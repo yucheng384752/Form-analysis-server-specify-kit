@@ -1,0 +1,63 @@
+# 忽略 node_modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 忽略 Python 相關
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.coverage
+.pytest_cache/
+venv/
+env/
+.env
+
+# 忽略資料庫檔案
+*.db
+*.sqlite
+*.sqlite3
+
+# 忽略 Docker 相關
+.docker/
+
+# 忽略上傳檔案
+uploads/
+# 但保留測試資料
+!test-data/**/*.csv
+!test-data/**/*.xlsx
+!test-data/**/*.xls
+
+# 忽略日誌檔案
+*.log
+logs/
+
+# 忽略系統檔案
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# 忽略 IDE 配置
+.vscode/settings.json
+.idea/
+*.iml
+
+# 忽略暫存檔案
+tmp/
+temp/
+.cache/
+
+# 忽略編譯產出
+dist/
+build/
+*.egg-info/
+
+# 忽略環境配置
+.env.local
+.env.production
+.env.development
