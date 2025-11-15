@@ -67,8 +67,9 @@ services:
       backend:
         condition: service_healthy
     environment:
-      - VITE_API_URL=${VITE_API_URL:-http://backend:8000}
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
       - VITE_MAX_FILE_SIZE=${VITE_MAX_FILE_SIZE:-10485760}
+      - DOCKER_ENV=true
     ports:
       - "5173:5173"
     volumes:
