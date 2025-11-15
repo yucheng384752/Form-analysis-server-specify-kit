@@ -26,7 +26,7 @@ from app.core.config import get_settings
 from app.core.database import init_db, Base
 from app.core.logging import setup_logging
 from app.core.middleware import RequestLoggingMiddleware, add_process_time_header
-from app.api import routes_health, routes_upload, routes_validate, routes_import, routes_export, routes_query
+from app.api import routes_health, routes_upload, routes_validate, routes_import, routes_export, routes_query, routes_logs
 
 # Import all models to ensure they're registered with Base
 from app.models import UploadJob, UploadError, Record
@@ -148,31 +148,43 @@ app.include_router(
 # 檔案上傳路由
 app.include_router(
     routes_upload.router,
+    prefix="/api",
     tags=["檔案上傳"]
 )
 
 # 驗證結果查詢路由
 app.include_router(
     routes_validate.router,
+    prefix="/api",
     tags=["驗證結果查詢"]
 )
 
 # 資料匯入路由
 app.include_router(
     routes_import.router,
+    prefix="/api",
     tags=["資料匯入"]
 )
 
 # 資料匯出路由
 app.include_router(
     routes_export.router,
+    prefix="/api",
     tags=["資料匯出"]
 )
 
 # 資料查詢路由
 app.include_router(
     routes_query.router,
+    prefix="/api/query",
     tags=["資料查詢"]
+)
+
+# 日誌管理路由
+app.include_router(
+    routes_logs.router,
+    prefix="/api/logs",
+    tags=["日誌管理"]
 )
 
 
