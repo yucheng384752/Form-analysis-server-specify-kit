@@ -282,7 +282,7 @@ async def import_data(
             # 使用檔案名稱的一部分作為預設批號
             lot_no = "0000000_00"
         
-        # 5. 批量匯入所有資料行
+        # 5. 批量匯入資料
         imported_rows = 0
         skipped_rows = 0
         
@@ -292,128 +292,172 @@ async def import_data(
                    lot_no=lot_no,
                    data_type=data_type.value)
         
-        # 處理 DataFrame 中的每一行
-        for index, row in df.iterrows():
+        # P2/P3 特殊處理：將多行資料合併為單一記錄
+        if data_type in [DataType.P2, DataType.P3]:
             try:
-                # 轉換 pandas Series 為字典
-                row_dict = row.to_dict()
-                
-                # 分離已知欄位和額外欄位
-                known_fields = {}
-                additional_fields = {}
-                
-                # 設置批號（對所有類型都需要）
-                known_fields['lot_no'] = lot_no
-                
-                # 提取已知的資料庫欄位
-                if 'product_name' in row_dict and pd.notna(row_dict['product_name']):
-                    known_fields['product_name'] = str(row_dict['product_name']).strip()
-                
-                if 'quantity' in row_dict and pd.notna(row_dict['quantity']):
-                    try:
-                        known_fields['quantity'] = int(float(row_dict['quantity']))
-                    except (ValueError, TypeError):
-                        pass
-                
-                if 'production_date' in row_dict and pd.notna(row_dict['production_date']):
-                    try:
-                        if isinstance(row_dict['production_date'], str):
-                            known_fields['production_date'] = datetime.strptime(row_dict['production_date'], '%Y-%m-%d').date()
-                        else:
-                            known_fields['production_date'] = row_dict['production_date']
-                    except (ValueError, TypeError):
-                        pass
-                
-                if 'notes' in row_dict and pd.notna(row_dict['notes']):
-                    known_fields['notes'] = str(row_dict['notes']).strip()
-                
-                # P2 專用欄位
-                for field in ['sheet_width', 'thickness1', 'thickness2', 'thickness3', 
-                             'thickness4', 'thickness5', 'thickness6', 'thickness7', 
-                             'appearance', 'rough_edge', 'slitting_result']:
-                    if field in row_dict and pd.notna(row_dict[field]):
-                        try:
-                            if 'thickness' in field or field == 'sheet_width':
-                                known_fields[field] = float(row_dict[field])
-                            else:
-                                known_fields[field] = int(float(row_dict[field]))
-                        except (ValueError, TypeError):
-                            pass
-                
-                # P3 專用欄位
-                if 'P3_No.' in row_dict and pd.notna(row_dict['P3_No.']):
-                    known_fields['p3_no'] = str(row_dict['P3_No.']).strip()
-                
-                # 將所有其他欄位存入 additional_data
-                for key, value in row_dict.items():
-                    if (key not in ['lot_no', 'product_name', 'quantity', 'production_date', 'notes',
-                                   'sheet_width', 'thickness1', 'thickness2', 'thickness3', 'thickness4',
-                                   'thickness5', 'thickness6', 'thickness7', 'appearance', 'rough_edge', 
-                                   'slitting_result', 'P3_No.'] and pd.notna(value)):
-                        # 轉換 numpy 類型為 Python 原生類型
-                        if pd.api.types.is_numeric_dtype(type(value)):
-                            additional_fields[key] = float(value) if isinstance(value, (int, float)) else str(value)
-                        else:
-                            additional_fields[key] = str(value).strip()
-                
-                # 設置預設生產日期（如果沒有提供）
-                if 'production_date' not in known_fields:
-                    known_fields['production_date'] = date.today()
+                # 將所有行轉換為列表存入 additional_data
+                all_rows = []
+                for index, row in df.iterrows():
+                    row_dict = row.to_dict()
+                    # 清理 NaN 值
+                    cleaned_row = {k: (v if pd.notna(v) else None) for k, v in row_dict.items()}
+                    all_rows.append(cleaned_row)
                 
                 # 檢查是否已存在相同的 lot_no + data_type 記錄
                 existing_stmt = select(Record).where(
-                    Record.lot_no == known_fields['lot_no'],
+                    Record.lot_no == lot_no,
                     Record.data_type == data_type
                 )
                 existing_result = await db.execute(existing_stmt)
                 existing_record = existing_result.scalar_one_or_none()
                 
                 if existing_record:
-                    # 如果記錄已存在，更新它而不是創建新記錄
-                    for field, value in known_fields.items():
-                        if field != 'lot_no':  # lot_no 不需要更新
-                            setattr(existing_record, field, value)
+                    # 更新現有記錄
+                    existing_record.additional_data = {'rows': all_rows}
+                    existing_record.production_date = date.today()
                     
-                    existing_record.data_type = data_type
-                    existing_record.additional_data = additional_fields if additional_fields else None
-                    
-                    logger.info("更新現有記錄", 
-                               row_index=index,
-                               lot_no=known_fields.get('lot_no'),
+                    logger.info("更新現有P2/P3記錄",
+                               lot_no=lot_no,
                                data_type=data_type.value,
+                               rows_count=len(all_rows),
                                record_id=str(existing_record.id),
                                process_id=str(request.process_id))
                 else:
                     # 創建新記錄
                     record = Record(
+                        lot_no=lot_no,
                         data_type=data_type,
-                        additional_data=additional_fields if additional_fields else None,
-                        **known_fields
+                        production_date=date.today(),
+                        additional_data={'rows': all_rows}
                     )
-                    
                     db.add(record)
                     
-                    if imported_rows <= 3:  # 只記錄前3筆的詳細資訊
-                        logger.info("成功創建記錄", 
+                    logger.info("創建新P2/P3記錄",
+                               lot_no=lot_no,
+                               data_type=data_type.value,
+                               rows_count=len(all_rows),
+                               process_id=str(request.process_id))
+                
+                imported_rows = len(all_rows)
+                
+            except Exception as e:
+                logger.error("處理P2/P3資料失敗",
+                           error=str(e),
+                           lot_no=lot_no,
+                           data_type=data_type.value,
+                           process_id=str(request.process_id))
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "detail": f"處理{data_type.value}資料失敗：{str(e)}",
+                        "process_id": str(request.process_id),
+                        "error_code": "IMPORT_ERROR"
+                    }
+                )
+        
+        # P1 處理：每一行作為獨立記錄
+        elif data_type == DataType.P1:
+            for index, row in df.iterrows():
+                try:
+                    # 轉換 pandas Series 為字典
+                    row_dict = row.to_dict()
+                    
+                    # 分離已知欄位和額外欄位
+                    known_fields = {}
+                    additional_fields = {}
+                    
+                    # 設置批號（對所有類型都需要）
+                    known_fields['lot_no'] = lot_no
+                    
+                    # 提取已知的資料庫欄位
+                    if 'product_name' in row_dict and pd.notna(row_dict['product_name']):
+                        known_fields['product_name'] = str(row_dict['product_name']).strip()
+                    
+                    if 'quantity' in row_dict and pd.notna(row_dict['quantity']):
+                        try:
+                            known_fields['quantity'] = int(float(row_dict['quantity']))
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    if 'production_date' in row_dict and pd.notna(row_dict['production_date']):
+                        try:
+                            if isinstance(row_dict['production_date'], str):
+                                known_fields['production_date'] = datetime.strptime(row_dict['production_date'], '%Y-%m-%d').date()
+                            else:
+                                known_fields['production_date'] = row_dict['production_date']
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    if 'notes' in row_dict and pd.notna(row_dict['notes']):
+                        known_fields['notes'] = str(row_dict['notes']).strip()
+                    
+                    # 將所有其他欄位存入 additional_data
+                    for key, value in row_dict.items():
+                        if (key not in ['lot_no', 'product_name', 'quantity', 'production_date', 'notes'] 
+                            and pd.notna(value)):
+                            # 轉換 numpy 類型為 Python 原生類型
+                            if pd.api.types.is_numeric_dtype(type(value)):
+                                additional_fields[key] = float(value) if isinstance(value, (int, float)) else str(value)
+                            else:
+                                additional_fields[key] = str(value).strip()
+                    
+                    # 設置預設生產日期（如果沒有提供）
+                    if 'production_date' not in known_fields:
+                        known_fields['production_date'] = date.today()
+                    
+                    # 檢查是否已存在相同的 lot_no + data_type 記錄
+                    existing_stmt = select(Record).where(
+                        Record.lot_no == known_fields['lot_no'],
+                        Record.data_type == data_type
+                    )
+                    existing_result = await db.execute(existing_stmt)
+                    existing_record = existing_result.scalar_one_or_none()
+                    
+                    if existing_record:
+                        # 如果記錄已存在，更新它而不是創建新記錄
+                        for field, value in known_fields.items():
+                            if field != 'lot_no':  # lot_no 不需要更新
+                                setattr(existing_record, field, value)
+                        
+                        existing_record.data_type = data_type
+                        existing_record.additional_data = additional_fields if additional_fields else None
+                        
+                        logger.info("更新現有P1記錄", 
                                    row_index=index,
                                    lot_no=known_fields.get('lot_no'),
                                    data_type=data_type.value,
-                                   additional_fields_count=len(additional_fields),
-                                   additional_fields=list(additional_fields.keys())[:5],
+                                   record_id=str(existing_record.id),
                                    process_id=str(request.process_id))
-                
-                imported_rows += 1
-                
-            except Exception as e:
-                logger.error("創建記錄失敗", 
-                           error=str(e), 
-                           row_index=index,
-                           row_data_sample=str(dict(list(row_dict.items())[:3])),
-                           process_id=str(request.process_id))
-                skipped_rows += 1
-                continue
+                    else:
+                        # 創建新記錄
+                        record = Record(
+                            data_type=data_type,
+                            additional_data=additional_fields if additional_fields else None,
+                            **known_fields
+                        )
+                        
+                        db.add(record)
+                        
+                        if imported_rows <= 3:  # 只記錄前3筆的詳細資訊
+                            logger.info("成功創建P1記錄", 
+                                       row_index=index,
+                                       lot_no=known_fields.get('lot_no'),
+                                       data_type=data_type.value,
+                                       additional_fields_count=len(additional_fields),
+                                       additional_fields=list(additional_fields.keys())[:5],
+                                       process_id=str(request.process_id))
+                    
+                    imported_rows += 1
+                    
+                except Exception as e:
+                    logger.error("處理P1記錄失敗", 
+                               error=str(e), 
+                               row_index=index,
+                               process_id=str(request.process_id))
+                    skipped_rows += 1
+                    continue
         
-        # 5. 更新工作狀態
+        # 6. 更新工作狀態
         job.status = JobStatus.IMPORTED
         await db.commit()
         

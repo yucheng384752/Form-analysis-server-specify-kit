@@ -282,6 +282,7 @@ export function QueryPage() {
       return <p className="no-data">此記錄沒有額外的CSV資料</p>;
     }
 
+    // 分組其他資料
     const grouped = groupDataByPrefix(record.additional_data);
     
     // 基本資料
@@ -291,15 +292,18 @@ export function QueryPage() {
       created_at: new Date(record.created_at).toLocaleString('zh-TW')
     };
 
+    // 合併 actual_temp 和 set_temp 作為押出機生產條件
+    const extrusionConditions = {
+      ...grouped.actual_temp,
+      ...grouped.set_temp
+    };
+
     return (
       <div className="grouped-data-container">
         {renderGroupedSection(record.id, '基本資料', 'basic', basicData, 'ℹ️')}
         
-        {Object.keys(grouped.actual_temp).length > 0 && 
-          renderGroupedSection(record.id, '押出機主查條件', 'actual_temp', grouped.actual_temp, '⚡')}
-        
-        {Object.keys(grouped.set_temp).length > 0 && 
-          renderGroupedSection(record.id, '生產參數', 'set_temp', grouped.set_temp, '🔧')}
+        {Object.keys(extrusionConditions).length > 0 && 
+          renderGroupedSection(record.id, '押出機生產條件', 'extrusion', extrusionConditions, '⚡', true)}
         
         {Object.keys(grouped.other).length > 0 && 
           renderGroupedSection(record.id, '其他參數', 'other', grouped.other, '📋')}
