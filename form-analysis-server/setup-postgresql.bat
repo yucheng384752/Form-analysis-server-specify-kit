@@ -12,7 +12,7 @@ echo  正在啟動PostgreSQL Docker容器...
 docker-compose up -d db
 
 echo.
-echo ⏳ 等待PostgreSQL準備就緒...
+echo  等待PostgreSQL準備就緒...
 timeout /t 10 /nobreak > nul
 
 echo.
@@ -20,7 +20,7 @@ echo  檢查PostgreSQL容器狀態...
 docker-compose ps db
 
 echo.
-echo 📋 PostgreSQL連接資訊:
+echo  PostgreSQL連接資訊:
 echo    主機: localhost
 echo    端口: 5432  
 echo    資料庫: form_analysis_db
@@ -28,7 +28,7 @@ echo    用戶: app
 echo    密碼: app_secure_password
 
 echo.
-echo 🚀 正在初始化資料庫表格...
+echo  正在初始化資料庫表格...
 cd backend
 python setup_postgresql.py
 cd ..

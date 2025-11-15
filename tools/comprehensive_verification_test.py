@@ -400,17 +400,17 @@ def print_summary():
     print(f"    失敗: {test_results['failed']}")
     print(f"   ⏭️  跳過: {test_results['skipped']}")
     print(f"     警告: {test_results['warnings']}")
-    print(f"   📝 總計: {total}")
+    print(f"    總計: {total}")
     
     if test_results['failed'] == 0:
-        print(f"\n🎉 恭喜！所有關鍵測試都通過了！")
+        print(f"\n 恭喜！所有關鍵測試都通過了！")
         if test_results['warnings'] > 0:
             print(f"  注意: 有 {test_results['warnings']} 個警告項目需要關注")
     else:
         print(f"\n  有 {test_results['failed']} 個測試失敗，需要修復")
     
     # 使用建議
-    print(f"\n📋 使用建議:")
+    print(f"\n 使用建議:")
     if test_results['failed'] > 0:
         print("   1. 修復失敗的測試項目")
         print("   2. 確保後端服務正在運行（端口 8001）")
@@ -422,7 +422,7 @@ def print_summary():
 
 def main():
     """主測試函數"""
-    print("🚀 Form Analysis System - 綜合驗證測試")
+    print(" Form Analysis System - 綜合驗證測試")
     print("=" * 60)
     
     # 執行各項測試

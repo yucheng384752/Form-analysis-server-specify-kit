@@ -20,7 +20,7 @@ from pathlib import Path
 
 def print_status(message):
     """打印狀態消息"""
-    print(f"🚀 {message}")
+    print(f" {message}")
 
 def print_success(message):
     """打印成功消息"""
@@ -174,10 +174,10 @@ def main():
     webbrowser.open("http://localhost:5173")
     
     print("\n" + "=" * 50)
-    print("🎉 服務已啟動！")
+    print(" 服務已啟動！")
     print(" 後端 API: http://localhost:8000")
-    print("🌐 前端界面: http://localhost:5173")
-    print("📚 API 文檔: http://localhost:8000/docs")
+    print(" 前端界面: http://localhost:5173")
+    print(" API 文檔: http://localhost:8000/docs")
     print("\n按 Ctrl+C 停止服務")
     print("=" * 50)
     
@@ -186,7 +186,7 @@ def main():
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n🛑 正在停止服務...")
+        print("\n 正在停止服務...")
         if backend_process:
             backend_process.terminate()
         if frontend_process:

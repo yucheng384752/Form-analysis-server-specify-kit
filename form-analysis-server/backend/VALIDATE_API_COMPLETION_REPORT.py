@@ -5,21 +5,21 @@
 """
 
 print("""
-🎉 驗證結果 API 實作完成報告
+ 驗證結果 API 實作完成報告
 ==========================================
 
-📋 實作內容總結：
+ 實作內容總結：
 ==========================================
 
  1. 資料模型 Schema (app/schemas/validate.py)
    
-   📌 ErrorItem 模型：
+    ErrorItem 模型：
    - row_index: 錯誤行號（從1開始，不包含標題行）
    - field: 錯誤欄位名稱
    - error_code: 錯誤類型代碼
    - message: 詳細錯誤描述
    
-   📌 ValidateResult 模型：
+    ValidateResult 模型：
    - job_id: 上傳工作唯一識別碼
    - process_id: 處理流程識別碼
    - filename: 原始檔案名稱
@@ -29,13 +29,13 @@ print("""
    - errors: 錯誤項目列表（支援分頁）
    - pagination: 分頁資訊
    
-   📌 PaginationParams 模型：
+    PaginationParams 模型：
    - page: 頁碼（預設1，最小1）
    - page_size: 每頁項目數（預設20，範圍1-100）
 
  2. API 路由實作 (app/api/routes_validate.py)
    
-   📌 GET /api/validate 端點：
+    GET /api/validate 端點：
    - 查詢參數：process_id (必填), page (選填), page_size (選填)
    - 回傳：完整的驗證結果和分頁錯誤列表
    - 錯誤處理：404 當工作不存在時
@@ -47,12 +47,12 @@ print("""
    - 中文化的錯誤訊息和描述
    - 與現有資料庫模型完全相容
 
-🚀 API 規格說明：
+ API 規格說明：
 ==========================================
 
 📍 端點：GET /api/validate
 
-📋 查詢參數：
+ 查詢參數：
 - process_id (UUID, 必填): 處理流程識別碼
 - page (int, 選填): 頁碼，從1開始，預設為1
 - page_size (int, 選填): 每頁項目數，1-100，預設為20
@@ -185,7 +185,7 @@ GET /api/validate?process_id=550e8400-e29b-41d4-a716-446655440000&page_size=100
  分頁功能：100% 完成
  型別安全：100% 完成
 
-🚀 準備就緒功能：
+ 準備就緒功能：
 - 支援任意 process_id 的驗證結果查詢
 - 完整的錯誤項目列表和詳細資訊
 - 靈活的分頁參數控制
@@ -201,7 +201,7 @@ GET /api/validate?process_id=550e8400-e29b-41d4-a716-446655440000&page_size=100
 4. 新增進階篩選和排序選項
 5. 實作錯誤統計分析功能
 
-🎉 結論：
+ 結論：
 ==========================================
 
 驗證結果查詢 API 已完全實作並準備就緒！
@@ -220,7 +220,7 @@ API 現在可以：
 4. 回傳結構化的錯誤詳情
 5. 支援靈活的查詢參數
 
-系統功能持續擴展中！ 🚀
+系統功能持續擴展中！ 
 
 啟動測試：
 1. python app/main.py

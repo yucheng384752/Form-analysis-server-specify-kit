@@ -48,28 +48,28 @@ docker-compose down --remove-orphans | Out-Null
 Write-Host ""
 Write-Host "[3/5] 啟動 PostgreSQL 資料庫..." -ForegroundColor Yellow
 docker-compose up -d db | Out-Null
-Write-Host "   ⏳ 等待資料庫初始化 (15秒)..." -ForegroundColor Cyan
+Write-Host "    等待資料庫初始化 (15秒)..." -ForegroundColor Cyan
 Start-Sleep -Seconds 15
 
 Write-Host ""
 Write-Host "[4/5] 啟動後端 API 服務..." -ForegroundColor Yellow  
 docker-compose up -d backend | Out-Null
-Write-Host "   ⏳ 等待 API 服務啟動 (20秒)..." -ForegroundColor Cyan
+Write-Host "    等待 API 服務啟動 (20秒)..." -ForegroundColor Cyan
 Start-Sleep -Seconds 20
 
 Write-Host ""
 Write-Host "[5/5] 啟動前端應用..." -ForegroundColor Yellow
 docker-compose up -d frontend | Out-Null
-Write-Host "   ⏳ 等待前端服務啟動 (15秒)..." -ForegroundColor Cyan
+Write-Host "    等待前端服務啟動 (15秒)..." -ForegroundColor Cyan
 Start-Sleep -Seconds 15
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
-Write-Host "            🎉 啟動完成！" -ForegroundColor Green
+Write-Host "             啟動完成！" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 
-Write-Host "📌 服務連結：" -ForegroundColor White
+Write-Host " 服務連結：" -ForegroundColor White
 Write-Host "   前端應用: " -NoNewline -ForegroundColor White
 Write-Host "http://localhost:5173" -ForegroundColor Cyan
 Write-Host "   API 文檔: " -NoNewline -ForegroundColor White  

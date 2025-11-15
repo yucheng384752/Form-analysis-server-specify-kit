@@ -216,7 +216,7 @@ class TestFullFlowIntegration:
         print(f" 防重複匯入測試通過")
         print(f"   錯誤代碼: {duplicate_error['detail']['error_code']}")
         
-        print("\n🎉 完整流程整合測試成功完成！")
+        print("\n 完整流程整合測試成功完成！")
         
         return {
             "process_id": process_id,
@@ -310,7 +310,7 @@ if __name__ == "__main__":
             async with AsyncClient(app=app, base_url="http://test") as client:
                 # 執行完整流程測試
                 result = await test_instance.test_complete_workflow(client, temp_path)
-                print(f"\n📋 測試結果摘要:")
+                print(f"\n 測試結果摘要:")
                 print(f"Process ID: {result['process_id']}")
                 print(f"匯入資料: {result['import_data']['imported_rows']} 列")
                 print(f"跳過資料: {result['import_data']['skipped_rows']} 列")

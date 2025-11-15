@@ -1,6 +1,6 @@
 # Form Analysis System - 手動啟動指南
 
-## 🚀 快速啟動步驟
+##  快速啟動步驟
 
 ### 步驟 1：啟動後端服務
 1. 打開第一個 PowerShell 終端
@@ -21,9 +21,9 @@ npm run dev
 ```
 
 ### 步驟 3：訪問應用
-- 🌐 前端界面: http://localhost:5173
+-  前端界面: http://localhost:5173
 -  後端 API: http://localhost:8000
-- 📚 API 文檔: http://localhost:8000/docs
+-  API 文檔: http://localhost:8000/docs
 
 ##  故障排除
 
@@ -69,13 +69,13 @@ python comprehensive_verification_test.py
 -  前端文件
 -  配置文件
 
-## 🎉 成功指標
+##  成功指標
 
 看到以下輸出表示服務正常：
 
 **後端成功啟動：**
 ```
-🚀 Form Analysis API starting on 0.0.0.0:8000
+ Form Analysis API starting on 0.0.0.0:8000
  Database: sqlite+aiosqlite:///./dev_test.db
  Upload limit: 10MB
 🔒 CORS origins: ['http://localhost:5173', 'http://localhost:3000']

@@ -102,7 +102,7 @@ def main():
         return
     
     # 2. 提取配置欄位
-    print(f"\n📝 提取配置欄位:")
+    print(f"\n 提取配置欄位:")
     config_fields = extract_config_fields_from_python(config_file)
     env_vars = extract_env_vars_from_example(env_example)
     docker_vars = extract_env_vars_from_docker_compose(docker_compose)
@@ -161,11 +161,11 @@ def main():
     total_issues = len([x for x in db_issues if "" in x]) + (1 if missing_in_env else 0)
     
     if total_issues == 0:
-        print(f"   🎉 配置一致性檢查通過!")
+        print(f"    配置一致性檢查通過!")
     else:
         print(f"     發現 {total_issues} 個問題需要修正")
     
-    print(f"\n📋 建議:")
+    print(f"\n 建議:")
     print(f"   1. 確保 DATABASE_URL 在 Docker 環境使用 'db:5432'")
     print(f"   2. 為本地開發創建 .env.local.example (使用 localhost)")
     print(f"   3. 確保所有 config.py 欄位都有對應的環境變數")

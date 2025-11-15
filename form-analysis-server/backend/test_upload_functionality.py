@@ -94,7 +94,7 @@ async def test_file_validation():
         return False
     
     print("\n" + "=" * 50)
-    print("🎉 測試完成！")
+    print(" 測試完成！")
     return True
 
 
@@ -142,7 +142,7 @@ async def test_column_validation():
 async def main():
     """主測試函數"""
     
-    print("🚀 開始檔案上傳功能測試")
+    print(" 開始檔案上傳功能測試")
     print("時間：", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     
     # 測試正常檔案驗證
@@ -151,7 +151,7 @@ async def main():
     # 測試欄位驗證
     test2_passed = await test_column_validation()
     
-    print(f"\n📋 測試結果總結：")
+    print(f"\n 測試結果總結：")
     print(f"   - 檔案驗證測試：{' 通過' if test1_passed else ' 失敗'}")
     print(f"   - 欄位驗證測試：{' 通過' if test2_passed else ' 失敗'}")
     

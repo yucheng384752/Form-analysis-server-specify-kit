@@ -17,7 +17,7 @@ def test_api_connection():
         response = requests.get(f"{API_BASE_URL}/")
         if response.status_code == 200:
             print(" API 連接成功")
-            print(f"📋 回應：{response.json()}")
+            print(f" 回應：{response.json()}")
             return True
         else:
             print(f" API 連接失敗：{response.status_code}")
@@ -72,7 +72,7 @@ def test_file_upload():
         response = requests.post(f"{API_BASE_URL}/api/upload", files=files)
         
         print(f" HTTP 狀態碼：{response.status_code}")
-        print(f"📝 回應內容：{response.text}")
+        print(f" 回應內容：{response.text}")
         
         if response.status_code == 200:
             result = response.json()
@@ -97,7 +97,7 @@ def test_upload_status(process_id):
         response = requests.get(f"{API_BASE_URL}/api/upload/{process_id}/status")
         
         print(f" HTTP 狀態碼：{response.status_code}")
-        print(f"📝 回應內容：{response.text}")
+        print(f" 回應內容：{response.text}")
         
         if response.status_code == 200:
             print(" 狀態查詢成功")
@@ -112,7 +112,7 @@ def test_upload_status(process_id):
 
 def main():
     """主測試函數"""
-    print("🚀 開始簡單 API 測試")
+    print(" 開始簡單 API 測試")
     print("時間：", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("=" * 50)
     
@@ -135,7 +135,7 @@ def main():
     
     # 總結
     print("\n" + "=" * 50)
-    print("📋 測試結果總結：")
+    print(" 測試結果總結：")
     print(f"   - API 連接：{' 成功' if connection_ok else ' 失敗'}")
     print(f"   - API 文檔：{' 成功' if docs_ok else ' 失敗'}")
     print(f"   - 檔案上傳：{' 成功' if upload_ok else ' 失敗'}")
@@ -143,7 +143,7 @@ def main():
     
     if all([connection_ok, docs_ok, upload_ok, status_ok]):
         print("\n🎊 所有測試通過！檔案上傳 API 運作正常。")
-        print("🌐 訪問 http://localhost:8000/docs 查看完整 API 文檔")
+        print(" 訪問 http://localhost:8000/docs 查看完整 API 文檔")
     else:
         print("\n  部分測試失敗，請檢查伺服器狀態。")
 

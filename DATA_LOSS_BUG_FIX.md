@@ -12,7 +12,7 @@
 
 ```bat
 if "!port_conflict!"=="true" (
-    echo    🧹 執行額外清理以釋放端口...
+    echo     執行額外清理以釋放端口...
     docker-compose -f "%SERVER_PATH%\docker-compose.yml" down -v --remove-orphans >nul 2>&1
     timeout /t 2 /nobreak >nul
 )
@@ -183,7 +183,7 @@ docker exec form_analysis_db psql -U app -d form_analysis_db -c "SELECT COUNT(*)
 -  系統正常啟動
 -  **資料完整保留**
 
-## 📝 相關文件更新
+##  相關文件更新
 
 ### 需要同步更新的文件
 
@@ -229,4 +229,4 @@ docker run --rm -v form-analysis-server_postgres_data:/data -v %cd%:/backup alpi
 **修復時間**: 2025-11-15  
 **影響範圍**: `scripts/start-system.bat`  
 **修復狀態**:  已完成  
-**測試狀態**: ⏳ 待驗證
+**測試狀態**:  待驗證

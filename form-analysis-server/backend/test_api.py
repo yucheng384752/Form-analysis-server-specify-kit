@@ -105,7 +105,7 @@ def test_endpoints():
     print(f"    Failed: {total - successful}/{total}")
     
     if successful == total:
-        print("\n🎉 All tests passed! The API is working correctly.")
+        print("\n All tests passed! The API is working correctly.")
         return True
     else:
         print("\n  Some tests failed. Check the details above.")

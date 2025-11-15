@@ -4,7 +4,7 @@ Form Analysis System 提供了完整的日誌管理工具包，支援日誌監�
 
 ## 🛠️ 工具概覽
 
-### 1. 📱 Windows 批次檔工具
+### 1.  Windows 批次檔工具
 **檔案**: `scripts/monitor-logs.bat`  
 **用途**: 基礎日誌監控和管理  
 **特色**: 簡單易用，無需額外依賴  
@@ -48,7 +48,7 @@ python tools/log_analyzer.py --watch --errors-only
 - ⚡ 效能統計 (平均/最大/最小處理時間)
 -  日誌級別分佈
 - 🕐 時間範圍篩選
-- 📱 即時監控模式
+-  即時監控模式
 
 ---
 
@@ -76,7 +76,7 @@ python tools/log_analyzer.py --watch --errors-only
 -  詳細統計資訊 (檔案大小、日誌級別分佈)
 -  高亮搜尋結果
 - 📈 即時監控 (格式化顯示)
-- 🧹 智能清理 (確認對話)
+-  智能清理 (確認對話)
 - ⚙️  自定義參數
 
 ---
@@ -94,17 +94,17 @@ scripts\diagnose-system.bat
 **功能**:
 - 🖥️  系統環境檢查 (Python, Node.js, Docker)
 -  專案結構驗證
-- 🌐 連接埠狀態檢查
-- 📝 日誌系統狀態
+-  連接埠狀態檢查
+-  日誌系統狀態
 - 💾 磁碟空間監控
 - 🌍 網路連接測試
 - 🐳 Docker 容器狀態
 -  運行程序檢查
-- 📋 診斷報告生成
+-  診斷報告生成
 
-## 📋 使用場景
+##  使用場景
 
-### 🚀 開發階段
+###  開發階段
 ```bash
 # 即時監控開發日誌
 python tools/log_analyzer.py --watch
@@ -135,7 +135,7 @@ python tools/log_analyzer.py --hours 24
 .\scripts\LogManager.ps1 -Action stats
 ```
 
-### 🧹 日誌維護
+###  日誌維護
 ```powershell
 # 檢查日誌大小和清理
 .\scripts\LogManager.ps1 -Action cleanup
@@ -185,11 +185,11 @@ ENABLE_REQUEST_ID=true
 📂 日誌目錄: form-analysis-server/backend/logs
 
  日誌檔案資訊:
-   📝 app.log: 2,345,678 bytes (2.23 MB)
+    app.log: 2,345,678 bytes (2.23 MB)
    🚨 error.log: 12,345 bytes (0.01 MB)
 
  API 使用統計 (過去24小時):
-   📡 UPLOAD:
+    UPLOAD:
       總請求: 25
       成功: 23
       錯誤: 2

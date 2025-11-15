@@ -43,7 +43,7 @@ function Write-Error { param($Message) Write-ColorOutput Red "[ERROR] $Message" 
 
 # 主腳本開始
 Write-ColorOutput Blue @"
-🚀 Form Analysis - Docker 一鍵啟動與驗證
+ Form Analysis - Docker 一鍵啟動與驗證
 ========================================
 "@
 
@@ -308,7 +308,7 @@ lot_no,product_name,quantity,production_date
 
 Write-Host ""
 Write-ColorOutput Blue @"
-🌐 前端訪問資訊
+ 前端訪問資訊
 ================
 "@
 Write-Success "前端應用已啟動: http://localhost:5173"
@@ -324,7 +324,7 @@ Write-Host "• API Base URL: 在 .env 文件中配置 VITE_API_URL"
 Write-Host "• 檔案大小限制: 在 .env 文件中配置 VITE_MAX_FILE_SIZE"
 Write-Host "• CORS 設定: 在 .env 文件中配置 CORS_ORIGINS"
 Write-Host ""
-Write-Host "📝 vite.config.ts 代理設定已配置 /api 路徑到後端"
+Write-Host " vite.config.ts 代理設定已配置 /api 路徑到後端"
 Write-Host ""
 
 Write-ColorOutput Blue @"
@@ -334,7 +334,7 @@ Write-ColorOutput Blue @"
 docker compose ps
 
 Write-Host ""
-Write-Success "🎉 一鍵啟動與驗證完成！"
+Write-Success " 一鍵啟動與驗證完成！"
 Write-Host ""
 Write-Host "使用以下命令查看日誌："
 Write-Host "  docker compose logs -f backend    # 後端日誌"

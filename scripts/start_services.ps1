@@ -21,7 +21,7 @@ if (-not (Test-Path $frontendDir)) {
 }
 
 # 啟動後端服務
-Write-Host "🚀 正在啟動後端服務..." -ForegroundColor Green
+Write-Host " 正在啟動後端服務..." -ForegroundColor Green
 $backendScript = @"
 cd '$backendDir'
 .\venv\Scripts\Activate.ps1
@@ -32,11 +32,11 @@ python -c "import sys; sys.path.insert(0, '.'); from app.main import app; import
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $backendScript
 
 # 等待後端啟動
-Write-Host "⏳ 等待後端服務啟動..." -ForegroundColor Yellow
+Write-Host " 等待後端服務啟動..." -ForegroundColor Yellow
 Start-Sleep -Seconds 5
 
 # 啟動前端服務  
-Write-Host "🌐 正在啟動前端服務..." -ForegroundColor Green
+Write-Host " 正在啟動前端服務..." -ForegroundColor Green
 $frontendScript = @"
 cd '$frontendDir'
 npm run dev
@@ -45,7 +45,7 @@ npm run dev
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $frontendScript
 
 # 等待前端啟動
-Write-Host "⏳ 等待前端服務啟動..." -ForegroundColor Yellow
+Write-Host " 等待前端服務啟動..." -ForegroundColor Yellow
 Start-Sleep -Seconds 5
 
 # 打開瀏覽器
@@ -55,8 +55,8 @@ Start-Process "http://localhost:5173"
 Write-Host ""
 Write-Host " 服務啟動完成！" -ForegroundColor Green
 Write-Host " 後端 API: http://localhost:8000" -ForegroundColor Cyan
-Write-Host "🌐 前端界面: http://localhost:5173" -ForegroundColor Cyan  
-Write-Host "📚 API 文檔: http://localhost:8000/docs" -ForegroundColor Cyan
+Write-Host " 前端界面: http://localhost:5173" -ForegroundColor Cyan  
+Write-Host " API 文檔: http://localhost:8000/docs" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "關閉此窗口將不會停止服務" -ForegroundColor Yellow
 Write-Host "要停止服務，請關閉對應的 PowerShell 窗口" -ForegroundColor Yellow

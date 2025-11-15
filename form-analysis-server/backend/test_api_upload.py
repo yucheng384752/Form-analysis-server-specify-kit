@@ -104,7 +104,7 @@ async def test_valid_file_upload():
                 
                 if response.status == 200:
                     print(" 檔案上傳成功")
-                    print(f"📝 回應：{response_data}")
+                    print(f" 回應：{response_data}")
                     
                     if 'process_id' in response_data:
                         return response_data['process_id']
@@ -140,7 +140,7 @@ async def test_invalid_file_upload():
                 
                 if response.status == 400:
                     print(" 正確偵測到檔案驗證錯誤")
-                    print(f"📝 錯誤詳情：{response_data}")
+                    print(f" 錯誤詳情：{response_data}")
                     return True
                 else:
                     print(f" 未正確處理驗證錯誤：{response_data}")
@@ -169,7 +169,7 @@ async def test_upload_status(process_id):
                 
                 if response.status == 200:
                     print(" 狀態查詢成功")
-                    print(f"📝 狀態資訊：{response_data}")
+                    print(f" 狀態資訊：{response_data}")
                     return True
                 else:
                     print(f" 狀態查詢失敗：{response_data}")
@@ -183,7 +183,7 @@ async def test_upload_status(process_id):
 async def main():
     """主測試函數"""
     
-    print("🚀 開始 API 測試")
+    print(" 開始 API 測試")
     print("時間：", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("API 地址：", API_BASE_URL)
     
@@ -204,7 +204,7 @@ async def main():
     
     # 總結
     print("\n" + "=" * 50)
-    print("📋 API 測試結果總結：")
+    print(" API 測試結果總結：")
     print(f"   - API 連接：{' 成功' if connection_ok else ' 失敗'}")
     print(f"   - 有效檔案上傳：{' 成功' if valid_upload_ok else ' 失敗'}")
     print(f"   - 無效檔案處理：{' 成功' if invalid_upload_ok else ' 失敗'}")

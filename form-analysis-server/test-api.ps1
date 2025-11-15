@@ -247,9 +247,9 @@ Remove-Item $errorCsvPath -ErrorAction SilentlyContinue
 Remove-Item $inlineCsvPath -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "🎉 API 測試完成！" -ForegroundColor Green
+Write-Host " API 測試完成！" -ForegroundColor Green
 Write-Host ""
-Write-Host "📋 測試摘要:" -ForegroundColor Cyan
+Write-Host " 測試摘要:" -ForegroundColor Cyan
 Write-Host "• 健康檢查: ✓"
 Write-Host "• 檔案上傳: ✓"
 Write-Host "• 錯誤報告: ✓"
@@ -257,7 +257,7 @@ Write-Host "• 資料匯入: ✓"
 Write-Host "• 錯誤處理: ✓"
 Write-Host "• 內聯 CSV: ✓"
 Write-Host ""
-Write-Host "🌐 前端測試：" -ForegroundColor Cyan
+Write-Host " 前端測試：" -ForegroundColor Cyan
 Write-Host "請開啟 http://localhost:5173 進行前端功能測試"
 
 # 詢問是否開啟前端

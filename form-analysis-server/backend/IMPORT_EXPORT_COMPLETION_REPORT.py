@@ -5,29 +5,29 @@
 """
 
 print("""
-🎉 匯入和匯出 API 實作完成報告
+ 匯入和匯出 API 實作完成報告
 ==========================================
 
-📋 實作內容總結：
+ 實作內容總結：
 ==========================================
 
  1. 資料匯入 API (app/api/routes_import.py)
    
-   📌 POST /api/import 端點：
+    POST /api/import 端點：
    - 請求格式：{"process_id": "uuid"}
    - 功能：將驗證通過的有效資料匯入系統
    - 狀態檢查：工作必須為 VALIDATED 狀態
    - 防重複：已匯入的工作不可重複操作
    - 回傳：imported_rows, skipped_rows, elapsed_ms
    
-   📌 Schema 模型 (app/schemas/import_data.py)：
+    Schema 模型 (app/schemas/import_data.py)：
    - ImportRequest：匯入請求模型
    - ImportResponse：匯入結果回應模型
    - ImportErrorResponse：錯誤回應模型
 
  2. 錯誤匯出 API (app/api/routes_export.py)
    
-   📌 GET /api/errors.csv 端點：
+    GET /api/errors.csv 端點：
    - 查詢參數：process_id (必填)
    - 功能：動態產生錯誤資料 CSV 檔案
    - CSV 欄位：row_index, field, error_code, message
@@ -46,12 +46,12 @@ print("""
    - 工作流程圖解
    - 錯誤代碼對照表
 
-🚀 API 規格說明：
+ API 規格說明：
 ==========================================
 
 📍 匯入 API：POST /api/import
 
-📋 請求格式：
+ 請求格式：
 {
   "process_id": "550e8400-e29b-41d4-a716-446655440000"
 }
@@ -199,14 +199,14 @@ PENDING → VALIDATED → IMPORTED
  測試覆蓋：100% 完成
  系統整合：100% 完成
 
-🚀 準備就緒功能：
+ 準備就緒功能：
 - 完整的資料匯入流程
 - 動態 CSV 錯誤報告產生
 - 狀態驅動的工作流程管理
 - 標準化的 REST API 介面
 - 完整的錯誤處理機制
 
-📋 API 端點總覽：
+ API 端點總覽：
 ==========================================
 
 1. POST /api/upload - 檔案上傳和驗證
@@ -215,7 +215,7 @@ PENDING → VALIDATED → IMPORTED
 4. POST /api/import - 匯入有效資料
 5. GET /api/errors.csv - 匯出錯誤 CSV
 
-🎉 結論：
+ 結論：
 ==========================================
 
 匯入和匯出 API 已完全實作並準備就緒！
@@ -234,7 +234,7 @@ PENDING → VALIDATED → IMPORTED
 4. 便利的錯誤資料匯出
 5. 標準化的 API 介面
 
-準備投入生產使用！ 🚀
+準備投入生產使用！ 
 
 測試方式：
 1. python app/main.py (啟動伺服器)

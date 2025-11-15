@@ -336,7 +336,7 @@ async def main():
         # 設置測試環境
         await test.setup()
         
-        print(f"\n📝 測試資料：")
+        print(f"\n 測試資料：")
         print(f"   CSV 檔案：{csv_file_path}")
         print(f"   資料列數：5 列（2 列錯誤，3 列有效）")
         
@@ -370,7 +370,7 @@ async def main():
         # 顯示測試結果摘要
         if success:
             print("\n" + "=" * 60)
-            print("🎉 整合測試完成！")
+            print(" 整合測試完成！")
             print("\n 測試結果摘要：")
             
             if 'upload' in test.test_results:

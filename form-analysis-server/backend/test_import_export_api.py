@@ -139,7 +139,7 @@ def test_export_errors_csv(process_id):
             
             # 解析 CSV 內容
             csv_content = response.text
-            print(f"\n📋 CSV 內容預覽：")
+            print(f"\n CSV 內容預覽：")
             
             lines = csv_content.strip().split('\n')
             for i, line in enumerate(lines[:6]):  # 只顯示前6行
@@ -190,7 +190,7 @@ def test_import_already_imported(process_id):
             error_data = response.json()
             if error_data.get("detail", {}).get("error_code") == "JOB_ALREADY_IMPORTED":
                 print(" 正確阻止重複匯入")
-                print(f"📝 錯誤訊息：{error_data}")
+                print(f" 錯誤訊息：{error_data}")
                 return True
             else:
                 print(f" 錯誤類型不符：{error_data}")
@@ -251,7 +251,7 @@ def test_invalid_process_id_apis():
 def main():
     """主測試函數"""
     
-    print("🚀 開始匯入和匯出 API 測試")
+    print(" 開始匯入和匯出 API 測試")
     print("時間：", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("=" * 60)
     
@@ -286,7 +286,7 @@ def main():
     
     # 總結
     print("\n" + "=" * 60)
-    print("📋 測試結果總結：")
+    print(" 測試結果總結：")
     print(f"   - 資料匯入：{' 成功' if import_test else ' 失敗'}")
     print(f"   - 錯誤匯出：{' 成功' if export_test else ' 失敗'}")
     print(f"   - 重複匯入檢查：{' 成功' if repeat_import_test else ' 失敗'}")
@@ -294,7 +294,7 @@ def main():
     
     if all([import_test, export_test, repeat_import_test, invalid_id_test]):
         print("\n🎊 所有測試通過！匯入和匯出 API 運作正常。")
-        print(f"🌐 API 文檔：http://localhost:8000/docs")
+        print(f" API 文檔：http://localhost:8000/docs")
         print(f"🔗 測試用的 Process ID：{process_id}")
     else:
         print("\n  部分測試失敗，請檢查 API 實作。")

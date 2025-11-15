@@ -61,9 +61,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Create all tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        print("📋 Database tables created/verified")
+        print(" Database tables created/verified")
     
-    print(f"🚀 Form Analysis API starting on {settings.api_host}:{settings.api_port}")
+    print(f" Form Analysis API starting on {settings.api_host}:{settings.api_port}")
     print(f" Database: PostgreSQL - {settings.database_url.split('@')[-1]}")  # Hide credentials
     print(f" Upload limit: {settings.max_upload_size_mb}MB")
     print(f"🔒 CORS origins: {settings.cors_origins}")
@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     
     # Shutdown
-    print("🛑 Form Analysis API shutting down...")
+    print(" Form Analysis API shutting down...")
 
 
 # Create FastAPI application

@@ -182,7 +182,7 @@ class LogAnalyzer:
         print(" 日誌檔案資訊:")
         if self.app_log.exists():
             size = self.app_log.stat().st_size
-            print(f"   📝 app.log: {size:,} bytes ({size/1024/1024:.2f} MB)")
+            print(f"    app.log: {size:,} bytes ({size/1024/1024:.2f} MB)")
             
         if self.error_log.exists():
             size = self.error_log.stat().st_size
@@ -195,7 +195,7 @@ class LogAnalyzer:
         
         for api_name, stats in api_analysis["api_stats"].items():
             success_rate = (stats["success"] / max(stats["count"], 1)) * 100
-            print(f"   📡 {api_name.upper()}:")
+            print(f"    {api_name.upper()}:")
             print(f"      總請求: {stats['count']}")
             print(f"      成功: {stats['success']}")
             print(f"      錯誤: {stats['errors']}")

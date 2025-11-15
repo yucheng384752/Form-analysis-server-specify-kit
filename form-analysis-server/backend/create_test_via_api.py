@@ -10,7 +10,7 @@ import json
 
 def create_test_data_via_api():
     """通過API創建測試資料"""
-    print("🚀 開始通過API創建 P1/P2/P3 測試資料")
+    print(" 開始通過API創建 P1/P2/P3 測試資料")
     print("=" * 50)
     
     # API端點

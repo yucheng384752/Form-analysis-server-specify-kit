@@ -10,7 +10,7 @@ from pathlib import Path
 
 def run_command(command, description):
     """執行命令並顯示結果"""
-    print(f"\n🚀 {description}")
+    print(f"\n {description}")
     print(f"執行命令: {' '.join(command)}")
     print("-" * 60)
     
@@ -102,7 +102,7 @@ def main():
     success = run_command(cmd, description)
     
     if success:
-        print(f"\n🎉 測試執行完成!")
+        print(f"\n 測試執行完成!")
         if mode == "coverage":
             print(f" 覆蓋率報告已生成:")
             print(f"   - HTML 報告: htmlcov/index.html")

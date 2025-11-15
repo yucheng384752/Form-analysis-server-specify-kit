@@ -32,7 +32,7 @@ async def setup_database():
         inspector = await conn.run_sync(lambda sync_conn: inspect(sync_conn))
         tables = await conn.run_sync(lambda sync_conn: inspector.get_table_names())
         
-        print(f"📋 創建的表格: {', '.join(tables)}")
+        print(f" 創建的表格: {', '.join(tables)}")
         
         for table_name in tables:
             columns = await conn.run_sync(
@@ -106,7 +106,7 @@ async def test_database_operations():
 
 async def main():
     """主函數"""
-    print("🚀 SQLite 開發環境設置開始\n")
+    print(" SQLite 開發環境設置開始\n")
     
     # 檢查 .env.dev 文件
     env_file = Path(".env.dev")
@@ -118,7 +118,7 @@ async def main():
     from dotenv import load_dotenv
     load_dotenv(".env.dev")
     
-    print(f"📝 使用資料庫: {os.getenv('DATABASE_URL', '未設定')}")
+    print(f" 使用資料庫: {os.getenv('DATABASE_URL', '未設定')}")
     
     try:
         # 設置資料庫
@@ -127,13 +127,13 @@ async def main():
         # 測試操作
         job, record, error = await test_database_operations()
         
-        print(f"\n🎉 SQLite 開發環境設置完成!")
+        print(f"\n SQLite 開發環境設置完成!")
         print(f"   - 資料庫檔案: {Path('dev.db').absolute()}")
         print(f"   - 測試工作 ID: {job.id}")
         print(f"   - 測試記錄 ID: {record.id}")
         print(f"   - 測試錯誤 ID: {error.id}")
         
-        print(f"\n📝 可以開始開發 API 端點了!")
+        print(f"\n 可以開始開發 API 端點了!")
         
     except Exception as e:
         print(f" 設置失敗: {e}")

@@ -77,7 +77,7 @@ class UploadError(Base):
 
 async def test_manual_models():
     """手動測試模型"""
-    print("🚀 開始手動測試 SQLAlchemy 模型\n")
+    print(" 開始手動測試 SQLAlchemy 模型\n")
     
     try:
         # 創建引擎
@@ -100,7 +100,7 @@ async def test_manual_models():
         
         # 測試 CRUD 操作
         async with session_factory() as session:
-            print("📝 測試創建記錄...")
+            print(" 測試創建記錄...")
             
             # 1. 創建 UploadJob
             job = UploadJob(
@@ -182,7 +182,7 @@ async def test_manual_models():
             print(f"     - 錯誤數量: {len(job_errors)}")
             
             # 5. 測試更新
-            print(f"\n📝 測試更新操作...")
+            print(f"\n 測試更新操作...")
             job_with_data.status = JobStatus.COMPLETED
             job_with_data.processed_at = datetime.utcnow()
             job_with_data.total_records = len(job_records)
@@ -229,9 +229,9 @@ async def test_manual_models():
         
         await engine.dispose()
         
-        print(f"\n🎉 手動模型測試全部通過!")
+        print(f"\n 手動模型測試全部通過!")
         print(f"   資料庫檔案: {Path('manual_test.db').absolute()}")
-        print(f"\n📋 測試覆蓋:")
+        print(f"\n 測試覆蓋:")
         print(f"    表格創建")
         print(f"    CRUD 操作 (創建、讀取、更新)")
         print(f"    關聯查詢")

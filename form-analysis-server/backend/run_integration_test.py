@@ -80,7 +80,7 @@ def run_integration_test():
         result = subprocess.run(cmd, cwd=project_root, capture_output=False)
         
         if result.returncode == 0:
-            print("\n🎉 整合測試執行成功！")
+            print("\n 整合測試執行成功！")
             return True
         else:
             print(f"\n 整合測試失敗，退出代碼：{result.returncode}")
@@ -114,7 +114,7 @@ def run_direct_test():
                     # 執行完整流程測試
                     result = await test_instance.test_complete_workflow(client, temp_path)
                     
-                    print(f"\n📋 測試結果摘要：")
+                    print(f"\n 測試結果摘要：")
                     print(f"Process ID: {result['process_id']}")
                     print(f"上傳狀態: 成功")
                     print(f"驗證結果: {result['validate_data']['summary']['error_count']} 個錯誤")
@@ -151,7 +151,7 @@ def run_direct_test():
 
 def main():
     """主要執行函數"""
-    print("🚀 整合測試執行器")
+    print(" 整合測試執行器")
     print("=" * 50)
     
     # 檢查是否有 pytest

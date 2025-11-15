@@ -1,6 +1,6 @@
 #  API路徑前綴問題修復報告
 
-## 📋 問題描述
+##  問題描述
 
 系統存在API路徑前綴配置混亂的問題：
 - **重複前綴問題**: 各個路由文件內部設定prefix，main.py中也設定prefix，導致路徑重複
@@ -121,7 +121,7 @@ async downloadLogFile(logType: string): Promise<void> {
 
 ## 🎯 最終API路徑結構
 
-### 📡 統一的API端點路徑
+###  統一的API端點路徑
 
 | 功能模塊 | 路徑前綴 | 示例端點 |
 |---------|----------|----------|
@@ -193,9 +193,9 @@ ROUTE_CONFIG = [
 ]
 ```
 
-## 🚀 系統狀態
+##  系統狀態
 
-### 📡 可用服務
+###  可用服務
 - **前端應用**: http://localhost:5173
 - **API文檔**: http://localhost:8000/docs
 - **健康檢查**: http://localhost:8000/healthz
@@ -234,7 +234,7 @@ ROUTE_CONFIG = [
    docker exec form_analysis_frontend printenv | findstr VITE_API_URL
    ```
 
-## 📝 預防措施
+##  預防措施
 
 ### 🔒 代碼質量保證
 
@@ -260,9 +260,9 @@ app.include_router(
 
 ---
 
-**🎉 API路徑前綴問題已完全修復！所有端點現在都有正確且一致的路徑結構。**
+** API路徑前綴問題已完全修復！所有端點現在都有正確且一致的路徑結構。**
 
-## 📋 修復清單
+##  修復清單
 
 -  移除routes文件中重複的prefix設定
 -  統一main.py中的路由前綴管理  

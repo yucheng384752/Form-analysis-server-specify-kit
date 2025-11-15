@@ -322,7 +322,8 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
       <Tabs defaultValue="logs" className="space-y-4">
         <TabsList>
           <TabsTrigger value="logs">日誌查看</TabsTrigger>
-          <TabsTrigger value="stats">統計資訊</TabsTrigger>
+          {/* Fixme: 需要修改一些icon或是顯示的方式，讓"最近活動"以及其他的卡片可以操作 */}
+          {/* <TabsTrigger value="stats">統計資訊</TabsTrigger> */}
         </TabsList>
 
         {/* Logs Tab */}

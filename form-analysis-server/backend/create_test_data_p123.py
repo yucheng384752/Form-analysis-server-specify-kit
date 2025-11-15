@@ -262,7 +262,7 @@ async def create_test_data():
 
 async def main():
     """主函數"""
-    print("🚀 開始創建 P1/P2/P3 測試資料")
+    print(" 開始創建 P1/P2/P3 測試資料")
     print("=" * 50)
     
     try:

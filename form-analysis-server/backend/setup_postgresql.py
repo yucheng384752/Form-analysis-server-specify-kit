@@ -131,7 +131,7 @@ async def insert_test_data(engine):
 
 async def main():
     """主函數"""
-    print("🚀 PostgreSQL 資料庫設置開始")
+    print(" PostgreSQL 資料庫設置開始")
     print("=" * 50)
     
     try:

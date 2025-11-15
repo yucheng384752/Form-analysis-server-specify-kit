@@ -10,7 +10,7 @@ REM 5. 提供前端訪問資訊
 
 setlocal enabledelayedexpansion
 
-echo 🚀 Form Analysis - Docker 一鍵啟動與驗證
+echo  Form Analysis - Docker 一鍵啟動與驗證
 echo ========================================
 
 REM 檢查 Docker 是否運行
@@ -166,7 +166,7 @@ del %TEMP_CSV% >nul 2>&1
 del %TEMP%\upload_response.json >nul 2>&1
 
 echo.
-echo 🌐 前端訪問資訊
+echo  前端訪問資訊
 echo ================
 echo [SUCCESS] 前端應用已啟動: http://localhost:5173
 echo [SUCCESS] 後端 API 文件: http://localhost:8000/docs
@@ -179,7 +179,7 @@ echo • API Base URL: 在 .env 文件中配置 VITE_API_URL
 echo • 檔案大小限制: 在 .env 文件中配置 VITE_MAX_FILE_SIZE
 echo • CORS 設定: 在 .env 文件中配置 CORS_ORIGINS
 echo.
-echo 📝 vite.config.ts 代理設定已配置 /api 路徑到後端
+echo  vite.config.ts 代理設定已配置 /api 路徑到後端
 echo.
 
 echo  容器狀態
@@ -187,7 +187,7 @@ echo ===========
 docker compose ps
 
 echo.
-echo [SUCCESS] 🎉 一鍵啟動與驗證完成！
+echo [SUCCESS]  一鍵啟動與驗證完成！
 echo.
 echo 使用以下命令查看日誌：
 echo   docker compose logs -f backend    # 後端日誌

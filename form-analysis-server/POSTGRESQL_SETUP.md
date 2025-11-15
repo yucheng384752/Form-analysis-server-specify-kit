@@ -4,7 +4,7 @@
 
 **系統固定使用 PostgreSQL 資料庫，不支援其他資料庫類型。**
 
-## 🚀 快速啟動
+##  快速啟動
 
 ### 方法1: 使用Docker (推薦)
 
@@ -75,7 +75,7 @@ API_PORT=8000
 -  不支援 SQLite
 -  不支援 MySQL
 
-## 📋 資料庫管理
+##  資料庫管理
 
 ### 使用pgAdmin (可選)
 ```bash
@@ -117,7 +117,7 @@ docker-compose ps db
 解決: 修改 docker-compose.yml 中的端口映射
 ```
 
-## 📚 相關指令
+##  相關指令
 
 ```bash
 # 檢查容器狀態

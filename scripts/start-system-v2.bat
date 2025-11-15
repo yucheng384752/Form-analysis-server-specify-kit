@@ -35,10 +35,10 @@ if errorlevel 1 (
     
     REM 檢查 Docker Desktop 是否已安裝
     if exist "C:\Program Files\Docker\Docker\Docker Desktop.exe" (
-        echo    🚀 啟動 Docker Desktop...
+        echo     啟動 Docker Desktop...
         start "" "C:\Program Files\Docker\Docker\Docker Desktop.exe"
     ) else if exist "%USERPROFILE%\AppData\Local\Docker\Docker Desktop.exe" (
-        echo    🚀 啟動 Docker Desktop...
+        echo     啟動 Docker Desktop...
         start "" "%USERPROFILE%\AppData\Local\Docker\Docker Desktop.exe"
     ) else (
         echo  找不到 Docker Desktop 安裝路徑
@@ -47,7 +47,7 @@ if errorlevel 1 (
         exit /b 1
     )
     
-    echo    ⏳ 等待 Docker Desktop 啟動...
+    echo     等待 Docker Desktop 啟動...
     set /a timeout_counter=0
     :docker_wait
     set /a timeout_counter+=1
@@ -66,7 +66,7 @@ if errorlevel 1 (
         exit /b 1
     )
     
-    echo    ⏳ 等待中... (!timeout_counter!/24)
+    echo     等待中... (!timeout_counter!/24)
     goto docker_wait
 ) else (
     echo  Docker 服務正常運行
@@ -157,7 +157,7 @@ if not errorlevel 1 (
 )
 
 if "!port_conflict!"=="true" (
-    echo    🧹 執行額外清理以釋放端口...
+    echo     執行額外清理以釋放端口...
     %DOCKER_COMPOSE% down -v --remove-orphans >nul 2>&1
     timeout /t 3 /nobreak >nul
 ) else (
@@ -220,7 +220,7 @@ REM 檢查前端
 if not errorlevel 1 set "frontend_healthy=true"
 
 REM 顯示進度
-echo    ⏳ 健康檢查進行中... (!overall_counter!/60)
+echo     健康檢查進行中... (!overall_counter!/60)
 echo     資料庫: !db_healthy! ^| 後端: !backend_healthy! ^| 前端: !frontend_healthy!
 
 REM 如果所有服務都健康，跳出迴圈
@@ -244,7 +244,7 @@ echo  當前服務狀態：
 %DOCKER_COMPOSE% ps
 
 echo.
-echo 📋 詳細日誌：
+echo  詳細日誌：
 %DOCKER_COMPOSE% logs --tail=20
 
 echo.
@@ -260,12 +260,12 @@ exit /b 1
 
 echo.
 echo ========================================
-echo            🎉 系統啟動完成！
+echo             系統啟動完成！
 echo ========================================
 echo.
-echo 📌 服務連結：
-echo    🌐 前端應用: http://localhost:5173
-echo    📚 API 文檔: http://localhost:8000/docs  
+echo  服務連結：
+echo     前端應用: http://localhost:5173
+echo     API 文檔: http://localhost:8000/docs  
 echo     API 測試: http://localhost:8000/redoc
 echo.
 echo  服務狀態：
@@ -291,14 +291,14 @@ if not errorlevel 1 (
 
 echo.
 echo  常用指令：
-echo    📋 查看日誌: %DOCKER_COMPOSE% logs -f
-echo    🛑 停止服務: %DOCKER_COMPOSE% down
+echo     查看日誌: %DOCKER_COMPOSE% logs -f
+echo     停止服務: %DOCKER_COMPOSE% down
 echo     重啟服務: %DOCKER_COMPOSE% restart
-echo    🏥 健康檢查: %DOCKER_COMPOSE% ps
+echo     健康檢查: %DOCKER_COMPOSE% ps
 echo    📂 開啟日誌監控: %DOCKER_COMPOSE% logs -f backend frontend db
 echo.
 
-set /p "open_browser=🚀 是否立即開啟瀏覽器? (y/N): "
+set /p "open_browser= 是否立即開啟瀏覽器? (y/N): "
 if /i "!open_browser!"=="y" (
     echo 正在開啟瀏覽器...
     start http://localhost:5173
@@ -306,14 +306,14 @@ if /i "!open_browser!"=="y" (
     start http://localhost:8000/docs
 )
 
-set /p "open_logs=📋 是否開啟日誌監控? (y/N): "
+set /p "open_logs= 是否開啟日誌監控? (y/N): "
 if /i "!open_logs!"=="y" (
     echo 正在開啟日誌監控...
     start "系統日誌監控" cmd /k "cd /d "%SERVER_PATH%" && %DOCKER_COMPOSE% logs -f"
 )
 
 echo.
-echo 📝 提示：
+echo  提示：
 echo    - 服務將在背景持續運行
 echo    - 要停止所有服務，請執行: %DOCKER_COMPOSE% down
 echo    - 服務啟動後，通常需要 1-2 分鐘才能完全準備就緒

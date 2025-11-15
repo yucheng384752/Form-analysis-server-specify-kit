@@ -119,7 +119,7 @@ echo. >> %REPORT_FILE%
 
 echo [6/12] 連接埠檢查...
 echo ──────────────────────────────────────── >> %REPORT_FILE%
-echo 🌐 連接埠狀態 >> %REPORT_FILE%
+echo  連接埠狀態 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 set PORTS=5432 8000 5173 3000
 for %%p in (%PORTS%) do (
@@ -136,7 +136,7 @@ echo. >> %REPORT_FILE%
 
 echo [7/12] 日誌系統檢查...
 echo ──────────────────────────────────────── >> %REPORT_FILE%
-echo 📝 日誌系統 >> %REPORT_FILE%
+echo  日誌系統 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 if exist "%LOG_DIR%" (
     echo  日誌目錄存在: %LOG_DIR%
@@ -249,7 +249,7 @@ echo 7. 使用 log_analyzer.py 進行詳細日誌分析 >> %REPORT_FILE%
 echo. >> %REPORT_FILE%
 
 echo ════════════════════════════════════════ >> %REPORT_FILE%
-echo 📋 診斷完成時間: %date% %time% >> %REPORT_FILE%
+echo  診斷完成時間: %date% %time% >> %REPORT_FILE%
 echo ════════════════════════════════════════ >> %REPORT_FILE%
 
 echo  診斷完成！
@@ -270,12 +270,12 @@ echo    重建映像檔: docker-compose build --no-cache
 echo    檢查磁碟空間: docker system df
 echo    清理未使用資源: docker system prune
 echo.
-echo 📝 日誌相關：
+echo  日誌相關：
 echo    監控日誌: scripts\monitor-logs.bat
 echo    分析日誌: python tools\log_analyzer.py
 echo    清理日誌: python tools\log_analyzer.py --cleanup
 echo.
-echo 🚀 服務啟動：
+echo  服務啟動：
 echo    快速啟動: scripts\start-system.bat
 echo    Docker 啟動: form-analysis-server\quick-start.bat
 echo.

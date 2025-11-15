@@ -154,7 +154,7 @@ def test_invalid_process_id():
         if response.status_code == 404:
             result = response.json()
             print(" 正確回傳 404 錯誤")
-            print(f"📝 錯誤訊息：{result}")
+            print(f" 錯誤訊息：{result}")
             return True
         else:
             print(f" 未正確處理無效 ID：{response.text}")
@@ -185,7 +185,7 @@ def test_pagination(process_id):
 def main():
     """主測試函數"""
     
-    print("🚀 開始驗證結果 API 測試")
+    print(" 開始驗證結果 API 測試")
     print("時間：", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("=" * 60)
     
@@ -217,14 +217,14 @@ def main():
     
     # 總結
     print("\n" + "=" * 60)
-    print("📋 測試結果總結：")
+    print(" 測試結果總結：")
     print(f"   - 基本查詢：{' 成功' if basic_test else ' 失敗'}")
     print(f"   - 無效 ID 處理：{' 成功' if invalid_id_test else ' 失敗'}")
     print(f"   - 分頁功能：{' 成功' if pagination_test else ' 失敗'}")
     
     if all([basic_test, invalid_id_test, pagination_test]):
         print("\n🎊 所有測試通過！驗證結果 API 運作正常。")
-        print(f"🌐 API 文檔：http://localhost:8000/docs")
+        print(f" API 文檔：http://localhost:8000/docs")
         print(f"🔗 測試用的 Process ID：{process_id}")
     else:
         print("\n  部分測試失敗，請檢查 API 實作。")

@@ -95,10 +95,10 @@ DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/form_analysis_db
  所有 config.py 欄位都在 .env.example 中
 
  檢查總結:
-🎉 配置一致性檢查通過!
+ 配置一致性檢查通過!
 ```
 
-## 📋 **使用指南**
+##  **使用指南**
 
 ### 1. Docker 環境啟動
 ```bash
@@ -142,4 +142,4 @@ python check_config.py
 -  自動化檢查工具
 -  完整的文檔說明
 
-**所有配置問題已修正並通過驗證！** 🎉
+**所有配置問題已修正並通過驗證！** 

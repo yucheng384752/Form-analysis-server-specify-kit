@@ -273,7 +273,7 @@ class LogService {
       case 'DEBUG':
         return '';
       default:
-        return '📝';
+        return '';
     }
   }
 }

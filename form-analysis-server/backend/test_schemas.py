@@ -178,11 +178,11 @@ class UploadErrorRead(BaseModel):
 
 def test_schemas():
     """測試所有 Pydantic schemas"""
-    print("🚀 開始測試 Pydantic Schemas\n")
+    print(" 開始測試 Pydantic Schemas\n")
     
     try:
         # 1. 測試 UploadJobCreate
-        print("📝 測試 UploadJobCreate...")
+        print(" 測試 UploadJobCreate...")
         job_create_data = {
             "filename": "test_file.xlsx",
             "file_size": 1024000
@@ -197,7 +197,7 @@ def test_schemas():
             print(f" 驗證錯誤正確捕獲: {len(e.errors())} 個錯誤")
         
         # 2. 測試 RecordCreate
-        print(f"\n📝 測試 RecordCreate...")
+        print(f"\n 測試 RecordCreate...")
         record_create_data = {
             "lot_no": "L240108001",
             "product_name": "測試產品",
@@ -226,7 +226,7 @@ def test_schemas():
         print(f" 批號大寫轉換: {valid_record.lot_no}")
         
         # 3. 測試 UploadErrorCreate
-        print(f"\n📝 測試 UploadErrorCreate...")
+        print(f"\n 測試 UploadErrorCreate...")
         error_create_data = {
             "error_message": "測試錯誤訊息",
             "error_details": {
@@ -239,7 +239,7 @@ def test_schemas():
         print(f" 創建成功: {error_create.error_message}")
         
         # 4. 測試 Read schemas 的 JSON 序列化
-        print(f"\n📝 測試 Read schemas JSON 序列化...")
+        print(f"\n 測試 Read schemas JSON 序列化...")
         
         # UploadJobRead
         job_read_data = {
@@ -286,7 +286,7 @@ def test_schemas():
         print(f" UploadErrorRead JSON 序列化成功 ({len(error_json)} chars)")
         
         # 5. 測試 JSON Schema 生成
-        print(f"\n📝 測試 JSON Schema 生成...")
+        print(f"\n 測試 JSON Schema 生成...")
         
         job_schema = UploadJobCreate.model_json_schema()
         print(f" UploadJobCreate schema: {len(job_schema['properties'])} 個屬性")
@@ -297,8 +297,8 @@ def test_schemas():
         error_schema = UploadErrorCreate.model_json_schema()
         print(f" UploadErrorCreate schema: {len(error_schema['properties'])} 個屬性")
         
-        print(f"\n🎉 所有 Pydantic Schema 測試通過!")
-        print(f"\n📋 測試覆蓋:")
+        print(f"\n 所有 Pydantic Schema 測試通過!")
+        print(f"\n 測試覆蓋:")
         print(f"    Create schemas 驗證")
         print(f"    欄位驗證器")
         print(f"    錯誤處理")

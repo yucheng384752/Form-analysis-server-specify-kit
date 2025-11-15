@@ -9,7 +9,7 @@ echo "  Backend Service Initialization"
 echo "========================================="
 
 # Wait for database to be ready
-echo "⏳ Waiting for PostgreSQL to be ready..."
+echo " Waiting for PostgreSQL to be ready..."
 while ! pg_isready -h db -p 5432 -U ${POSTGRES_USER:-app} > /dev/null 2>&1; do
     echo "   Database is not ready yet, waiting..."
     sleep 2

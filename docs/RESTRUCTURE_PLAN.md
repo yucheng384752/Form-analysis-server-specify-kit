@@ -222,7 +222,7 @@ export const colors = {
 - **類型檢查**: TypeScript + mypy
 - **Git Hooks**: Husky + lint-staged
 
-## 🚀 一鍵啟動解決方案
+##  一鍵啟動解決方案
 
 ### Windows 批次腳本
 ```batch
@@ -240,7 +240,7 @@ echo API Docs: http://localhost:8000/docs
 
 ### PowerShell 腳本
 ```powershell
-Write-Host "🚀 Starting Form Analysis Spec Kit..." -ForegroundColor Green
+Write-Host " Starting Form Analysis Spec Kit..." -ForegroundColor Green
 docker-compose up -d db
 Start-Sleep -Seconds 10
 docker-compose up -d backend  
@@ -249,7 +249,7 @@ docker-compose up -d frontend
 Write-Host " All services started!" -ForegroundColor Green
 ```
 
-## 📚 文檔架構
+##  文檔架構
 
 ### README.md (主文檔)
 - 專案概述和特色

@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ════════════════════════════════════════
-echo           📦 專案打包準備
+echo            專案打包準備
 echo ════════════════════════════════════════
 echo.
 
@@ -92,16 +92,16 @@ echo    總大小: %bytes% 位元組
 
 echo.
 echo ════════════════════════════════════════
-echo           🎉 打包準備完成！
+echo            打包準備完成！
 echo ════════════════════════════════════════
 echo.
-echo 📋 下一步打包選項：
+echo  下一步打包選項：
 echo.
-echo 📦 方式一：壓縮檔案
+echo  方式一：壓縮檔案
 echo    1. 使用 WinRAR/7-Zip 壓縮整個資料夾
 echo    2. 排除 .git 資料夾（如不需要版本記錄）
 echo.
-echo 🌐 方式二：PowerShell 壓縮
+echo  方式二：PowerShell 壓縮
 echo    Compress-Archive -Path "." -DestinationPath "..\form-analysis-kit.zip"
 echo.
 echo 📂 方式三：Git 倉庫

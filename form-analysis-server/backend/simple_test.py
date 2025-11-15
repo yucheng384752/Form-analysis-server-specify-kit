@@ -14,7 +14,7 @@ load_dotenv(".env.dev")
 # 手動設置資料庫 URL
 DATABASE_URL = "sqlite+aiosqlite:///./dev_test.db"
 
-print(f"📝 使用資料庫: {DATABASE_URL}")
+print(f" 使用資料庫: {DATABASE_URL}")
 
 async def test_basic_sqlite():
     """測試基本的 SQLite 連接"""
@@ -43,12 +43,12 @@ async def test_basic_sqlite():
         return False
 
 async def main():
-    print("🚀 開始 SQLite 基本測試\n")
+    print(" 開始 SQLite 基本測試\n")
     
     success = await test_basic_sqlite()
     
     if success:
-        print(f"\n🎉 SQLite 基本測試成功!")
+        print(f"\n SQLite 基本測試成功!")
         print(f"   資料庫檔案: {Path('dev_test.db').absolute()}")
     else:
         print(f"\n SQLite 測試失敗")

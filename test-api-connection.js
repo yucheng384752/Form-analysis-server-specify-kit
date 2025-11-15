@@ -20,7 +20,7 @@ async function testApiConnection() {
     
     for (const endpoint of endpoints) {
         try {
-            console.log(`📡 測試: ${endpoint.name} (${endpoint.url})`);
+            console.log(` 測試: ${endpoint.name} (${endpoint.url})`);
             const response = await axios.get(`${API_BASE_URL}${endpoint.url}`, {
                 timeout: 5000,
                 headers: {

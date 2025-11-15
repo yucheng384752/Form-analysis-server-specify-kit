@@ -22,7 +22,7 @@ REM 啟用虛擬環境
 call .venv\Scripts\activate.bat
 
 REM 安裝測試依賴
-echo 📦 安裝測試依賴...
+echo  安裝測試依賴...
 python -m pip install -r requirements-test.txt
 
 if %errorlevel% neq 0 (
@@ -51,7 +51,7 @@ if "%1"=="" (
     exit /b 0
 )
 
-echo 🚀 執行測試模式: %1
+echo  執行測試模式: %1
 python run_tests.py %1 %2 %3 %4 %5
 
 if %errorlevel% neq 0 (

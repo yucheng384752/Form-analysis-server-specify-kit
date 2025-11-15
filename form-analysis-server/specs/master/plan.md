@@ -856,7 +856,7 @@ jobs:
 
 最小可行的檔案處理系統，支援 CSV/Excel 上傳、即時驗證、資料預覽與批次匯入。
 
-## 🚀 快速開始
+##  快速開始
 
 ### 前置需求
 - Docker & Docker Compose
@@ -899,7 +899,7 @@ npm run dev  # http://localhost:5173
 docker-compose up -d db
 ```
 
-## 📋 主要功能
+##  主要功能
 
 ### 檔案上傳與驗證
 - 支援 CSV (UTF-8) 和 Excel (.xlsx) 格式
@@ -1089,7 +1089,7 @@ docker-compose exec db pg_dump -U app form_analysis_db > backup.sql
 docker-compose exec -T db psql -U app form_analysis_db < backup.sql
 ```
 
-## 🚀 部署
+##  部署
 
 ### Production 環境
 ```bash
@@ -1113,7 +1113,7 @@ docker-compose -f docker-compose.prod.yml exec backend alembic upgrade head
 
 - 🐛 Bug 回報: [GitHub Issues](https://github.com/your-org/form-analysis-server/issues)
 - 📖 API 文件: http://localhost:8000/docs
-- 📋 專案看板: [GitHub Projects](https://github.com/your-org/form-analysis-server/projects)
+-  專案看板: [GitHub Projects](https://github.com/your-org/form-analysis-server/projects)
 
 ---
 

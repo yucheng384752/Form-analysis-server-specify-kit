@@ -314,7 +314,7 @@ class TestModelsIntegration:
             },
             {
                 "lot_no": "1111111_11",
-                "product_name": "測試產品C包含中文🎉特殊字元!@#$%",
+                "product_name": "測試產品C包含中文特殊字元!@#$%",
                 "quantity": 12345,
                 "production_date": date(2024, 2, 29)  # 閏年日期
             }

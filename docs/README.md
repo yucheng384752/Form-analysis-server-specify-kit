@@ -35,7 +35,7 @@
     └── 沖孔記錄 (P3)
 ```
 
-## 🚀 快速開始
+##  快速開始
 
 ### 前置需求
 
@@ -106,13 +106,13 @@ docker-compose ps
 form-analysis-spec-kit/
 ├──  README.md                    # 專案說明文檔
 ├──  .env.example                 # 環境變數範例
-├── 🚀 start-system.bat             # Windows 啟動腳本
-├── 🚀 start-system.ps1             # PowerShell 啟動腳本
+├──  start-system.bat             # Windows 啟動腳本
+├──  start-system.ps1             # PowerShell 啟動腳本
 ├── form-analysis-server/           # 主要服務目錄
 │   ├── 🐳 docker-compose.yml       # 容器編排檔案
 │   ├── backend/                    # 後端服務 (FastAPI)
 │   │   ├── 🐳 Dockerfile           
-│   │   ├── 📋 requirements.txt     
+│   │   ├──  requirements.txt     
 │   │   ├── ⚙️ alembic.ini          # 資料庫遷移配置
 │   │   ├── migrations/             # 資料庫遷移檔案
 │   │   └── app/                    # 應用程式碼
@@ -125,7 +125,7 @@ form-analysis-spec-kit/
 │   │       └── services/           # 業務邏輯
 │   └── frontend/                   # 前端應用 (React + TypeScript)
 │       ├── 🐳 Dockerfile           
-│       ├── 📦 package.json         
+│       ├──  package.json         
 │       ├── ⚡ vite.config.ts       
 │       └── src/                    # 原始碼
 │           ├── components/         # UI 元件
@@ -239,7 +239,7 @@ docker-compose down -v --remove-orphans
 -  SQL 注入防護
 -  輸入資料驗證
 
-## 📝 API 使用範例
+##  API 使用範例
 
 ### 上傳檔案
 

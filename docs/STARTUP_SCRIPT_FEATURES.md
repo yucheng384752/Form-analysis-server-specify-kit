@@ -97,7 +97,7 @@ start-system.bat
 ### 首次啟動
 第一次執行時，腳本會：
 1. 檢測到無現有資料卷
-2. 顯示 "🆕 檢測到首次啟動，將執行完整初始化"
+2. 顯示 " 檢測到首次啟動，將執行完整初始化"
 3. 自動執行所有初始化步驟
 4. 創建資料庫結構並應用遷移
 
@@ -160,10 +160,10 @@ docker-compose down -v
 ## 服務訪問
 
 啟動成功後可訪問：
-- 🌐 前端應用: http://localhost:5173
-- 📚 API 文檔: http://localhost:8000/docs
+-  前端應用: http://localhost:5173
+-  API 文檔: http://localhost:8000/docs
 -  API 測試: http://localhost:8000/redoc
-- 🏥 健康檢查: http://localhost:8000/healthz
+-  健康檢查: http://localhost:8000/healthz
 
 ## 停止服務
 

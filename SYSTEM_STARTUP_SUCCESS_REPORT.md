@@ -1,4 +1,4 @@
-# 🎉 表單分析系統 - 成功啟動報告
+#  表單分析系統 - 成功啟動報告
 
 ##  系統狀態概覽
 
@@ -18,13 +18,13 @@
 
 ---
 
-## 🌐 服務連結
+##  服務連結
 
 ### 🖥️ 用戶界面
 - **主應用程式**: [http://localhost:5173](http://localhost:5173)
 - **日誌查看器**: 已整合在主應用中
 
-### 📚 開發工具
+###  開發工具
 - **API 互動文檔**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc 文檔**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 - **API 健康檢查**: [http://localhost:8000/healthz](http://localhost:8000/healthz)
@@ -50,7 +50,7 @@
 
 ---
 
-## 📋 測試驗證結果
+##  測試驗證結果
 
 ###  API 健康檢查
 ```json
@@ -163,11 +163,11 @@ docker-compose logs -f --tail=50
 3. 查看容器日誌: `docker-compose logs [服務名]`
 4. 重啟服務: `docker-compose restart [服務名]`
 
-### 📝 日誌位置
+###  日誌位置
 - **應用日誌**: `logs/app.log`
 - **錯誤日誌**: `logs/error.log`  
 - **容器日誌**: `docker-compose logs`
 
 ---
 
-**🎉 恭喜！您的表單分析系統已成功部署並包含完整的日誌管理功能！**
+** 恭喜！您的表單分析系統已成功部署並包含完整的日誌管理功能！**

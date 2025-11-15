@@ -1,6 +1,6 @@
 # Form Analysis API - 一鍵啟動與驗證指令摘要
 
-## 🚀 一鍵啟動命令
+##  一鍵啟動命令
 
 ### Docker Compose 啟動
 ```bash
@@ -189,7 +189,7 @@ curl -X POST \
 rm test_upload.csv
 ```
 
-## 🌐 前端訪問
+##  前端訪問
 
 ### URL 和埠口
 - **前端應用**: http://localhost:5173
@@ -244,7 +244,7 @@ curl -X OPTIONS \
      http://localhost:8000/api/upload
 ```
 
-## 📋 常用除錯指令
+##  常用除錯指令
 
 ### 檢查容器狀態
 ```bash

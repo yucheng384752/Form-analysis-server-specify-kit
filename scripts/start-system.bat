@@ -64,7 +64,7 @@ if not errorlevel 1 (
     echo   檢測到端口 5432 PostgreSQL 被佔用
     echo     檢查是否為其他 Docker 容器...
     for /f "tokens=*" %%i in ('docker ps --filter "publish=5432" --format "{{.Names}}"') do (
-        echo    🛑 停止容器: %%i
+        echo     停止容器: %%i
         docker stop %%i >nul 2>&1
     )
     set "port_conflict=true"
@@ -75,7 +75,7 @@ if not errorlevel 1 (
     echo   檢測到端口 8000 API 被佔用
     echo     檢查是否為其他 Docker 容器...
     for /f "tokens=*" %%i in ('docker ps --filter "publish=8000" --format "{{.Names}}"') do (
-        echo    🛑 停止容器: %%i
+        echo     停止容器: %%i
         docker stop %%i >nul 2>&1
     )
     set "port_conflict=true"
@@ -86,7 +86,7 @@ if not errorlevel 1 (
     echo   檢測到端口 3000 被佔用
     echo     檢查是否為其他 Docker 容器...
     for /f "tokens=*" %%i in ('docker ps --filter "publish=3000" --format "{{.Names}}"') do (
-        echo    🛑 停止容器: %%i
+        echo     停止容器: %%i
         docker stop %%i >nul 2>&1
     )
     set "port_conflict=true"
@@ -97,14 +97,14 @@ if not errorlevel 1 (
     echo   檢測到端口 5173 前端被佔用
     echo     檢查是否為其他 Docker 容器...
     for /f "tokens=*" %%i in ('docker ps --filter "publish=5173" --format "{{.Names}}"') do (
-        echo    🛑 停止容器: %%i
+        echo     停止容器: %%i
         docker stop %%i >nul 2>&1
     )
     set "port_conflict=true"
 )
 
 if "!port_conflict!"=="true" (
-    echo    🧹 執行額外清理以釋放端口...
+    echo     執行額外清理以釋放端口...
     docker-compose -f "%SERVER_PATH%\docker-compose.yml" down --remove-orphans >nul 2>&1
     timeout /t 2 /nobreak >nul
 )
@@ -115,7 +115,7 @@ echo     端口檢查完成
 REM 檢查是否有殘留容器
 docker ps -a --format "table {{.Names}}" | find "form_analysis" >nul 2>&1
 if not errorlevel 1 (
-    echo    🧹 發現現有容器，將在下一步清理
+    echo     發現現有容器，將在下一步清理
 ) else (
     echo     無殘留容器
 )
@@ -124,7 +124,7 @@ REM 檢查是否為首次啟動
 set "FIRST_TIME_SETUP=false"
 docker volume ls | find "form-analysis-server_postgres_data" >nul 2>&1
 if errorlevel 1 (
-    echo    🆕 檢測到首次啟動，將執行完整初始化
+    echo     檢測到首次啟動，將執行完整初始化
     set "FIRST_TIME_SETUP=true"
 ) else (
     echo     檢測到現有資料，將執行正常啟動
@@ -135,10 +135,10 @@ echo [2/6] 停止現有容器並清理...
 cd "%SERVER_PATH%"
 
 if "!FIRST_TIME_SETUP!"=="true" (
-    echo    📦 首次啟動：保留資料卷，清理容器
+    echo     首次啟動：保留資料卷，清理容器
     docker-compose down --remove-orphans
 ) else (
-    echo    🧹 正常啟動：清理現有容器
+    echo     正常啟動：清理現有容器
     docker-compose down --remove-orphans
 )
 
@@ -155,7 +155,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo    ⏳ 等待資料庫健康檢查...
+echo     等待資料庫健康檢查...
 set /a counter=0
 :db_check
 set /a counter+=1
@@ -192,7 +192,7 @@ if not errorlevel 1 (
 REM 如果還在啟動期間，檢查是否有 "starting" 狀態
 docker-compose ps db --format "table {{.Status}}" | find "starting" >nul 2>&1
 if not errorlevel 1 (
-    echo    📡 資料庫健康檢查啟動中... (%counter%/60)
+    echo     資料庫健康檢查啟動中... (%counter%/60)
 ) else (
     REM 檢查是否有 "unhealthy" 狀態
     docker-compose ps db --format "table {{.Status}}" | find "unhealthy" >nul 2>&1
@@ -207,7 +207,7 @@ if not errorlevel 1 (
         pause
         exit /b 1
     ) else (
-        echo    ⏳ 等待資料庫啟動... (%counter%/60)
+        echo     等待資料庫啟動... (%counter%/60)
     )
 )
 
@@ -217,7 +217,7 @@ if %counter% geq 60 (
     echo  容器狀態：
     docker-compose ps db
     echo.
-    echo 📋 最近日誌：
+    echo  最近日誌：
     docker-compose logs --tail=50 db
     echo.
     echo  建議排除步驟：
@@ -243,10 +243,10 @@ if errorlevel 1 (
 )
 
 if "!FIRST_TIME_SETUP!"=="true" (
-    echo    📦 首次啟動：後端將自動執行資料庫遷移...
+    echo     首次啟動：後端將自動執行資料庫遷移...
 )
 
-echo    ⏳ 等待後端服務健康檢查...
+echo     等待後端服務健康檢查...
 set /a counter=0
 :backend_check
 set /a counter+=1
@@ -288,9 +288,9 @@ if not errorlevel 1 (
 REM 檢查是否在啟動期間
 docker-compose ps backend --format "table {{.Status}}" | find "starting\|health:" >nul 2>&1
 if not errorlevel 1 (
-    echo    📡 後端服務啟動中，等待健康檢查... (%counter%/45)
+    echo     後端服務啟動中，等待健康檢查... (%counter%/45)
 ) else (
-    echo    ⏳ 等待後端服務完成啟動... (%counter%/45)
+    echo     等待後端服務完成啟動... (%counter%/45)
 )
 
 if %counter% geq 45 (
@@ -299,7 +299,7 @@ if %counter% geq 45 (
     echo  容器狀態：
     docker-compose ps backend
     echo.
-    echo 📋 最近日誌：
+    echo  最近日誌：
     docker-compose logs --tail=50 backend
     echo.
     echo  常見問題檢查：
@@ -324,7 +324,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo    ⏳ 等待前端服務健康檢查...
+echo     等待前端服務健康檢查...
 set /a counter=0
 :frontend_check
 set /a counter+=1
@@ -348,9 +348,9 @@ if not errorlevel 1 (
 REM 檢查是否在啟動期間
 docker-compose ps frontend --format "table {{.Status}}" | find "starting\|health:" >nul 2>&1
 if not errorlevel 1 (
-    echo    📡 前端服務啟動中，等待健康檢查... (%counter%/40)
+    echo     前端服務啟動中，等待健康檢查... (%counter%/40)
 ) else (
-    echo    ⏳ 等待前端服務完成啟動... (%counter%/40)
+    echo     等待前端服務完成啟動... (%counter%/40)
 )
 
 if %counter% geq 40 (
@@ -359,7 +359,7 @@ if %counter% geq 40 (
     echo  容器狀態：
     docker-compose ps frontend
     echo.
-    echo 📋 最近日誌：
+    echo  最近日誌：
     docker-compose logs --tail=50 frontend
     echo.
     echo  常見問題檢查：
@@ -412,32 +412,32 @@ start "前端監控" /D "%PROJECT_ROOT%" monitor_frontend.bat
 
 echo.
 echo ========================================
-echo            🎉 系統啟動完成！
+echo             系統啟動完成！
 echo ========================================
 echo.
-echo 📌 服務連結：
-echo    🌐 前端應用: http://localhost:5173
-echo    📚 API 文檔: http://localhost:8000/docs  
+echo  服務連結：
+echo     前端應用: http://localhost:5173
+echo     API 文檔: http://localhost:8000/docs  
 echo     API 測試: http://localhost:8000/redoc
-echo    🗄️  資料庫管理: http://localhost:5050 (可選)
+echo     資料庫管理: http://localhost:5050 (可選)
 echo.
 echo  服務狀態：
 docker-compose ps
 
 echo.
-echo 📱 已開啟監控終端機：
-echo    � 後端監控 - 顯示 API 和資料庫日誌
-echo    🔵 前端監控 - 顯示前端應用日誌
+echo  已開啟監控終端機：
+echo    後端監控 - 顯示 API 和資料庫日誌
+echo    前端監控 - 顯示前端應用日誌
 echo.
-echo � 常用指令：
-echo    📋 查看所有日誌: docker-compose logs -f
-echo    🛑 停止服務: docker-compose down
+echo  常用指令：
+echo     查看所有日誌: docker-compose logs -f
+echo     停止服務: docker-compose down
 echo     重啟服務: docker-compose restart
-echo    🏥 健康檢查: docker-compose ps
+echo     健康檢查: docker-compose ps
 echo.
 
 REM 等待服務完全就緒
-echo ⏳ 最終健康檢查...
+echo  最終健康檢查...
 timeout /t 3 /nobreak > nul
 
 REM 測試服務連通性
@@ -457,7 +457,7 @@ if not errorlevel 1 (
 )
 
 echo.
-set /p "open_browser=🚀 是否立即開啟瀏覽器? (y/N): "
+set /p "open_browser= 是否立即開啟瀏覽器? (y/N): "
 if /i "!open_browser!"=="y" (
     echo 正在開啟瀏覽器...
     start http://localhost:5173
@@ -465,11 +465,5 @@ if /i "!open_browser!"=="y" (
     start http://localhost:8000/docs
 )
 
-echo.
-echo 📝 提示：
-echo    - 關閉監控終端機不會影響服務運行
-echo    - 要停止所有服務，請在 form-analysis-server 目錄執行: docker-compose down
-echo    - 監控腳本已保存，可隨時重新開啟
-echo.
 echo 按任意鍵結束啟動程序...
 pause > nul

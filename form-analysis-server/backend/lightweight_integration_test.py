@@ -229,7 +229,7 @@ async def main():
     success = True
     
     try:
-        print(f"\n📝 測試資料：")
+        print(f"\n 測試資料：")
         print(f"   CSV 檔案：{csv_file_path}")
         print(f"   資料列數：5 列（預期 2 列錯誤，3 列有效）")
         print(f"   測試場景：上傳 → 驗證 → 匯入完整流程")
@@ -242,7 +242,7 @@ async def main():
         
         if success:
             print("\n" + "=" * 60)
-            print("🎉 輕量級整合測試完成！")
+            print(" 輕量級整合測試完成！")
             
             print("\n 測試涵蓋範圍：")
             print("   • 檔案上傳和驗證處理")
@@ -287,6 +287,6 @@ async def main():
 if __name__ == "__main__":
     success = asyncio.run(main())
     exit_code = 0 if success else 1
-    print(f"\n📋 測試總結：{'成功' if success else '失敗'}")
+    print(f"\n 測試總結：{'成功' if success else '失敗'}")
     print(f"程式結束，退出代碼：{exit_code}")
     sys.exit(exit_code)

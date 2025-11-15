@@ -1,6 +1,6 @@
 #  前端後端連接問題 - 修復報告
 
-## 📋 問題描述
+##  問題描述
 
 用戶在使用 start-system 腳本啟動項目後，在**系統日誌**頁面遇到無法連接的問題。前端無法連接到後端 API 的日誌管理端點。
 
@@ -68,9 +68,9 @@ GET http://localhost:8000/api/logs/files → 200 OK
 GET http://localhost:8000/api/logs/stats → 200 OK
 ```
 
-## 🚀 當前系統狀態
+##  當前系統狀態
 
-### 📡 可用服務
+###  可用服務
 - **前端應用**: http://localhost:5173
 - **系統日誌頁面**: http://localhost:5173 (日誌標籤)
 - **API 文檔**: http://localhost:8000/docs
@@ -83,7 +83,7 @@ GET http://localhost:8000/api/logs/stats → 200 OK
 | form_analysis_api | 🟢 Running | 8000 |  Healthy |
 | form_analysis_frontend | 🟢 Running | 5173 |  Healthy |
 
-## 📝 預防措施
+##  預防措施
 
 ### 🔒 配置文件管理
 1. **環境變數一致性**: 確保 `.env` 文件與 `docker-compose.yml` 一致
@@ -140,4 +140,4 @@ VITE_API_URL=https://your-api-domain.com
 
 ---
 
-**🎉 問題已完全解決！系統現在可以正常使用所有功能。**
+** 問題已完全解決！系統現在可以正常使用所有功能。**

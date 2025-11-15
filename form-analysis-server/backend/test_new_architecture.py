@@ -84,7 +84,7 @@ def create_sample_data():
 
 def demonstrate_api_structure():
     """展示 API 結構設計"""
-    print("\n🚀 API 結構設計示範：")
+    print("\n API 結構設計示範：")
     
     api_examples = {
         "生產批次管理": {
@@ -164,7 +164,7 @@ def main():
     test_lot_no_validation()
     
     # 3. 展示範例數據
-    print("\n📋 範例數據結構:")
+    print("\n 範例數據結構:")
     sample_data = create_sample_data()
     for lot in sample_data:
         print(f"  • {lot['lot_no']}: {lot['phase']} 階段 - {lot['product_spec']} ({lot['material']})")
@@ -175,8 +175,8 @@ def main():
     # 5. 設計優勢說明
     explain_design_benefits()
     
-    print("\n🎉 架構設計驗證完成！")
-    print("\n📚 詳細說明請參考:")
+    print("\n 架構設計驗證完成！")
+    print("\n 詳細說明請參考:")
     print("  • database_migration_design.sql - 資料庫架構")
     print("  • api_models_design.py - API 數據模型")
     print("  • api_routes_design.py - API 路由設計")

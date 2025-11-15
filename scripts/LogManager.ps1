@@ -97,7 +97,7 @@ function Show-LogStats {
     if ($logFiles.AppLogExists) {
         $size = (Get-Item $logFiles.AppLog).Length
         $sizeGB = [math]::Round($size / 1GB, 3)
-        Write-Host "   📝 app.log: " -NoNewline
+        Write-Host "    app.log: " -NoNewline
         Write-Host "$($size.ToString('N0')) bytes ($sizeGB GB)" -ForegroundColor Green
     }
     
@@ -159,7 +159,7 @@ function Show-LogStats {
         }
         
         foreach ($api in $apiStats.Keys) {
-            Write-Host "   📡 $api`: " -NoNewline
+            Write-Host "    $api`: " -NoNewline
             Write-Host $apiStats[$api].ToString('N0') -ForegroundColor Cyan
         }
     }
@@ -290,7 +290,7 @@ function Search-Logs {
     if ($logFiles.AppLogExists) {
         $results = Get-Content $logFiles.AppLog | Select-String $Term -AllMatches
         
-        Write-ColoredOutput "📝 在 app.log 中找到 $($results.Count) 個匹配項:" "Info"
+        Write-ColoredOutput " 在 app.log 中找到 $($results.Count) 個匹配項:" "Info"
         
         foreach ($result in $results | Select-Object -First 20) {
             $lineNumber = $result.LineNumber
@@ -389,14 +389,14 @@ function Show-Menu {
         Clear-Host
         Show-Header "Form Analysis System - 日誌管理工具"
         
-        Write-ColoredOutput "📋 可用操作：" "Info"
+        Write-ColoredOutput " 可用操作：" "Info"
         Write-Host "   [1]  查看應用程式日誌 (最新50行)"
         Write-Host "   [2] 🚨 查看錯誤日誌 (最新50行)"
         Write-Host "   [3]  統計資訊"
         Write-Host "   [4] 📈 即時監控"
         Write-Host "   [5]  搜尋日誌"
         Write-Host "   [6] 📤 匯出 JSON"
-        Write-Host "   [7] 🧹 清理舊日誌"
+        Write-Host "   [7]  清理舊日誌"
         Write-Host "   [8] ⚙️  自定義查看"
         Write-Host "   [0]  退出"
         Write-Host ""

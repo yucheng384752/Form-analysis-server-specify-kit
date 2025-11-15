@@ -28,7 +28,7 @@ from app.models.upload_error import UploadError
 
 async def test_models():
     """測試所有模型"""
-    print("🚀 開始測試 SQLAlchemy 模型\n")
+    print(" 開始測試 SQLAlchemy 模型\n")
     
     try:
         # 創建引擎
@@ -54,7 +54,7 @@ async def test_models():
         
         # 測試 CRUD 操作
         async with session_factory() as session:
-            print("📝 測試創建記錄...")
+            print(" 測試創建記錄...")
             
             # 1. 創建 UploadJob
             job = UploadJob(
@@ -115,7 +115,7 @@ async def test_models():
             print(f"     - 錯誤數量: {len(job_with_data.errors)}")
             
             # 5. 測試更新
-            print(f"\n📝 測試更新操作...")
+            print(f"\n 測試更新操作...")
             job_with_data.status = JobStatus.COMPLETED
             job_with_data.processed_at = datetime.utcnow()
             await session.commit()
@@ -140,7 +140,7 @@ async def test_models():
         
         await engine.dispose()
         
-        print(f"\n🎉 所有模型測試通過!")
+        print(f"\n 所有模型測試通過!")
         print(f"   資料庫檔案: {Path('dev_models_test.db').absolute()}")
         
         return True
