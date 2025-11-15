@@ -17,7 +17,7 @@
 端口: 5432
 資料庫名稱: form_analysis_db
 使用者名稱: app
-密碼: app_secure_password
+密碼: app_secure_password_change_in_production
 ```
 
 ### 從環境變數讀取（可自訂）
@@ -29,7 +29,7 @@
 ```ini
 # 資料庫配置
 POSTGRES_USER=app
-POSTGRES_PASSWORD=app_secure_password
+POSTGRES_PASSWORD=app_secure_password_change_in_production
 POSTGRES_DB=form_analysis_db
 POSTGRES_PORT=5432
 ```

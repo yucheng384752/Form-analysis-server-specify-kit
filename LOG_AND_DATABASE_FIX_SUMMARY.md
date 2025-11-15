@@ -104,7 +104,7 @@ docker exec form_analysis_api ls -lh /app/logs/
 | **Port** | 5432 |
 | **資料庫** | form_analysis_db |
 | **使用者名稱** | app |
-| **密碼** | app_secure_password |
+| **密碼** | app_secure_password_change_in_production |
 
 #### 連線步驟
 1. 開啟 DBeaver → 新增連線 → PostgreSQL
