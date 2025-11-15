@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
-from sqlalchemy import String, Integer, DateTime, func
+from sqlalchemy import String, Integer, DateTime, func, LargeBinary
 from sqlalchemy.dialects.postgresql import UUID, ENUM
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,6 +44,13 @@ class UploadJob(Base):
         String(255),
         nullable=False,
         comment="上傳的檔案名稱"
+    )
+    
+    # 檔案內容儲存
+    file_content: Mapped[Optional[bytes]] = mapped_column(
+        LargeBinary,
+        nullable=True,
+        comment="上傳檔案的二進位內容，用於重新處理"
     )
     
     # 時間戳記
