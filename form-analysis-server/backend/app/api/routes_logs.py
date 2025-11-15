@@ -80,7 +80,9 @@ def parse_time_filter(hours: Optional[int] = None,
                      start_time: Optional[str] = None,
                      end_time: Optional[str] = None) -> tuple:
     """解析時間過濾條件"""
-    now = datetime.now()
+    from datetime import timezone
+    
+    now = datetime.now(timezone.utc)
     
     if hours:
         start_dt = now - timedelta(hours=hours)

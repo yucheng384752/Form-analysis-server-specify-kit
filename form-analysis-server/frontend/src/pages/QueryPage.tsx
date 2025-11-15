@@ -271,7 +271,7 @@ export function QueryPage() {
         <strong>批號：</strong>
         <span>{record.lot_no}</span>
       </div>
-      <div className="detail-row">
+      {/* <div className="detail-row">
         <strong>產品名稱：</strong>
         <span>{record.product_name}</span>
       </div>
@@ -282,7 +282,7 @@ export function QueryPage() {
       <div className="detail-row">
         <strong>生產日期：</strong>
         <span>{record.production_date}</span>
-      </div>
+      </div> */}
       {record.notes && (
         <div className="detail-row">
           <strong>備註：</strong>
@@ -332,10 +332,10 @@ export function QueryPage() {
         <strong>切割結果：</strong>
         <span>{record.slitting_result === 1 ? '通過' : '不通過'}</span>
       </div>
-      <div className="detail-row">
+      {/* <div className="detail-row">
         <strong>生產日期：</strong>
         <span>{record.production_date}</span>
-      </div>
+      </div> */}
       <div className="detail-row">
         <strong>建立時間：</strong>
         <span>{new Date(record.created_at).toLocaleString()}</span>
@@ -355,7 +355,7 @@ export function QueryPage() {
         <strong>P3編號：</strong>
         <span>{record.p3_no}</span>
       </div>
-      <div className="detail-row">
+      {/* <div className="detail-row">
         <strong>產品名稱：</strong>
         <span>{record.product_name}</span>
       </div>
@@ -366,7 +366,7 @@ export function QueryPage() {
       <div className="detail-row">
         <strong>生產日期：</strong>
         <span>{record.production_date}</span>
-      </div>
+      </div> */}
       {record.notes && (
         <div className="detail-row">
           <strong>備註：</strong>
@@ -462,10 +462,6 @@ export function QueryPage() {
             <p className="section-empty">沒有找到符合條件的批號</p>
           ) : (
             <div className="lot-groups-container">
-              <div className="lot-groups-header">
-                <p>共找到 {lotGroups.length} 個批號</p>
-              </div>
-              
               {/* 批號列表 */}
               <div className="lot-groups-list">
                 {lotGroups.map((group) => (
@@ -476,22 +472,10 @@ export function QueryPage() {
                   >
                     <div className="lot-group-header">
                       <h3>{group.lot_no}</h3>
-                      <span className="total-count">共 {group.total_count} 筆</span>
-                    </div>
-                    <div className="data-type-counts">
-                      <span className={`data-type-badge ${group.p1_count > 0 ? 'has-data' : ''}`}>
-                        P1: {group.p1_count}
-                      </span>
-                      <span className={`data-type-badge ${group.p2_count > 0 ? 'has-data' : ''}`}>
-                        P2: {group.p2_count}
-                      </span>
-                      <span className={`data-type-badge ${group.p3_count > 0 ? 'has-data' : ''}`}>
-                        P3: {group.p3_count}
-                      </span>
                     </div>
                     {group.latest_production_date && (
                       <div className="production-date">
-                        最新生產日期: {group.latest_production_date}
+                        生產日期: {group.latest_production_date}
                       </div>
                     )}
                   </div>
@@ -514,7 +498,7 @@ export function QueryPage() {
                           onClick={() => handleDataTypeSelection(type as DataType)}
                           disabled={count === 0}
                         >
-                          {type} ({count})
+                          {type}
                         </button>
                       );
                     })}
