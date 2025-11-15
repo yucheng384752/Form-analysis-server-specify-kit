@@ -12,6 +12,7 @@ REM 設置工作目錄
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
+cd ..
 set "PROJECT_ROOT=%cd%"
 set "SERVER_PATH=%PROJECT_ROOT%\form-analysis-server"
 
@@ -39,9 +40,12 @@ if errorlevel 1 (
 )
 
 REM 檢查 docker-compose 檔案
+echo 🔍 檢查路徑: %SERVER_PATH%\docker-compose.yml
 if not exist "%SERVER_PATH%\docker-compose.yml" (
     echo ❌ 找不到 docker-compose.yml 檔案
     echo    路徑: %SERVER_PATH%\docker-compose.yml
+    echo    項目根目錄: %PROJECT_ROOT%
+    echo    服務器路徑: %SERVER_PATH%
     echo    請確認您在專案根目錄執行此腳本
     pause
     exit /b 1
