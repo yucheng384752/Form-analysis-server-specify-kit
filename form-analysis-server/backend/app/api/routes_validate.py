@@ -24,7 +24,7 @@ from app.schemas.validate import (
 )
 
 # 建立路由器
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 
 @router.get(
