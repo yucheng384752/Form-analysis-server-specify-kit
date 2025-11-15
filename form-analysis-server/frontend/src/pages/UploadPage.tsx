@@ -113,6 +113,7 @@ async function parseCsv(file: File): Promise<CsvData> {
 export function UploadPage() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [confirmTargetId, setConfirmTargetId] = useState<string | null>(null);
+  const [showBatchImportConfirm, setShowBatchImportConfirm] = useState(false);
   const { showToast } = useToast();
 
   const handleFiles = (fileList: FileList | null) => {
@@ -335,7 +336,38 @@ export function UploadPage() {
   };
 
   // 批次匯入所有已驗證的檔案
+  const handleBatchImportClick = () => {
+    const validatedFiles = files.filter(f => 
+      f.status === "validated" && 
+      f.processId && 
+      (!f.validationErrors || f.validationErrors.length === 0)
+    );
+    
+    if (validatedFiles.length === 0) {
+      const filesWithErrors = files.filter(f => 
+        f.status === "validated" && 
+        f.validationErrors && 
+        f.validationErrors.length > 0
+      );
+      const unvalidatedFiles = files.filter(f => f.status === "uploaded");
+      
+      if (filesWithErrors.length > 0) {
+        showToast("error", `有 ${filesWithErrors.length} 個檔案包含驗證錯誤，請修正後再匯入`);
+      } else if (unvalidatedFiles.length > 0) {
+        showToast("error", `有 ${unvalidatedFiles.length} 個檔案尚未驗證，請先驗證檔案`);
+      } else {
+        showToast("error", "沒有已驗證的檔案可供匯入");
+      }
+      return;
+    }
+    
+    // 顯示確認彈窗
+    setShowBatchImportConfirm(true);
+  };
+
   const performBatchImport = async () => {
+    setShowBatchImportConfirm(false);
+    
     const totalFiles = files.length;
     
     // 只允許匯入沒有驗證錯誤的檔案
@@ -600,7 +632,7 @@ export function UploadPage() {
                 return (
                   <button
                     className={`btn-primary batch-import-btn ${isDisabled ? "btn-primary--disabled" : ""}`}
-                    onClick={performBatchImport}
+                    onClick={handleBatchImportClick}
                     disabled={isDisabled}
                     title={buttonTitle}
                   >
@@ -645,6 +677,62 @@ export function UploadPage() {
         confirmText="確認匯入"
       >
         <p>匯入資料庫中後，資料將無法直接還原，請再次確認內容是否正確。</p>
+      </Modal>
+
+      <Modal
+        open={showBatchImportConfirm}
+        title="⚠️ 是否確認批次匯入"
+        onClose={() => setShowBatchImportConfirm(false)}
+        onConfirm={performBatchImport}
+        confirmText="確認批次匯入"
+      >
+        {(() => {
+          const validFilesWithoutErrors = files.filter(f => 
+            f.status === "validated" && 
+            f.processId && 
+            (!f.validationErrors || f.validationErrors.length === 0)
+          );
+          const filesWithErrors = files.filter(f => 
+            f.status === "validated" && 
+            f.validationErrors && 
+            f.validationErrors.length > 0
+          );
+          
+          return (
+            <div>
+              <p style={{ marginBottom: '12px' }}>
+                即將批次匯入 <strong style={{ color: '#059669' }}>{validFilesWithoutErrors.length}</strong> 個已驗證的檔案到資料庫。
+              </p>
+              <p style={{ marginBottom: '12px', color: '#dc2626', fontWeight: 'bold' }}>
+                匯入後資料將無法直接還原，請再次確認所有檔案內容是否正確。
+              </p>
+              {filesWithErrors.length > 0 && (
+                <p style={{ 
+                  padding: '8px 12px', 
+                  backgroundColor: '#fef2f2', 
+                  border: '1px solid #fecaca',
+                  borderRadius: '4px',
+                  color: '#7f1d1d',
+                  fontSize: '14px'
+                }}>
+                  ℹ️ 注意：有 {filesWithErrors.length} 個檔案因包含錯誤將被跳過
+                </p>
+              )}
+              {validFilesWithoutErrors.length > 0 && (
+                <div style={{ marginTop: '12px' }}>
+                  <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>待匯入檔案：</p>
+                  <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px' }}>
+                    {validFilesWithoutErrors.map(f => (
+                      <li key={f.id} style={{ marginBottom: '4px' }}>
+                        <span style={{ color: '#6366f1', fontWeight: 'bold' }}>{f.type}</span> - {f.name}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </Modal>
     </div>
   );
@@ -788,7 +876,7 @@ function UploadedFileCard({
                 }}
                 title="驗證通過"
               >
-                ✅ 驗證通過
+                 驗證通過
               </span>
             )}
           </div>
@@ -1065,7 +1153,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
           </p>
         ) : (
           <p style={{ margin: '0', fontSize: '0.75rem', color: '#059669', fontWeight: 'bold' }}>
-            ✅ 所有資料驗證通過，可以匯入資料庫
+             所有資料驗證通過，可以匯入資料庫
           </p>
         )}
       </div>
