@@ -696,6 +696,8 @@
 
 .expanded-data-container {
   padding: 1.5rem;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .grouped-data-container {
@@ -709,6 +711,7 @@
   border: 1px solid #e5e7eb;
   border-radius: 0.5rem;
   overflow: hidden;
+  max-width: 100%;
 }
 
 .section-header {
@@ -803,6 +806,35 @@
 }
 
 .data-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+/* 垂直表格樣式（用於 P1 押出機生產條件） */
+.data-table-vertical {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.data-table-vertical th {
+  background-color: #334155;
+  color: white;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+  width: 30%;
+  border-bottom: 1px solid #475569;
+}
+
+.data-table-vertical td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+  color: #111827;
+  width: 70%;
+}
+
+.data-table-vertical tbody tr:hover {
   background-color: #f9fafb;
 }
 

@@ -361,7 +361,6 @@ async def import_data(
                     known_fields['production_date'] = date.today()
                 
                 # 檢查是否已存在相同的 lot_no + data_type 記錄
-                from sqlalchemy import select
                 existing_stmt = select(Record).where(
                     Record.lot_no == known_fields['lot_no'],
                     Record.data_type == data_type

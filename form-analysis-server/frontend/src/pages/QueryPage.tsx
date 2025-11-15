@@ -216,7 +216,8 @@ export function QueryPage() {
     title: string,
     sectionKey: string,
     data: { [key: string]: any },
-    icon: string = "ℹ️"
+    icon: string = "ℹ️",
+    vertical: boolean = false
   ) => {
     const isCollapsed = isSectionCollapsed(recordId, sectionKey);
     const fieldCount = Object.keys(data).length;
@@ -238,24 +239,37 @@ export function QueryPage() {
         </div>
         {!isCollapsed && (
           <div className="section-content">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  {Object.keys(data).map(key => (
-                    <th key={key}>{key}</th>
+            {vertical ? (
+              <table className="data-table data-table-vertical">
+                <tbody>
+                  {Object.entries(data).map(([key, value]) => (
+                    <tr key={key}>
+                      <th>{key}</th>
+                      <td>{typeof value === 'number' ? value.toLocaleString() : String(value)}</td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  {Object.values(data).map((value, idx) => (
-                    <td key={idx}>
-                      {typeof value === 'number' ? value.toLocaleString() : String(value)}
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    {Object.keys(data).map(key => (
+                      <th key={key}>{key}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {Object.values(data).map((value, idx) => (
+                      <td key={idx}>
+                        {typeof value === 'number' ? value.toLocaleString() : String(value)}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </div>
@@ -332,7 +346,6 @@ export function QueryPage() {
 
     // 統計資訊
     const totalFields = Object.keys(record.additional_data).length;
-    const validFields = Object.values(record.additional_data).filter(v => v !== null && v !== undefined && v !== '').length;
 
     return (
       <div className="grouped-data-container">
