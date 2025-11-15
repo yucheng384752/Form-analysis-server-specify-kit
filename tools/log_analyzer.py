@@ -29,11 +29,11 @@ class LogAnalyzer:
     def check_log_files(self):
         """檢查日誌檔案是否存在"""
         if not self.log_dir.exists():
-            print(f"❌ 日誌目錄不存在: {self.log_dir}")
+            print(f" 日誌目錄不存在: {self.log_dir}")
             return False
             
         if not self.app_log.exists():
-            print(f"⚠️  應用程式日誌不存在: {self.app_log}")
+            print(f"  應用程式日誌不存在: {self.app_log}")
             return False
             
         return True
@@ -172,14 +172,14 @@ class LogAnalyzer:
         if not self.check_log_files():
             return
         
-        print("📊 Form Analysis System - 日誌分析報告")
+        print(" Form Analysis System - 日誌分析報告")
         print("=" * 50)
         print(f"📅 報告時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"📂 日誌目錄: {self.log_dir}")
         print()
         
         # 檔案資訊
-        print("📄 日誌檔案資訊:")
+        print(" 日誌檔案資訊:")
         if self.app_log.exists():
             size = self.app_log.stat().st_size
             print(f"   📝 app.log: {size:,} bytes ({size/1024/1024:.2f} MB)")
@@ -190,7 +190,7 @@ class LogAnalyzer:
         print()
         
         # API 使用統計
-        print("🔄 API 使用統計 (過去24小時):")
+        print(" API 使用統計 (過去24小時):")
         api_analysis = self.analyze_api_usage()
         
         for api_name, stats in api_analysis["api_stats"].items():

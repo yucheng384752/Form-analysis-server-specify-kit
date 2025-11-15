@@ -17,9 +17,9 @@ def run_command(command, description):
     result = subprocess.run(command, capture_output=False)
     
     if result.returncode == 0:
-        print(f"✅ {description} 成功完成")
+        print(f" {description} 成功完成")
     else:
-        print(f"❌ {description} 失敗 (退出碼: {result.returncode})")
+        print(f" {description} 失敗 (退出碼: {result.returncode})")
         return False
     return True
 
@@ -95,7 +95,7 @@ def main():
         description = "執行快速測試"
         
     else:
-        print(f"❌ 未知模式: {mode}")
+        print(f" 未知模式: {mode}")
         return 1
     
     # 執行測試
@@ -104,7 +104,7 @@ def main():
     if success:
         print(f"\n🎉 測試執行完成!")
         if mode == "coverage":
-            print(f"📊 覆蓋率報告已生成:")
+            print(f" 覆蓋率報告已生成:")
             print(f"   - HTML 報告: htmlcov/index.html")
             print(f"   - XML 報告: coverage.xml")
     else:

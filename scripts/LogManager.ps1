@@ -93,7 +93,7 @@ function Show-LogStats {
     $logFiles = Get-LogFiles
     
     # 檔案大小統計
-    Write-ColoredOutput "📄 檔案資訊:" "Info"
+    Write-ColoredOutput " 檔案資訊:" "Info"
     if ($logFiles.AppLogExists) {
         $size = (Get-Item $logFiles.AppLog).Length
         $sizeGB = [math]::Round($size / 1GB, 3)
@@ -111,7 +111,7 @@ function Show-LogStats {
     # 日誌級別統計
     if ($logFiles.AppLogExists) {
         Write-Host ""
-        Write-ColoredOutput "📊 日誌級別統計:" "Info"
+        Write-ColoredOutput " 日誌級別統計:" "Info"
         
         $content = Get-Content $logFiles.AppLog
         $totalLines = $content.Count
@@ -149,7 +149,7 @@ function Show-LogStats {
     # API 使用統計
     if ($logFiles.AppLogExists) {
         Write-Host ""
-        Write-ColoredOutput "🔄 API 使用統計:" "Info"
+        Write-ColoredOutput " API 使用統計:" "Info"
         
         $content = Get-Content $logFiles.AppLog
         $apiStats = @{
@@ -192,7 +192,7 @@ function Show-RecentLogs {
     $logExists = if ($LogType -eq "error") { $logFiles.ErrorLogExists } else { $logFiles.AppLogExists }
     
     if (-not $logExists) {
-        Write-ColoredOutput "⚠️  日誌檔案不存在: $logFile" "Warning"
+        Write-ColoredOutput "  日誌檔案不存在: $logFile" "Warning"
         return
     }
     
@@ -238,7 +238,7 @@ function Watch-Logs {
     $logFiles = Get-LogFiles
     
     if (-not $logFiles.AppLogExists) {
-        Write-ColoredOutput "⚠️  日誌檔案不存在" "Warning"
+        Write-ColoredOutput "  日誌檔案不存在" "Warning"
         return
     }
     
@@ -319,7 +319,7 @@ function Export-LogsToJson {
     $logFiles = Get-LogFiles
     
     if (-not $logFiles.AppLogExists) {
-        Write-ColoredOutput "⚠️  日誌檔案不存在" "Warning"
+        Write-ColoredOutput "  日誌檔案不存在" "Warning"
         return
     }
     
@@ -348,8 +348,8 @@ function Export-LogsToJson {
     
     $logs | ConvertTo-Json -Depth 10 | Out-File $outputFile -Encoding UTF8
     
-    Write-ColoredOutput "✅ 日誌已匯出到: $outputFile" "Success"
-    Write-ColoredOutput "📊 匯出了 $($logs.Count) 條日誌記錄" "Info"
+    Write-ColoredOutput " 日誌已匯出到: $outputFile" "Success"
+    Write-ColoredOutput " 匯出了 $($logs.Count) 條日誌記錄" "Info"
     Write-Host ""
 }
 
@@ -361,14 +361,14 @@ function Cleanup-OldLogs {
     $backupFiles = Get-ChildItem $LogDir -Filter "*.log.*"
     
     if ($backupFiles.Count -eq 0) {
-        Write-ColoredOutput "ℹ️  沒有備份檔案需要清理" "Info"
+        Write-ColoredOutput "  沒有備份檔案需要清理" "Info"
         return
     }
     
     Write-ColoredOutput "🗂️  找到 $($backupFiles.Count) 個備份檔案:" "Warning"
     foreach ($file in $backupFiles) {
         $size = [math]::Round($file.Length / 1MB, 2)
-        Write-Host "   📄 $($file.Name) ($size MB)" -ForegroundColor DarkGray
+        Write-Host "    $($file.Name) ($size MB)" -ForegroundColor DarkGray
     }
     
     Write-Host ""
@@ -376,9 +376,9 @@ function Cleanup-OldLogs {
     
     if ($confirm -eq 'y' -or $confirm -eq 'Y') {
         $backupFiles | Remove-Item -Force
-        Write-ColoredOutput "✅ 已清理 $($backupFiles.Count) 個備份檔案" "Success"
+        Write-ColoredOutput " 已清理 $($backupFiles.Count) 個備份檔案" "Success"
     } else {
-        Write-ColoredOutput "❌ 已取消清理操作" "Warning"
+        Write-ColoredOutput " 已取消清理操作" "Warning"
     }
     
     Write-Host ""
@@ -390,15 +390,15 @@ function Show-Menu {
         Show-Header "Form Analysis System - 日誌管理工具"
         
         Write-ColoredOutput "📋 可用操作：" "Info"
-        Write-Host "   [1] 📄 查看應用程式日誌 (最新50行)"
+        Write-Host "   [1]  查看應用程式日誌 (最新50行)"
         Write-Host "   [2] 🚨 查看錯誤日誌 (最新50行)"
-        Write-Host "   [3] 📊 統計資訊"
+        Write-Host "   [3]  統計資訊"
         Write-Host "   [4] 📈 即時監控"
-        Write-Host "   [5] 🔍 搜尋日誌"
+        Write-Host "   [5]  搜尋日誌"
         Write-Host "   [6] 📤 匯出 JSON"
         Write-Host "   [7] 🧹 清理舊日誌"
         Write-Host "   [8] ⚙️  自定義查看"
-        Write-Host "   [0] ❌ 退出"
+        Write-Host "   [0]  退出"
         Write-Host ""
         
         $choice = Read-Host "請選擇操作 (0-8)"
@@ -418,7 +418,7 @@ function Show-Menu {
                 Read-Host "按 Enter 繼續"
             }
             "0" { Write-ColoredOutput "👋 再見！" "Success"; break }
-            default { Write-ColoredOutput "❌ 無效選擇，請重新輸入" "Error"; Start-Sleep 1 }
+            default { Write-ColoredOutput " 無效選擇，請重新輸入" "Error"; Start-Sleep 1 }
         }
     } while ($true)
 }
@@ -434,7 +434,7 @@ switch ($Action.ToLower()) {
     "cleanup" { Cleanup-OldLogs }
     "watch" { Watch-Logs }
     default { 
-        Write-ColoredOutput "❌ 未知操作: $Action" "Error"
+        Write-ColoredOutput " 未知操作: $Action" "Error"
         Write-ColoredOutput "可用操作: menu, stats, view, errors, search, export, cleanup, watch" "Info"
     }
 }

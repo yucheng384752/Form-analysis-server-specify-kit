@@ -8,7 +8,7 @@
 4. **一鍵啟動解決方案** - 統一所有服務的啟動流程
 5. **完善文檔系統** - 清晰的專案說明和使用指南
 
-## 📁 建議的新專案結構
+##  建議的新專案結構
 
 ```
 form-analysis-spec-kit/
@@ -139,7 +139,7 @@ form-analysis-spec-kit/
     └── test-services.bat            # 服務測試
 ```
 
-## 🔄 遷移步驟
+##  遷移步驟
 
 ### 階段 1: 專案結構整理
 1. **建立新的資料夾結構**
@@ -246,7 +246,7 @@ Start-Sleep -Seconds 10
 docker-compose up -d backend  
 Start-Sleep -Seconds 15
 docker-compose up -d frontend
-Write-Host "✅ All services started!" -ForegroundColor Green
+Write-Host " All services started!" -ForegroundColor Green
 ```
 
 ## 📚 文檔架構
@@ -275,7 +275,7 @@ Write-Host "✅ All services started!" -ForegroundColor Green
 - 環境變數配置
 - 監控和日誌
 
-## ✅ 驗收標準
+##  驗收標準
 
 1. **結構整齊**: 所有檔案按新結構組織
 2. **PostgreSQL**: 完全遷移並正常運作  
@@ -293,7 +293,7 @@ Write-Host "✅ All services started!" -ForegroundColor Green
 
 **總計**: 6-10 個工作天
 
-## 🔧 下一步行動
+##  下一步行動
 
 1. **確認重構計劃** - 檢視並確認此重構方案
 2. **開始結構遷移** - 建立新資料夾並移動檔案

@@ -9,7 +9,7 @@ const axios = require('axios');
 const API_BASE_URL = 'http://localhost:8000';
 
 async function testApiConnection() {
-    console.log('🔍 測試前端到後端 API 連接...\n');
+    console.log(' 測試前端到後端 API 連接...\n');
     
     const endpoints = [
         { name: '健康檢查', url: '/healthz' },
@@ -29,14 +29,14 @@ async function testApiConnection() {
                 }
             });
             
-            console.log(`✅ 成功 - 狀態碼: ${response.status}`);
+            console.log(` 成功 - 狀態碼: ${response.status}`);
             
             if (endpoint.url === '/healthz') {
                 console.log(`   回應: ${JSON.stringify(response.data, null, 2)}`);
             }
             
         } catch (error) {
-            console.log(`❌ 失敗 - ${endpoint.name}`);
+            console.log(` 失敗 - ${endpoint.name}`);
             console.log(`   錯誤: ${error.message}`);
             
             if (error.response) {
@@ -58,7 +58,7 @@ try {
     require('axios');
     testApiConnection();
 } catch (error) {
-    console.log('❌ 需要安裝 axios 套件: npm install axios');
+    console.log(' 需要安裝 axios 套件: npm install axios');
     console.log('或者使用 curl 命令測試:');
     console.log('curl -X GET http://localhost:8000/healthz');
     console.log('curl -X GET http://localhost:8000/api/logs/files');

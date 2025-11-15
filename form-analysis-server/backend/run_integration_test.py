@@ -32,7 +32,7 @@ def create_test_data():
     with open(test_csv_path, 'w', encoding='utf-8') as f:
         f.write(test_csv_content)
     
-    print(f"✅ 測試資料已建立：{test_csv_path}")
+    print(f" 測試資料已建立：{test_csv_path}")
     return test_csv_path
 
 def check_dependencies():
@@ -47,11 +47,11 @@ def check_dependencies():
             missing_packages.append(package)
     
     if missing_packages:
-        print(f"❌ 缺少必要套件：{', '.join(missing_packages)}")
+        print(f" 缺少必要套件：{', '.join(missing_packages)}")
         print("請執行：pip install " + " ".join(missing_packages))
         return False
     
-    print("✅ 所有必要套件已安裝")
+    print(" 所有必要套件已安裝")
     return True
 
 def run_integration_test():
@@ -83,11 +83,11 @@ def run_integration_test():
             print("\n🎉 整合測試執行成功！")
             return True
         else:
-            print(f"\n❌ 整合測試失敗，退出代碼：{result.returncode}")
+            print(f"\n 整合測試失敗，退出代碼：{result.returncode}")
             return False
             
     except Exception as e:
-        print(f"\n❌ 執行測試時發生錯誤：{e}")
+        print(f"\n 執行測試時發生錯誤：{e}")
         return False
 
 def run_direct_test():
@@ -127,7 +127,7 @@ def run_direct_test():
                     await test_instance.test_error_handling_workflow(client)
                     
                     # 執行分頁測試
-                    print("\n📄 測試分頁功能...")
+                    print("\n 測試分頁功能...")
                     await test_instance.test_pagination_workflow(client, temp_path)
                     
                     print("\n🎊 所有測試完成！")
@@ -144,7 +144,7 @@ def run_direct_test():
         return asyncio.run(execute_test())
         
     except Exception as e:
-        print(f"\n❌ 直接執行測試時發生錯誤：{e}")
+        print(f"\n 直接執行測試時發生錯誤：{e}")
         import traceback
         traceback.print_exc()
         return False
@@ -159,7 +159,7 @@ def main():
         import pytest
         use_pytest = True
     except ImportError:
-        print("⚠️  未安裝 pytest，將使用直接執行模式")
+        print("  未安裝 pytest，將使用直接執行模式")
         use_pytest = False
     
     # 執行測試
@@ -169,8 +169,8 @@ def main():
         success = run_direct_test()
     
     if success:
-        print("\n✅ 整合測試完成")
-        print("\n📊 測試涵蓋範圍：")
+        print("\n 整合測試完成")
+        print("\n 測試涵蓋範圍：")
         print("   • 檔案上傳 (POST /api/upload)")
         print("   • 狀態查詢 (GET /api/upload/{id}/status)")
         print("   • 驗證結果 (GET /api/validate)")
@@ -187,7 +187,7 @@ def main():
         print("   • 完整工作流程：上傳→驗證→匯入")
         
     else:
-        print("\n❌ 整合測試失敗")
+        print("\n 整合測試失敗")
         return 1
     
     return 0

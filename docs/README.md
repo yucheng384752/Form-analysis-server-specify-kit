@@ -1,4 +1,4 @@
-# 📊 表單分析系統 (Form Analysis Spec Kit)
+#  表單分析系統 (Form Analysis Spec Kit)
 
 > 現代化的表單資料處理系統，支援 CSV 檔案上傳、驗證、預覽和匯入功能
 
@@ -9,13 +9,13 @@
 
 ## 🌟 功能特色
 
-- ✅ **檔案上傳與驗證** - 支援 CSV、Excel 格式，即時驗證資料格式
-- ✅ **資料預覽與編輯** - 上傳後即時預覽，支援錯誤修正
-- ✅ **生產鏈追蹤** - P1→P2→P3 完整生產流程管理
-- ✅ **PostgreSQL 資料庫** - 高效能、可擴展的關聯式資料庫
-- ✅ **現代化介面** - 基於 Figma 設計系統的響應式介面
-- ✅ **Docker 容器化** - 一鍵啟動，環境隔離
-- ✅ **API 文檔** - 完整的 OpenAPI/Swagger 文檔
+-  **檔案上傳與驗證** - 支援 CSV、Excel 格式，即時驗證資料格式
+-  **資料預覽與編輯** - 上傳後即時預覽，支援錯誤修正
+-  **生產鏈追蹤** - P1→P2→P3 完整生產流程管理
+-  **PostgreSQL 資料庫** - 高效能、可擴展的關聯式資料庫
+-  **現代化介面** - 基於 Figma 設計系統的響應式介面
+-  **Docker 容器化** - 一鍵啟動，環境隔離
+-  **API 文檔** - 完整的 OpenAPI/Swagger 文檔
 
 ## 🏗️ 系統架構
 
@@ -100,12 +100,12 @@ docker-compose ps
 | **API 替代文檔** | http://localhost:8000/redoc | ReDoc 文檔 |
 | **資料庫管理** | http://localhost:5050 | pgAdmin (可選) |
 
-## 📁 專案結構
+##  專案結構
 
 ```
 form-analysis-spec-kit/
-├── 📄 README.md                    # 專案說明文檔
-├── 📄 .env.example                 # 環境變數範例
+├──  README.md                    # 專案說明文檔
+├──  .env.example                 # 環境變數範例
 ├── 🚀 start-system.bat             # Windows 啟動腳本
 ├── 🚀 start-system.ps1             # PowerShell 啟動腳本
 ├── form-analysis-server/           # 主要服務目錄
@@ -142,7 +142,7 @@ form-analysis-spec-kit/
     └── DEVELOPMENT.md              # 開發指南
 ```
 
-## 🔧 開發指南
+##  開發指南
 
 ### 環境設定
 
@@ -217,7 +217,7 @@ docker-compose down
 docker-compose down -v --remove-orphans
 ```
 
-## 📊 資料庫結構
+##  資料庫結構
 
 系統使用 PostgreSQL 資料庫，主要資料表包括：
 
@@ -232,12 +232,12 @@ docker-compose down -v --remove-orphans
 
 ## 🔒 安全性設定
 
-- ✅ JWT 權杖認證 (準備中)
-- ✅ CORS 跨域保護
-- ✅ 檔案類型驗證
-- ✅ 檔案大小限制
-- ✅ SQL 注入防護
-- ✅ 輸入資料驗證
+-  JWT 權杖認證 (準備中)
+-  CORS 跨域保護
+-  檔案類型驗證
+-  檔案大小限制
+-  SQL 注入防護
+-  輸入資料驗證
 
 ## 📝 API 使用範例
 
@@ -327,7 +327,7 @@ docker system prune -a
 4. 推送分支 (`git push origin feature/amazing-feature`)
 5. 開啟 Pull Request
 
-## 📄 授權條款
+##  授權條款
 
 此專案採用 MIT 授權條款。詳細內容請參考 [LICENSE](LICENSE) 檔案。
 
@@ -341,10 +341,10 @@ docker system prune -a
 
 ### v1.0.0 (2024-11-08)
 - ✨ 初始版本發布
-- ✅ PostgreSQL 資料庫整合
-- ✅ 現代化 React 前端
-- ✅ Docker 容器化部署
-- ✅ 一鍵啟動腳本
+-  PostgreSQL 資料庫整合
+-  現代化 React 前端
+-  Docker 容器化部署
+-  一鍵啟動腳本
 
 ---
 

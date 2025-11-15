@@ -202,3 +202,12 @@ Index(
     Record.data_type,
     postgresql_using="btree"
 )
+
+# 添加唯一約束防止重複資料
+# 同一個 lot_no 和 data_type 組合不允許重複
+from sqlalchemy import UniqueConstraint
+UniqueConstraint(
+    Record.lot_no,
+    Record.data_type,
+    name='uq_records_lot_no_data_type'
+)

@@ -7,7 +7,7 @@ Write-Host "   Form Analysis PostgreSQL 設置" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "📊 正在啟動PostgreSQL Docker容器..." -ForegroundColor Yellow
+Write-Host " 正在啟動PostgreSQL Docker容器..." -ForegroundColor Yellow
 docker-compose up -d db
 
 Write-Host ""
@@ -15,7 +15,7 @@ Write-Host "⏳ 等待PostgreSQL準備就緒..." -ForegroundColor Yellow
 Start-Sleep -Seconds 10
 
 Write-Host ""
-Write-Host "🔧 檢查PostgreSQL容器狀態..." -ForegroundColor Yellow
+Write-Host " 檢查PostgreSQL容器狀態..." -ForegroundColor Yellow
 docker-compose ps db
 
 Write-Host ""
@@ -34,7 +34,7 @@ Pop-Location
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "✅ PostgreSQL設置完成！" -ForegroundColor Green
+Write-Host " PostgreSQL設置完成！" -ForegroundColor Green
 Write-Host ""
 Write-Host "💡 提示:" -ForegroundColor Yellow
 Write-Host "   - 使用 docker-compose logs db 查看資料庫日誌" -ForegroundColor White

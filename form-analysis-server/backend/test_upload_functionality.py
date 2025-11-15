@@ -69,28 +69,28 @@ async def test_file_validation():
     
     # 1. 建立測試 CSV 檔案
     csv_content = create_test_csv_content()
-    print(f"📄 建立測試 CSV 檔案，大小：{len(csv_content)} 位元組")
+    print(f" 建立測試 CSV 檔案，大小：{len(csv_content)} 位元組")
     
     # 2. 執行檔案驗證
     try:
         result = file_validation_service.validate_file(csv_content, "test_data.csv")
         
-        print(f"✅ 檔案驗證完成")
-        print(f"📊 統計結果：")
+        print(f" 檔案驗證完成")
+        print(f" 統計結果：")
         print(f"   - 總行數：{result['total_rows']}")
         print(f"   - 有效行數：{result['valid_rows']}")
         print(f"   - 無效行數：{result['invalid_rows']}")
         
         # 3. 顯示錯誤樣本
         if result['sample_errors']:
-            print(f"\n❌ 錯誤樣本（前 {len(result['sample_errors'])} 筆）：")
+            print(f"\n 錯誤樣本（前 {len(result['sample_errors'])} 筆）：")
             for i, error in enumerate(result['sample_errors'], 1):
                 print(f"   {i}. 行 {error['row_index']}, 欄位 '{error['field']}': {error['message']}")
         else:
-            print("\n✅ 無驗證錯誤")
+            print("\n 無驗證錯誤")
             
     except Exception as e:
-        print(f"❌ 驗證失敗：{e}")
+        print(f" 驗證失敗：{e}")
         return False
     
     print("\n" + "=" * 50)
@@ -132,10 +132,10 @@ async def test_column_validation():
     
     try:
         result = file_validation_service.validate_file(invalid_csv, "invalid_columns.csv")
-        print("❌ 應該要拋出驗證錯誤，但沒有")
+        print(" 應該要拋出驗證錯誤，但沒有")
         return False
     except Exception as e:
-        print(f"✅ 正確捕獲到欄位驗證錯誤：{e}")
+        print(f" 正確捕獲到欄位驗證錯誤：{e}")
         return True
 
 
@@ -152,13 +152,13 @@ async def main():
     test2_passed = await test_column_validation()
     
     print(f"\n📋 測試結果總結：")
-    print(f"   - 檔案驗證測試：{'✅ 通過' if test1_passed else '❌ 失敗'}")
-    print(f"   - 欄位驗證測試：{'✅ 通過' if test2_passed else '❌ 失敗'}")
+    print(f"   - 檔案驗證測試：{' 通過' if test1_passed else ' 失敗'}")
+    print(f"   - 欄位驗證測試：{' 通過' if test2_passed else ' 失敗'}")
     
     if test1_passed and test2_passed:
         print("\n🎊 所有測試通過！檔案上傳功能已準備就緒。")
     else:
-        print("\n⚠️  部分測試失敗，請檢查程式碼。")
+        print("\n  部分測試失敗，請檢查程式碼。")
 
 
 if __name__ == "__main__":

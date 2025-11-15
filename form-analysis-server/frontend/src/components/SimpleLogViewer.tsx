@@ -217,11 +217,11 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
           <div className="log-meta">
             {timestamp && (
               <span className="log-timestamp">
-                ⏰ {timestamp}
+                 {timestamp}
               </span>
             )}
             <span className="log-line">
-              📄 Line {entry.line_number}
+               Line {entry.line_number}
             </span>
           </div>
         </div>
@@ -561,7 +561,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
             }}
             disabled={loading}
           >
-            {loading ? <div className="spinner" /> : '🔄'} 重新整理
+            {loading ? <div className="spinner" /> : ''} 重新整理
           </button>
           
           <button
@@ -569,7 +569,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
             onClick={cleanupLogs}
             disabled={loading}
           >
-            🗑️ 清理舊日誌
+             清理舊日誌
           </button>
         </div>
       </div>
@@ -577,7 +577,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
       {/* Error Alert */}
       {error && (
         <div className="error-alert">
-          ⚠️ {error}
+           {error}
         </div>
       )}
 
@@ -628,7 +628,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
                     disabled={!selectedLogType || loading}
                     style={{ marginTop: '1.5rem' }}
                   >
-                    📥 下載
+                    下載
                   </button>
                 </div>
               </div>
@@ -691,7 +691,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
                   onKeyPress={(e) => e.key === 'Enter' && searchLogs()}
                 />
                 <button className="btn btn-primary" onClick={searchLogs} disabled={loading}>
-                  🔍 搜尋
+                   搜尋
                 </button>
                 {isSearchMode && (
                   <button 
@@ -702,7 +702,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
                       loadLogs();
                     }}
                   >
-                    ❌ 清除
+                     清除
                   </button>
                 )}
               </div>
@@ -725,7 +725,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
             {/* Logs Display */}
             <div className="card">
               <div className="card-title">
-                📄 日誌內容
+                 日誌內容
                 {isSearchMode && <span style={{ marginLeft: '0.5rem', fontSize: '0.875rem', color: '#6b7280' }}>搜尋模式</span>}
               </div>
               
@@ -768,7 +768,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
           <div className="stats-grid">
             {/* File Stats */}
             <div className="card">
-              <div className="card-title">📁 檔案資訊</div>
+              <div className="card-title"> 檔案資訊</div>
               <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
                 總大小: {logService.formatFileSize(stats.total_size)}
               </p>
@@ -786,7 +786,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
 
             {/* Level Distribution */}
             <div className="card">
-              <div className="card-title">📊 日誌級別分佈</div>
+              <div className="card-title"> 日誌級別分佈</div>
               <div>
                 {Object.entries(stats.level_distribution).map(([level, count]) => {
                   const levelColor = logService.getLogLevelColor(level);
@@ -807,7 +807,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
 
             {/* API Usage */}
             <div className="card">
-              <div className="card-title">🔧 API 使用統計</div>
+              <div className="card-title"> API 使用統計</div>
               <div>
                 {Object.entries(stats.api_usage).map(([api, count]) => (
                   <div key={api} className="stat-item">
@@ -820,7 +820,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className = '' }) => {
 
             {/* Recent Activity */}
             <div className="card">
-              <div className="card-title">⏱️ 最近活動</div>
+              <div className="card-title"> 最近活動</div>
               <p style={{ color: '#6b7280', marginBottom: '1rem' }}>最新的系統活動記錄</p>
               <div>
                 {stats.recent_activity.slice(0, 10).map((activity, index) => {

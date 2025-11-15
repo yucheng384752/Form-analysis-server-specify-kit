@@ -238,7 +238,7 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>⚠️ 是否確認上傳</AlertDialogTitle>
+            <AlertDialogTitle> 是否確認上傳</AlertDialogTitle>
             <AlertDialogDescription>
               此操作將會把 CSV 檔案匯入資料庫中，請確認是否要繼續？
             </AlertDialogDescription>

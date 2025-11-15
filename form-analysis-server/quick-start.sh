@@ -147,7 +147,7 @@ fi
 echo ""
 
 # 模擬上傳與驗證流程
-echo "📁 模擬上傳與驗證流程"
+echo " 模擬上傳與驗證流程"
 echo "======================="
 
 # 創建測試 CSV 文件
@@ -211,7 +211,7 @@ print_success "後端 API 文件: http://localhost:8000/docs"
 print_success "後端 API Redoc: http://localhost:8000/redoc"
 
 echo ""
-echo "🔧 環境配置說明"
+echo " 環境配置說明"
 echo "================"
 echo "• API Base URL: 在 .env 文件中配置 VITE_API_URL"
 echo "• 檔案大小限制: 在 .env 文件中配置 VITE_MAX_FILE_SIZE"
@@ -220,7 +220,7 @@ echo ""
 echo "📝 vite.config.ts 代理設定已配置 /api 路徑到後端"
 echo ""
 
-echo "📊 容器狀態"
+echo " 容器狀態"
 echo "==========="
 docker compose ps
 

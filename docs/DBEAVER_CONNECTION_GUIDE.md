@@ -4,9 +4,9 @@
 本指南說明如何使用 DBeaver 連線到 Form Analysis System 的 PostgreSQL 資料庫。
 
 ## 前置條件
-- ✅ 系統已啟動（執行 `start-system.bat`）
-- ✅ PostgreSQL 容器正在運行
-- ✅ 已安裝 DBeaver Community 或 Enterprise 版本
+-  系統已啟動（執行 `start-system.bat`）
+-  PostgreSQL 容器正在運行
+-  已安裝 DBeaver Community 或 Enterprise 版本
 
 ## 資料庫連線資訊
 
@@ -86,7 +86,7 @@ form_analysis_db    postgres:16    Up 5 minutes (healthy)    0.0.0.0:5432->5432/
 1. 點擊 **Test Connection** 按鈕
 2. 第一次連線時，DBeaver 可能會提示下載 PostgreSQL JDBC 驅動
 3. 點擊 **Download** 下載驅動
-4. 如果連線成功，會顯示 ✅ "Connected"
+4. 如果連線成功，會顯示  "Connected"
 
 ### 5. 完成連線
 

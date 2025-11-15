@@ -29,12 +29,12 @@ class TestModelsIntegration:
         await db_session.refresh(job)
         
         assert job.status == JobStatus.PENDING
-        print(f"✅ 步驟1: 創建上傳工作 {job.id}")
+        print(f" 步驟1: 創建上傳工作 {job.id}")
         
         # 2. 開始驗證
         job.status = JobStatus.VALIDATED
         await db_session.commit()
-        print(f"✅ 步驟2: 驗證完成，狀態更新為 {job.status}")
+        print(f" 步驟2: 驗證完成，狀態更新為 {job.status}")
         
         # 3. 創建成功記錄（這些記錄不與 UploadJob 直接關聯）
         success_records = []
@@ -49,7 +49,7 @@ class TestModelsIntegration:
         
         db_session.add_all(success_records)
         await db_session.commit()
-        print(f"✅ 步驟3: 創建 {len(success_records)} 筆成功記錄")
+        print(f" 步驟3: 創建 {len(success_records)} 筆成功記錄")
         
         # 4. 創建錯誤記錄
         error_scenarios = [
@@ -70,7 +70,7 @@ class TestModelsIntegration:
         
         db_session.add_all(errors)
         await db_session.commit()
-        print(f"✅ 步驟4: 創建 {len(errors)} 筆錯誤記錄")
+        print(f" 步驟4: 創建 {len(errors)} 筆錯誤記錄")
         
         # 5. 完成處理並更新統計
         job.status = JobStatus.IMPORTED
@@ -78,7 +78,7 @@ class TestModelsIntegration:
         job.valid_rows = len(success_records)
         job.invalid_rows = len(errors)
         await db_session.commit()
-        print(f"✅ 步驟5: 處理完成，統計信息已更新")
+        print(f" 步驟5: 處理完成，統計信息已更新")
         
         # 6. 驗證完整性
         
@@ -108,8 +108,8 @@ class TestModelsIntegration:
         # 驗證外鍵關聯（只有 UploadError 與 UploadJob 有關聯）
         assert all(error.job_id == job.id for error in errors_from_db)
         
-        print(f"✅ 步驟6: 完整性驗證通過")
-        print(f"📊 最終統計: 總計{final_job.total_rows}筆，有效{final_job.valid_rows}筆，無效{final_job.invalid_rows}筆")
+        print(f" 步驟6: 完整性驗證通過")
+        print(f" 最終統計: 總計{final_job.total_rows}筆，有效{final_job.valid_rows}筆，無效{final_job.invalid_rows}筆")
     
     @pytest.mark.asyncio
     async def test_cascade_delete_integration(self, db_session, clean_db):
@@ -156,7 +156,7 @@ class TestModelsIntegration:
         
         assert record_count == 3
         assert error_count == 2
-        print(f"✅ 創建完成: {record_count} 筆記錄, {error_count} 筆錯誤")
+        print(f" 創建完成: {record_count} 筆記錄, {error_count} 筆錯誤")
         
         # 刪除工作（觸發級聯刪除）
         await db_session.delete(job)
@@ -172,7 +172,7 @@ class TestModelsIntegration:
         
         assert remaining_records == 3  # Record 不受影響
         assert remaining_errors == 0   # UploadError 被級聯刪除
-        print(f"✅ 級聯刪除成功: 錯誤已清除，記錄保持獨立")
+        print(f" 級聯刪除成功: 錯誤已清除，記錄保持獨立")
     
     @pytest.mark.asyncio
     async def test_multiple_jobs_isolation(self, db_session, clean_db):
@@ -247,14 +247,14 @@ class TestModelsIntegration:
             for error in job_errors:
                 assert f"工作{i+1}" in error.message
             
-            print(f"✅ 工作{i+1}: {len(job_errors)}筆錯誤 - 隔離驗證通過")
+            print(f" 工作{i+1}: {len(job_errors)}筆錯誤 - 隔離驗證通過")
         
         # 驗證記錄總數（所有記錄都是獨立的）
         total_records_result = await db_session.execute(select(Record))
         total_records = total_records_result.scalars().all()
         expected_total_records = 2 + 3 + 1  # 各工作的記錄數總和
         assert len(total_records) == expected_total_records
-        print(f"✅ 總記錄數驗證: {len(total_records)}筆記錄（獨立存在）")
+        print(f" 總記錄數驗證: {len(total_records)}筆記錄（獨立存在）")
     
     @pytest.mark.asyncio
     async def test_data_consistency_constraints(self, db_session, clean_db):
@@ -295,7 +295,7 @@ class TestModelsIntegration:
         )
         records = records_result.scalars().all()
         assert len(records) == 2
-        print("✅ 批號重複測試通過（允許重複）")
+        print(" 批號重複測試通過（允許重複）")
         
         # 測試資料型態一致性
         test_records = []
@@ -336,7 +336,7 @@ class TestModelsIntegration:
             assert record.quantity == case["quantity"]
             assert record.production_date == case["production_date"]
         
-        print("✅ 資料型態一致性測試通過")
+        print(" 資料型態一致性測試通過")
         
         # 測試時間戳記一致性
         timestamps = []
@@ -359,7 +359,7 @@ class TestModelsIntegration:
             assert time_diff >= 0  # 後創建的記錄時間應該不早於前一個
             assert time_diff < 60   # 但差異不應超過1分鐘
         
-        print("✅ 時間戳記一致性測試通過")
+        print(" 時間戳記一致性測試通過")
         
         # 測試 UploadError 與 UploadJob 的關聯一致性
         error_data = TestDataFactory.upload_error_data(
@@ -375,6 +375,6 @@ class TestModelsIntegration:
         await db_session.refresh(error)
         
         assert error.job_id == job.id
-        print("✅ 外鍵關聯一致性測試通過")
+        print(" 外鍵關聯一致性測試通過")
         
-        print(f"📊 資料一致性測試完成：共測試 {len(test_records) + 3 + 2} 筆記錄")
+        print(f" 資料一致性測試完成：共測試 {len(test_records) + 3 + 2} 筆記錄")

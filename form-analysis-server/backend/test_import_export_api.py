@@ -58,15 +58,15 @@ def test_upload_and_get_process_id():
         if response.status_code == 200:
             result = response.json()
             process_id = result.get('process_id')
-            print(f"✅ 檔案上傳成功，Process ID: {process_id}")
+            print(f" 檔案上傳成功，Process ID: {process_id}")
             print(f"📈 統計：總 {result.get('total_rows')}，有效 {result.get('valid_rows')}，錯誤 {result.get('invalid_rows')}")
             return process_id
         else:
-            print(f"❌ 上傳失敗：{response.text}")
+            print(f" 上傳失敗：{response.text}")
             return None
             
     except Exception as e:
-        print(f"❌ 上傳請求失敗：{e}")
+        print(f" 上傳請求失敗：{e}")
         return None
 
 
@@ -84,11 +84,11 @@ def test_import_api(process_id):
             headers={"Content-Type": "application/json"}
         )
         
-        print(f"📊 匯入回應狀態碼：{response.status_code}")
+        print(f" 匯入回應狀態碼：{response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
-            print("✅ 資料匯入成功")
+            print(" 資料匯入成功")
             print(f"📈 匯入結果：")
             print(f"   - 成功匯入：{result['imported_rows']} 筆")
             print(f"   - 跳過錯誤：{result['skipped_rows']} 筆")
@@ -98,18 +98,18 @@ def test_import_api(process_id):
             
         elif response.status_code == 400:
             error_data = response.json()
-            print(f"⚠️ 匯入錯誤：{error_data}")
+            print(f" 匯入錯誤：{error_data}")
             return False
         elif response.status_code == 404:
             error_data = response.json()
-            print(f"❌ 找不到工作：{error_data}")
+            print(f" 找不到工作：{error_data}")
             return False
         else:
-            print(f"❌ 匯入失敗：{response.text}")
+            print(f" 匯入失敗：{response.text}")
             return False
             
     except Exception as e:
-        print(f"❌ 匯入請求失敗：{e}")
+        print(f" 匯入請求失敗：{e}")
         return False
 
 
@@ -126,15 +126,15 @@ def test_export_errors_csv(process_id):
             params=params
         )
         
-        print(f"📊 匯出回應狀態碼：{response.status_code}")
+        print(f" 匯出回應狀態碼：{response.status_code}")
         
         if response.status_code == 200:
             # 檢查回應標頭
             content_type = response.headers.get('content-type', '')
             content_disposition = response.headers.get('content-disposition', '')
             
-            print("✅ CSV 匯出成功")
-            print(f"📄 Content-Type: {content_type}")
+            print(" CSV 匯出成功")
+            print(f" Content-Type: {content_type}")
             print(f"📎 Content-Disposition: {content_disposition}")
             
             # 解析 CSV 內容
@@ -151,7 +151,7 @@ def test_export_errors_csv(process_id):
             if len(lines) > 6:
                 print(f"   ... 還有 {len(lines) - 6} 行")
             
-            print(f"\n📊 CSV 統計：")
+            print(f"\n CSV 統計：")
             print(f"   - 總行數：{len(lines)} (包含標題)")
             print(f"   - 錯誤筆數：{len(lines) - 1}")
             
@@ -159,14 +159,14 @@ def test_export_errors_csv(process_id):
             
         elif response.status_code == 404:
             error_data = response.json()
-            print(f"❌ 找不到工作：{error_data}")
+            print(f" 找不到工作：{error_data}")
             return False
         else:
-            print(f"❌ 匯出失敗：{response.text}")
+            print(f" 匯出失敗：{response.text}")
             return False
             
     except Exception as e:
-        print(f"❌ 匯出請求失敗：{e}")
+        print(f" 匯出請求失敗：{e}")
         return False
 
 
@@ -184,23 +184,23 @@ def test_import_already_imported(process_id):
             headers={"Content-Type": "application/json"}
         )
         
-        print(f"📊 重複匯入回應狀態碼：{response.status_code}")
+        print(f" 重複匯入回應狀態碼：{response.status_code}")
         
         if response.status_code == 400:
             error_data = response.json()
             if error_data.get("detail", {}).get("error_code") == "JOB_ALREADY_IMPORTED":
-                print("✅ 正確阻止重複匯入")
+                print(" 正確阻止重複匯入")
                 print(f"📝 錯誤訊息：{error_data}")
                 return True
             else:
-                print(f"❌ 錯誤類型不符：{error_data}")
+                print(f" 錯誤類型不符：{error_data}")
                 return False
         else:
-            print(f"❌ 應該要回傳 400 錯誤：{response.text}")
+            print(f" 應該要回傳 400 錯誤：{response.text}")
             return False
             
     except Exception as e:
-        print(f"❌ 重複匯入測試失敗：{e}")
+        print(f" 重複匯入測試失敗：{e}")
         return False
 
 
@@ -216,16 +216,16 @@ def test_invalid_process_id_apis():
         data = {"process_id": invalid_uuid}
         response = requests.post(f"{API_BASE_URL}/api/import", json=data)
         
-        print(f"📊 匯入 API 無效 ID 狀態碼：{response.status_code}")
+        print(f" 匯入 API 無效 ID 狀態碼：{response.status_code}")
         
         import_ok = response.status_code == 404
         if import_ok:
-            print("✅ 匯入 API 正確回傳 404")
+            print(" 匯入 API 正確回傳 404")
         else:
-            print(f"❌ 匯入 API 錯誤處理異常：{response.text}")
+            print(f" 匯入 API 錯誤處理異常：{response.text}")
             
     except Exception as e:
-        print(f"❌ 匯入 API 無效 ID 測試失敗：{e}")
+        print(f" 匯入 API 無效 ID 測試失敗：{e}")
         import_ok = False
     
     # 測試匯出 API
@@ -233,16 +233,16 @@ def test_invalid_process_id_apis():
         params = {"process_id": invalid_uuid}
         response = requests.get(f"{API_BASE_URL}/api/errors.csv", params=params)
         
-        print(f"📊 匯出 API 無效 ID 狀態碼：{response.status_code}")
+        print(f" 匯出 API 無效 ID 狀態碼：{response.status_code}")
         
         export_ok = response.status_code == 404
         if export_ok:
-            print("✅ 匯出 API 正確回傳 404")
+            print(" 匯出 API 正確回傳 404")
         else:
-            print(f"❌ 匯出 API 錯誤處理異常：{response.text}")
+            print(f" 匯出 API 錯誤處理異常：{response.text}")
             
     except Exception as e:
-        print(f"❌ 匯出 API 無效 ID 測試失敗：{e}")
+        print(f" 匯出 API 無效 ID 測試失敗：{e}")
         export_ok = False
     
     return import_ok and export_ok
@@ -259,17 +259,17 @@ def main():
     try:
         response = requests.get(f"{API_BASE_URL}/")
         if response.status_code != 200:
-            print("❌ API 伺服器未運行，請先啟動伺服器")
+            print(" API 伺服器未運行，請先啟動伺服器")
             return
     except Exception as e:
-        print(f"❌ 無法連接到 API 伺服器：{e}")
+        print(f" 無法連接到 API 伺服器：{e}")
         print("請確保伺服器已啟動在 http://localhost:8000")
         return
     
     # 1. 上傳檔案
     process_id = test_upload_and_get_process_id()
     if not process_id:
-        print("❌ 無法獲取 process_id，測試終止")
+        print(" 無法獲取 process_id，測試終止")
         return
     
     # 2. 測試匯入
@@ -287,17 +287,17 @@ def main():
     # 總結
     print("\n" + "=" * 60)
     print("📋 測試結果總結：")
-    print(f"   - 資料匯入：{'✅ 成功' if import_test else '❌ 失敗'}")
-    print(f"   - 錯誤匯出：{'✅ 成功' if export_test else '❌ 失敗'}")
-    print(f"   - 重複匯入檢查：{'✅ 成功' if repeat_import_test else '❌ 失敗'}")
-    print(f"   - 無效 ID 處理：{'✅ 成功' if invalid_id_test else '❌ 失敗'}")
+    print(f"   - 資料匯入：{' 成功' if import_test else ' 失敗'}")
+    print(f"   - 錯誤匯出：{' 成功' if export_test else ' 失敗'}")
+    print(f"   - 重複匯入檢查：{' 成功' if repeat_import_test else ' 失敗'}")
+    print(f"   - 無效 ID 處理：{' 成功' if invalid_id_test else ' 失敗'}")
     
     if all([import_test, export_test, repeat_import_test, invalid_id_test]):
         print("\n🎊 所有測試通過！匯入和匯出 API 運作正常。")
         print(f"🌐 API 文檔：http://localhost:8000/docs")
         print(f"🔗 測試用的 Process ID：{process_id}")
     else:
-        print("\n⚠️  部分測試失敗，請檢查 API 實作。")
+        print("\n  部分測試失敗，請檢查 API 實作。")
 
 
 if __name__ == "__main__":

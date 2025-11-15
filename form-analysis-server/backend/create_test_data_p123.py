@@ -228,8 +228,8 @@ async def create_test_data():
             session.add_all(test_records)
             await session.commit()
             
-            print(f"✅ 成功創建 {len(test_records)} 筆測試資料")
-            print("\n📊 測試資料摘要:")
+            print(f" 成功創建 {len(test_records)} 筆測試資料")
+            print("\n 測試資料摘要:")
             print("- 批號 2503033_01: P1(2筆) + P2(2筆) + P3(2筆)")
             print("- 批號 2503044_01: P1(1筆) + P2(1筆) + P3(1筆)")  
             print("- 批號 2503055_01: P2(1筆)")
@@ -254,7 +254,7 @@ async def create_test_data():
             
         except Exception as e:
             await session.rollback()
-            print(f"❌ 創建測試資料失敗: {e}")
+            print(f" 創建測試資料失敗: {e}")
             raise
         finally:
             await engine.dispose()
@@ -268,12 +268,12 @@ async def main():
     try:
         await create_test_data()
         print("=" * 50)
-        print("✅ 測試資料創建完成！")
-        print("📄 資料庫檔案: ./test_p123.db")
+        print(" 測試資料創建完成！")
+        print(" 資料庫檔案: ./test_p123.db")
         
     except Exception as e:
         print("=" * 50)
-        print(f"❌ 創建失敗: {e}")
+        print(f" 創建失敗: {e}")
         sys.exit(1)
 
 

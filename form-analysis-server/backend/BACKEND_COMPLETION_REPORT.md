@@ -2,27 +2,27 @@
 
 ## 🎉 任務完成狀態
 
-### ✅ 已完成的任務
+###  已完成的任務
 
-1. **T006: SQLAlchemy 2.x 模型** ✅
+1. **T006: SQLAlchemy 2.x 模型** 
    - 三個核心模型：`UploadJob`、`Record`、`UploadError`
    - 完整的關聯設定（一對多關係）
    - UUID 主鍵 + 適當的索引設計
    - 級聯刪除配置
 
-2. **T007: Alembic 資料庫遷移** ✅
+2. **T007: Alembic 資料庫遷移** 
    - 完整的 Alembic 設定
    - 初始遷移腳本生成
    - 離線 SQL 腳本支援
    - 開發環境 SQLite 設定
 
-3. **T008: Pydantic v2 Schemas** ✅
+3. **T008: Pydantic v2 Schemas** 
    - Create/Read schemas 全套
    - 欄位驗證器（批號格式驗證）
    - JSON 序列化支援
    - OpenAPI 文件範例
 
-## 📁 檔案結構
+##  檔案結構
 
 ```
 backend/
@@ -54,7 +54,7 @@ backend/
     └── simple_test.py          # 基礎連線測試
 ```
 
-## 🔧 技術特點
+##  技術特點
 
 ### SQLAlchemy 2.x 模型
 - **現代化語法**: 使用 `Mapped` 類型註解
@@ -90,21 +90,21 @@ upload_jobs 1:N upload_errors
 
 ### SQLAlchemy 測試結果
 ```
-✅ 表格創建 (3個表格，完整 DDL)
-✅ CRUD 操作 (創建、讀取、更新)
-✅ 關聯查詢 (1:N 關係正確)
-✅ 複雜查詢 (LIKE、狀態篩選)
-✅ 統計功能 (計數、彙總)
+ 表格創建 (3個表格，完整 DDL)
+ CRUD 操作 (創建、讀取、更新)
+ 關聯查詢 (1:N 關係正確)
+ 複雜查詢 (LIKE、狀態篩選)
+ 統計功能 (計數、彙總)
 ```
 
 ### Pydantic 測試結果  
 ```
-✅ Create schemas 驗證
-✅ 欄位驗證器 (批號格式)
-✅ 錯誤處理 (ValidationError)
-✅ JSON 序列化 (datetime 轉換)
-✅ Schema 生成 (OpenAPI)
-✅ 範例資料 (文件用)
+ Create schemas 驗證
+ 欄位驗證器 (批號格式)
+ 錯誤處理 (ValidationError)
+ JSON 序列化 (datetime 轉換)
+ Schema 生成 (OpenAPI)
+ 範例資料 (文件用)
 ```
 
 ## 🚀 開發環境設定
@@ -160,4 +160,4 @@ upload_jobs 1:N upload_errors
 - **測試腳本**: `manual_test.py`, `test_schemas.py`
 - **遷移腳本**: `alembic/versions/`
 
-**狀態**: ✅ 資料庫層開發完成，可開始 API 層開發
+**狀態**:  資料庫層開發完成，可開始 API 層開發

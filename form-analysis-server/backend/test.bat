@@ -6,14 +6,14 @@ echo ===============================================
 REM 檢查 Python 是否可用
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ❌ Python 未安裝或未加入 PATH
+    echo  Python 未安裝或未加入 PATH
     pause
     exit /b 1
 )
 
 REM 檢查虛擬環境
 if not exist ".venv\Scripts\python.exe" (
-    echo ❌ 虛擬環境不存在，請先運行 setup.bat
+    echo  虛擬環境不存在，請先運行 setup.bat
     pause
     exit /b 1
 )
@@ -26,7 +26,7 @@ echo 📦 安裝測試依賴...
 python -m pip install -r requirements-test.txt
 
 if %errorlevel% neq 0 (
-    echo ❌ 測試依賴安裝失敗
+    echo  測試依賴安裝失敗
     pause
     exit /b 1
 )
@@ -55,14 +55,14 @@ echo 🚀 執行測試模式: %1
 python run_tests.py %1 %2 %3 %4 %5
 
 if %errorlevel% neq 0 (
-    echo ❌ 測試失敗
+    echo  測試失敗
     pause
     exit /b 1
 )
 
-echo ✅ 測試完成
+echo  測試完成
 if "%1"=="coverage" (
-    echo 📊 覆蓋率報告: htmlcov\index.html
+    echo  覆蓋率報告: htmlcov\index.html
     echo 是否要開啟報告? (y/n)
     set /p choice=
     if /i "%choice%"=="y" start htmlcov\index.html

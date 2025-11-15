@@ -127,7 +127,7 @@ class TestUploadErrorModel:
             assert error.error_code == test_case["error_code"]
             assert error.message == test_case["message"]
             
-            print(f"✅ {test_case['name']} 測試通過")
+            print(f" {test_case['name']} 測試通過")
     
     @pytest.mark.asyncio
     async def test_upload_error_foreign_key_constraint(self, db_session, clean_db):
@@ -148,10 +148,10 @@ class TestUploadErrorModel:
             # 如果沒有錯誤，驗證記錄確實被創建了
             await db_session.refresh(error)
             assert error.job_id == fake_job_id
-            print("ℹ️  SQLite 記憶體模式允許了外鍵約束違反")
+            print("  SQLite 記憶體模式允許了外鍵約束違反")
         except IntegrityError:
             # 如果有錯誤，這是期望的行為
-            print("✅ 外鍵約束正確執行")
+            print(" 外鍵約束正確執行")
             pass
     
     @pytest.mark.asyncio
@@ -315,7 +315,7 @@ class TestUploadErrorModel:
             assert error.message == message
             assert error.row_index == i
             
-            print(f"✅ {field} - {error_code} 測試通過")
+            print(f" {field} - {error_code} 測試通過")
     
     @pytest.mark.asyncio
     async def test_upload_error_row_index_variations(self, db_session, clean_db):
@@ -347,4 +347,4 @@ class TestUploadErrorModel:
             assert error.row_index == row_index
             assert f"第 {row_index} 行錯誤" in error.message
             
-            print(f"✅ 行索引 {row_index} 測試通過")
+            print(f" 行索引 {row_index} 測試通過")

@@ -90,13 +90,13 @@ async def test_manual_models():
             expire_on_commit=False
         )
         
-        print("🔧 創建資料庫表格...")
+        print(" 創建資料庫表格...")
         
         # 創建所有表格
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         
-        print("✅ 表格創建成功!\n")
+        print(" 表格創建成功!\n")
         
         # 測試 CRUD 操作
         async with session_factory() as session:
@@ -112,7 +112,7 @@ async def test_manual_models():
             await session.commit()
             await session.refresh(job)
             
-            print(f"✅ 創建工作: {job.id} - {job.filename}")
+            print(f" 創建工作: {job.id} - {job.filename}")
             
             # 2. 創建 Record
             record1 = Record(
@@ -140,8 +140,8 @@ async def test_manual_models():
             await session.refresh(record1)
             await session.refresh(record2)
             
-            print(f"✅ 創建記錄1: {record1.id} - {record1.lot_no}")
-            print(f"✅ 創建記錄2: {record2.id} - {record2.lot_no}")
+            print(f" 創建記錄1: {record1.id} - {record1.lot_no}")
+            print(f" 創建記錄2: {record2.id} - {record2.lot_no}")
             
             # 3. 創建 UploadError
             error = UploadError(
@@ -153,10 +153,10 @@ async def test_manual_models():
             await session.commit()
             await session.refresh(error)
             
-            print(f"✅ 創建錯誤: {error.id}")
+            print(f" 創建錯誤: {error.id}")
             
             # 4. 測試關聯查詢
-            print(f"\n🔍 測試關聯查詢...")
+            print(f"\n 測試關聯查詢...")
             
             # 查詢工作及其記錄
             result = await session.execute(
@@ -191,11 +191,11 @@ async def test_manual_models():
             
             await session.commit()
             
-            print(f"✅ 更新工作狀態為: {job_with_data.status}")
-            print(f"✅ 設置統計: 總計{job_with_data.total_records}, 成功{job_with_data.success_records}, 錯誤{job_with_data.error_records}")
+            print(f" 更新工作狀態為: {job_with_data.status}")
+            print(f" 設置統計: 總計{job_with_data.total_records}, 成功{job_with_data.success_records}, 錯誤{job_with_data.error_records}")
             
             # 6. 測試查詢統計
-            print(f"\n📊 測試查詢統計...")
+            print(f"\n 測試查詢統計...")
             
             all_jobs = await session.execute(select(UploadJob))
             job_count = len(all_jobs.scalars().all())
@@ -211,7 +211,7 @@ async def test_manual_models():
             print(f"   總錯誤數: {error_count}")
             
             # 7. 測試複雜查詢
-            print(f"\n🔍 測試複雜查詢...")
+            print(f"\n 測試複雜查詢...")
             
             # 查詢特定批號
             lot_result = await session.execute(
@@ -232,16 +232,16 @@ async def test_manual_models():
         print(f"\n🎉 手動模型測試全部通過!")
         print(f"   資料庫檔案: {Path('manual_test.db').absolute()}")
         print(f"\n📋 測試覆蓋:")
-        print(f"   ✅ 表格創建")
-        print(f"   ✅ CRUD 操作 (創建、讀取、更新)")
-        print(f"   ✅ 關聯查詢")
-        print(f"   ✅ 複雜查詢")
-        print(f"   ✅ 統計功能")
+        print(f"    表格創建")
+        print(f"    CRUD 操作 (創建、讀取、更新)")
+        print(f"    關聯查詢")
+        print(f"    複雜查詢")
+        print(f"    統計功能")
         
         return True
         
     except Exception as e:
-        print(f"❌ 測試失敗: {e}")
+        print(f" 測試失敗: {e}")
         import traceback
         traceback.print_exc()
         return False

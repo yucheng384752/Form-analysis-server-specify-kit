@@ -57,20 +57,20 @@ def test_upload_and_get_process_id():
         
         response = requests.post(f"{API_BASE_URL}/api/upload", files=files)
         
-        print(f"📊 上傳回應狀態碼：{response.status_code}")
+        print(f" 上傳回應狀態碼：{response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
             process_id = result.get('process_id')
-            print(f"✅ 檔案上傳成功，Process ID: {process_id}")
+            print(f" 檔案上傳成功，Process ID: {process_id}")
             print(f"📈 統計：總行數 {result.get('total_rows')}, 有效 {result.get('valid_rows')}, 錯誤 {result.get('invalid_rows')}")
             return process_id
         else:
-            print(f"❌ 上傳失敗：{response.text}")
+            print(f" 上傳失敗：{response.text}")
             return None
             
     except Exception as e:
-        print(f"❌ 上傳請求失敗：{e}")
+        print(f" 上傳請求失敗：{e}")
         return None
 
 
@@ -88,26 +88,26 @@ def test_validate_api(process_id, page=1, page_size=10):
         
         response = requests.get(f"{API_BASE_URL}/api/validate", params=params)
         
-        print(f"📊 驗證查詢狀態碼：{response.status_code}")
+        print(f" 驗證查詢狀態碼：{response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
             
-            print("✅ 驗證結果查詢成功")
+            print(" 驗證結果查詢成功")
             print(f"📂 檔案：{result['filename']}")
             print(f"🏷️  狀態：{result['status']}")
-            print(f"⏰ 建立時間：{result['created_at']}")
+            print(f" 建立時間：{result['created_at']}")
             
             # 統計資訊
             stats = result['statistics']
-            print(f"\n📊 統計資訊：")
+            print(f"\n 統計資訊：")
             print(f"   - 總行數：{stats['total_rows']}")
             print(f"   - 有效行數：{stats['valid_rows']}")
             print(f"   - 錯誤行數：{stats['invalid_rows']}")
             
             # 錯誤列表
             errors = result['errors']
-            print(f"\n❌ 錯誤項目（當前頁面 {len(errors)} 筆）：")
+            print(f"\n 錯誤項目（當前頁面 {len(errors)} 筆）：")
             for i, error in enumerate(errors, 1):
                 print(f"   {i}. 行 {error['row_index']}, 欄位 '{error['field']}'")
                 print(f"      錯誤代碼：{error['error_code']}")
@@ -116,7 +116,7 @@ def test_validate_api(process_id, page=1, page_size=10):
             
             # 分頁資訊
             pagination = result['pagination']
-            print(f"📄 分頁資訊：")
+            print(f" 分頁資訊：")
             print(f"   - 當前頁：{pagination['page']} / {pagination['total_pages']}")
             print(f"   - 每頁項目：{pagination['page_size']}")
             print(f"   - 總錯誤數：{pagination['total_errors']}")
@@ -127,14 +127,14 @@ def test_validate_api(process_id, page=1, page_size=10):
             
         elif response.status_code == 404:
             error_data = response.json()
-            print(f"❌ 找不到工作：{error_data}")
+            print(f" 找不到工作：{error_data}")
             return False
         else:
-            print(f"❌ 查詢失敗：{response.text}")
+            print(f" 查詢失敗：{response.text}")
             return False
             
     except Exception as e:
-        print(f"❌ 查詢請求失敗：{e}")
+        print(f" 查詢請求失敗：{e}")
         return False
 
 
@@ -149,19 +149,19 @@ def test_invalid_process_id():
         params = {'process_id': invalid_uuid}
         response = requests.get(f"{API_BASE_URL}/api/validate", params=params)
         
-        print(f"📊 無效 ID 查詢狀態碼：{response.status_code}")
+        print(f" 無效 ID 查詢狀態碼：{response.status_code}")
         
         if response.status_code == 404:
             result = response.json()
-            print("✅ 正確回傳 404 錯誤")
+            print(" 正確回傳 404 錯誤")
             print(f"📝 錯誤訊息：{result}")
             return True
         else:
-            print(f"❌ 未正確處理無效 ID：{response.text}")
+            print(f" 未正確處理無效 ID：{response.text}")
             return False
             
     except Exception as e:
-        print(f"❌ 無效 ID 測試失敗：{e}")
+        print(f" 無效 ID 測試失敗：{e}")
         return False
 
 
@@ -193,17 +193,17 @@ def main():
     try:
         response = requests.get(f"{API_BASE_URL}/")
         if response.status_code != 200:
-            print("❌ API 伺服器未運行，請先啟動伺服器")
+            print(" API 伺服器未運行，請先啟動伺服器")
             return
     except Exception as e:
-        print(f"❌ 無法連接到 API 伺服器：{e}")
+        print(f" 無法連接到 API 伺服器：{e}")
         print("請確保伺服器已啟動在 http://localhost:8000")
         return
     
     # 上傳檔案
     process_id = test_upload_and_get_process_id()
     if not process_id:
-        print("❌ 無法獲取 process_id，測試終止")
+        print(" 無法獲取 process_id，測試終止")
         return
     
     # 測試基本查詢
@@ -218,16 +218,16 @@ def main():
     # 總結
     print("\n" + "=" * 60)
     print("📋 測試結果總結：")
-    print(f"   - 基本查詢：{'✅ 成功' if basic_test else '❌ 失敗'}")
-    print(f"   - 無效 ID 處理：{'✅ 成功' if invalid_id_test else '❌ 失敗'}")
-    print(f"   - 分頁功能：{'✅ 成功' if pagination_test else '❌ 失敗'}")
+    print(f"   - 基本查詢：{' 成功' if basic_test else ' 失敗'}")
+    print(f"   - 無效 ID 處理：{' 成功' if invalid_id_test else ' 失敗'}")
+    print(f"   - 分頁功能：{' 成功' if pagination_test else ' 失敗'}")
     
     if all([basic_test, invalid_id_test, pagination_test]):
         print("\n🎊 所有測試通過！驗證結果 API 運作正常。")
         print(f"🌐 API 文檔：http://localhost:8000/docs")
         print(f"🔗 測試用的 Process ID：{process_id}")
     else:
-        print("\n⚠️  部分測試失敗，請檢查 API 實作。")
+        print("\n  部分測試失敗，請檢查 API 實作。")
 
 
 if __name__ == "__main__":

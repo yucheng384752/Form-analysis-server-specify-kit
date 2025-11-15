@@ -14,19 +14,19 @@ while ! pg_isready -h db -p 5432 -U ${POSTGRES_USER:-app} > /dev/null 2>&1; do
     echo "   Database is not ready yet, waiting..."
     sleep 2
 done
-echo "✅ Database is ready!"
+echo " Database is ready!"
 
 # Check if this is the first time setup
 echo ""
-echo "🔍 Checking database initialization status..."
+echo " Checking database initialization status..."
 
 # Run Alembic migrations
 echo ""
-echo "🔄 Running database migrations..."
+echo " Running database migrations..."
 if alembic upgrade head; then
-    echo "✅ Database migrations completed successfully!"
+    echo " Database migrations completed successfully!"
 else
-    echo "❌ Database migration failed!"
+    echo " Database migration failed!"
     echo "   Trying to initialize database from scratch..."
     
     # If migration fails, try to create initial revision
@@ -37,19 +37,19 @@ else
     
     # Try upgrade again
     if alembic upgrade head; then
-        echo "✅ Database initialized successfully!"
+        echo " Database initialized successfully!"
     else
-        echo "⚠️  Migration failed, but will continue startup..."
+        echo "  Migration failed, but will continue startup..."
         echo "   Please check database connection and schema manually"
     fi
 fi
 
 # Create uploads directory if it doesn't exist
 echo ""
-echo "📁 Checking uploads directory..."
+echo " Checking uploads directory..."
 mkdir -p /app/uploads
 chmod 777 /app/uploads
-echo "✅ Uploads directory ready"
+echo " Uploads directory ready"
 
 # Log startup information
 echo ""

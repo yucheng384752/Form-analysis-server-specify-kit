@@ -23,11 +23,11 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-✅ **SDD 流程**: 規格已完成 → 本計畫 → 任務分解 → 實作  
-✅ **前後端分離**: FastAPI (後端) + React (前端) + Docker Compose  
-✅ **程式碼品質**: ruff + black + mypy (Python), eslint + prettier (TS), pre-commit  
-✅ **測試與 CI**: pytest + vitest, GitHub Actions 設定 lint → test → type-check  
-✅ **可觀測性**: 中介層記錄 request_id, 處理時間, 錯誤追蹤, 結構化日誌  
+ **SDD 流程**: 規格已完成 → 本計畫 → 任務分解 → 實作  
+ **前後端分離**: FastAPI (後端) + React (前端) + Docker Compose  
+ **程式碼品質**: ruff + black + mypy (Python), eslint + prettier (TS), pre-commit  
+ **測試與 CI**: pytest + vitest, GitHub Actions 設定 lint → test → type-check  
+ **可觀測性**: 中介層記錄 request_id, 處理時間, 錯誤追蹤, 結構化日誌  
 
 **通過條件**: 所有工具設定與 Docker 環境符合憲章要求
 
@@ -637,7 +637,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onUpload }) => {
         <ProgressBar message="上傳檔案中..." />
       ) : (
         <>
-          <div className="upload-icon">📁</div>
+          <div className="upload-icon"></div>
           <p>拖拽檔案到此處或點擊選擇檔案</p>
           <p className="file-info">支援 CSV, Excel (.xlsx) 檔案，最大 10MB</p>
           <input
@@ -918,7 +918,7 @@ docker-compose up -d db
 - 完整的操作審計日誌
 - 處理時間與效能監控
 
-## 🔧 API 規格
+##  API 規格
 
 ### 核心端點
 
@@ -970,7 +970,7 @@ docker-compose -f docker-compose.test.yml up --abort-on-container-exit
 - `backend/tests/fixtures/invalid_sample.csv` - 包含錯誤的資料
 - `backend/tests/fixtures/sample.xlsx` - Excel 格式範例
 
-## 🔍 驗證規則
+##  驗證規則
 
 ### 必需欄位
 - `lot_no`: 批號 (格式: 7位數字_2位數字，如 1234567_01)

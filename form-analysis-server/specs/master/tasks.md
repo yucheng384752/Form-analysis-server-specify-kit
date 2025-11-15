@@ -104,15 +104,15 @@
 - [ ] Docker healthcheck 可以正常使用此端點
 - [ ] 有適當的錯誤處理 (資料庫連線失敗時)
 
-#### T006 [Backend] SQLAlchemy 模型與資料庫設定 ✅ **COMPLETED**
+#### T006 [Backend] SQLAlchemy 模型與資料庫設定  **COMPLETED**
 **Story**: Data Layer  
 **Description**: 建立資料庫模型 (upload_jobs, upload_errors, records)，設定 SQLAlchemy 連線
 **Files**:
-- `/backend/app/models/__init__.py` ✅
-- `/backend/app/models/upload_job.py` ✅ (renamed)
-- `/backend/app/models/upload_error.py` ✅ (renamed) 
-- `/backend/app/models/record.py` ✅ (renamed)
-- `/backend/app/core/database.py` ✅
+- `/backend/app/models/__init__.py` 
+- `/backend/app/models/upload_job.py`  (renamed)
+- `/backend/app/models/upload_error.py`  (renamed) 
+- `/backend/app/models/record.py`  (renamed)
+- `/backend/app/core/database.py` 
 
 **DoD**:
 - [x] 所有資料表模型符合 spec 中的 schema 定義
@@ -122,15 +122,15 @@
 - [x] 資料庫連線池設定適當
 - [x] 所有模型都有適當的 __repr__ 方法
 
-#### T007 [Backend] Alembic Migration 設定與初始 Schema ✅ **COMPLETED**
+#### T007 [Backend] Alembic Migration 設定與初始 Schema  **COMPLETED**
 **Story**: Data Layer  
 **Description**: 設定 Alembic migration 環境，建立初始資料庫 schema migration
 **Files**:
-- `/backend/alembic.ini` ✅
-- `/backend/alembic/env.py` ✅
-- `/backend/alembic/versions/2025_11_08_0122-ae889647f4f2_create_initial_tables_upload_jobs_.py` ✅
-- `/backend/database_schema.sql` ✅ (SQL script generated)
-- `/backend/DATABASE_SETUP.md` ✅ (setup guide)
+- `/backend/alembic.ini` 
+- `/backend/alembic/env.py` 
+- `/backend/alembic/versions/2025_11_08_0122-ae889647f4f2_create_initial_tables_upload_jobs_.py` 
+- `/backend/database_schema.sql`  (SQL script generated)
+- `/backend/DATABASE_SETUP.md`  (setup guide)
 
 **DoD**:
 - [x] Alembic 環境正確設定並可連接資料庫
@@ -140,14 +140,14 @@
 - [x] 支援 async SQLAlchemy 設定
 - [ ] `alembic upgrade head` 需要 PostgreSQL 連線 (待資料庫啟動)
 
-#### T008 [Backend] Pydantic Schemas 定義 ✅ **COMPLETED**
+#### T008 [Backend] Pydantic Schemas 定義  **COMPLETED**
 **Story**: API Layer  
 **Description**: 建立 API 請求/回應的 Pydantic models，包含驗證規則
 **Files**:
-- `/backend/app/schemas/__init__.py` ✅
-- `/backend/app/schemas/upload_job_schema.py` ✅ (Create/Read/Update)
-- `/backend/app/schemas/upload_error_schema.py` ✅ (Create/Read)
-- `/backend/app/schemas/record_schema.py` ✅ (Create/Read with validation)
+- `/backend/app/schemas/__init__.py` 
+- `/backend/app/schemas/upload_job_schema.py`  (Create/Read/Update)
+- `/backend/app/schemas/upload_error_schema.py`  (Create/Read)
+- `/backend/app/schemas/record_schema.py`  (Create/Read with validation)
 
 **DoD**:
 - [x] 所有主要模型都有對應的 request/response schema

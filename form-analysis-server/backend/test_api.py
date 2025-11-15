@@ -27,7 +27,7 @@ def test_endpoints():
             "success": response.status_code == 200,
             "data": response.json() if response.status_code == 200 else None
         })
-        print(f"✅ Root endpoint: {response.status_code}")
+        print(f" Root endpoint: {response.status_code}")
     except Exception as e:
         results.append({
             "endpoint": "/",
@@ -35,7 +35,7 @@ def test_endpoints():
             "success": False,
             "error": str(e)
         })
-        print(f"❌ Root endpoint failed: {e}")
+        print(f" Root endpoint failed: {e}")
     
     # Test basic health check
     print("\nTesting basic health check...")
@@ -47,7 +47,7 @@ def test_endpoints():
             "success": response.status_code == 200,
             "data": response.json() if response.status_code == 200 else None
         })
-        print(f"✅ Basic health check: {response.status_code}")
+        print(f" Basic health check: {response.status_code}")
     except Exception as e:
         results.append({
             "endpoint": "/healthz",
@@ -55,7 +55,7 @@ def test_endpoints():
             "success": False,
             "error": str(e)
         })
-        print(f"❌ Basic health check failed: {e}")
+        print(f" Basic health check failed: {e}")
     
     # Test liveness check
     print("\nTesting liveness check...")
@@ -67,7 +67,7 @@ def test_endpoints():
             "success": response.status_code == 200,
             "data": response.json() if response.status_code == 200 else None
         })
-        print(f"✅ Liveness check: {response.status_code}")
+        print(f" Liveness check: {response.status_code}")
     except Exception as e:
         results.append({
             "endpoint": "/healthz/live",
@@ -75,7 +75,7 @@ def test_endpoints():
             "success": False,
             "error": str(e)
         })
-        print(f"❌ Liveness check failed: {e}")
+        print(f" Liveness check failed: {e}")
     
     # Test docs endpoint
     print("\nTesting API docs...")
@@ -86,7 +86,7 @@ def test_endpoints():
             "status": response.status_code,
             "success": response.status_code == 200,
         })
-        print(f"✅ API docs: {response.status_code}")
+        print(f" API docs: {response.status_code}")
     except Exception as e:
         results.append({
             "endpoint": "/docs",
@@ -94,21 +94,21 @@ def test_endpoints():
             "success": False,
             "error": str(e)
         })
-        print(f"❌ API docs failed: {e}")
+        print(f" API docs failed: {e}")
     
     # Summary
     successful = sum(1 for r in results if r.get("success", False))
     total = len(results)
     
-    print(f"\n📊 Test Summary:")
-    print(f"   ✅ Successful: {successful}/{total}")
-    print(f"   ❌ Failed: {total - successful}/{total}")
+    print(f"\n Test Summary:")
+    print(f"    Successful: {successful}/{total}")
+    print(f"    Failed: {total - successful}/{total}")
     
     if successful == total:
         print("\n🎉 All tests passed! The API is working correctly.")
         return True
     else:
-        print("\n⚠️  Some tests failed. Check the details above.")
+        print("\n  Some tests failed. Check the details above.")
         return False
 
 if __name__ == "__main__":

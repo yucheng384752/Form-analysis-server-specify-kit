@@ -43,12 +43,12 @@ def print_test(description: str):
 
 def print_pass(message: str):
     """打印通過消息"""
-    print(f"✅ {message}")
+    print(f" {message}")
     test_results["passed"] += 1
 
 def print_fail(message: str):
     """打印失敗消息"""
-    print(f"❌ {message}")
+    print(f" {message}")
     test_results["failed"] += 1
 
 def print_skip(message: str):
@@ -58,12 +58,12 @@ def print_skip(message: str):
 
 def print_warning(message: str):
     """打印警告消息"""
-    print(f"⚠️  {message}")
+    print(f"  {message}")
     test_results["warnings"] += 1
 
 def print_info(message: str):
     """打印信息消息"""
-    print(f"ℹ️  {message}")
+    print(f"  {message}")
 
 def check_database_structure():
     """驗證資料庫結構"""
@@ -395,19 +395,19 @@ def print_summary():
     
     total = sum(test_results.values())
     
-    print(f"📊 測試統計:")
-    print(f"   ✅ 通過: {test_results['passed']}")
-    print(f"   ❌ 失敗: {test_results['failed']}")
+    print(f" 測試統計:")
+    print(f"    通過: {test_results['passed']}")
+    print(f"    失敗: {test_results['failed']}")
     print(f"   ⏭️  跳過: {test_results['skipped']}")
-    print(f"   ⚠️  警告: {test_results['warnings']}")
+    print(f"     警告: {test_results['warnings']}")
     print(f"   📝 總計: {total}")
     
     if test_results['failed'] == 0:
         print(f"\n🎉 恭喜！所有關鍵測試都通過了！")
         if test_results['warnings'] > 0:
-            print(f"⚠️  注意: 有 {test_results['warnings']} 個警告項目需要關注")
+            print(f"  注意: 有 {test_results['warnings']} 個警告項目需要關注")
     else:
-        print(f"\n⚠️  有 {test_results['failed']} 個測試失敗，需要修復")
+        print(f"\n  有 {test_results['failed']} 個測試失敗，需要修復")
     
     # 使用建議
     print(f"\n📋 使用建議:")

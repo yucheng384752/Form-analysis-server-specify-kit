@@ -75,14 +75,14 @@ class TestFullFlowIntegration:
         assert "message" in upload_data
         process_id = upload_data["process_id"]
         
-        print(f"✅ 上傳成功，process_id: {process_id}")
+        print(f" 上傳成功，process_id: {process_id}")
         print(f"   回應訊息: {upload_data['message']}")
         
         # 等待驗證完成（模擬非同步處理）
         await asyncio.sleep(0.1)
         
         # ========== 步驟 2：查詢工作狀態 ==========
-        print("\n📊 步驟 2：查詢工作狀態")
+        print("\n 步驟 2：查詢工作狀態")
         
         status_response = await async_client.get(f"/api/upload/{process_id}/status")
         assert status_response.status_code == 200
@@ -93,14 +93,14 @@ class TestFullFlowIntegration:
         assert status_data["error_count"] == 2
         assert status_data["valid_count"] == 3
         
-        print(f"✅ 工作狀態查詢成功")
+        print(f" 工作狀態查詢成功")
         print(f"   狀態: {status_data['status']}")
         print(f"   總列數: {status_data['total_rows']}")
         print(f"   錯誤數: {status_data['error_count']}")
         print(f"   有效數: {status_data['valid_count']}")
         
         # ========== 步驟 3：查詢驗證結果 ==========
-        print("\n🔍 步驟 3：查詢驗證結果（分頁）")
+        print("\n 步驟 3：查詢驗證結果（分頁）")
         
         # 查詢第一頁錯誤
         validate_response = await async_client.get(
@@ -131,7 +131,7 @@ class TestFullFlowIntegration:
         assert summary["error_count"] == 2
         assert summary["valid_count"] == 3
         
-        print(f"✅ 驗證結果查詢成功")
+        print(f" 驗證結果查詢成功")
         print(f"   錯誤數量: {len(errors)}")
         print(f"   分頁資訊: 第 {pagination['current_page']}/{pagination['total_pages']} 頁")
         
@@ -147,7 +147,7 @@ class TestFullFlowIntegration:
             print(f"   列 {error['row_index']}: {error['field']} - {error['message']}")
         
         # ========== 步驟 4：匯出錯誤 CSV ==========
-        print("\n📥 步驟 4：匯出錯誤 CSV")
+        print("\n 步驟 4：匯出錯誤 CSV")
         
         csv_response = await async_client.get(f"/api/errors.csv?process_id={process_id}")
         assert csv_response.status_code == 200
@@ -163,12 +163,12 @@ class TestFullFlowIntegration:
         assert len(csv_lines) >= 3  # 標頭 + 2 個錯誤列
         assert csv_lines[0] == "row_index,field,error_code,message"
         
-        print(f"✅ 錯誤 CSV 匯出成功")
+        print(f" 錯誤 CSV 匯出成功")
         print(f"   CSV 列數: {len(csv_lines)}")
         print(f"   檔案大小: {len(csv_content)} 字元")
         
         # ========== 步驟 5：匯入有效資料 ==========
-        print("\n📊 步驟 5：匯入有效資料")
+        print("\n 步驟 5：匯入有效資料")
         
         import_response = await async_client.post(
             "/api/import",
@@ -183,14 +183,14 @@ class TestFullFlowIntegration:
         assert "elapsed_ms" in import_data
         assert import_data["process_id"] == process_id
         
-        print(f"✅ 資料匯入成功")
+        print(f" 資料匯入成功")
         print(f"   匯入列數: {import_data['imported_rows']}")
         print(f"   跳過列數: {import_data['skipped_rows']}")
         print(f"   處理時間: {import_data['elapsed_ms']} ms")
         print(f"   回應訊息: {import_data['message']}")
         
         # ========== 步驟 6：驗證最終狀態 ==========
-        print("\n🔍 步驟 6：驗證最終狀態")
+        print("\n 步驟 6：驗證最終狀態")
         
         final_status_response = await async_client.get(f"/api/upload/{process_id}/status")
         assert final_status_response.status_code == 200
@@ -198,7 +198,7 @@ class TestFullFlowIntegration:
         
         assert final_status_data["status"] == "IMPORTED"
         
-        print(f"✅ 最終狀態確認")
+        print(f" 最終狀態確認")
         print(f"   狀態: {final_status_data['status']}")
         
         # ========== 步驟 7：防重複匯入測試 ==========
@@ -213,7 +213,7 @@ class TestFullFlowIntegration:
         
         assert "already_imported" in duplicate_error["detail"]["error_code"].lower()
         
-        print(f"✅ 防重複匯入測試通過")
+        print(f" 防重複匯入測試通過")
         print(f"   錯誤代碼: {duplicate_error['detail']['error_code']}")
         
         print("\n🎉 完整流程整合測試成功完成！")
@@ -250,7 +250,7 @@ class TestFullFlowIntegration:
         csv_response = await async_client.get(f"/api/errors.csv?process_id={fake_uuid}")
         assert csv_response.status_code == 404
         
-        print("✅ 錯誤處理流程測試通過")
+        print(" 錯誤處理流程測試通過")
     
     async def test_pagination_workflow(self, async_client: AsyncClient, test_csv_file: str):
         """
@@ -292,7 +292,7 @@ class TestFullFlowIntegration:
         page2_row = page2_data["errors"][0]["row_index"]
         assert page1_row != page2_row
         
-        print("✅ 分頁功能測試通過")
+        print(" 分頁功能測試通過")
 
 if __name__ == "__main__":
     """直接執行測試"""

@@ -24,8 +24,8 @@ echo 🌍 正在打開瀏覽器...
 start http://localhost:5173
 
 echo.
-echo ✅ 服務啟動完成！
-echo 📊 後端 API: http://localhost:8000
+echo  服務啟動完成！
+echo  後端 API: http://localhost:8000
 echo 🌐 前端界面: http://localhost:5173
 echo 📚 API 文檔: http://localhost:8000/docs
 echo.

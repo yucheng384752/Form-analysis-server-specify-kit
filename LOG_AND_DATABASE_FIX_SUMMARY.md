@@ -27,14 +27,14 @@
 # 修改前
 structlog.configure(
     processors=processors,
-    logger_factory=structlog.WriteLoggerFactory(),  # ❌ 只寫入 stdout
+    logger_factory=structlog.WriteLoggerFactory(),  #  只寫入 stdout
     ...
 )
 
 # 修改後
 structlog.configure(
     processors=processors,
-    logger_factory=structlog.stdlib.LoggerFactory(),  # ✅ 整合 Python logging
+    logger_factory=structlog.stdlib.LoggerFactory(),  #  整合 Python logging
     ...
 )
 ```
@@ -50,7 +50,7 @@ logging.basicConfig(
     level=log_level,
     format="%(message)s",
     handlers=[file_handler, error_file_handler, console_handler],
-    force=True,  # ✅ 強制覆蓋現有配置
+    force=True,  #  強制覆蓋現有配置
 )
 ```
 
@@ -71,7 +71,7 @@ docker exec form_analysis_api ls -lh /app/logs/
 #### 驗證結果
 ```bash
 # 日誌檔案大小
--rw-r--r-- 1 app app 15K Nov 15 09:29 app.log  # ✅ 成功寫入
+-rw-r--r-- 1 app app 15K Nov 15 09:29 app.log  #  成功寫入
 -rw-r--r-- 1 app app   0 Nov  9 15:07 error.log
 ```
 
@@ -164,10 +164,10 @@ Files changed:
 | 特性 | WriteLoggerFactory | stdlib.LoggerFactory |
 |------|-------------------|---------------------|
 | 輸出方式 | 直接寫入 file-like 物件 | 透過 Python logging |
-| 檔案處理器 | ❌ 不支援 | ✅ 完全支援 |
-| RotatingFileHandler | ❌ 無效 | ✅ 有效 |
-| 日誌等級過濾 | ❌ 受限 | ✅ 完整支援 |
-| 多處理器輸出 | ❌ 困難 | ✅ 自動同步 |
+| 檔案處理器 |  不支援 |  完全支援 |
+| RotatingFileHandler |  無效 |  有效 |
+| 日誌等級過濾 |  受限 |  完整支援 |
+| 多處理器輸出 |  困難 |  自動同步 |
 
 **最佳實踐**:
 ```python
@@ -244,4 +244,4 @@ logging.basicConfig(
 
 **建立時間**: 2025-11-15  
 **最後更新**: 2025-11-15  
-**問題狀態**: ✅ 已解決
+**問題狀態**:  已解決

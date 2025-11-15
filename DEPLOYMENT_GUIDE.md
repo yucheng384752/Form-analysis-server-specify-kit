@@ -4,7 +4,7 @@
 
 ## 📋 部署前檢查清單
 
-### 🔍 當前電腦準備工作
+###  當前電腦準備工作
 
 #### 1. 清理專案（必做）
 ```bash
@@ -126,7 +126,7 @@ docker-compose up -d --build
 - [ ] 上傳測試檔案
 - [ ] 查詢功能測試
 
-## 🔧 常見問題排除
+##  常見問題排除
 
 ### Docker 相關問題
 
@@ -173,20 +173,20 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## 📁 檔案結構檢查
+##  檔案結構檢查
 
 部署後確認以下結構存在：
 ```
 form-analysis-sepc-kit/
-├── docs/                    # ✅ 文檔
-├── scripts/                 # ✅ 啟動腳本
-├── test-data/              # ✅ 測試資料
-├── form-analysis-server/   # ✅ 主應用
-│   ├── backend/           # ✅ 後端代碼
-│   ├── frontend/          # ✅ 前端代碼
-│   └── docker-compose.yml # ✅ Docker 配置
-├── README.md              # ✅ 說明文檔
-└── .env.example          # ✅ 環境配置範例
+├── docs/                    #  文檔
+├── scripts/                 #  啟動腳本
+├── test-data/              #  測試資料
+├── form-analysis-server/   #  主應用
+│   ├── backend/           #  後端代碼
+│   ├── frontend/          #  前端代碼
+│   └── docker-compose.yml #  Docker 配置
+├── README.md              #  說明文檔
+└── .env.example          #  環境配置範例
 ```
 
 ## ⚡ 快速驗證腳本
@@ -201,22 +201,22 @@ echo.
 echo "檢查 Docker..."
 docker --version
 if %errorlevel% neq 0 (
-    echo "❌ Docker 未安裝或未運行"
+    echo " Docker 未安裝或未運行"
     exit /b 1
 )
 
 echo "檢查專案結構..."
 if not exist "scripts\start-system.bat" (
-    echo "❌ 啟動腳本不存在"
+    echo " 啟動腳本不存在"
     exit /b 1
 )
 
 if not exist "form-analysis-server\docker-compose.yml" (
-    echo "❌ Docker Compose 檔案不存在"
+    echo " Docker Compose 檔案不存在"
     exit /b 1
 )
 
-echo "✅ 基本檢查通過"
+echo " 基本檢查通過"
 echo "執行 .\scripts\start-system.bat 來啟動系統"
 pause
 ```

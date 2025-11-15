@@ -248,13 +248,13 @@ export function QueryPage() {
           {/* 查詢說明 */}
           <div className="query-description">
             {queryType === 'lot_no' && (
-              <p>🔍 <strong>批號查詢：</strong>支援精確或模糊搜尋，例如: 2503033_01 或 2503033</p>
+              <p> <strong>批號查詢：</strong>支援精確或模糊搜尋，例如: 2503033_01 或 2503033</p>
             )}
             {queryType === 'product_name' && (
-              <p>🔍 <strong>產品名稱查詢：</strong>支援產品名稱的模糊搜尋</p>
+              <p> <strong>產品名稱查詢：</strong>支援產品名稱的模糊搜尋</p>
             )}
             {queryType === 'all' && (
-              <p>🔍 <strong>全域查詢：</strong>同時搜尋批號和產品名稱</p>
+              <p> <strong>全域查詢：</strong>同時搜尋批號和產品名稱</p>
             )}
           </div>
 
@@ -363,7 +363,7 @@ export function QueryPage() {
                           title="檢視詳細"
                           onClick={() => handleViewDetail(record)}
                         >
-                          🔍
+                          
                         </button>
                       </td>
                     </tr>

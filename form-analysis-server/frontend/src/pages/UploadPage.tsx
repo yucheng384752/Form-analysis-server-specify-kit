@@ -639,7 +639,7 @@ export function UploadPage() {
                     {buttonText}
                     {filesWithErrors.length > 0 && (
                       <span style={{ color: '#f59e0b', marginLeft: '8px' }}>
-                        ⚠️ {filesWithErrors.length} 個錯誤
+                         {filesWithErrors.length} 個錯誤
                       </span>
                     )}
                   </button>
@@ -671,7 +671,7 @@ export function UploadPage() {
 
       <Modal
         open={confirmTargetId !== null}
-        title="⚠️ 是否確認上傳"
+        title=" 是否確認上傳"
         onClose={() => setConfirmTargetId(null)}
         onConfirm={performImport}
         confirmText="確認匯入"
@@ -681,7 +681,7 @@ export function UploadPage() {
 
       <Modal
         open={showBatchImportConfirm}
-        title="⚠️ 是否確認批次匯入"
+        title=" 是否確認批次匯入"
         onClose={() => setShowBatchImportConfirm(false)}
         onConfirm={performBatchImport}
         confirmText="確認批次匯入"
@@ -862,7 +862,7 @@ function UploadedFileCard({
                   }, 100);
                 }}
               >
-                ⚠️ {file.validationErrors.length} 個錯誤
+                 {file.validationErrors.length} 個錯誤
               </span>
             )}
             {file.isValidated && !hasValidationErrors && (
@@ -983,7 +983,7 @@ function UploadedFileCard({
               color: '#dc2626',
               border: '1px solid #fecaca'
             }}>
-              ❌ 需要修正
+               需要修正
             </span>
           )}
 
@@ -1149,7 +1149,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
         </p>
         {file.validationErrors && file.validationErrors.length > 0 ? (
           <p style={{ margin: '0', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>
-            ⚠️ 紅色高亮的單元格表示有驗證錯誤，將滑鼠懸停查看詳情。修正錯誤後請重新驗證檔案。
+             紅色高亮的單元格表示有驗證錯誤，將滑鼠懸停查看詳情。修正錯誤後請重新驗證檔案。
           </p>
         ) : (
           <p style={{ margin: '0', fontSize: '0.75rem', color: '#059669', fontWeight: 'bold' }}>
@@ -1169,7 +1169,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
           boxShadow: '0 2px 4px rgba(220, 38, 38, 0.1)'
         }}>
           <h4 style={{ color: '#dc2626', marginBottom: '12px', fontSize: '16px', fontWeight: 'bold' }}>
-            ⚠️ 驗證錯誤詳情 ({file.validationErrors.length} 個錯誤)
+             驗證錯誤詳情 ({file.validationErrors.length} 個錯誤)
           </h4>
           <div className="error-list" style={{ maxHeight: '300px', overflowY: 'auto' }}>
             {file.validationErrors.slice(0, 10).map((error: any, index: number) => (

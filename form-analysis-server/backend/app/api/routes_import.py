@@ -360,24 +360,50 @@ async def import_data(
                 if 'production_date' not in known_fields:
                     known_fields['production_date'] = date.today()
                 
-                # 創建記錄
-                record = Record(
-                    data_type=data_type,
-                    additional_data=additional_fields if additional_fields else None,
-                    **known_fields
+                # 檢查是否已存在相同的 lot_no + data_type 記錄
+                from sqlalchemy import select
+                existing_stmt = select(Record).where(
+                    Record.lot_no == known_fields['lot_no'],
+                    Record.data_type == data_type
                 )
+                existing_result = await db.execute(existing_stmt)
+                existing_record = existing_result.scalar_one_or_none()
                 
-                db.add(record)
-                imported_rows += 1
-                
-                if imported_rows <= 3:  # 只記錄前3筆的詳細資訊
-                    logger.info("成功創建記錄", 
+                if existing_record:
+                    # 如果記錄已存在，更新它而不是創建新記錄
+                    for field, value in known_fields.items():
+                        if field != 'lot_no':  # lot_no 不需要更新
+                            setattr(existing_record, field, value)
+                    
+                    existing_record.data_type = data_type
+                    existing_record.additional_data = additional_fields if additional_fields else None
+                    
+                    logger.info("更新現有記錄", 
                                row_index=index,
                                lot_no=known_fields.get('lot_no'),
                                data_type=data_type.value,
-                               additional_fields_count=len(additional_fields),
-                               additional_fields=list(additional_fields.keys())[:5],
+                               record_id=str(existing_record.id),
                                process_id=str(request.process_id))
+                else:
+                    # 創建新記錄
+                    record = Record(
+                        data_type=data_type,
+                        additional_data=additional_fields if additional_fields else None,
+                        **known_fields
+                    )
+                    
+                    db.add(record)
+                    
+                    if imported_rows <= 3:  # 只記錄前3筆的詳細資訊
+                        logger.info("成功創建記錄", 
+                                   row_index=index,
+                                   lot_no=known_fields.get('lot_no'),
+                                   data_type=data_type.value,
+                                   additional_fields_count=len(additional_fields),
+                                   additional_fields=list(additional_fields.keys())[:5],
+                                   process_id=str(request.process_id))
+                
+                imported_rows += 1
                 
             except Exception as e:
                 logger.error("創建記錄失敗", 

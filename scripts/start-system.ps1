@@ -21,12 +21,12 @@ Write-Host "[1/5] 檢查 Docker 服務狀態..." -ForegroundColor Yellow
 try {
     docker --version | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Docker 服務正常" -ForegroundColor Green
+        Write-Host " Docker 服務正常" -ForegroundColor Green
     } else {
         throw "Docker 未正常運行"
     }
 } catch {
-    Write-Host "❌ Docker 未安裝或未啟動" -ForegroundColor Red
+    Write-Host " Docker 未安裝或未啟動" -ForegroundColor Red
     Write-Host "   請安裝 Docker Desktop 並確保服務正在運行" -ForegroundColor Red
     Read-Host "按 Enter 繼續"
     exit 1
@@ -34,7 +34,7 @@ try {
 
 # 檢查 docker-compose 檔案
 if (!(Test-Path "form-analysis-server\docker-compose.yml")) {
-    Write-Host "❌ 找不到 docker-compose.yml 檔案" -ForegroundColor Red
+    Write-Host " 找不到 docker-compose.yml 檔案" -ForegroundColor Red
     Write-Host "   請確認您在專案根目錄執行此腳本" -ForegroundColor Red
     Read-Host "按 Enter 繼續"
     exit 1
@@ -78,11 +78,11 @@ Write-Host "   資料庫管理: " -NoNewline -ForegroundColor White
 Write-Host "http://localhost:5050 (可選)" -ForegroundColor Cyan
 
 Write-Host ""
-Write-Host "📊 檢查服務狀態：" -ForegroundColor White
+Write-Host " 檢查服務狀態：" -ForegroundColor White
 docker-compose ps
 
 Write-Host ""
-Write-Host "🔧 常用指令：" -ForegroundColor White
+Write-Host " 常用指令：" -ForegroundColor White
 Write-Host "   查看日誌: docker-compose logs -f" -ForegroundColor Gray
 Write-Host "   停止服務: docker-compose down" -ForegroundColor Gray
 Write-Host "   重啟服務: docker-compose restart" -ForegroundColor Gray

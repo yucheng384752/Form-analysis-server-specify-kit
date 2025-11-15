@@ -14,20 +14,20 @@ echo [1/3] 停止所有服務...
 cd "%SERVER_PATH%"
 docker-compose down --remove-orphans
 if not errorlevel 1 (
-    echo ✅ 所有服務已停止
+    echo  所有服務已停止
 ) else (
-    echo ⚠️  停止服務時遇到問題
+    echo   停止服務時遇到問題
 )
 
 echo.
 echo [2/3] 清理監控腳本...
 if exist "%PROJECT_ROOT%\monitor_backend.bat" (
     del "%PROJECT_ROOT%\monitor_backend.bat"
-    echo ✅ 已清理後端監控腳本
+    echo  已清理後端監控腳本
 )
 if exist "%PROJECT_ROOT%\monitor_frontend.bat" (
     del "%PROJECT_ROOT%\monitor_frontend.bat"
-    echo ✅ 已清理前端監控腳本
+    echo  已清理前端監控腳本
 )
 
 echo.

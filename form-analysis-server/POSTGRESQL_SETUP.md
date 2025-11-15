@@ -1,6 +1,6 @@
 # PostgreSQL 配置說明
 
-## 📊 資料庫要求
+##  資料庫要求
 
 **系統固定使用 PostgreSQL 資料庫，不支援其他資料庫類型。**
 
@@ -52,7 +52,7 @@ GRANT ALL PRIVILEGES ON DATABASE form_analysis_db TO app;
 DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:5432/form_analysis_db
 ```
 
-## 🔧 配置檔案
+##  配置檔案
 
 ### `.env` 設定
 ```properties
@@ -68,12 +68,12 @@ API_PORT=8000
 
 ## 🛡️ 安全提醒
 
-- ✅ 只支援 PostgreSQL
-- ✅ 使用連接池
-- ✅ 異步操作
-- ✅ 自動重連
-- ❌ 不支援 SQLite
-- ❌ 不支援 MySQL
+-  只支援 PostgreSQL
+-  使用連接池
+-  異步操作
+-  自動重連
+-  不支援 SQLite
+-  不支援 MySQL
 
 ## 📋 資料庫管理
 
@@ -97,7 +97,7 @@ docker-compose exec db psql -U app -d form_analysis_db
 docker-compose down
 ```
 
-## 🔍 故障排除
+##  故障排除
 
 ### 常見問題
 

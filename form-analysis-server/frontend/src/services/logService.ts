@@ -264,14 +264,14 @@ class LogService {
     switch (level.toUpperCase()) {
       case 'ERROR':
       case 'CRITICAL':
-        return '❌';
+        return '';
       case 'WARNING':
       case 'WARN':
-        return '⚠️';
+        return '';
       case 'INFO':
-        return 'ℹ️';
+        return '';
       case 'DEBUG':
-        return '🔍';
+        return '';
       default:
         return '📝';
     }

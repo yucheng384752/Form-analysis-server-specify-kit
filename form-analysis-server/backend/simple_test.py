@@ -33,13 +33,13 @@ async def test_basic_sqlite():
         async with session_factory() as session:
             result = await session.execute(select(1))
             value = result.scalar()
-            print(f"✅ SQLite 連接成功! 測試查詢結果: {value}")
+            print(f" SQLite 連接成功! 測試查詢結果: {value}")
         
         await engine.dispose()
         return True
         
     except Exception as e:
-        print(f"❌ 連接失敗: {e}")
+        print(f" 連接失敗: {e}")
         return False
 
 async def main():
@@ -51,7 +51,7 @@ async def main():
         print(f"\n🎉 SQLite 基本測試成功!")
         print(f"   資料庫檔案: {Path('dev_test.db').absolute()}")
     else:
-        print(f"\n❌ SQLite 測試失敗")
+        print(f"\n SQLite 測試失敗")
 
 if __name__ == "__main__":
     asyncio.run(main())

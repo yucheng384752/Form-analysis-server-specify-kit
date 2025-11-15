@@ -46,23 +46,6 @@ interface QueryResponse {
   records: QueryRecord[];
 }
 
-interface LotGroupResponse {
-  lot_no: string;
-  p1_count: number;
-  p2_count: number;
-  p3_count: number;
-  total_count: number;
-  latest_production_date?: string;
-  created_at: string;
-}
-
-interface LotGroupListResponse {
-  total_count: number;
-  page: number;
-  page_size: number;
-  groups: LotGroupResponse[];
-}
-
 export function QueryPage() {
   // 搜尋相關狀態
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -71,13 +54,9 @@ export function QueryPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionLoading, setSuggestionLoading] = useState(false);
   
-  // 批號分組相關狀態
-  const [lotGroups, setLotGroups] = useState<LotGroupResponse[]>([]);
-  const [selectedLotNo, setSelectedLotNo] = useState<string>("");
-  const [activeDataType, setActiveDataType] = useState<DataType | null>(null);
-  
   // 記錄列表相關狀態
   const [records, setRecords] = useState<QueryRecord[]>([]);
+  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
   const [detailRecord, setDetailRecord] = useState<QueryRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
@@ -85,48 +64,19 @@ export function QueryPage() {
   
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
-  const pageSize = 10;
+  const pageSize = 50;
 
-  // 搜尋批號分組
-  const searchLotGroups = async (search: string) => {
+  // 搜尋記錄
+  const searchRecords = async (search: string, page: number = 1) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        page: '1',
-        page_size: '50'
-      });
-      
-      if (search) {
-        params.append('search', search);
-      }
-      
-      const response = await fetch(`/api/query/lots?${params}`);
-      if (response.ok) {
-        const data: LotGroupListResponse = await response.json();
-        setLotGroups(data.groups);
-        setSearchPerformed(true);
-      } else {
-        console.error("搜尋批號時出錯:", response.status);
-      }
-    } catch (error) {
-      console.error("搜尋批號時出錯:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 獲取指定批號和數據類型的記錄
-  const fetchRecords = async (lotNo: string, dataType?: DataType, page: number = 1) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        lot_no: lotNo,
         page: page.toString(),
         page_size: pageSize.toString()
       });
       
-      if (dataType) {
-        params.append('data_type', dataType);
+      if (search) {
+        params.append('lot_no', search);
       }
       
       const response = await fetch(`/api/query/records?${params}`);
@@ -135,11 +85,12 @@ export function QueryPage() {
         setRecords(data.records);
         setTotalCount(data.total_count);
         setCurrentPage(data.page);
+        setSearchPerformed(true);
       } else {
-        console.error("獲取記錄時出錯:", response.status);
+        console.error("搜尋記錄時出錯:", response.status);
       }
     } catch (error) {
-      console.error("獲取記錄時出錯:", error);
+      console.error("搜尋記錄時出錯:", error);
     } finally {
       setLoading(false);
     }
@@ -182,7 +133,7 @@ export function QueryPage() {
   // 處理搜尋
   const handleSearch = async () => {
     if (searchKeyword.trim()) {
-      await searchLotGroups(searchKeyword.trim());
+      await searchRecords(searchKeyword.trim());
       setShowSuggestions(false);
     }
   };
@@ -198,7 +149,7 @@ export function QueryPage() {
   const handleSuggestionClick = (suggestion: string) => {
     setSearchKeyword(suggestion);
     setShowSuggestions(false);
-    searchLotGroups(suggestion);
+    searchRecords(suggestion);
   };
 
   // 處理輸入焦點
@@ -213,17 +164,9 @@ export function QueryPage() {
     setTimeout(() => setShowSuggestions(false), 200);
   };
 
-  // 處理批號選擇
-  const handleLotSelection = (lotNo: string) => {
-    setSelectedLotNo(lotNo);
-    setActiveDataType(null);
-    setRecords([]);
-  };
-
-  // 處理數據類型選擇
-  const handleDataTypeSelection = (dataType: DataType) => {
-    setActiveDataType(dataType);
-    fetchRecords(selectedLotNo, dataType);
+  // 切換展開狀態
+  const toggleExpand = (recordId: string) => {
+    setExpandedRecordId(prev => prev === recordId ? null : recordId);
   };
 
   // 處理查看詳情
@@ -235,10 +178,10 @@ export function QueryPage() {
   const handleClear = () => {
     setSearchKeyword('');
     setSearchPerformed(false);
-    setLotGroups([]);
-    setSelectedLotNo('');
-    setActiveDataType(null);
     setRecords([]);
+    setTotalCount(0);
+    setCurrentPage(1);
+    setExpandedRecordId(null);
     setShowSuggestions(false);
     setSuggestions([]);
   };
@@ -251,7 +194,7 @@ export function QueryPage() {
 
     return (
       <div className="additional-data-section">
-        <div className="section-title">📊 CSV 表格完整資料</div>
+        <div className="section-title">📄 CSV 表格完整資料</div>
         <div className="additional-data-grid">
           {Object.entries(additionalData).map(([key, value]) => (
             <div key={key} className="detail-row">
@@ -271,18 +214,6 @@ export function QueryPage() {
         <strong>批號：</strong>
         <span>{record.lot_no}</span>
       </div>
-      {/* <div className="detail-row">
-        <strong>產品名稱：</strong>
-        <span>{record.product_name}</span>
-      </div>
-      <div className="detail-row">
-        <strong>數量：</strong>
-        <span>{record.quantity}</span>
-      </div>
-      <div className="detail-row">
-        <strong>生產日期：</strong>
-        <span>{record.production_date}</span>
-      </div> */}
       {record.notes && (
         <div className="detail-row">
           <strong>備註：</strong>
@@ -332,10 +263,6 @@ export function QueryPage() {
         <strong>切割結果：</strong>
         <span>{record.slitting_result === 1 ? '通過' : '不通過'}</span>
       </div>
-      {/* <div className="detail-row">
-        <strong>生產日期：</strong>
-        <span>{record.production_date}</span>
-      </div> */}
       <div className="detail-row">
         <strong>建立時間：</strong>
         <span>{new Date(record.created_at).toLocaleString()}</span>
@@ -355,18 +282,6 @@ export function QueryPage() {
         <strong>P3編號：</strong>
         <span>{record.p3_no}</span>
       </div>
-      {/* <div className="detail-row">
-        <strong>產品名稱：</strong>
-        <span>{record.product_name}</span>
-      </div>
-      <div className="detail-row">
-        <strong>數量：</strong>
-        <span>{record.quantity}</span>
-      </div>
-      <div className="detail-row">
-        <strong>生產日期：</strong>
-        <span>{record.production_date}</span>
-      </div> */}
       {record.notes && (
         <div className="detail-row">
           <strong>備註：</strong>
@@ -389,7 +304,7 @@ export function QueryPage() {
           資料查詢
           
           <div className="query-description">
-            <p>🔍 <strong>批號查詢：</strong>輸入批號進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料</p>
+            <p> <strong>批號查詢：</strong>輸入批號進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料</p>
           </div>
 
           <div className="query-search-input-wrapper autocomplete-wrapper">
@@ -458,114 +373,97 @@ export function QueryPage() {
         <section className="query-result-section">
           {loading ? (
             <p className="section-empty">載入中...</p>
-          ) : lotGroups.length === 0 ? (
-            <p className="section-empty">沒有找到符合條件的批號</p>
+          ) : records.length === 0 ? (
+            <p className="section-empty">沒有找到符合條件的資料</p>
           ) : (
-            <div className="lot-groups-container">
-              {/* 批號列表 */}
-              <div className="lot-groups-list">
-                {lotGroups.map((group) => (
-                  <div 
-                    key={group.lot_no} 
-                    className={`lot-group-card ${selectedLotNo === group.lot_no ? 'selected' : ''}`}
-                    onClick={() => handleLotSelection(group.lot_no)}
-                  >
-                    <div className="lot-group-header">
-                      <h3>{group.lot_no}</h3>
-                    </div>
-                    {group.latest_production_date && (
-                      <div className="production-date">
-                        生產日期: {group.latest_production_date}
-                      </div>
-                    )}
-                  </div>
-                ))}
+            <div className="records-container">
+              <div className="records-header">
+                <h3>{searchKeyword ? `${searchKeyword} - ` : ''}共找到 {totalCount} 筆資料</h3>
               </div>
               
-              {/* P1/P2/P3 分頁按鈕 */}
-              {selectedLotNo && (
-                <div className="data-type-tabs">
-                  <h4>查看 {selectedLotNo} 的詳細資料：</h4>
-                  <div className="tab-buttons">
-                    {['P1', 'P2', 'P3'].map((type) => {
-                      const group = lotGroups.find(g => g.lot_no === selectedLotNo);
-                      const count = group ? group[`${type.toLowerCase()}_count` as keyof LotGroupResponse] as number : 0;
-                      
-                      return (
-                        <button
-                          key={type}
-                          className={`tab-button ${activeDataType === type ? 'active' : ''} ${count === 0 ? 'disabled' : ''}`}
-                          onClick={() => handleDataTypeSelection(type as DataType)}
-                          disabled={count === 0}
-                        >
-                          {type}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              
-              {/* 記錄表格 */}
-              {selectedLotNo && activeDataType && records.length > 0 && (
-                <div className="records-table-container">
-                  <div className="records-header">
-                    <h4>{selectedLotNo} - {activeDataType} 資料 (共 {totalCount} 筆)</h4>
-                  </div>
-                  
-                  <table className="records-table">
-                    <thead>
-                      <tr>
-                        <th>Lot No</th>
-                        <th>資料類型</th>
-                        <th>生產日期</th>
-                        <th>建立時間</th>
-                        <th>操作</th>
+              <table className="records-table">
+                <thead>
+                  <tr>
+                    <th>Lot No</th>
+                    <th>資料類型</th>
+                    <th>生產日期</th>
+                    <th>建立時間</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {records.map((record) => (
+                    <>
+                      <tr key={record.id}>
+                        <td>{record.lot_no}</td>
+                        <td>
+                          <span className={`data-type-label ${record.data_type.toLowerCase()}`}>
+                            {record.data_type}
+                          </span>
+                        </td>
+                        <td>{record.production_date || '未設定'}</td>
+                        <td>{new Date(record.created_at).toLocaleString('zh-TW', {
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false
+                        })}</td>
+                        <td>
+                          <button
+                            className="btn-expand"
+                            title="展開查看CSV資料"
+                            onClick={() => toggleExpand(record.id)}
+                          >
+                            {expandedRecordId === record.id ? '🔼 收起' : '🔽 展開'}
+                          </button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {records.map((record) => (
-                        <tr key={record.id}>
-                          <td>{record.lot_no}</td>
-                          <td>
-                            <span className={`data-type-label ${record.data_type.toLowerCase()}`}>
-                              {record.data_type}
-                            </span>
-                          </td>
-                          <td>{record.production_date || '未設定'}</td>
-                          <td>{new Date(record.created_at).toLocaleString()}</td>
-                          <td>
-                            <button
-                              className="icon-button"
-                              title="檢視詳細"
-                              onClick={() => handleViewDetail(record)}
-                            >
-                              🔍
-                            </button>
+                      
+                      {/* 展開行 - 顯示CSV完整資料 */}
+                      {expandedRecordId === record.id && (
+                        <tr className="expanded-row">
+                          <td colSpan={5}>
+                            <div className="csv-data-container">
+                              <h4>📄 CSV 內容編輯 - {record.lot_no}.csv（共 1 行，{record.additional_data ? Object.keys(record.additional_data).length : 0} 個欄位）</h4>
+                              {record.additional_data && Object.keys(record.additional_data).length > 0 ? (
+                                <div className="csv-data-grid">
+                                  {Object.entries(record.additional_data).map(([key, value]) => (
+                                    <div key={key} className="csv-field">
+                                      <strong>{key}：</strong>
+                                      <span>{typeof value === 'number' ? value.toLocaleString() : String(value)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="no-data">此記錄沒有額外的CSV資料</p>
+                              )}
+                            </div>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  
-                  {/* 分頁控制 */}
-                  {totalCount > pageSize && (
-                    <div className="pagination">
-                      <button
-                        onClick={() => fetchRecords(selectedLotNo, activeDataType, currentPage - 1)}
-                        disabled={currentPage <= 1}
-                      >
-                        上一頁
-                      </button>
-                      <span>第 {currentPage} 頁</span>
-                      <button
-                        onClick={() => fetchRecords(selectedLotNo, activeDataType, currentPage + 1)}
-                        disabled={currentPage * pageSize >= totalCount}
-                      >
-                        下一頁
-                      </button>
-                    </div>
-                  )}
+                      )}
+                    </>
+                  ))}
+                </tbody>
+              </table>
+              
+              {/* 分頁控制 */}
+              {totalCount > pageSize && (
+                <div className="pagination">
+                  <button
+                    onClick={() => searchRecords(searchKeyword, currentPage - 1)}
+                    disabled={currentPage <= 1}
+                  >
+                    上一頁
+                  </button>
+                  <span>第 {currentPage} 頁</span>
+                  <button
+                    onClick={() => searchRecords(searchKeyword, currentPage + 1)}
+                    disabled={currentPage * pageSize >= totalCount}
+                  >
+                    下一頁
+                  </button>
                 </div>
               )}
             </div>

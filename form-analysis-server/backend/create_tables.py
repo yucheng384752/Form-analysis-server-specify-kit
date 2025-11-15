@@ -12,7 +12,7 @@ def create_tables():
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    print(f"🔧 正在創建SQLite資料庫表格: {db_path}")
+    print(f" 正在創建SQLite資料庫表格: {db_path}")
     
     # 創建records表格
     cursor.execute("""
@@ -77,7 +77,7 @@ def create_tables():
     # 檢查資料
     cursor.execute("SELECT COUNT(*) FROM records")
     count = cursor.fetchone()[0]
-    print(f"✅ 資料庫設置完成，包含 {count} 筆測試記錄")
+    print(f" 資料庫設置完成，包含 {count} 筆測試記錄")
     
     # 關閉連接
     conn.close()

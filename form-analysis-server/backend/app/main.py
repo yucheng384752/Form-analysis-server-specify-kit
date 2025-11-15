@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     # Startup - 驗證PostgreSQL配置
     if not settings.database_url.startswith('postgresql'):
-        raise ValueError(f"❌ 系統只支援PostgreSQL資料庫！當前配置: {settings.database_url[:30]}...")
+        raise ValueError(f" 系統只支援PostgreSQL資料庫！當前配置: {settings.database_url[:30]}...")
     
     # Initialize database connection
     await init_db()
@@ -64,8 +64,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         print("📋 Database tables created/verified")
     
     print(f"🚀 Form Analysis API starting on {settings.api_host}:{settings.api_port}")
-    print(f"📊 Database: PostgreSQL - {settings.database_url.split('@')[-1]}")  # Hide credentials
-    print(f"📁 Upload limit: {settings.max_upload_size_mb}MB")
+    print(f" Database: PostgreSQL - {settings.database_url.split('@')[-1]}")  # Hide credentials
+    print(f" Upload limit: {settings.max_upload_size_mb}MB")
     print(f"🔒 CORS origins: {settings.cors_origins}")
     print(f"🛡️  Database Type: PostgreSQL Only (固定使用PostgreSQL)")
     

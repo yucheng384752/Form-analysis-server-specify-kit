@@ -4,7 +4,7 @@
 
 使用 `start-system.bat` 啟動腳本時,資料庫內容被意外清空。
 
-## 🔍 根本原因分析
+##  根本原因分析
 
 ### 問題代碼位置
 **檔案**: `scripts/start-system.bat`  
@@ -29,7 +29,7 @@ docker-compose down -v
 - `-v` = `--volumes`
 - **會刪除所有 Docker Volume**
 - **包括 `postgres_data` 資料卷**
-- **導致所有資料庫資料永久丟失** ❌
+- **導致所有資料庫資料永久丟失** 
 
 ### 觸發條件
 
@@ -48,7 +48,7 @@ port_conflict=true
 docker-compose down -v  ← 這裡會刪除資料!
 ```
 
-## ✅ 修復方案
+##  修復方案
 
 ### 修改內容
 
@@ -65,10 +65,10 @@ docker-compose -f "%SERVER_PATH%\docker-compose.yml" down --remove-orphans
 ### 修復說明
 
 移除 `-v` 參數:
-- ✅ **保留** Docker Volume (資料庫資料)
-- ✅ **停止並移除**容器
-- ✅ **清理**孤立容器
-- ✅ **釋放**被佔用的端口
+-  **保留** Docker Volume (資料庫資料)
+-  **停止並移除**容器
+-  **清理**孤立容器
+-  **釋放**被佔用的端口
 
 ## 🛡️ 資料安全機制
 
@@ -76,11 +76,11 @@ docker-compose -f "%SERVER_PATH%\docker-compose.yml" down --remove-orphans
 
 | 操作 | Volume 保留 | 資料安全 |
 |------|------------|---------|
-| `docker-compose down` | ✅ 保留 | ✅ 安全 |
-| `docker-compose down --remove-orphans` | ✅ 保留 | ✅ 安全 |
-| `docker-compose down -v` | ❌ **刪除** | ⚠️ **資料丟失** |
-| `docker-compose stop` | ✅ 保留 | ✅ 安全 |
-| `docker-compose restart` | ✅ 保留 | ✅ 安全 |
+| `docker-compose down` |  保留 |  安全 |
+| `docker-compose down --remove-orphans` |  保留 |  安全 |
+| `docker-compose down -v` |  **刪除** |  **資料丟失** |
+| `docker-compose stop` |  保留 |  安全 |
+| `docker-compose restart` |  保留 |  安全 |
 
 ### Volume 資料位置
 
@@ -95,7 +95,7 @@ volumes:
 - **Windows**: `C:\ProgramData\Docker\volumes\form-analysis-server_postgres_data\_data`
 - **Linux/Mac**: `/var/lib/docker/volumes/form-analysis-server_postgres_data/_data`
 
-## 🔧 手動資料管理
+##  手動資料管理
 
 ### 查看現有 Volume
 
@@ -128,7 +128,7 @@ docker run --rm -v form-analysis-server_postgres_data:/data -v %cd%:/backup alpi
 如果**確實需要清空資料庫**,使用明確的命令:
 
 ```bash
-# ⚠️ 警告:這會刪除所有資料!
+#  警告:這會刪除所有資料!
 cd form-analysis-server
 docker-compose down -v
 
@@ -136,7 +136,7 @@ docker-compose down -v
 docker volume rm form-analysis-server_postgres_data
 ```
 
-## 📊 影響評估
+##  影響評估
 
 ### 修復前的風險
 
@@ -146,9 +146,9 @@ docker volume rm form-analysis-server_postgres_data
 
 ### 修復後的改善
 
-- ✅ **資料持久化**: Volume 始終保留
-- ✅ **安全清理**: 只清理容器,不影響資料
-- ✅ **端口管理**: 正確停止衝突容器
+-  **資料持久化**: Volume 始終保留
+-  **安全清理**: 只清理容器,不影響資料
+-  **端口管理**: 正確停止衝突容器
 
 ## 🧪 測試驗證
 
@@ -178,10 +178,10 @@ docker exec form_analysis_db psql -U app -d form_analysis_db -c "SELECT COUNT(*)
 
 ### 預期結果
 
-- ✅ 偵測到端口衝突
-- ✅ 自動停止衝突容器
-- ✅ 系統正常啟動
-- ✅ **資料完整保留**
+-  偵測到端口衝突
+-  自動停止衝突容器
+-  系統正常啟動
+-  **資料完整保留**
 
 ## 📝 相關文件更新
 
@@ -228,5 +228,5 @@ docker run --rm -v form-analysis-server_postgres_data:/data -v %cd%:/backup alpi
 
 **修復時間**: 2025-11-15  
 **影響範圍**: `scripts/start-system.bat`  
-**修復狀態**: ✅ 已完成  
+**修復狀態**:  已完成  
 **測試狀態**: ⏳ 待驗證

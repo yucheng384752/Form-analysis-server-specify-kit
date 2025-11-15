@@ -20,7 +20,7 @@ try:
     from httpx import AsyncClient, ASGITransport
     from app.main import app
 except ImportError as e:
-    print(f"❌ 缺少必要模組：{e}")
+    print(f" 缺少必要模組：{e}")
     print("請確保已安裝 FastAPI 和相關套件")
     sys.exit(1)
 
@@ -100,10 +100,10 @@ class FinalIntegrationTest:
         try:
             conn.executescript(CREATE_TABLES_SQL)
             conn.commit()
-            print("✅ 測試資料庫表格建立完成")
+            print(" 測試資料庫表格建立完成")
             return True
         except Exception as e:
-            print(f"❌ 建立資料庫表格失敗：{e}")
+            print(f" 建立資料庫表格失敗：{e}")
             return False
         finally:
             conn.close()
@@ -121,14 +121,14 @@ class FinalIntegrationTest:
         try:
             from app.core.database import init_db
             await init_db()
-            print("✅ 測試資料庫連線初始化完成")
+            print(" 測試資料庫連線初始化完成")
         except Exception as e:
-            print(f"⚠️  資料庫初始化警告：{e}")
+            print(f"  資料庫初始化警告：{e}")
         
         # 設置 HTTP 客戶端
         transport = ASGITransport(app=app)
         self.client = AsyncClient(transport=transport, base_url="http://test")
-        print("✅ 測試環境設置完成")
+        print(" 測試環境設置完成")
         return True
     
     async def cleanup(self):
@@ -140,11 +140,11 @@ class FinalIntegrationTest:
         if self.db_path and os.path.exists(self.db_path):
             try:
                 os.unlink(self.db_path)
-                print("✅ 測試資料庫清理完成")
+                print(" 測試資料庫清理完成")
             except Exception as e:
-                print(f"⚠️  資料庫清理警告：{e}")
+                print(f"  資料庫清理警告：{e}")
         
-        print("✅ 測試環境清理完成")
+        print(" 測試環境清理完成")
     
     async def run_integration_test(self, csv_file_path):
         """執行完整的整合測試"""
@@ -163,16 +163,16 @@ class FinalIntegrationTest:
         print(f"   HTTP 狀態碼: {response.status_code}")
         
         if response.status_code != 200:
-            print(f"❌ 檔案上傳失敗: {response.text}")
+            print(f" 檔案上傳失敗: {response.text}")
             return False
         
         upload_data = response.json()
         if "process_id" not in upload_data:
-            print("❌ 回應中缺少 process_id")
+            print(" 回應中缺少 process_id")
             return False
         
         process_id = upload_data["process_id"]
-        print(f"✅ 檔案上傳成功")
+        print(f" 檔案上傳成功")
         print(f"   Process ID: {process_id}")
         print(f"   檔案名稱: integration_test.csv")
         print(f"   回應訊息: {upload_data.get('message', '無')}")
@@ -184,17 +184,17 @@ class FinalIntegrationTest:
         await asyncio.sleep(2.0)  # 給予充分時間讓非同步處理完成
         
         # ========== 步驟 2：查詢工作狀態 ==========
-        print("\n📊 步驟 2：工作狀態查詢測試")
+        print("\n 步驟 2：工作狀態查詢測試")
         
         response = await self.client.get(f"/api/upload/{process_id}/status")
         print(f"   HTTP 狀態碼: {response.status_code}")
         
         if response.status_code != 200:
-            print(f"❌ 狀態查詢失敗: {response.text}")
+            print(f" 狀態查詢失敗: {response.text}")
             return False
         
         status_data = response.json()
-        print(f"✅ 狀態查詢成功")
+        print(f" 狀態查詢成功")
         print(f"   工作狀態: {status_data.get('status', '未知')}")
         print(f"   總列數: {status_data.get('total_rows', '未知')}")
         print(f"   錯誤數: {status_data.get('error_count', '未知')}")
@@ -204,7 +204,7 @@ class FinalIntegrationTest:
         
         # 檢查是否已驗證
         if status_data.get('status') not in ['VALIDATED', 'IMPORTED']:
-            print(f"⚠️  工作狀態為 '{status_data.get('status')}'，可能需要更多處理時間")
+            print(f"  工作狀態為 '{status_data.get('status')}'，可能需要更多處理時間")
             # 再等待一段時間
             await asyncio.sleep(3.0)
             
@@ -215,7 +215,7 @@ class FinalIntegrationTest:
                 print(f"   更新後狀態: {status_data.get('status', '未知')}")
         
         # ========== 步驟 3：驗證結果查詢 ==========
-        print("\n🔍 步驟 3：驗證結果查詢測試")
+        print("\n 步驟 3：驗證結果查詢測試")
         
         response = await self.client.get(
             f"/api/validate?process_id={process_id}&page=1&page_size=20"
@@ -224,7 +224,7 @@ class FinalIntegrationTest:
         
         if response.status_code == 200:
             validate_data = response.json()
-            print(f"✅ 驗證結果查詢成功")
+            print(f" 驗證結果查詢成功")
             
             if "errors" in validate_data:
                 errors = validate_data["errors"]
@@ -245,16 +245,16 @@ class FinalIntegrationTest:
             
             self.test_results['validate'] = validate_data
         else:
-            print(f"⚠️  驗證結果查詢回應: {response.status_code} - {response.text[:200]}")
+            print(f"  驗證結果查詢回應: {response.status_code} - {response.text[:200]}")
         
         # ========== 步驟 4：CSV 錯誤匯出 ==========
-        print("\n📥 步驟 4：CSV 錯誤匯出測試")
+        print("\n 步驟 4：CSV 錯誤匯出測試")
         
         response = await self.client.get(f"/api/errors.csv?process_id={process_id}")
         print(f"   HTTP 狀態碼: {response.status_code}")
         
         if response.status_code == 200:
-            print(f"✅ CSV 匯出成功")
+            print(f" CSV 匯出成功")
             
             # 檢查內容類型
             content_type = response.headers.get("content-type", "")
@@ -277,10 +277,10 @@ class FinalIntegrationTest:
                 'size': len(csv_content)
             }
         else:
-            print(f"⚠️  CSV 匯出回應: {response.status_code} - {response.text[:200]}")
+            print(f"  CSV 匯出回應: {response.status_code} - {response.text[:200]}")
         
         # ========== 步驟 5：資料匯入 ==========
-        print("\n📊 步驟 5：資料匯入測試")
+        print("\n 步驟 5：資料匯入測試")
         
         response = await self.client.post(
             "/api/import",
@@ -290,7 +290,7 @@ class FinalIntegrationTest:
         
         if response.status_code == 200:
             import_data = response.json()
-            print(f"✅ 資料匯入成功")
+            print(f" 資料匯入成功")
             print(f"   匯入列數: {import_data.get('imported_rows', '未知')}")
             print(f"   跳過列數: {import_data.get('skipped_rows', '未知')}")
             print(f"   處理時間: {import_data.get('elapsed_ms', '未知')} ms")
@@ -299,14 +299,14 @@ class FinalIntegrationTest:
             self.test_results['import'] = import_data
             
             # 驗證最終狀態
-            print("\n🔍 驗證最終狀態")
+            print("\n 驗證最終狀態")
             response = await self.client.get(f"/api/upload/{process_id}/status")
             if response.status_code == 200:
                 final_status = response.json()
                 print(f"   最終狀態: {final_status.get('status', '未知')}")
                 self.test_results['final_status'] = final_status
         else:
-            print(f"⚠️  資料匯入回應: {response.status_code} - {response.text[:200]}")
+            print(f"  資料匯入回應: {response.status_code} - {response.text[:200]}")
         
         # ========== 步驟 6：防重複匯入測試 ==========
         print("\n🚫 步驟 6：防重複匯入測試")
@@ -318,11 +318,11 @@ class FinalIntegrationTest:
         print(f"   HTTP 狀態碼: {response.status_code}")
         
         if response.status_code == 400:
-            print("✅ 防重複匯入測試成功：正確阻止重複匯入")
+            print(" 防重複匯入測試成功：正確阻止重複匯入")
             error_data = response.json()
             print(f"   錯誤訊息: {error_data.get('detail', '無')}")
         else:
-            print(f"⚠️  防重複匯入回應: {response.status_code} - {response.text[:200]}")
+            print(f"  防重複匯入回應: {response.status_code} - {response.text[:200]}")
         
         # ========== 步驟 7：錯誤處理測試 ==========
         print("\n🧪 步驟 7：錯誤處理測試")
@@ -332,21 +332,21 @@ class FinalIntegrationTest:
         # 測試不存在的工作查詢
         response = await self.client.get(f"/api/validate?process_id={fake_uuid}")
         if response.status_code == 404:
-            print("✅ 404 錯誤處理正確：不存在的驗證查詢")
+            print(" 404 錯誤處理正確：不存在的驗證查詢")
         else:
             print(f"   不存在工作查詢回應: {response.status_code}")
         
         # 測試不存在的匯入
         response = await self.client.post("/api/import", json={"process_id": fake_uuid})
         if response.status_code == 404:
-            print("✅ 404 錯誤處理正確：不存在的匯入請求")
+            print(" 404 錯誤處理正確：不存在的匯入請求")
         else:
             print(f"   不存在匯入回應: {response.status_code}")
         
         # 測試不存在的 CSV 匯出
         response = await self.client.get(f"/api/errors.csv?process_id={fake_uuid}")
         if response.status_code == 404:
-            print("✅ 404 錯誤處理正確：不存在的 CSV 匯出")
+            print(" 404 錯誤處理正確：不存在的 CSV 匯出")
         else:
             print(f"   不存在 CSV 匯出回應: {response.status_code}")
         
@@ -367,11 +367,11 @@ async def main():
     
     try:
         print(f"\n📝 測試案例說明：")
-        print(f"   📁 CSV 檔案：{os.path.basename(csv_file_path)}")
-        print(f"   📊 資料列數：5 列測試資料")
-        print(f"   ❌ 預期錯誤：2 列（空白欄位 + 格式錯誤）")
-        print(f"   ✅ 預期有效：3 列正常資料")
-        print(f"   🔄 測試流程：上傳 → 驗證 → 匯出 → 匯入")
+        print(f"    CSV 檔案：{os.path.basename(csv_file_path)}")
+        print(f"    資料列數：5 列測試資料")
+        print(f"    預期錯誤：2 列（空白欄位 + 格式錯誤）")
+        print(f"    預期有效：3 列正常資料")
+        print(f"    測試流程：上傳 → 驗證 → 匯出 → 匯入")
         
         # 設置測試環境
         print(f"\n🛠️  環境設置：")
@@ -388,14 +388,14 @@ async def main():
             print("🎉 完整流程整合測試成功完成！")
             
             # 統計結果
-            print("\n📊 測試結果統計：")
+            print("\n 測試結果統計：")
             
             if 'upload' in test.test_results:
-                print(f"   ✅ 檔案上傳：成功")
+                print(f"    檔案上傳：成功")
             
             if 'status' in test.test_results:
                 status = test.test_results['status']
-                print(f"   ✅ 狀態查詢：{status.get('status', '未知')}")
+                print(f"    狀態查詢：{status.get('status', '未知')}")
                 print(f"   📈 資料統計：總計 {status.get('total_rows', 0)} 列，"
                       f"錯誤 {status.get('error_count', 0)} 列，"
                       f"有效 {status.get('valid_count', 0)} 列")
@@ -403,32 +403,32 @@ async def main():
             if 'validate' in test.test_results:
                 validate = test.test_results['validate']
                 error_count = len(validate.get('errors', []))
-                print(f"   ✅ 驗證查詢：發現 {error_count} 個錯誤")
+                print(f"    驗證查詢：發現 {error_count} 個錯誤")
             
             if 'csv_export' in test.test_results:
                 csv_info = test.test_results['csv_export']
-                print(f"   ✅ CSV 匯出：{csv_info.get('lines', 0)} 列，"
+                print(f"    CSV 匯出：{csv_info.get('lines', 0)} 列，"
                       f"{csv_info.get('size', 0)} 字元")
             
             if 'import' in test.test_results:
                 import_info = test.test_results['import']
-                print(f"   ✅ 資料匯入：匯入 {import_info.get('imported_rows', 0)} 列，"
+                print(f"    資料匯入：匯入 {import_info.get('imported_rows', 0)} 列，"
                       f"跳過 {import_info.get('skipped_rows', 0)} 列")
             
             if 'final_status' in test.test_results:
                 final = test.test_results['final_status']
-                print(f"   ✅ 最終狀態：{final.get('status', '未知')}")
+                print(f"    最終狀態：{final.get('status', '未知')}")
             
             # 測試覆蓋範圍
             print("\n🎯 測試覆蓋範圍：")
-            print("   • 完整資料庫表格建立和初始化 ✅")
-            print("   • 檔案上傳和驗證處理 (POST /api/upload) ✅")
-            print("   • 工作狀態查詢 (GET /api/upload/{id}/status) ✅")
-            print("   • 驗證結果分頁查詢 (GET /api/validate) ✅")
-            print("   • 錯誤資料 CSV 匯出 (GET /api/errors.csv) ✅")
-            print("   • 有效資料匯入處理 (POST /api/import) ✅")
-            print("   • 防重複匯入機制驗證 ✅")
-            print("   • 404 錯誤處理機制測試 ✅")
+            print("   • 完整資料庫表格建立和初始化 ")
+            print("   • 檔案上傳和驗證處理 (POST /api/upload) ")
+            print("   • 工作狀態查詢 (GET /api/upload/{id}/status) ")
+            print("   • 驗證結果分頁查詢 (GET /api/validate) ")
+            print("   • 錯誤資料 CSV 匯出 (GET /api/errors.csv) ")
+            print("   • 有效資料匯入處理 (POST /api/import) ")
+            print("   • 防重複匯入機制驗證 ")
+            print("   • 404 錯誤處理機制測試 ")
             
             print("\n🏆 測試成果：")
             print("   • 模擬了真實的檔案處理場景")
@@ -437,7 +437,7 @@ async def main():
             print("   • 確認了資料一致性和完整性")
             
         else:
-            print("\n❌ 整合測試失敗")
+            print("\n 整合測試失敗")
             print("請檢查上述錯誤訊息，修正問題後重新執行")
             
     except Exception as e:
@@ -457,7 +457,7 @@ async def main():
         # 清理測試檔案
         try:
             os.unlink(csv_file_path)
-            print("✅ 測試檔案清理完成")
+            print(" 測試檔案清理完成")
         except FileNotFoundError:
             pass
     
@@ -468,9 +468,9 @@ if __name__ == "__main__":
     exit_code = 0 if success else 1
     
     print(f"\n" + "=" * 60)
-    print(f"📋 整合測試總結：{'✅ 測試通過' if success else '❌ 測試失敗'}")
+    print(f"📋 整合測試總結：{' 測試通過' if success else ' 測試失敗'}")
     print(f"🚀 系統狀態：{'準備就緒' if success else '需要修正'}")
-    print(f"🔄 退出代碼：{exit_code}")
+    print(f" 退出代碼：{exit_code}")
     print("=" * 60)
     
     sys.exit(exit_code)

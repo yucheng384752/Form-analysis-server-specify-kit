@@ -32,7 +32,7 @@ if errorlevel 1 (
     pause
     exit /b 1
 ) else (
-    echo ✅ Docker 服務正常運行
+    echo  Docker 服務正常運行
 )
 
 REM 檢查 docker-compose 檔案
@@ -43,7 +43,7 @@ if not exist "%SERVER_PATH%\docker-compose.yml" (
     pause
     exit /b 1
 ) else (
-    echo ✅ 找到 docker-compose.yml
+    echo  找到 docker-compose.yml
 )
 
 REM 切換到服務器目錄
@@ -70,7 +70,7 @@ echo [5] 等待服務啟動...
 timeout /t 10 /nobreak >nul
 
 echo.
-echo ✅ 服務啟動完成！
+echo  服務啟動完成！
 echo.
 echo 服務連結：
 echo 前端: http://localhost:5173

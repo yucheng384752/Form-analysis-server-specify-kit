@@ -41,7 +41,7 @@ async def test_models():
             expire_on_commit=False
         )
         
-        print("🔧 創建資料庫表格...")
+        print(" 創建資料庫表格...")
         
         # 創建所有表格
         async with engine.begin() as conn:
@@ -50,7 +50,7 @@ async def test_models():
             Base.metadata.create_all(bind=await conn.get_sync_connection())
             await conn.commit()
         
-        print("✅ 表格創建成功!\n")
+        print(" 表格創建成功!\n")
         
         # 測試 CRUD 操作
         async with session_factory() as session:
@@ -67,7 +67,7 @@ async def test_models():
             await session.commit()
             await session.refresh(job)
             
-            print(f"✅ 創建工作: {job.id} - {job.filename}")
+            print(f" 創建工作: {job.id} - {job.filename}")
             
             # 2. 創建 Record
             record = Record(
@@ -83,7 +83,7 @@ async def test_models():
             await session.commit()
             await session.refresh(record)
             
-            print(f"✅ 創建記錄: {record.id} - {record.lot_no}")
+            print(f" 創建記錄: {record.id} - {record.lot_no}")
             
             # 3. 創建 UploadError
             error = UploadError(
@@ -96,10 +96,10 @@ async def test_models():
             await session.commit()
             await session.refresh(error)
             
-            print(f"✅ 創建錯誤: {error.id}")
+            print(f" 創建錯誤: {error.id}")
             
             # 4. 測試關聯查詢
-            print(f"\n🔍 測試關聯查詢...")
+            print(f"\n 測試關聯查詢...")
             
             # 查詢工作及其記錄
             result = await session.execute(
@@ -120,10 +120,10 @@ async def test_models():
             job_with_data.processed_at = datetime.utcnow()
             await session.commit()
             
-            print(f"✅ 更新工作狀態為: {job_with_data.status}")
+            print(f" 更新工作狀態為: {job_with_data.status}")
             
             # 6. 測試查詢所有記錄
-            print(f"\n📊 測試查詢統計...")
+            print(f"\n 測試查詢統計...")
             
             all_jobs = await session.execute(select(UploadJob))
             job_count = len(all_jobs.scalars().all())
@@ -146,7 +146,7 @@ async def test_models():
         return True
         
     except Exception as e:
-        print(f"❌ 測試失敗: {e}")
+        print(f" 測試失敗: {e}")
         import traceback
         traceback.print_exc()
         return False

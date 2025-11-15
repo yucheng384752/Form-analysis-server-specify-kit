@@ -56,9 +56,9 @@ def check_database_url_consistency(base_dir: Path) -> List[str]:
     if config_file.exists():
         content = config_file.read_text()
         if "@localhost:5432" in content and "@db:5432" not in content:
-            issues.append("❌ config.py 中使用 localhost 而非 Docker 服務名 'db'")
+            issues.append(" config.py 中使用 localhost 而非 Docker 服務名 'db'")
         elif "@db:5432" in content:
-            issues.append("✅ config.py 使用正確的 Docker 服務名 'db'")
+            issues.append(" config.py 使用正確的 Docker 服務名 'db'")
     
     # 檢查 .env.example
     env_file = base_dir / ".env.example"
@@ -66,15 +66,15 @@ def check_database_url_consistency(base_dir: Path) -> List[str]:
         content = env_file.read_text()
         if "DATABASE_URL=" in content:
             if "@db:5432" in content:
-                issues.append("✅ .env.example 使用 Docker 服務名 'db'")
+                issues.append(" .env.example 使用 Docker 服務名 'db'")
             elif "@localhost:5432" in content:
-                issues.append("❌ .env.example 使用 localhost (應提供 Docker 和本地兩種選項)")
+                issues.append(" .env.example 使用 localhost (應提供 Docker 和本地兩種選項)")
     
     return issues
 
 def main():
     """主要檢查邏輯"""
-    print("🔍 配置一致性檢查\n")
+    print(" 配置一致性檢查\n")
     
     base_dir = Path(".")
     config_file = base_dir / "backend/app/core/config.py"
@@ -82,7 +82,7 @@ def main():
     docker_compose = base_dir / "docker-compose.yml"
     
     # 1. 檢查檔案存在
-    print("📁 檢查檔案存在性:")
+    print(" 檢查檔案存在性:")
     files_to_check = [
         (config_file, "config.py"),
         (env_example, ".env.example"), 
@@ -92,13 +92,13 @@ def main():
     missing_files = []
     for file_path, name in files_to_check:
         if file_path.exists():
-            print(f"✅ {name}")
+            print(f" {name}")
         else:
-            print(f"❌ {name} 不存在")
+            print(f" {name} 不存在")
             missing_files.append(name)
     
     if missing_files:
-        print(f"\n❌ 缺少檔案: {', '.join(missing_files)}")
+        print(f"\n 缺少檔案: {', '.join(missing_files)}")
         return
     
     # 2. 提取配置欄位
@@ -118,7 +118,7 @@ def main():
         print(f"   {issue}")
     
     # 4. 檢查配置欄位映射
-    print(f"\n🔄 配置欄位映射檢查:")
+    print(f"\n 配置欄位映射檢查:")
     
     # 將 Python 欄位名轉換為環境變數名 (snake_case -> UPPER_CASE)
     expected_env_vars = set()
@@ -129,16 +129,16 @@ def main():
     # 檢查缺少的環境變數
     missing_in_env = expected_env_vars - env_vars
     if missing_in_env:
-        print(f"   ❌ .env.example 中缺少的變數:")
+        print(f"    .env.example 中缺少的變數:")
         for var in sorted(missing_in_env):
             print(f"      - {var}")
     else:
-        print(f"   ✅ 所有 config.py 欄位都在 .env.example 中")
+        print(f"    所有 config.py 欄位都在 .env.example 中")
     
     # 檢查多餘的環境變數
     extra_in_env = env_vars - expected_env_vars - docker_vars
     if extra_in_env:
-        print(f"   ℹ️  額外的環境變數 (可能是 Docker 或前端專用):")
+        print(f"     額外的環境變數 (可能是 Docker 或前端專用):")
         for var in sorted(extra_in_env):
             print(f"      - {var}")
     
@@ -146,24 +146,24 @@ def main():
     print(f"\n🐳 Docker Compose 環境變數檢查:")
     docker_only = docker_vars - env_vars
     if docker_only:
-        print(f"   ⚠️  只在 docker-compose.yml 中定義的變數:")
+        print(f"     只在 docker-compose.yml 中定義的變數:")
         for var in sorted(docker_only):
             print(f"      - {var}")
     
     env_only = env_vars - docker_vars - expected_env_vars
     if env_only:
-        print(f"   ℹ️  只在 .env.example 中的變數:")
+        print(f"     只在 .env.example 中的變數:")
         for var in sorted(env_only):
             print(f"      - {var}")
     
     # 6. 總結
-    print(f"\n📊 檢查總結:")
-    total_issues = len([x for x in db_issues if "❌" in x]) + (1 if missing_in_env else 0)
+    print(f"\n 檢查總結:")
+    total_issues = len([x for x in db_issues if "" in x]) + (1 if missing_in_env else 0)
     
     if total_issues == 0:
         print(f"   🎉 配置一致性檢查通過!")
     else:
-        print(f"   ⚠️  發現 {total_issues} 個問題需要修正")
+        print(f"     發現 {total_issues} 個問題需要修正")
     
     print(f"\n📋 建議:")
     print(f"   1. 確保 DATABASE_URL 在 Docker 環境使用 'db:5432'")

@@ -188,13 +188,13 @@ def test_schemas():
             "file_size": 1024000
         }
         job_create = UploadJobCreate(**job_create_data)
-        print(f"✅ 創建成功: {job_create.filename}, {job_create.file_size} bytes")
+        print(f" 創建成功: {job_create.filename}, {job_create.file_size} bytes")
         
         # 測試驗證錯誤
         try:
             invalid_job = UploadJobCreate(filename="", file_size=0)
         except ValidationError as e:
-            print(f"✅ 驗證錯誤正確捕獲: {len(e.errors())} 個錯誤")
+            print(f" 驗證錯誤正確捕獲: {len(e.errors())} 個錯誤")
         
         # 2. 測試 RecordCreate
         print(f"\n📝 測試 RecordCreate...")
@@ -207,7 +207,7 @@ def test_schemas():
             "raw_data": {"col1": "value1", "col2": "value2"}
         }
         record_create = RecordCreate(**record_create_data)
-        print(f"✅ 創建成功: {record_create.lot_no}, {record_create.product_name}")
+        print(f" 創建成功: {record_create.lot_no}, {record_create.product_name}")
         
         # 測試批號格式驗證
         try:
@@ -216,14 +216,14 @@ def test_schemas():
                 raw_data={"test": "data"}
             )
         except ValidationError as e:
-            print(f"✅ 批號格式驗證錯誤正確捕獲: {e.errors()[0]['msg']}")
+            print(f" 批號格式驗證錯誤正確捕獲: {e.errors()[0]['msg']}")
         
         # 測試正確的批號格式
         valid_record = RecordCreate(
             lot_no="l240108999",  # 小寫，應該轉為大寫
             raw_data={"test": "data"}
         )
-        print(f"✅ 批號大寫轉換: {valid_record.lot_no}")
+        print(f" 批號大寫轉換: {valid_record.lot_no}")
         
         # 3. 測試 UploadErrorCreate
         print(f"\n📝 測試 UploadErrorCreate...")
@@ -236,7 +236,7 @@ def test_schemas():
             }
         }
         error_create = UploadErrorCreate(**error_create_data)
-        print(f"✅ 創建成功: {error_create.error_message}")
+        print(f" 創建成功: {error_create.error_message}")
         
         # 4. 測試 Read schemas 的 JSON 序列化
         print(f"\n📝 測試 Read schemas JSON 序列化...")
@@ -255,7 +255,7 @@ def test_schemas():
         }
         job_read = UploadJobRead(**job_read_data)
         job_json = job_read.model_dump_json()
-        print(f"✅ UploadJobRead JSON 序列化成功 ({len(job_json)} chars)")
+        print(f" UploadJobRead JSON 序列化成功 ({len(job_json)} chars)")
         
         # RecordRead  
         record_read_data = {
@@ -271,7 +271,7 @@ def test_schemas():
         }
         record_read = RecordRead(**record_read_data)
         record_json = record_read.model_dump_json()
-        print(f"✅ RecordRead JSON 序列化成功 ({len(record_json)} chars)")
+        print(f" RecordRead JSON 序列化成功 ({len(record_json)} chars)")
         
         # UploadErrorRead
         error_read_data = {
@@ -283,33 +283,33 @@ def test_schemas():
         }
         error_read = UploadErrorRead(**error_read_data)
         error_json = error_read.model_dump_json()
-        print(f"✅ UploadErrorRead JSON 序列化成功 ({len(error_json)} chars)")
+        print(f" UploadErrorRead JSON 序列化成功 ({len(error_json)} chars)")
         
         # 5. 測試 JSON Schema 生成
         print(f"\n📝 測試 JSON Schema 生成...")
         
         job_schema = UploadJobCreate.model_json_schema()
-        print(f"✅ UploadJobCreate schema: {len(job_schema['properties'])} 個屬性")
+        print(f" UploadJobCreate schema: {len(job_schema['properties'])} 個屬性")
         
         record_schema = RecordCreate.model_json_schema()
-        print(f"✅ RecordCreate schema: {len(record_schema['properties'])} 個屬性")
+        print(f" RecordCreate schema: {len(record_schema['properties'])} 個屬性")
         
         error_schema = UploadErrorCreate.model_json_schema()
-        print(f"✅ UploadErrorCreate schema: {len(error_schema['properties'])} 個屬性")
+        print(f" UploadErrorCreate schema: {len(error_schema['properties'])} 個屬性")
         
         print(f"\n🎉 所有 Pydantic Schema 測試通過!")
         print(f"\n📋 測試覆蓋:")
-        print(f"   ✅ Create schemas 驗證")
-        print(f"   ✅ 欄位驗證器")
-        print(f"   ✅ 錯誤處理")
-        print(f"   ✅ JSON 序列化")
-        print(f"   ✅ Schema 生成")
-        print(f"   ✅ 範例資料")
+        print(f"    Create schemas 驗證")
+        print(f"    欄位驗證器")
+        print(f"    錯誤處理")
+        print(f"    JSON 序列化")
+        print(f"    Schema 生成")
+        print(f"    範例資料")
         
         return True
         
     except Exception as e:
-        print(f"❌ 測試失敗: {e}")
+        print(f" 測試失敗: {e}")
         import traceback
         traceback.print_exc()
         return False

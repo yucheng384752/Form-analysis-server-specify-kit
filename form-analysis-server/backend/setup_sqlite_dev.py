@@ -16,7 +16,7 @@ from datetime import datetime
 
 async def setup_database():
     """初始化 SQLite 資料庫"""
-    print("🔧 正在初始化 SQLite 資料庫...")
+    print(" 正在初始化 SQLite 資料庫...")
     
     # 初始化資料庫引擎
     await init_db()
@@ -25,7 +25,7 @@ async def setup_database():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
-    print("✅ 資料庫表格創建成功!")
+    print(" 資料庫表格創建成功!")
     
     # 檢查表格
     async with engine.begin() as conn:
@@ -57,7 +57,7 @@ async def test_database_operations():
         await session.commit()
         await session.refresh(test_job)
         
-        print(f"✅ 創建工作: {test_job.id} - {test_job.filename}")
+        print(f" 創建工作: {test_job.id} - {test_job.filename}")
         
         # 創建測試記錄
         test_record = Record(
@@ -74,7 +74,7 @@ async def test_database_operations():
         await session.commit()
         await session.refresh(test_record)
         
-        print(f"✅ 創建記錄: {test_record.id} - {test_record.lot_no}")
+        print(f" 創建記錄: {test_record.id} - {test_record.lot_no}")
         
         # 測試關聯查詢
         from sqlalchemy import select
@@ -87,7 +87,7 @@ async def test_database_operations():
         # 加載關聯記錄
         await session.refresh(job_with_records, ['records'])
         
-        print(f"✅ 工作關聯記錄數量: {len(job_with_records.records)}")
+        print(f" 工作關聯記錄數量: {len(job_with_records.records)}")
         
         # 創建錯誤記錄
         test_error = UploadError(
@@ -100,7 +100,7 @@ async def test_database_operations():
         session.add(test_error)
         await session.commit()
         
-        print(f"✅ 創建錯誤: {test_error.id}")
+        print(f" 創建錯誤: {test_error.id}")
         
         return test_job, test_record, test_error
 
@@ -111,7 +111,7 @@ async def main():
     # 檢查 .env.dev 文件
     env_file = Path(".env.dev")
     if not env_file.exists():
-        print("❌ .env.dev 文件不存在!")
+        print(" .env.dev 文件不存在!")
         return
     
     # 設置環境變數
@@ -136,7 +136,7 @@ async def main():
         print(f"\n📝 可以開始開發 API 端點了!")
         
     except Exception as e:
-        print(f"❌ 設置失敗: {e}")
+        print(f" 設置失敗: {e}")
         import traceback
         traceback.print_exc()
     

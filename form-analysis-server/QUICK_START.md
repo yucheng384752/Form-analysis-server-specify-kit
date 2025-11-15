@@ -66,7 +66,7 @@ curl -f http://localhost:8000/healthz/detailed
 }
 ```
 
-## 📁 檔案上傳與驗證流程
+##  檔案上傳與驗證流程
 
 ### 1. 創建測試 CSV 檔案
 
@@ -226,7 +226,7 @@ export default defineConfig({
 })
 ```
 
-## 🔧 CORS 配置確認
+##  CORS 配置確認
 
 ### 後端 CORS 設定
 在 `.env` 文件中配置允許的來源：

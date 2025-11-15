@@ -1,4 +1,4 @@
-# 📊 日誌管理工具包
+#  日誌管理工具包
 
 Form Analysis System 提供了完整的日誌管理工具包，支援日誌監控、分析、搜尋和清理等功能。
 
@@ -44,9 +44,9 @@ python tools/log_analyzer.py --watch --errors-only
 
 **功能**:
 - 📈 API 使用統計 (上傳/查詢/匯入)
-- 🔍 錯誤模式分析
+-  錯誤模式分析
 - ⚡ 效能統計 (平均/最大/最小處理時間)
-- 📊 日誌級別分佈
+-  日誌級別分佈
 - 🕐 時間範圍篩選
 - 📱 即時監控模式
 
@@ -73,15 +73,15 @@ python tools/log_analyzer.py --watch --errors-only
 **功能**:
 - 🎨 彩色輸出和表情符號
 - 📤 JSON 格式匯出
-- 📊 詳細統計資訊 (檔案大小、日誌級別分佈)
-- 🔍 高亮搜尋結果
+-  詳細統計資訊 (檔案大小、日誌級別分佈)
+-  高亮搜尋結果
 - 📈 即時監控 (格式化顯示)
 - 🧹 智能清理 (確認對話)
 - ⚙️  自定義參數
 
 ---
 
-### 4. 🔍 系統診斷工具
+### 4.  系統診斷工具
 **檔案**: `scripts/diagnose-system.bat`  
 **用途**: 系統環境和狀態檢查  
 **特色**: 綜合診斷報告，問題排查  
@@ -93,13 +93,13 @@ scripts\diagnose-system.bat
 
 **功能**:
 - 🖥️  系統環境檢查 (Python, Node.js, Docker)
-- 📁 專案結構驗證
+-  專案結構驗證
 - 🌐 連接埠狀態檢查
 - 📝 日誌系統狀態
 - 💾 磁碟空間監控
 - 🌍 網路連接測試
 - 🐳 Docker 容器狀態
-- 🔄 運行程序檢查
+-  運行程序檢查
 - 📋 診斷報告生成
 
 ## 📋 使用場景
@@ -113,7 +113,7 @@ python tools/log_analyzer.py --watch
 .\scripts\LogManager.ps1 -Action watch
 ```
 
-### 🔧 問題排查
+###  問題排查
 ```batch
 # 1. 系統診斷
 scripts\diagnose-system.bat
@@ -126,7 +126,7 @@ scripts\monitor-logs.bat
 .\scripts\LogManager.ps1 -Action search -SearchTerm "ConnectionError"
 ```
 
-### 📊 性能分析
+###  性能分析
 ```bash
 # 生成 24 小時性能報告
 python tools/log_analyzer.py --hours 24
@@ -179,16 +179,16 @@ ENABLE_REQUEST_ID=true
 
 ### Python 分析報告
 ```
-📊 Form Analysis System - 日誌分析報告
+ Form Analysis System - 日誌分析報告
 ==================================================
 📅 報告時間: 2024-11-09 15:30:45
 📂 日誌目錄: form-analysis-server/backend/logs
 
-📄 日誌檔案資訊:
+ 日誌檔案資訊:
    📝 app.log: 2,345,678 bytes (2.23 MB)
    🚨 error.log: 12,345 bytes (0.01 MB)
 
-🔄 API 使用統計 (過去24小時):
+ API 使用統計 (過去24小時):
    📡 UPLOAD:
       總請求: 25
       成功: 23
@@ -206,8 +206,8 @@ ENABLE_REQUEST_ID=true
 ### PowerShell 彩色輸出
 ```
 [15:30:45] 📘 INFO: 檔案上傳開始 - filename: P1_test.csv
-[15:30:46] ✅ INFO: 檔案驗證完成 - valid_rows: 100
-[15:30:47] ⚠️ WARNING: 發現重複記錄 - duplicate_count: 3
+[15:30:46]  INFO: 檔案驗證完成 - valid_rows: 100
+[15:30:47]  WARNING: 發現重複記錄 - duplicate_count: 3
 [15:30:48] 📘 INFO: 上傳完成 - processing_time: 2.34s
 ```
 

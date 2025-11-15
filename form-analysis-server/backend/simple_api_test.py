@@ -16,14 +16,14 @@ def test_api_connection():
     try:
         response = requests.get(f"{API_BASE_URL}/")
         if response.status_code == 200:
-            print("✅ API 連接成功")
+            print(" API 連接成功")
             print(f"📋 回應：{response.json()}")
             return True
         else:
-            print(f"❌ API 連接失敗：{response.status_code}")
+            print(f" API 連接失敗：{response.status_code}")
             return False
     except Exception as e:
-        print(f"❌ 無法連接到 API：{e}")
+        print(f" 無法連接到 API：{e}")
         return False
 
 def test_api_docs():
@@ -31,13 +31,13 @@ def test_api_docs():
     try:
         response = requests.get(f"{API_BASE_URL}/docs")
         if response.status_code == 200:
-            print("✅ API 文檔可訪問")
+            print(" API 文檔可訪問")
             return True
         else:
-            print(f"❌ API 文檔無法訪問：{response.status_code}")
+            print(f" API 文檔無法訪問：{response.status_code}")
             return False
     except Exception as e:
-        print(f"❌ 文檔訪問錯誤：{e}")
+        print(f" 文檔訪問錯誤：{e}")
         return False
 
 def create_test_csv_file():
@@ -71,19 +71,19 @@ def test_file_upload():
         
         response = requests.post(f"{API_BASE_URL}/api/upload", files=files)
         
-        print(f"📊 HTTP 狀態碼：{response.status_code}")
+        print(f" HTTP 狀態碼：{response.status_code}")
         print(f"📝 回應內容：{response.text}")
         
         if response.status_code == 200:
             result = response.json()
-            print("✅ 檔案上傳成功")
+            print(" 檔案上傳成功")
             return result.get('process_id')
         else:
-            print(f"❌ 檔案上傳失敗")
+            print(f" 檔案上傳失敗")
             return None
             
     except Exception as e:
-        print(f"❌ 上傳請求失敗：{e}")
+        print(f" 上傳請求失敗：{e}")
         return None
 
 def test_upload_status(process_id):
@@ -96,18 +96,18 @@ def test_upload_status(process_id):
     try:
         response = requests.get(f"{API_BASE_URL}/api/upload/{process_id}/status")
         
-        print(f"📊 HTTP 狀態碼：{response.status_code}")
+        print(f" HTTP 狀態碼：{response.status_code}")
         print(f"📝 回應內容：{response.text}")
         
         if response.status_code == 200:
-            print("✅ 狀態查詢成功")
+            print(" 狀態查詢成功")
             return True
         else:
-            print(f"❌ 狀態查詢失敗")
+            print(f" 狀態查詢失敗")
             return False
             
     except Exception as e:
-        print(f"❌ 狀態查詢請求失敗：{e}")
+        print(f" 狀態查詢請求失敗：{e}")
         return False
 
 def main():
@@ -119,7 +119,7 @@ def main():
     # 測試基本連接
     connection_ok = test_api_connection()
     if not connection_ok:
-        print("\n⚠️ API 伺服器未啟動，請先執行:")
+        print("\n API 伺服器未啟動，請先執行:")
         print("   python app/main.py")
         return
     
@@ -136,16 +136,16 @@ def main():
     # 總結
     print("\n" + "=" * 50)
     print("📋 測試結果總結：")
-    print(f"   - API 連接：{'✅ 成功' if connection_ok else '❌ 失敗'}")
-    print(f"   - API 文檔：{'✅ 成功' if docs_ok else '❌ 失敗'}")
-    print(f"   - 檔案上傳：{'✅ 成功' if upload_ok else '❌ 失敗'}")
-    print(f"   - 狀態查詢：{'✅ 成功' if status_ok else '❌ 失敗'}")
+    print(f"   - API 連接：{' 成功' if connection_ok else ' 失敗'}")
+    print(f"   - API 文檔：{' 成功' if docs_ok else ' 失敗'}")
+    print(f"   - 檔案上傳：{' 成功' if upload_ok else ' 失敗'}")
+    print(f"   - 狀態查詢：{' 成功' if status_ok else ' 失敗'}")
     
     if all([connection_ok, docs_ok, upload_ok, status_ok]):
         print("\n🎊 所有測試通過！檔案上傳 API 運作正常。")
         print("🌐 訪問 http://localhost:8000/docs 查看完整 API 文檔")
     else:
-        print("\n⚠️  部分測試失敗，請檢查伺服器狀態。")
+        print("\n  部分測試失敗，請檢查伺服器狀態。")
 
 if __name__ == "__main__":
     main()

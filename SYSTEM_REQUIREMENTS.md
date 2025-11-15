@@ -2,7 +2,7 @@
 
 在部署 Form Analysis Spec Kit 到新電腦前，請確認以下軟體已安裝：
 
-## 🔧 必需軟體
+##  必需軟體
 
 ### Docker & 容器化
 - [ ] **Docker Desktop** (最新版本)
@@ -26,7 +26,7 @@
   - 下載：https://git-scm.com/
   - 驗證：`git --version`
 
-## 🔍 快速檢查命令
+##  快速檢查命令
 
 在新電腦上執行以下命令檢查環境：
 

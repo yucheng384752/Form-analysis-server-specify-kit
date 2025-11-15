@@ -97,7 +97,7 @@ class TestRecordModel:
             assert isinstance(record.production_date, date)
             assert isinstance(record.created_at, datetime)
             
-            print(f"✅ {test_case['name']} 測試通過")
+            print(f" {test_case['name']} 測試通過")
     
     @pytest.mark.asyncio
     async def test_record_lot_no_variations(self, db_session, clean_db):
@@ -125,7 +125,7 @@ class TestRecordModel:
             await db_session.refresh(record)
             
             assert record.lot_no == lot_no
-            print(f"✅ 批號 {lot_no} 測試通過")
+            print(f" 批號 {lot_no} 測試通過")
     
     @pytest.mark.asyncio
     async def test_record_production_date_validation(self, db_session, clean_db):
@@ -155,7 +155,7 @@ class TestRecordModel:
             await db_session.refresh(record)
             
             assert record.production_date == test_date
-            print(f"✅ 日期 {test_date} 測試通過")
+            print(f" 日期 {test_date} 測試通過")
     
     @pytest.mark.asyncio
     async def test_record_quantity_validation(self, db_session, clean_db):
@@ -178,7 +178,7 @@ class TestRecordModel:
             await db_session.refresh(record)
             
             assert record.quantity == quantity
-            print(f"✅ 數量 {quantity} 測試通過")
+            print(f" 數量 {quantity} 測試通過")
     
     @pytest.mark.asyncio
     async def test_multiple_records_creation(self, db_session, clean_db):
@@ -210,4 +210,4 @@ class TestRecordModel:
         expected_lot_numbers = [f"BATCH00{i+1}_01" for i in range(5)]
         assert sorted(lot_numbers) == sorted(expected_lot_numbers)
         
-        print("✅ 批量記錄創建測試通過")
+        print(" 批量記錄創建測試通過")

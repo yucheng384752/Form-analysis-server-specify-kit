@@ -25,18 +25,18 @@ def create_test_data_via_api():
         
         if result.returncode == 0:
             response = json.loads(result.stdout)
-            print(f"✅ API調用成功: {response}")
+            print(f" API調用成功: {response}")
         else:
-            print(f"❌ API調用失敗: {result.stderr}")
+            print(f" API調用失敗: {result.stderr}")
             print(f"stdout: {result.stdout}")
             
     except subprocess.TimeoutExpired:
-        print("❌ API調用超時")
+        print(" API調用超時")
     except json.JSONDecodeError as e:
-        print(f"❌ JSON解析錯誤: {e}")
+        print(f" JSON解析錯誤: {e}")
         print(f"原始回應: {result.stdout}")
     except Exception as e:
-        print(f"❌ 意外錯誤: {e}")
+        print(f" 意外錯誤: {e}")
 
 if __name__ == "__main__":
     create_test_data_via_api()

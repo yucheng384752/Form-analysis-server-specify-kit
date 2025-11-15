@@ -19,7 +19,7 @@ try:
     from app.main import app
     from app.core.database import engine, init_db, Base
 except ImportError as e:
-    print(f"❌ 缺少必要模組：{e}")
+    print(f" 缺少必要模組：{e}")
     print("請確保已安裝 FastAPI 和相關套件")
     sys.exit(1)
 
@@ -45,16 +45,16 @@ class FullIntegrationTest:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             
-            print("✅ 資料庫表格建立完成")
+            print(" 資料庫表格建立完成")
             
             # 初始化資料庫
             await init_db()
-            print("✅ 資料庫初始化完成")
+            print(" 資料庫初始化完成")
             
             return True
             
         except Exception as e:
-            print(f"❌ 資料庫設置失敗：{e}")
+            print(f" 資料庫設置失敗：{e}")
             import traceback
             traceback.print_exc()
             return False
@@ -64,10 +64,10 @@ class FullIntegrationTest:
         try:
             transport = ASGITransport(app=app)
             self.client = AsyncClient(transport=transport, base_url="http://test")
-            print("✅ HTTP 客戶端設置完成")
+            print(" HTTP 客戶端設置完成")
             return True
         except Exception as e:
-            print(f"❌ HTTP 客戶端設置失敗：{e}")
+            print(f" HTTP 客戶端設置失敗：{e}")
             return False
     
     async def cleanup(self):
@@ -79,20 +79,20 @@ class FullIntegrationTest:
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.drop_all)
-            print("✅ 資料庫清理完成")
+            print(" 資料庫清理完成")
         except Exception as e:
-            print(f"⚠️  資料庫清理警告：{e}")
+            print(f"  資料庫清理警告：{e}")
         
-        print("✅ 測試環境清理完成")
+        print(" 測試環境清理完成")
     
     async def assert_response(self, response, expected_status, step_name):
         """驗證 API 回應"""
         if response.status_code != expected_status:
-            print(f"❌ {step_name} 失敗：期望狀態碼 {expected_status}，實際 {response.status_code}")
+            print(f" {step_name} 失敗：期望狀態碼 {expected_status}，實際 {response.status_code}")
             print(f"   回應內容：{response.text}")
             return False
         
-        print(f"✅ {step_name} 成功：狀態碼 {response.status_code}")
+        print(f" {step_name} 成功：狀態碼 {response.status_code}")
         return True
     
     async def test_upload_file(self, csv_file_path):
@@ -108,7 +108,7 @@ class FullIntegrationTest:
         
         data = response.json()
         if "process_id" not in data:
-            print("❌ 回應中缺少 process_id")
+            print(" 回應中缺少 process_id")
             return None
         
         process_id = data["process_id"]
@@ -123,7 +123,7 @@ class FullIntegrationTest:
     
     async def test_check_status(self, process_id):
         """步驟 2：測試狀態查詢"""
-        print(f"\n📊 步驟 2：查詢工作狀態 {process_id}")
+        print(f"\n 步驟 2：查詢工作狀態 {process_id}")
         
         response = await self.client.get(f"/api/upload/{process_id}/status")
         
@@ -135,7 +135,7 @@ class FullIntegrationTest:
         
         for field in expected_fields:
             if field not in data:
-                print(f"❌ 回應中缺少欄位：{field}")
+                print(f" 回應中缺少欄位：{field}")
                 return None
         
         print(f"   狀態: {data['status']}")
@@ -145,15 +145,15 @@ class FullIntegrationTest:
         
         # 驗證預期結果
         if data['total_rows'] != 5:
-            print(f"❌ 總列數錯誤：期望 5，實際 {data['total_rows']}")
+            print(f" 總列數錯誤：期望 5，實際 {data['total_rows']}")
             return None
         
         if data['error_count'] != 2:
-            print(f"❌ 錯誤數錯誤：期望 2，實際 {data['error_count']}")
+            print(f" 錯誤數錯誤：期望 2，實際 {data['error_count']}")
             return None
         
         if data['valid_count'] != 3:
-            print(f"❌ 有效數錯誤：期望 3，實際 {data['valid_count']}")
+            print(f" 有效數錯誤：期望 3，實際 {data['valid_count']}")
             return None
         
         self.test_results['status'] = data
@@ -161,7 +161,7 @@ class FullIntegrationTest:
     
     async def test_validate_results(self, process_id):
         """步驟 3：測試驗證結果查詢"""
-        print(f"\n🔍 步驟 3：查詢驗證結果 {process_id}")
+        print(f"\n 步驟 3：查詢驗證結果 {process_id}")
         
         response = await self.client.get(
             f"/api/validate?process_id={process_id}&page=1&page_size=10"
@@ -175,7 +175,7 @@ class FullIntegrationTest:
         
         for section in required_sections:
             if section not in data:
-                print(f"❌ 回應中缺少區塊：{section}")
+                print(f" 回應中缺少區塊：{section}")
                 return None
         
         errors = data["errors"]
@@ -188,7 +188,7 @@ class FullIntegrationTest:
         
         # 驗證錯誤數量
         if len(errors) != 2:
-            print(f"❌ 錯誤數量錯誤：期望 2，實際 {len(errors)}")
+            print(f" 錯誤數量錯誤：期望 2，實際 {len(errors)}")
             return None
         
         # 顯示錯誤詳情
@@ -200,7 +200,7 @@ class FullIntegrationTest:
     
     async def test_export_csv(self, process_id):
         """步驟 4：測試錯誤 CSV 匯出"""
-        print(f"\n📥 步驟 4：匯出錯誤 CSV {process_id}")
+        print(f"\n 步驟 4：匯出錯誤 CSV {process_id}")
         
         response = await self.client.get(f"/api/errors.csv?process_id={process_id}")
         
@@ -210,7 +210,7 @@ class FullIntegrationTest:
         # 檢查標頭
         content_type = response.headers.get("content-type", "")
         if "text/csv" not in content_type:
-            print(f"❌ Content-Type 錯誤：期望包含 text/csv，實際 {content_type}")
+            print(f" Content-Type 錯誤：期望包含 text/csv，實際 {content_type}")
             return None
         
         # 檢查 CSV 內容
@@ -221,13 +221,13 @@ class FullIntegrationTest:
         print(f"   檔案大小: {len(csv_content)} 字元")
         
         if len(csv_lines) < 3:  # 標頭 + 至少 2 個錯誤
-            print(f"❌ CSV 內容不足：期望至少 3 列，實際 {len(csv_lines)}")
+            print(f" CSV 內容不足：期望至少 3 列，實際 {len(csv_lines)}")
             return None
         
         # 檢查標頭
         expected_header = "row_index,field,error_code,message"
         if csv_lines[0] != expected_header:
-            print(f"❌ CSV 標頭錯誤：期望 {expected_header}")
+            print(f" CSV 標頭錯誤：期望 {expected_header}")
             print(f"   實際: {csv_lines[0]}")
             return None
         
@@ -239,7 +239,7 @@ class FullIntegrationTest:
     
     async def test_import_data(self, process_id):
         """步驟 5：測試資料匯入"""
-        print(f"\n📊 步驟 5：匯入有效資料 {process_id}")
+        print(f"\n 步驟 5：匯入有效資料 {process_id}")
         
         response = await self.client.post(
             "/api/import",
@@ -254,7 +254,7 @@ class FullIntegrationTest:
         
         for field in required_fields:
             if field not in data:
-                print(f"❌ 回應中缺少欄位：{field}")
+                print(f" 回應中缺少欄位：{field}")
                 return None
         
         print(f"   匯入列數: {data['imported_rows']}")
@@ -264,11 +264,11 @@ class FullIntegrationTest:
         
         # 驗證結果
         if data['imported_rows'] != 3:
-            print(f"❌ 匯入列數錯誤：期望 3，實際 {data['imported_rows']}")
+            print(f" 匯入列數錯誤：期望 3，實際 {data['imported_rows']}")
             return None
         
         if data['skipped_rows'] != 2:
-            print(f"❌ 跳過列數錯誤：期望 2，實際 {data['skipped_rows']}")
+            print(f" 跳過列數錯誤：期望 2，實際 {data['skipped_rows']}")
             return None
         
         self.test_results['import'] = data
@@ -276,7 +276,7 @@ class FullIntegrationTest:
     
     async def test_final_status(self, process_id):
         """步驟 6：測試最終狀態"""
-        print(f"\n🔍 步驟 6：驗證最終狀態 {process_id}")
+        print(f"\n 步驟 6：驗證最終狀態 {process_id}")
         
         response = await self.client.get(f"/api/upload/{process_id}/status")
         
@@ -286,7 +286,7 @@ class FullIntegrationTest:
         data = response.json()
         
         if data['status'] != "IMPORTED":
-            print(f"❌ 最終狀態錯誤：期望 IMPORTED，實際 {data['status']}")
+            print(f" 最終狀態錯誤：期望 IMPORTED，實際 {data['status']}")
             return None
         
         print(f"   最終狀態: {data['status']}")
@@ -309,7 +309,7 @@ class FullIntegrationTest:
         data = response.json()
         
         if "detail" not in data:
-            print("❌ 錯誤回應格式不正確")
+            print(" 錯誤回應格式不正確")
             return None
         
         print(f"   錯誤訊息: {data['detail']}")
@@ -341,7 +341,7 @@ class FullIntegrationTest:
         if not await self.assert_response(response, 404, "匯出不存在的錯誤 CSV"):
             return None
         
-        print("✅ 錯誤處理測試完成")
+        print(" 錯誤處理測試完成")
         return True
 
 async def main():
@@ -405,7 +405,7 @@ async def main():
         if success:
             print("\n" + "=" * 70)
             print("🎉 完整流程整合測試成功完成！")
-            print("\n📊 測試結果摘要：")
+            print("\n 測試結果摘要：")
             
             if 'upload' in test.test_results:
                 print(f"   上傳成功：Process ID {process_id}")
@@ -422,7 +422,7 @@ async def main():
                 csv_data = test.test_results['csv']
                 print(f"   CSV 匯出：{csv_data['lines']} 列")
             
-            print("\n✅ 測試涵蓋範圍：")
+            print("\n 測試涵蓋範圍：")
             print("   • 資料庫表格建立和初始化")
             print("   • 檔案上傳 (POST /api/upload)")
             print("   • 狀態查詢 (GET /api/upload/{id}/status)")
@@ -433,16 +433,16 @@ async def main():
             print("   • 防重複匯入測試")
             
             print("\n🎯 測試場景驗證：")
-            print("   • CSV 檔案：5 列資料 ✅")
-            print("   • 錯誤資料：2 列（空白欄位、格式錯誤）✅")
-            print("   • 有效資料：3 列 ✅")
-            print("   • 完整工作流程：上傳→驗證→匯入 ✅")
+            print("   • CSV 檔案：5 列資料 ")
+            print("   • 錯誤資料：2 列（空白欄位、格式錯誤）")
+            print("   • 有效資料：3 列 ")
+            print("   • 完整工作流程：上傳→驗證→匯入 ")
             
         else:
-            print("\n❌ 整合測試失敗")
+            print("\n 整合測試失敗")
             
     except Exception as e:
-        print(f"\n❌ 測試執行時發生錯誤：{e}")
+        print(f"\n 測試執行時發生錯誤：{e}")
         import traceback
         traceback.print_exc()
         success = False

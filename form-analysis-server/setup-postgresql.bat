@@ -8,7 +8,7 @@ echo    Form Analysis PostgreSQL 設置
 echo ==========================================
 echo.
 
-echo 📊 正在啟動PostgreSQL Docker容器...
+echo  正在啟動PostgreSQL Docker容器...
 docker-compose up -d db
 
 echo.
@@ -16,7 +16,7 @@ echo ⏳ 等待PostgreSQL準備就緒...
 timeout /t 10 /nobreak > nul
 
 echo.
-echo 🔧 檢查PostgreSQL容器狀態...
+echo  檢查PostgreSQL容器狀態...
 docker-compose ps db
 
 echo.
@@ -35,7 +35,7 @@ cd ..
 
 echo.
 echo ==========================================
-echo ✅ PostgreSQL設置完成！
+echo  PostgreSQL設置完成！
 echo.
 echo 💡 提示:
 echo    - 使用 docker-compose logs db 查看資料庫日誌

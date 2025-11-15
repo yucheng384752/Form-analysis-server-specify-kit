@@ -244,7 +244,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
                 </span>
               )}
               <span className="flex items-center gap-1">
-                <FileText className="w-3 h-3" />
+                {/* <FileText className="w-3 h-3" /> */}
                 Line {entry.line_number}
               </span>
             </div>
@@ -295,7 +295,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
             }}
             disabled={loading}
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            {/* <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> */}
             重新整理
           </Button>
           
@@ -305,7 +305,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
             onClick={cleanupLogs}
             disabled={loading}
           >
-            <Trash2 className="w-4 h-4 mr-2" />
+            {/* <Trash2 className="w-4 h-4 mr-2" /> */}
             清理舊日誌
           </Button>
         </div>
@@ -357,7 +357,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
                   onClick={() => downloadLog(selectedLogType)}
                   disabled={!selectedLogType || loading}
                 >
-                  <Download className="w-4 h-4 mr-2" />
+                  {/* <Download className="w-4 h-4 mr-2" /> */}
                   下載
                 </Button>
               </div>

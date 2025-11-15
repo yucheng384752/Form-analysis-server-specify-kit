@@ -22,7 +22,7 @@ lot_no VARCHAR(20) PRIMARY KEY  -- 格式：7位數字_2位數字 (如 2503033_0
 
 ### 2. 資料庫架構設計理由
 
-#### 📊 **分階段表設計**
+####  **分階段表設計**
 ```
 production_lots (主表)
 ├── p1_extrusion_data (P1階段)
@@ -65,9 +65,9 @@ DELETE /api/data/p1/{lot_no}/{record_id}      # 刪除P1記錄
 
 #### 📝 **以 lot_no 為路徑參數的理由**
 ```python
-@router.get("/p1/{lot_no}")  # ✅ 推薦
+@router.get("/p1/{lot_no}")  #  推薦
 # vs
-@router.get("/p1?lot_no={lot_no}")  # ❌ 不推薦
+@router.get("/p1?lot_no={lot_no}")  #  不推薦
 ```
 
 **理由：**
@@ -107,7 +107,7 @@ lot_no: str = Field(..., pattern=r'^\d{7}_\d{2}$')  # 格式驗證
 
 ### 5. 批量上傳設計理由
 
-#### 📁 **檔案類型路由**
+####  **檔案類型路由**
 ```python
 @upload_router.post("/csv/{phase}/{lot_no}")
 @upload_router.post("/json/{lot_no}")
@@ -121,7 +121,7 @@ lot_no: str = Field(..., pattern=r'^\d{7}_\d{2}$')  # 格式驗證
 
 ### 6. 查詢和分析API理由
 
-#### 🔍 **分層查詢設計**
+####  **分層查詢設計**
 ```
 /api/production/lots        # 基本列表查詢
 /api/analytics/search       # 全文搜尋

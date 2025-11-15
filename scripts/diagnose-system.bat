@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 echo ════════════════════════════════════════
-echo        🔍 系統診斷工具 v2.0
+echo         系統診斷工具 v2.0
 echo ════════════════════════════════════════
 echo.
 
@@ -16,12 +16,12 @@ set TIMESTAMP=%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%%time:~6,2
 set TIMESTAMP=%TIMESTAMP: =0%
 set REPORT_FILE=diagnostic_report_%TIMESTAMP%.txt
 
-echo 📊 正在生成綜合系統診斷報告...
+echo  正在生成綜合系統診斷報告...
 echo.
 
 :: 開始診斷報告
 echo ════════════════════════════════════════ > %REPORT_FILE%
-echo       🔍 Form Analysis System 診斷報告 >> %REPORT_FILE%
+echo        Form Analysis System 診斷報告 >> %REPORT_FILE%
 echo ════════════════════════════════════════ >> %REPORT_FILE%
 echo 📅 報告時間: %date% %time% >> %REPORT_FILE%
 echo 💻 系統: %OS% >> %REPORT_FILE%
@@ -43,11 +43,11 @@ echo 🐍 Python 環境 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 python --version >> %REPORT_FILE% 2>nul
 if errorlevel 1 (
-    echo ❌ Python 未安裝或未加入 PATH
-    echo ❌ Python 未安裝或未加入 PATH >> %REPORT_FILE%
+    echo  Python 未安裝或未加入 PATH
+    echo  Python 未安裝或未加入 PATH >> %REPORT_FILE%
 ) else (
-    echo ✅ Python 已安裝
-    echo ✅ Python 已安裝 >> %REPORT_FILE%
+    echo  Python 已安裝
+    echo  Python 已安裝 >> %REPORT_FILE%
     pip --version >> %REPORT_FILE% 2>nul
 )
 echo. >> %REPORT_FILE%
@@ -58,11 +58,11 @@ echo 🟢 Node.js 環境 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 node --version >> %REPORT_FILE% 2>nul
 if errorlevel 1 (
-    echo ❌ Node.js 未安裝
-    echo ❌ Node.js 未安裝 >> %REPORT_FILE%
+    echo  Node.js 未安裝
+    echo  Node.js 未安裝 >> %REPORT_FILE%
 ) else (
-    echo ✅ Node.js 已安裝
-    echo ✅ Node.js 已安裝 >> %REPORT_FILE%
+    echo  Node.js 已安裝
+    echo  Node.js 已安裝 >> %REPORT_FILE%
     npm --version >> %REPORT_FILE% 2>nul
 )
 echo. >> %REPORT_FILE%
@@ -73,46 +73,46 @@ echo 🐳 Docker 環境 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 docker --version >> %REPORT_FILE% 2>nul
 if errorlevel 1 (
-    echo ❌ Docker 未安裝或未啟動
-    echo ❌ Docker 未安裝或未啟動 >> %REPORT_FILE%
+    echo  Docker 未安裝或未啟動
+    echo  Docker 未安裝或未啟動 >> %REPORT_FILE%
     set DOCKER_AVAILABLE=false
 ) else (
-    echo ✅ Docker 服務可用
-    echo ✅ Docker 服務可用 >> %REPORT_FILE%
+    echo  Docker 服務可用
+    echo  Docker 服務可用 >> %REPORT_FILE%
     set DOCKER_AVAILABLE=true
     
     docker-compose --version >> %REPORT_FILE% 2>nul
     if errorlevel 1 (
-        echo ❌ Docker Compose 未安裝
-        echo ❌ Docker Compose 未安裝 >> %REPORT_FILE%
+        echo  Docker Compose 未安裝
+        echo  Docker Compose 未安裝 >> %REPORT_FILE%
     ) else (
-        echo ✅ Docker Compose 可用
-        echo ✅ Docker Compose 可用 >> %REPORT_FILE%
+        echo  Docker Compose 可用
+        echo  Docker Compose 可用 >> %REPORT_FILE%
     )
     
     docker info >nul 2>nul
     if errorlevel 1 (
-        echo ⚠️  Docker 服務未運行
-        echo ⚠️  Docker 服務未運行 >> %REPORT_FILE%
+        echo   Docker 服務未運行
+        echo   Docker 服務未運行 >> %REPORT_FILE%
     ) else (
-        echo ✅ Docker 服務正在運行
-        echo ✅ Docker 服務正在運行 >> %REPORT_FILE%
+        echo  Docker 服務正在運行
+        echo  Docker 服務正在運行 >> %REPORT_FILE%
     )
 )
 echo. >> %REPORT_FILE%
 
 echo [5/12] 專案結構檢查...
 echo ──────────────────────────────────────── >> %REPORT_FILE%
-echo 📁 專案結構 >> %REPORT_FILE%
+echo  專案結構 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 set REQUIRED_DIRS=form-analysis-server docs scripts test-data tools
 for %%d in (%REQUIRED_DIRS%) do (
     if exist "%%d" (
-        echo ✅ %%d\ 目錄存在
-        echo ✅ %%d\ 目錄存在 >> %REPORT_FILE%
+        echo  %%d\ 目錄存在
+        echo  %%d\ 目錄存在 >> %REPORT_FILE%
     ) else (
-        echo ❌ %%d\ 目錄不存在
-        echo ❌ %%d\ 目錄不存在 >> %REPORT_FILE%
+        echo  %%d\ 目錄不存在
+        echo  %%d\ 目錄不存在 >> %REPORT_FILE%
     )
 )
 echo. >> %REPORT_FILE%
@@ -125,11 +125,11 @@ set PORTS=5432 8000 5173 3000
 for %%p in (%PORTS%) do (
     netstat -an | findstr ":%%p " >nul 2>nul
     if errorlevel 1 (
-        echo ✅ 連接埠 %%p 可用
-        echo ✅ 連接埠 %%p 可用 >> %REPORT_FILE%
+        echo  連接埠 %%p 可用
+        echo  連接埠 %%p 可用 >> %REPORT_FILE%
     ) else (
-        echo ⚠️  連接埠 %%p 被占用
-        echo ⚠️  連接埠 %%p 被占用 >> %REPORT_FILE%
+        echo   連接埠 %%p 被占用
+        echo   連接埠 %%p 被占用 >> %REPORT_FILE%
     )
 )
 echo. >> %REPORT_FILE%
@@ -139,30 +139,30 @@ echo ─────────────────────────
 echo 📝 日誌系統 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 if exist "%LOG_DIR%" (
-    echo ✅ 日誌目錄存在: %LOG_DIR%
-    echo ✅ 日誌目錄存在: %LOG_DIR% >> %REPORT_FILE%
+    echo  日誌目錄存在: %LOG_DIR%
+    echo  日誌目錄存在: %LOG_DIR% >> %REPORT_FILE%
     
     if exist "%LOG_DIR%\app.log" (
-        echo ✅ app.log 存在
-        echo ✅ app.log 存在 >> %REPORT_FILE%
+        echo  app.log 存在
+        echo  app.log 存在 >> %REPORT_FILE%
         for %%i in ("%LOG_DIR%\app.log") do (
             echo    檔案大小: %%~zi bytes >> %REPORT_FILE%
         )
     ) else (
-        echo ⚠️  app.log 不存在
-        echo ⚠️  app.log 不存在 >> %REPORT_FILE%
+        echo   app.log 不存在
+        echo   app.log 不存在 >> %REPORT_FILE%
     )
     
     if exist "%LOG_DIR%\error.log" (
-        echo ✅ error.log 存在
-        echo ✅ error.log 存在 >> %REPORT_FILE%
+        echo  error.log 存在
+        echo  error.log 存在 >> %REPORT_FILE%
     ) else (
-        echo ℹ️  error.log 不存在（正常）
-        echo ℹ️  error.log 不存在（正常）>> %REPORT_FILE%
+        echo   error.log 不存在（正常）
+        echo   error.log 不存在（正常）>> %REPORT_FILE%
     )
 ) else (
-    echo ⚠️  日誌目錄不存在
-    echo ⚠️  日誌目錄不存在 >> %REPORT_FILE%
+    echo   日誌目錄不存在
+    echo   日誌目錄不存在 >> %REPORT_FILE%
 )
 echo. >> %REPORT_FILE%
 
@@ -187,11 +187,11 @@ echo 🌍 網路連接 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 ping -n 1 8.8.8.8 >nul 2>nul
 if errorlevel 1 (
-    echo ❌ 網路連接異常
-    echo ❌ 網路連接異常 >> %REPORT_FILE%
+    echo  網路連接異常
+    echo  網路連接異常 >> %REPORT_FILE%
 ) else (
-    echo ✅ 網路連接正常
-    echo ✅ 網路連接正常 >> %REPORT_FILE%
+    echo  網路連接正常
+    echo  網路連接正常 >> %REPORT_FILE%
 )
 echo. >> %REPORT_FILE%
 
@@ -203,13 +203,13 @@ if "%DOCKER_AVAILABLE%"=="true" (
     
     cd "%SERVER_PATH%" 2>nul
     if exist "docker-compose.yml" (
-        echo ✅ docker-compose.yml 存在
-        echo ✅ docker-compose.yml 存在 >> %REPORT_FILE%
+        echo  docker-compose.yml 存在
+        echo  docker-compose.yml 存在 >> %REPORT_FILE%
         
         docker-compose ps >> %REPORT_FILE% 2>nul
     ) else (
-        echo ❌ docker-compose.yml 不存在
-        echo ❌ docker-compose.yml 不存在 >> %REPORT_FILE%
+        echo  docker-compose.yml 不存在
+        echo  docker-compose.yml 不存在 >> %REPORT_FILE%
     )
     echo. >> %REPORT_FILE%
     
@@ -228,7 +228,7 @@ if "%DOCKER_AVAILABLE%"=="true" (
 
 echo [12/12] 進程檢查...
 echo ──────────────────────────────────────── >> %REPORT_FILE%
-echo 🔄 運行中的相關程序 >> %REPORT_FILE%
+echo  運行中的相關程序 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 tasklist | findstr /I "python" >> %REPORT_FILE% 2>nul
 tasklist | findstr /I "node" >> %REPORT_FILE% 2>nul
@@ -252,16 +252,16 @@ echo ═════════════════════════
 echo 📋 診斷完成時間: %date% %time% >> %REPORT_FILE%
 echo ════════════════════════════════════════ >> %REPORT_FILE%
 
-echo ✅ 診斷完成！
-echo 📄 報告已保存到: %REPORT_FILE%
+echo  診斷完成！
+echo  報告已保存到: %REPORT_FILE%
 echo.
 echo � 診斷摘要:
 echo ═══════════════════════════════════════════
-type %REPORT_FILE% | findstr /C:"✅" /C:"❌" /C:"⚠️ " | more
+type %REPORT_FILE% | findstr /C:"" /C:"" /C:" " | more
 echo.
 
 echo ════════════════════════════════════════
-echo            �🔧 常用修復指令
+echo            � 常用修復指令
 echo ════════════════════════════════════════
 echo 🐳 Docker 相關：
 echo    停止所有容器: docker-compose down
@@ -283,7 +283,7 @@ echo.
 set /p view_report="是否要查看完整診斷報告？(y/N): "
 if /i "%view_report%"=="y" (
     echo.
-    echo 📄 完整診斷報告:
+    echo  完整診斷報告:
     echo ═══════════════════════════════════════════
     type %REPORT_FILE%
 )

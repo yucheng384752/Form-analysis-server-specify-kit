@@ -232,7 +232,7 @@ if (-not $SkipTests) {
 
     # 模擬上傳與驗證流程
     Write-ColorOutput Blue @"
-📁 模擬上傳與驗證流程
+ 模擬上傳與驗證流程
 =======================
 "@
 
@@ -317,7 +317,7 @@ Write-Success "後端 API Redoc: http://localhost:8000/redoc"
 
 Write-Host ""
 Write-ColorOutput Blue @"
-🔧 環境配置說明
+ 環境配置說明
 ================
 "@
 Write-Host "• API Base URL: 在 .env 文件中配置 VITE_API_URL"
@@ -328,7 +328,7 @@ Write-Host "📝 vite.config.ts 代理設定已配置 /api 路徑到後端"
 Write-Host ""
 
 Write-ColorOutput Blue @"
-📊 容器狀態
+ 容器狀態
 ===========
 "@
 docker compose ps

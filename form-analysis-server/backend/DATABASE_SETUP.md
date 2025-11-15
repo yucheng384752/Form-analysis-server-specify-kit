@@ -2,16 +2,16 @@
 
 ## 📋 **已完成的工作**
 
-✅ **SQLAlchemy 2.x 模型** (3個表格)
+ **SQLAlchemy 2.x 模型** (3個表格)
 - `upload_jobs` - 檔案上傳工作記錄
 - `upload_errors` - 錯誤記錄與位置資訊  
 - `records` - 成功驗證的業務資料
 
-✅ **Pydantic v2 Schemas** (API 請求/回應格式)
+ **Pydantic v2 Schemas** (API 請求/回應格式)
 - 完整的 Create/Read 模型
 - 資料驗證規則 (批號格式驗證等)
 
-✅ **Alembic 遷移腳本**
+ **Alembic 遷移腳本**
 - 初始遷移檔案: `2025_11_08_0122-ae889647f4f2_create_initial_tables_upload_jobs_.py`
 - 完整的 SQL 腳本: `database_schema.sql`
 
@@ -83,7 +83,7 @@
 
 ---
 
-## 🔍 **驗證步驟**
+##  **驗證步驟**
 
 ### **1. 檢查表格結構**
 ```sql
@@ -139,7 +139,7 @@ psycopg.errors.ConnectionTimeout: connection timeout expired
 
 ---
 
-## 📊 **資料庫結構概覽**
+##  **資料庫結構概覽**
 
 ```
 PostgreSQL Database: form_analysis_db
@@ -164,7 +164,7 @@ PostgreSQL Database: form_analysis_db
 
 ---
 
-## 🔄 **下一步**
+##  **下一步**
 
 資料庫遷移完成後，您可以：
 
