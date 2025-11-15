@@ -34,6 +34,7 @@ uploads/
 
 # 忽略日誌檔案
 *.log
+*.log.*
 logs/
 
 # 忽略系統檔案

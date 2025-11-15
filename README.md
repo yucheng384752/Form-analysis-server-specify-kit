@@ -122,6 +122,30 @@ form-analysis-sepc-kit/
 .\scripts\monitor_frontend.bat
 ```
 
+### 📊 日誌管理工具
+本系統提供完整的日誌管理工具包：
+
+```batch
+# Windows 批次檔日誌監控
+scripts\monitor-logs.bat
+
+# Python 日誌分析工具
+python tools\log_analyzer.py
+
+# PowerShell 進階日誌管理
+.\scripts\LogManager.ps1
+```
+
+**主要功能：**
+- 📈 即時日誌監控
+- 📊 API 使用統計和效能分析
+- 🔍 日誌搜尋和錯誤分析
+- 🧹 自動日誌清理和備份管理
+- 📤 JSON 格式日誌匯出
+- 🎨 彩色輸出和格式化顯示
+
+詳細說明請參考：[日誌管理工具文檔](docs/LOG_MANAGEMENT_TOOLS.md)
+
 ## 📝 技術棧
 
 - **前端**: React + TypeScript + Vite
