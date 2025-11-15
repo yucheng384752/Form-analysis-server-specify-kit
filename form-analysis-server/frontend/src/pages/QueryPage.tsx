@@ -57,6 +57,7 @@ export function QueryPage() {
   // 記錄列表相關狀態
   const [records, setRecords] = useState<QueryRecord[]>([]);
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<{ [key: string]: boolean }>({});
   const [detailRecord, setDetailRecord] = useState<QueryRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
@@ -167,11 +168,215 @@ export function QueryPage() {
   // 切換展開狀態
   const toggleExpand = (recordId: string) => {
     setExpandedRecordId(prev => prev === recordId ? null : recordId);
+    // 重置收起狀態
+    if (expandedRecordId !== recordId) {
+      setCollapsedSections({});
+    }
   };
 
-  // 處理查看詳情
-  const handleViewDetail = (record: QueryRecord) => {
-    setDetailRecord(record);
+  // 切換區塊收起狀態
+  const toggleSection = (recordId: string, sectionKey: string) => {
+    const key = `${recordId}-${sectionKey}`;
+    setCollapsedSections(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // 判斷區塊是否收起
+  const isSectionCollapsed = (recordId: string, sectionKey: string): boolean => {
+    const key = `${recordId}-${sectionKey}`;
+    return collapsedSections[key] || false;
+  };
+
+  // 分組資料的輔助函數
+  const groupDataByPrefix = (data: { [key: string]: any }) => {
+    const groups: { [key: string]: { [key: string]: any } } = {
+      actual_temp: {},
+      set_temp: {},
+      other: {}
+    };
+
+    Object.entries(data).forEach(([key, value]) => {
+      if (key.startsWith('actual_temp_') || key.startsWith('Actual_Temp_')) {
+        groups.actual_temp[key] = value;
+      } else if (key.startsWith('set_temp_') || key.startsWith('Set_Temp_')) {
+        groups.set_temp[key] = value;
+      } else {
+        groups.other[key] = value;
+      }
+    });
+
+    return groups;
+  };
+
+  // 渲染分組區塊
+  const renderGroupedSection = (
+    recordId: string,
+    title: string,
+    sectionKey: string,
+    data: { [key: string]: any },
+    icon: string = "ℹ️"
+  ) => {
+    const isCollapsed = isSectionCollapsed(recordId, sectionKey);
+    const fieldCount = Object.keys(data).length;
+
+    return (
+      <div className="data-section" key={sectionKey}>
+        <div className="section-header">
+          <div className="section-title-wrapper">
+            <span className="section-icon">{icon}</span>
+            <h5>{title}</h5>
+            <span className="field-count-badge">{fieldCount}</span>
+          </div>
+          <button
+            className="btn-collapse"
+            onClick={() => toggleSection(recordId, sectionKey)}
+          >
+            {isCollapsed ? '展開' : '收起'}
+          </button>
+        </div>
+        {!isCollapsed && (
+          <div className="section-content">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  {Object.keys(data).map(key => (
+                    <th key={key}>{key}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  {Object.values(data).map((value, idx) => (
+                    <td key={idx}>
+                      {typeof value === 'number' ? value.toLocaleString() : String(value)}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 渲染P1展開內容
+  const renderP1ExpandedContent = (record: QueryRecord) => {
+    if (!record.additional_data) {
+      return <p className="no-data">此記錄沒有額外的CSV資料</p>;
+    }
+
+    const grouped = groupDataByPrefix(record.additional_data);
+    
+    // 基本資料
+    const basicData = {
+      lot_no: record.lot_no,
+      updated_at: new Date(record.created_at).toLocaleString('zh-TW'),
+      created_at: new Date(record.created_at).toLocaleString('zh-TW')
+    };
+
+    return (
+      <div className="grouped-data-container">
+        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, 'ℹ️')}
+        
+        {Object.keys(grouped.actual_temp).length > 0 && 
+          renderGroupedSection(record.id, '押出機主查條件', 'actual_temp', grouped.actual_temp, '⚡')}
+        
+        {Object.keys(grouped.set_temp).length > 0 && 
+          renderGroupedSection(record.id, '生產參數', 'set_temp', grouped.set_temp, '🔧')}
+        
+        {Object.keys(grouped.other).length > 0 && 
+          renderGroupedSection(record.id, '其他參數', 'other', grouped.other, '📋')}
+      </div>
+    );
+  };
+
+  // 渲染P2展開內容
+  const renderP2ExpandedContent = (record: QueryRecord) => {
+    if (!record.additional_data) {
+      return <p className="no-data">此記錄沒有額外的CSV資料</p>;
+    }
+
+    // 基本資料
+    const basicData = {
+      lot_no: record.lot_no,
+      updated_at: new Date(record.created_at).toLocaleString('zh-TW'),
+      created_at: new Date(record.created_at).toLocaleString('zh-TW')
+    };
+
+    return (
+      <div className="grouped-data-container">
+        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, 'ℹ️')}
+        
+        {Object.keys(record.additional_data).length > 0 && 
+          renderGroupedSection(record.id, '其他上傳參數', 'upload_params', record.additional_data, '📤')}
+      </div>
+    );
+  };
+
+  // 渲染P3展開內容
+  const renderP3ExpandedContent = (record: QueryRecord) => {
+    if (!record.additional_data) {
+      return <p className="no-data">此記錄沒有額外的CSV資料</p>;
+    }
+
+    // 基本資料
+    const basicData = {
+      lot_no: record.lot_no,
+      p3_no: record.p3_no || '-',
+      updated_at: new Date(record.created_at).toLocaleString('zh-TW'),
+      created_at: new Date(record.created_at).toLocaleString('zh-TW')
+    };
+
+    // 統計資訊
+    const totalFields = Object.keys(record.additional_data).length;
+    const validFields = Object.values(record.additional_data).filter(v => v !== null && v !== undefined && v !== '').length;
+
+    return (
+      <div className="grouped-data-container">
+        <div className="p3-header">
+          <div className="p3-badges">
+            <span className="badge badge-primary">批號: {record.lot_no}</span>
+            <span className="badge badge-success">筆記數: 1筆</span>
+          </div>
+          <div className="p3-stats">
+            <div className="stat-item">
+              <span className="stat-label">原始筆數:</span>
+              <span className="stat-value">1</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">有效筆數:</span>
+              <span className="stat-value">1</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">檢查項目:</span>
+              <span className="stat-value">{totalFields}</span>
+            </div>
+          </div>
+        </div>
+
+        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, 'ℹ️')}
+        
+        {Object.keys(record.additional_data).length > 0 && 
+          renderGroupedSection(record.id, '檢查項目', 'check_items', record.additional_data, '✅')}
+      </div>
+    );
+  };
+
+  // 根據資料類型渲染展開內容
+  const renderExpandedContent = (record: QueryRecord) => {
+    switch (record.data_type) {
+      case 'P1':
+        return renderP1ExpandedContent(record);
+      case 'P2':
+        return renderP2ExpandedContent(record);
+      case 'P3':
+        return renderP3ExpandedContent(record);
+      default:
+        return <p className="no-data">未知的資料類型</p>;
+    }
   };
 
   // 清除搜尋
@@ -182,6 +387,7 @@ export function QueryPage() {
     setTotalCount(0);
     setCurrentPage(1);
     setExpandedRecordId(null);
+    setCollapsedSections({});
     setShowSuggestions(false);
     setSuggestions([]);
   };
@@ -194,7 +400,7 @@ export function QueryPage() {
 
     return (
       <div className="additional-data-section">
-        <div className="section-title">📄 CSV 表格完整資料</div>
+        <div className="section-title"> CSV 表格完整資料</div>
         <div className="additional-data-grid">
           {Object.entries(additionalData).map(([key, value]) => (
             <div key={key} className="detail-row">
@@ -416,29 +622,17 @@ export function QueryPage() {
                             title="展開查看CSV資料"
                             onClick={() => toggleExpand(record.id)}
                           >
-                            {expandedRecordId === record.id ? '🔼 收起' : '🔽 展開'}
+                            {expandedRecordId === record.id ? '收起' : '展開'}
                           </button>
                         </td>
                       </tr>
                       
-                      {/* 展開行 - 顯示CSV完整資料 */}
+                      {/* 展開行 - 顯示分組資料 */}
                       {expandedRecordId === record.id && (
                         <tr className="expanded-row">
                           <td colSpan={5}>
-                            <div className="csv-data-container">
-                              <h4>📄 CSV 內容編輯 - {record.lot_no}.csv（共 1 行，{record.additional_data ? Object.keys(record.additional_data).length : 0} 個欄位）</h4>
-                              {record.additional_data && Object.keys(record.additional_data).length > 0 ? (
-                                <div className="csv-data-grid">
-                                  {Object.entries(record.additional_data).map(([key, value]) => (
-                                    <div key={key} className="csv-field">
-                                      <strong>{key}：</strong>
-                                      <span>{typeof value === 'number' ? value.toLocaleString() : String(value)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="no-data">此記錄沒有額外的CSV資料</p>
-                              )}
+                            <div className="expanded-data-container">
+                              {renderExpandedContent(record)}
                             </div>
                           </td>
                         </tr>
