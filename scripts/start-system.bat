@@ -105,7 +105,7 @@ if not errorlevel 1 (
 
 if "!port_conflict!"=="true" (
     echo    🧹 執行額外清理以釋放端口...
-    docker-compose -f "%SERVER_PATH%\docker-compose.yml" down -v --remove-orphans >nul 2>&1
+    docker-compose -f "%SERVER_PATH%\docker-compose.yml" down --remove-orphans >nul 2>&1
     timeout /t 2 /nobreak >nul
 )
 
