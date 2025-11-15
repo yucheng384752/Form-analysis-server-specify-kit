@@ -216,7 +216,7 @@ export function QueryPage() {
     title: string,
     sectionKey: string,
     data: { [key: string]: any },
-    icon: string = "ℹ️",
+    icon: string = "ℹ",
     vertical: boolean = false
   ) => {
     const isCollapsed = isSectionCollapsed(recordId, sectionKey);
@@ -300,13 +300,13 @@ export function QueryPage() {
 
     return (
       <div className="grouped-data-container">
-        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, 'ℹ️')}
+        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, '')}
         
         {Object.keys(extrusionConditions).length > 0 && 
-          renderGroupedSection(record.id, '押出機生產條件', 'extrusion', extrusionConditions, '⚡', true)}
+          renderGroupedSection(record.id, '押出機生產條件', 'extrusion', extrusionConditions, '', true)}
         
         {Object.keys(grouped.other).length > 0 && 
-          renderGroupedSection(record.id, '其他參數', 'other', grouped.other, '📋')}
+          renderGroupedSection(record.id, '其他參數', 'other', grouped.other, '')}
       </div>
     );
   };
@@ -324,12 +324,57 @@ export function QueryPage() {
       created_at: new Date(record.created_at).toLocaleString('zh-TW')
     };
 
+    // 檢查是否為 rows 陣列結構
+    const rows = record.additional_data.rows || [];
+    const hasRows = Array.isArray(rows) && rows.length > 0;
+
     return (
       <div className="grouped-data-container">
         {renderGroupedSection(record.id, '基本資料', 'basic', basicData, 'ℹ️')}
         
-        {Object.keys(record.additional_data).length > 0 && 
-          renderGroupedSection(record.id, '其他上傳參數', 'upload_params', record.additional_data, '📤')}
+        {hasRows && (
+          <div className="data-section">
+            <div className="section-header">
+              <div className="section-title-wrapper">
+                <span className="section-icon">📊</span>
+                <h5>檢測數據</h5>
+                <span className="field-count-badge">{rows.length} 筆</span>
+              </div>
+              <button
+                className="btn-collapse"
+                onClick={() => toggleSection(record.id, 'rows_data')}
+              >
+                {isSectionCollapsed(record.id, 'rows_data') ? '展開' : '收起'}
+              </button>
+            </div>
+            {!isSectionCollapsed(record.id, 'rows_data') && (
+              <div className="section-content">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      {Object.keys(rows[0]).map(key => (
+                        <th key={key}>{key}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row: any, idx: number) => (
+                      <tr key={idx}>
+                        <td>{idx + 1}</td>
+                        {Object.values(row).map((value: any, vidx: number) => (
+                          <td key={vidx}>
+                            {typeof value === 'number' ? value.toLocaleString() : String(value)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };

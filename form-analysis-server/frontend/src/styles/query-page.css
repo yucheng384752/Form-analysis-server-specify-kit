@@ -777,7 +777,6 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
-  min-width: 600px;
 }
 
 .data-table thead {
@@ -815,8 +814,10 @@
 /* 垂直表格樣式（用於 P1 押出機生產條件） */
 .data-table-vertical {
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
+  table-layout: fixed;
 }
 
 .data-table-vertical th {
@@ -828,6 +829,8 @@
   white-space: nowrap;
   width: 30%;
   border-bottom: 1px solid #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .data-table-vertical td {
@@ -835,6 +838,8 @@
   border-bottom: 1px solid #e5e7eb;
   color: #111827;
   width: 70%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .data-table-vertical tbody tr:hover {
