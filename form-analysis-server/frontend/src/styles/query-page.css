@@ -497,11 +497,13 @@
 
 .records-table {
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
   background: white;
   border-radius: 0.5rem;
   overflow: hidden;
   border: 1px solid #e5e7eb;
+  table-layout: fixed;
 }
 
 .records-table th,
