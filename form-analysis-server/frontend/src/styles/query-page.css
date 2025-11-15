@@ -689,13 +689,13 @@
   font-family: monospace;
 }
 
-/* 展開內容樣式 */
-.expanded-row {
+/* 展開內容樣式 - 確保在 query-result-section 層級下 */
+.query-result-section .expanded-row {
   background-color: #f8fafc !important;
 }
 
-.expanded-data-container {
-  padding: 1.5rem;
+.query-result-section .expanded-data-container {
+  padding: 1.5rem 0;
   max-width: 100%;
   overflow: hidden;
 }
