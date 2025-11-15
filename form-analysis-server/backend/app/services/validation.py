@@ -429,13 +429,34 @@ class FileValidationService:
         # 5. 驗證資料列
         total_rows, valid_rows, invalid_rows = self.validate_data_rows(df, filename)
         
-        # 6. 回傳驗證結果
+        # 6. 判斷數據類型
+        from app.models.record import DataType
+        filename_lower = filename.lower()
+        detected_data_type = DataType.P1  # 預設值
+        detected_columns = list(df.columns) if not df.empty else []
+        
+        if filename_lower.startswith('p1_'):
+            detected_data_type = DataType.P1
+        elif filename_lower.startswith('p2_'):
+            detected_data_type = DataType.P2
+        elif filename_lower.startswith('p3_'):
+            detected_data_type = DataType.P3
+        else:
+            # 根據欄位內容判斷
+            if 'P3_No.' in detected_columns:
+                detected_data_type = DataType.P3
+            else:
+                detected_data_type = DataType.P1  # 預設為P1
+        
+        # 7. 回傳驗證結果
         return {
             'total_rows': total_rows,
             'valid_rows': valid_rows,
             'invalid_rows': invalid_rows,
             'errors': self.errors,
-            'sample_errors': self.get_sample_errors(10)
+            'sample_errors': self.get_sample_errors(10),
+            'detected_data_type': detected_data_type.value,
+            'detected_columns': detected_columns
         }
 
 
