@@ -67,11 +67,16 @@ def setup_logging(level: str = "INFO", format_type: str = "json") -> None:
     )
     error_handler.setLevel(logging.ERROR)
     
+    # Clear existing handlers to avoid duplicates
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    
     # Configure root logger
     logging.basicConfig(
         format="%(message)s",
         level=log_level,
-        handlers=[console_handler, file_handler, error_handler]
+        handlers=[console_handler, file_handler, error_handler],
+        force=True  # Force reconfiguration
     )
     
     # Configure processors based on format
@@ -100,12 +105,13 @@ def setup_logging(level: str = "INFO", format_type: str = "json") -> None:
             structlog.dev.ConsoleRenderer(colors=True),
         ])
     
-    # Configure structlog
+    # Configure structlog to use standard library logging
+    # This ensures logs go to both console and files
     structlog.configure(
         processors=processors,
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,
-        logger_factory=structlog.WriteLoggerFactory(),
+        logger_factory=structlog.stdlib.LoggerFactory(),  # 使用標準 logging
         cache_logger_on_first_use=True,
     )
 
