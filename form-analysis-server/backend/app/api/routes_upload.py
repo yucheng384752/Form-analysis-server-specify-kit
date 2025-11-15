@@ -14,15 +14,18 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.logging import get_logger
 from app.models.upload_job import UploadJob, JobStatus
 from app.models.upload_error import UploadError
 from app.schemas.upload import FileUploadResponse, UploadErrorResponse
 from app.services.validation import file_validation_service, ValidationError
 
+# 獲取日誌記錄器
+logger = get_logger(__name__)
+
 
 # 建立路由器
 router = APIRouter(
-    prefix="/api",
     tags=["檔案上傳"]
 )
 
@@ -143,9 +146,12 @@ async def upload_file(
     """
     start_time = time.time()
     
+    logger.info("檔案上傳開始", filename=file.filename if file else None)
+    
     try:
         # 1. 檢查檔案是否存在
         if not file or not file.filename:
+            logger.warning("上傳失敗：未選擇檔案或檔案名稱為空")
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="未選擇檔案或檔案名稱為空"
@@ -156,12 +162,17 @@ async def upload_file(
         file_size = len(file_content)
         
         if file_size == 0:
+            logger.warning("上傳失敗：檔案內容為空", filename=file.filename)
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="檔案內容為空"
             )
         
         if file_size > 10 * 1024 * 1024:  # 10MB
+            logger.warning("上傳失敗：檔案超過大小限制", 
+                         filename=file.filename, 
+                         file_size=file_size,
+                         max_size=10*1024*1024)
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail="檔案大小超過 10MB 限制"
@@ -171,14 +182,21 @@ async def upload_file(
         upload_job = UploadJob(
             filename=file.filename,
             status=JobStatus.PENDING,
+            file_content=file_content  # 儲存檔案內容以供後續匯入使用
         )
         
         db.add(upload_job)
         await db.commit()
         await db.refresh(upload_job)
         
+        logger.info("上傳工作已建立", 
+                   process_id=str(upload_job.process_id),
+                   filename=file.filename,
+                   file_size=file_size)
+        
         try:
             # 4. 執行檔案驗證
+            logger.info("開始檔案驗證", process_id=str(upload_job.process_id))
             validation_result = file_validation_service.validate_file(
                 file_content, 
                 file.filename
@@ -221,6 +239,14 @@ async def upload_file(
             # 8. 記錄處理時間
             processing_time = time.time() - start_time
             
+            logger.info("檔案上傳和驗證完成",
+                       process_id=str(upload_job.process_id),
+                       filename=file.filename,
+                       total_rows=validation_result['total_rows'],
+                       valid_rows=validation_result['valid_rows'],
+                       invalid_rows=validation_result['invalid_rows'],
+                       processing_time=processing_time)
+            
             return FileUploadResponse(
                 process_id=upload_job.process_id,
                 total_rows=validation_result['total_rows'],
@@ -233,6 +259,11 @@ async def upload_file(
             # 驗證錯誤：更新工作狀態但不刪除記錄
             upload_job.status = JobStatus.PENDING  # 保持 PENDING 狀態表示驗證失敗
             await db.commit()
+            
+            logger.error("檔案驗證失敗",
+                        process_id=str(upload_job.process_id),
+                        filename=file.filename,
+                        error_message=ve.message)
             
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

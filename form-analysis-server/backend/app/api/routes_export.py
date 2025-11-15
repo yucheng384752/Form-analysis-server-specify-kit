@@ -17,7 +17,7 @@ from app.models.upload_job import UploadJob
 from app.models.upload_error import UploadError
 
 # 建立路由器
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 
 @router.get(
