@@ -22,6 +22,11 @@ WORKDIR /app
 # Development stage
 FROM base as development
 
+# Install PostgreSQL client for database checks
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy requirements first for better layer caching
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
@@ -29,8 +34,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Copy and setup entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Create uploads directory with proper permissions
-RUN mkdir -p /app/uploads && chown -R app:app /app
+RUN mkdir -p /app/uploads && chown -R app:app /app && chown app:app /usr/local/bin/entrypoint.sh
 
 # Switch to app user
 USER app
@@ -41,6 +50,9 @@ EXPOSE 8000
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
     CMD curl -f http://localhost:8000/healthz || exit 1
+
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Development command (with hot reload)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -48,6 +60,11 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload
 # Production stage
 FROM base as production
 
+# Install PostgreSQL client for database checks
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy requirements first for better layer caching
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
@@ -55,8 +72,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Copy and setup entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Create uploads directory with proper permissions  
-RUN mkdir -p /app/uploads && chown -R app:app /app
+RUN mkdir -p /app/uploads && chown -R app:app /app && chown app:app /usr/local/bin/entrypoint.sh
 
 # Switch to app user
 USER app
@@ -67,6 +88,9 @@ EXPOSE 8000
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
     CMD curl -f http://localhost:8000/healthz || exit 1
+
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Production command
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

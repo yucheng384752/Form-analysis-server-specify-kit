@@ -61,25 +61,45 @@ REM 檢查端口佔用並自動處理
 set "port_conflict=false"
 netstat -an | find ":5432" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo ⚠️  檢測到端口 5432 PostgreSQL 被佔用，將自動清理
+    echo ⚠️  檢測到端口 5432 PostgreSQL 被佔用
+    echo    🔍 檢查是否為其他 Docker 容器...
+    for /f "tokens=*" %%i in ('docker ps --filter "publish=5432" --format "{{.Names}}"') do (
+        echo    🛑 停止容器: %%i
+        docker stop %%i >nul 2>&1
+    )
     set "port_conflict=true"
 )
 
 netstat -an | find ":8000" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo ⚠️  檢測到端口 8000 API 被佔用，將自動清理
+    echo ⚠️  檢測到端口 8000 API 被佔用
+    echo    🔍 檢查是否為其他 Docker 容器...
+    for /f "tokens=*" %%i in ('docker ps --filter "publish=8000" --format "{{.Names}}"') do (
+        echo    🛑 停止容器: %%i
+        docker stop %%i >nul 2>&1
+    )
     set "port_conflict=true"
 )
 
 netstat -an | find ":3000" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo ⚠️  檢測到端口 3000 被佔用，將自動清理
+    echo ⚠️  檢測到端口 3000 被佔用
+    echo    🔍 檢查是否為其他 Docker 容器...
+    for /f "tokens=*" %%i in ('docker ps --filter "publish=3000" --format "{{.Names}}"') do (
+        echo    🛑 停止容器: %%i
+        docker stop %%i >nul 2>&1
+    )
     set "port_conflict=true"
 )
 
 netstat -an | find ":5173" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo ⚠️  檢測到端口 5173 前端被佔用，將自動清理
+    echo ⚠️  檢測到端口 5173 前端被佔用
+    echo    🔍 檢查是否為其他 Docker 容器...
+    for /f "tokens=*" %%i in ('docker ps --filter "publish=5173" --format "{{.Names}}"') do (
+        echo    🛑 停止容器: %%i
+        docker stop %%i >nul 2>&1
+    )
     set "port_conflict=true"
 )
 
@@ -100,10 +120,28 @@ if not errorlevel 1 (
     echo    ✅ 無殘留容器
 )
 
+REM 檢查是否為首次啟動
+set "FIRST_TIME_SETUP=false"
+docker volume ls | find "form-analysis-server_postgres_data" >nul 2>&1
+if errorlevel 1 (
+    echo    🆕 檢測到首次啟動，將執行完整初始化
+    set "FIRST_TIME_SETUP=true"
+) else (
+    echo    🔄 檢測到現有資料，將執行正常啟動
+)
+
 echo.
 echo [2/6] 停止現有容器並清理...
 cd "%SERVER_PATH%"
-docker-compose down --remove-orphans --volumes
+
+if "!FIRST_TIME_SETUP!"=="true" (
+    echo    📦 首次啟動：保留資料卷，清理容器
+    docker-compose down --remove-orphans
+) else (
+    echo    🧹 正常啟動：清理現有容器
+    docker-compose down --remove-orphans
+)
+
 if errorlevel 1 (
     echo ⚠️  清理容器時遇到問題，繼續執行...
 )
@@ -135,6 +173,19 @@ REM 檢查健康狀態
 docker-compose ps db --format "table {{.Status}}" | find "healthy" >nul 2>&1
 if not errorlevel 1 (
     echo ✅ 資料庫已就緒（健康檢查通過）
+    
+    if "!FIRST_TIME_SETUP!"=="true" (
+        echo.
+        echo    🔧 首次啟動：檢查資料庫初始化...
+        timeout /t 3 /nobreak > nul
+        docker-compose logs db | find "Database initialized successfully" >nul 2>&1
+        if not errorlevel 1 (
+            echo    ✅ 資料庫初始化腳本執行成功
+        ) else (
+            echo    ℹ️  資料庫基礎結構已建立
+        )
+    )
+    
     goto db_ready
 )
 
@@ -191,6 +242,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
+if "!FIRST_TIME_SETUP!"=="true" (
+    echo    📦 首次啟動：後端將自動執行資料庫遷移...
+)
+
 echo    ⏳ 等待後端服務健康檢查...
 set /a counter=0
 :backend_check
@@ -209,6 +264,24 @@ REM 檢查健康狀態
 docker-compose ps backend --format "table {{.Status}}" | find "healthy" >nul 2>&1
 if not errorlevel 1 (
     echo ✅ 後端服務已就緒（健康檢查通過）
+    
+    if "!FIRST_TIME_SETUP!"=="true" (
+        echo.
+        echo    🔍 檢查資料庫遷移執行狀態...
+        timeout /t 2 /nobreak > nul
+        docker-compose logs backend | find "Database migrations completed successfully" >nul 2>&1
+        if not errorlevel 1 (
+            echo    ✅ 資料庫遷移執行成功
+        ) else (
+            docker-compose logs backend | find "Database initialized successfully" >nul 2>&1
+            if not errorlevel 1 (
+                echo    ✅ 資料庫初始化完成
+            ) else (
+                echo    ℹ️  後端服務正常啟動
+            )
+        )
+    )
+    
     goto backend_ready
 )
 
