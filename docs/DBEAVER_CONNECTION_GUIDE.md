@@ -10,28 +10,29 @@
 
 ## 資料庫連線資訊
 
-### 預設配置（來自 docker-compose.yml）
+### 預設配置（來自 docker-compose.yml 和 .env）
 
 ```yaml
 主機: localhost
-端口: 5432
+端口: 18001  ⚠️ 注意：非標準端口 (避免與其他 PostgreSQL 衝突)
 資料庫名稱: form_analysis_db
 使用者名稱: app
-密碼: app_secure_password_change_in_production
+密碼: app_secure_password_2024
 ```
 
 ### 從環境變數讀取（可自訂）
 
 資料庫配置可以透過 `.env` 檔案自訂：
 
-**位置：** `form-analysis-server/backend/.env`
+**位置：** `form-analysis-server/.env`
 
 ```ini
 # 資料庫配置
 POSTGRES_USER=app
-POSTGRES_PASSWORD=app_secure_password_change_in_production
+POSTGRES_PASSWORD=app_secure_password_2024
 POSTGRES_DB=form_analysis_db
-POSTGRES_PORT=5432
+POSTGRES_PORT=18001  # 外部訪問端口(主機端)
+# 容器內部仍使用 5432
 ```
 
 ## DBeaver 連線步驟
@@ -51,7 +52,7 @@ docker ps | findstr form_analysis_db
 
 應該看到類似輸出：
 ```
-form_analysis_db    postgres:16    Up 5 minutes (healthy)    0.0.0.0:5432->5432/tcp
+form_analysis_db    postgres:16    Up 5 minutes (healthy)    0.0.0.0:18001->5432/tcp
 ```
 
 ### 2. 開啟 DBeaver 並創建新連線
@@ -67,10 +68,10 @@ form_analysis_db    postgres:16    Up 5 minutes (healthy)    0.0.0.0:5432->5432/
 | 欄位 | 值 | 說明 |
 |------|-----|------|
 | **Host** | `localhost` | 本地主機 |
-| **Port** | `5432` | PostgreSQL 預設端口 |
+| **Port** | `18001` | ⚠️ 自訂端口(非標準 5432) |
 | **Database** | `form_analysis_db` | 資料庫名稱 |
 | **Username** | `app` | 使用者名稱 |
-| **Password** | `app_secure_password` | 密碼 |
+| **Password** | `app_secure_password_2024` | 密碼 |
 | **Show all databases** | ☑️ 勾選（可選） | 顯示所有資料庫 |
 | **Save password** | ☑️ 勾選（建議） | 儲存密碼 |
 
@@ -176,9 +177,9 @@ WHERE data_type = 'P1';
    docker ps | findstr postgres
    ```
 
-2. 確認端口 5432 沒被佔用：
+2. 確認端口 18001 沒被佔用：
    ```bash
-   netstat -an | findstr :5432
+   netstat -an | findstr :18001
    ```
 
 3. 重啟資料庫容器：
@@ -193,7 +194,7 @@ WHERE data_type = 'P1';
 
 **解決方案：**
 1. 檢查 `.env` 檔案中的密碼設定
-2. 確認使用正確的密碼：預設為 `app_secure_password`
+2. 確認使用正確的密碼：當前為 `app_secure_password_2024`
 3. 如果修改過環境變數，需要重新創建容器：
    ```bash
    docker-compose down -v
@@ -242,18 +243,22 @@ docker exec form_analysis_db env | findstr POSTGRES
 
 ### 連線到不同環境
 
-#### 本地開發環境
+#### 本地開發環境（從主機連線）
 ```
 Host: localhost
-Port: 5432
+Port: 18001  ⚠️ 外部端口
 Database: form_analysis_db
+Username: app
+Password: app_secure_password_2024
 ```
 
 #### Docker 內部連線（從其他容器）
 ```
 Host: db
-Port: 5432
+Port: 5432  ℹ️ 容器內部端口
 Database: form_analysis_db
+Username: app
+Password: app_secure_password_2024
 ```
 
 ### 設定連線池（可選）
@@ -294,10 +299,16 @@ docker exec -i form_analysis_db psql -U app form_analysis_db < backup.sql
 │     DBeaver 快速連線資訊                │
 ├─────────────────────────────────────────┤
 │ 主機:       localhost                   │
-│ 端口:       5432                        │
+│ 端口:       18001  ⚠️ 非標準端口        │
 │ 資料庫:     form_analysis_db            │
 │ 使用者:     app                         │
-│ 密碼:       app_secure_password         │
+│ 密碼:       app_secure_password_2024    │
+├─────────────────────────────────────────┤
+│ 服務端口對照:                           │
+│  • 資料庫:   18001 (外部) → 5432 (內部) │
+│  • API:      18002                      │
+│  • 前端:     18003                      │
+│  • pgAdmin:  18004                      │
 ├─────────────────────────────────────────┤
 │ 主要資料表:                             │
 │  • upload_jobs   (上傳任務)             │
@@ -308,5 +319,6 @@ docker exec -i form_analysis_db psql -U app form_analysis_db < backup.sql
 
 ---
 
-**最後更新：** 2025-11-15
+**最後更新：** 2025-11-16
 **適用版本：** Form Analysis System v1.0
+**端口配置：** 18001-18004 (避免端口衝突)
