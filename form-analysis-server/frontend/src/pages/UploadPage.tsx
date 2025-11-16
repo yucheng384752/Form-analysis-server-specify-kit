@@ -442,7 +442,10 @@ export function UploadPage() {
 
         if (!importResponse.ok) {
           const errorData = await importResponse.json().catch(() => ({ detail: '匯入失敗' }));
-          throw new Error(`檔案 ${file.name} 匯入失敗: ${errorData.detail}`);
+          const errorMessage = typeof errorData.detail === 'string' 
+            ? errorData.detail 
+            : errorData.detail?.detail || '匯入失敗';
+          throw new Error(`檔案 ${file.name} 匯入失敗: ${errorMessage}`);
         }
 
         const importResult = await importResponse.json();
@@ -542,7 +545,10 @@ export function UploadPage() {
 
       if (!importResponse.ok) {
         const errorData = await importResponse.json().catch(() => ({ detail: '匯入失敗' }));
-        throw new Error(errorData.detail || '資料匯入失敗');
+        const errorMessage = typeof errorData.detail === 'string' 
+          ? errorData.detail 
+          : errorData.detail?.detail || '資料匯入失敗';
+        throw new Error(errorMessage);
       }
 
       const importResult = await importResponse.json();
