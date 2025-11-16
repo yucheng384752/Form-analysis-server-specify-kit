@@ -34,12 +34,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Copy and setup entrypoint script
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
 # Create uploads directory with proper permissions
-RUN mkdir -p /app/uploads && chown -R app:app /app && chown app:app /usr/local/bin/entrypoint.sh
+RUN mkdir -p /app/uploads && chown -R app:app /app
 
 # Switch to app user
 USER app
@@ -51,11 +47,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
     CMD curl -f http://localhost:8000/healthz || exit 1
 
-# Set entrypoint
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-
 # Development command (with hot reload)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["sh", "-c", "while ! pg_isready -h db -p 5432 -U ${POSTGRES_USER:-app}; do sleep 2; done && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
 
 # Production stage
 FROM base as production
@@ -72,12 +65,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Copy and setup entrypoint script
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
 # Create uploads directory with proper permissions  
-RUN mkdir -p /app/uploads && chown -R app:app /app && chown app:app /usr/local/bin/entrypoint.sh
+RUN mkdir -p /app/uploads && chown -R app:app /app
 
 # Switch to app user
 USER app
@@ -89,8 +78,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
     CMD curl -f http://localhost:8000/healthz || exit 1
 
-# Set entrypoint
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-
 # Production command
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["sh", "-c", "while ! pg_isready -h db -p 5432 -U ${POSTGRES_USER:-app}; do sleep 2; done && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"]
