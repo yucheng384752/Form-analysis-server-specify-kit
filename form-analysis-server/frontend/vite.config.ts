@@ -16,7 +16,12 @@ export default defineConfig({
     hmr: {
       host: 'localhost',
       port: 5173,
-      clientPort: 5173
+      clientPort: 18003
+    },
+    // Fix SPA routing - serve index.html for all routes
+    middlewareMode: false,
+    fs: {
+      strict: false
     },
     proxy: {
       // Proxy API calls to backend during development
