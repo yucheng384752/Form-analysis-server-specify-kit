@@ -393,36 +393,77 @@ export function QueryPage() {
       created_at: new Date(record.created_at).toLocaleString('zh-TW')
     };
 
-    // 統計資訊
-    const totalFields = Object.keys(record.additional_data).length;
+    // 檢查是否有 rows 陣列
+    const rows = record.additional_data.rows || [];
+    const rowCount = Array.isArray(rows) ? rows.length : 0;
 
     return (
       <div className="grouped-data-container">
         <div className="p3-header">
           <div className="p3-badges">
             <span className="badge badge-primary">批號: {record.lot_no}</span>
-            <span className="badge badge-success">筆記數: 1筆</span>
+            <span className="badge badge-success">檢查筆數: {rowCount}筆</span>
           </div>
           <div className="p3-stats">
             <div className="stat-item">
               <span className="stat-label">原始筆數:</span>
-              <span className="stat-value">1</span>
+              <span className="stat-value">{rowCount}</span>
             </div>
             <div className="stat-item">
               <span className="stat-label">有效筆數:</span>
-              <span className="stat-value">1</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-label">檢查項目:</span>
-              <span className="stat-value">{totalFields}</span>
+              <span className="stat-value">{rowCount}</span>
             </div>
           </div>
         </div>
 
         {renderGroupedSection(record.id, '基本資料', 'basic', basicData, 'ℹ️')}
         
-        {Object.keys(record.additional_data).length > 0 && 
-          renderGroupedSection(record.id, '檢查項目', 'check_items', record.additional_data, '✅')}
+        {/* 渲染檢查項目表格 */}
+        {Array.isArray(rows) && rows.length > 0 && (
+          <div className="data-section" key="check_items">
+            <div className="section-header">
+              <div className="section-title-wrapper">
+                <span className="section-icon">✅</span>
+                <h5>檢查項目明細</h5>
+                <span className="field-count-badge">{rows.length} 筆</span>
+              </div>
+              <button
+                className="btn-collapse"
+                onClick={() => toggleSection(record.id, 'check_items')}
+              >
+                {collapsedSections[`${record.id}-check_items`] ? '▼' : '▲'}
+              </button>
+            </div>
+            {!collapsedSections[`${record.id}-check_items`] && (
+              <div className="section-content">
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        {Object.keys(rows[0]).map(header => (
+                          <th key={header}>{header}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row: any, idx: number) => (
+                        <tr key={idx}>
+                          {Object.keys(rows[0]).map(header => (
+                            <td key={header}>
+                              {typeof row[header] === 'number' 
+                                ? row[header].toLocaleString() 
+                                : row[header] || '-'}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -460,9 +501,46 @@ export function QueryPage() {
       return null;
     }
 
+    // 檢查是否有 rows 陣列 (P3 資料格式)
+    if (additionalData.rows && Array.isArray(additionalData.rows) && additionalData.rows.length > 0) {
+      const rows = additionalData.rows;
+      const headers = Object.keys(rows[0]);
+
+      return (
+        <div className="additional-data-section">
+          <div className="section-title">📋 檢查項目明細</div>
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  {headers.map(header => (
+                    <th key={header}>{header}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row: any, idx: number) => (
+                  <tr key={idx}>
+                    {headers.map(header => (
+                      <td key={header}>
+                        {typeof row[header] === 'number' 
+                          ? row[header].toLocaleString() 
+                          : row[header] || '-'}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // 一般鍵值對資料顯示
     return (
       <div className="additional-data-section">
-        <div className="section-title"> CSV 表格完整資料</div>
+        <div className="section-title">📋 CSV 表格完整資料</div>
         <div className="additional-data-grid">
           {Object.entries(additionalData).map(([key, value]) => (
             <div key={key} className="detail-row">
