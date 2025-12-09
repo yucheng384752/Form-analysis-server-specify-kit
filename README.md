@@ -5,7 +5,7 @@
 ##  專案結構
 
 ```
-form-analysis-sepc-kit/
+form-analysis-spec-kit/
 ├── docs/                           #  專案文檔
 │   ├── PRD.md                     # 產品需求文檔
 │   ├── PRD2.md                    # 產品需求文檔 v2
@@ -13,7 +13,7 @@ form-analysis-sepc-kit/
 │   ├── RESTRUCTURE_PLAN.md        # 重構計劃
 │   └── MANUAL_STARTUP_GUIDE.md    # 手動啟動指南
 │
-├── scripts/                        # 🛠️ 系統腳本
+├── scripts/                        # 系統腳本
 │   ├── diagnose-system.bat        # 系統診斷腳本
 │   ├── monitor_backend.bat        # 後端監控腳本
 │   ├── monitor_frontend.bat       # 前端監控腳本
@@ -55,7 +55,7 @@ form-analysis-sepc-kit/
 │   ├── frontend/                  # 前端 React 應用
 │   └── docker-compose.yml         # Docker 編排設定
 │
-├── uploads/                        # 📂 上傳檔案儲存
+├── uploads/                        # 上傳檔案儲存
 ├── .venv/                         # Python 虛擬環境
 └── .env.example                   # 環境變數範例
 ```
@@ -84,7 +84,7 @@ form-analysis-sepc-kit/
 ## 📖 功能說明
 
 ### 檔案上傳與驗證
-- 支援 CSV 和 Excel 格式
+- 支援 CSV 和 Excel (.xlsx) 格式（不支援 .xls）
 - 自動驗證 lot_no 格式
 - 檔案大小限制 10MB
 
@@ -137,12 +137,12 @@ python tools\log_analyzer.py
 ```
 
 **主要功能：**
-- 📈 即時日誌監控
+-  即時日誌監控
 -  API 使用統計和效能分析
 -  日誌搜尋和錯誤分析
 -  自動日誌清理和備份管理
-- 📤 JSON 格式日誌匯出
-- 🎨 彩色輸出和格式化顯示
+-  JSON 格式日誌匯出
+-  彩色輸出和格式化顯示
 
 詳細說明請參考：[日誌管理工具文檔](docs/LOG_MANAGEMENT_TOOLS.md)
 
