@@ -132,7 +132,7 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
   DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:5432/form_analysis_db
   ```
 
-- **psycopg** - 用於 Docker 環境（同步驅動）
+- **psycopg** - 用於 Docker 環境（支援同步和非同步模式）
   ```env
   DATABASE_URL=postgresql+psycopg://app:app_secure_password@db:5432/form_analysis_db
   ```
