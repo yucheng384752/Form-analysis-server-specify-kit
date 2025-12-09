@@ -4,7 +4,7 @@
 
 ## ✨ 主要功能
 
--  **檔案上傳**: 支援 CSV、XLS、XLSX 格式，最大 10MB
+-  **檔案上傳**: 支援 CSV 和 Excel (.xlsx) 格式，最大 10MB（不支援 .xls）
 -  **即時驗證**: 格式和內容驗證，即時錯誤回報
 -  **資料預覽**: 可預覽匯入資料，錯誤高亮顯示
 -  **批次匯入**: 交易安全的批量資料匯入
@@ -87,12 +87,20 @@ chmod +x quick-start.sh
    curl -X POST -F "file=@test_upload.csv" \
         http://localhost:8000/api/upload
    
-   # 如果有錯誤，下載錯誤報告（需要從上傳回應中獲取 file_id）
-   curl "http://localhost:8000/api/errors.csv?file_id=YOUR_FILE_ID"
+   # 範例回應:
+   # {
+   #   "file_id": "abc123def456",
+   #   "filename": "test_upload.csv",
+   #   "status": "validated",
+   #   "message": "File uploaded and validated successfully"
+   # }
    
-   # 確認匯入資料
+   # 如果有錯誤，下載錯誤報告（使用上傳回應中的 file_id）
+   curl "http://localhost:8000/api/errors.csv?file_id=abc123def456"
+   
+   # 確認匯入資料（使用上傳回應中的 file_id）
    curl -X POST -H "Content-Type: application/json" \
-        -d '{"file_id":"YOUR_FILE_ID"}' \
+        -d '{"file_id":"abc123def456"}' \
         http://localhost:8000/api/import
    ```
 
@@ -114,6 +122,20 @@ VITE_MAX_FILE_SIZE=10485760  # 10MB in bytes
 # 後端 CORS 設定
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 ```
+
+### 資料庫驅動選擇
+
+選擇合適的 PostgreSQL 驅動程式取決於您的應用程式配置：
+
+- **asyncpg** - 建議用於本地開發和非同步 FastAPI 應用
+  ```env
+  DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:5432/form_analysis_db
+  ```
+
+- **psycopg** - 用於 Docker 環境（同步驅動）
+  ```env
+  DATABASE_URL=postgresql+psycopg://app:app_secure_password@db:5432/form_analysis_db
+  ```
 
 ### vite.config.ts 代理設定
 

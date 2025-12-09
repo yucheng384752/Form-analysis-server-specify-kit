@@ -5,7 +5,7 @@
 ##  專案結構
 
 ```
-form-analysis-sepc-kit/
+form-analysis-spec-kit/
 ├── docs/                           #  專案文檔
 │   ├── PRD.md                     # 產品需求文檔
 │   ├── PRD2.md                    # 產品需求文檔 v2
@@ -84,7 +84,7 @@ form-analysis-sepc-kit/
 ## 📖 功能說明
 
 ### 檔案上傳與驗證
-- 支援 CSV 和 Excel 格式
+- 支援 CSV 和 Excel (.xlsx) 格式（不支援 .xls）
 - 自動驗證 lot_no 格式
 - 檔案大小限制 10MB
 
