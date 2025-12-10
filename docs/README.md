@@ -9,7 +9,7 @@
 
 ## 🌟 功能特色
 
--  **檔案上傳與驗證** - 支援 CSV、Excel 格式，即時驗證資料格式
+-  **檔案上傳與驗證** - 支援 CSV、Excel (.xlsx) 格式，即時驗證資料格式（不支援 .xls）
 -  **資料預覽與編輯** - 上傳後即時預覽，支援錯誤修正
 -  **生產鏈追蹤** - P1→P2→P3 完整生產流程管理
 -  **PostgreSQL 資料庫** - 高效能、可擴展的關聯式資料庫
@@ -153,8 +153,11 @@ form-analysis-spec-kit/
 
 2. **修改環境設定** (可選)
    ```bash
-   # 資料庫連接
+   # 資料庫連接（本地開發使用 asyncpg，建議用於 FastAPI 非同步應用）
    DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:5432/form_analysis_db
+   
+   # Docker 環境使用 psycopg（同步驅動）
+   # DATABASE_URL=postgresql+psycopg://app:app_secure_password@db:5432/form_analysis_db
    
    # API 服務
    API_HOST=0.0.0.0
@@ -244,9 +247,19 @@ docker-compose down -v --remove-orphans
 ### 上傳檔案
 
 ```bash
-curl -X POST "http://localhost:8000/api/upload/files" \
+curl -X POST "http://localhost:8000/api/upload" \
   -H "Content-Type: multipart/form-data" \
-  -F "files=@your_file.csv"
+  -F "file=@your_file.csv"
+```
+
+**範例回應:**
+```json
+{
+  "file_id": "abc123def456",
+  "filename": "your_file.csv",
+  "status": "validated",
+  "message": "File uploaded and validated successfully"
+}
 ```
 
 ### 查詢 Lot 資料
