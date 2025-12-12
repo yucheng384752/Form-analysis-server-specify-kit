@@ -386,8 +386,8 @@ echo cd /d "%SERVER_PATH%" >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo echo     後端 API 服務日誌監控 >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_backend.bat"
-echo echo 後端服務 URL: http://localhost:8000 >> "%PROJECT_ROOT%\monitor_backend.bat"
-echo echo API 文檔: http://localhost:8000/docs >> "%PROJECT_ROOT%\monitor_backend.bat"
+echo echo 後端服務 URL: http://localhost:18002 >> "%PROJECT_ROOT%\monitor_backend.bat"
+echo echo API 文檔: http://localhost:18002/docs >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo echo. >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo docker-compose logs -f backend db >> "%PROJECT_ROOT%\monitor_backend.bat"
@@ -400,7 +400,7 @@ echo cd /d "%SERVER_PATH%" >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo echo     前端應用日誌監控 >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_frontend.bat"
-echo echo 前端應用 URL: http://localhost:5173 >> "%PROJECT_ROOT%\monitor_frontend.bat"
+echo echo 前端應用 URL: http://localhost:18003/index.html >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo echo. >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo docker-compose logs -f frontend >> "%PROJECT_ROOT%\monitor_frontend.bat"
@@ -416,10 +416,11 @@ echo             系統啟動完成！
 echo ========================================
 echo.
 echo  服務連結：
-echo     前端應用: http://localhost:5173
-echo     API 文檔: http://localhost:8000/docs  
-echo     API 測試: http://localhost:8000/redoc
-echo     資料庫管理: http://localhost:5050 (可選)
+echo     前端應用: http://localhost:18003/index.html
+echo     API 文檔: http://localhost:18002/docs  
+echo     API 測試: http://localhost:18002/redoc
+echo     資料庫: localhost:18001 (PostgreSQL)
+echo     資料庫管理: http://localhost:18004 (可選)
 echo.
 echo  服務狀態：
 docker-compose ps
@@ -442,14 +443,14 @@ timeout /t 3 /nobreak > nul
 
 REM 測試服務連通性
 echo  測試服務連通性...
-curl -s http://localhost:8000/healthz >nul 2>&1
+curl -s http://localhost:18002/healthz >nul 2>&1
 if not errorlevel 1 (
     echo  後端 API 服務正常
 ) else (
     echo   後端 API 可能尚未完全就緒
 )
 
-curl -s http://localhost:5173 >nul 2>&1
+curl -s http://localhost:18003 >nul 2>&1
 if not errorlevel 1 (
     echo  前端應用服務正常
 ) else (
@@ -460,9 +461,9 @@ echo.
 set /p "open_browser= 是否立即開啟瀏覽器? (y/N): "
 if /i "!open_browser!"=="y" (
     echo 正在開啟瀏覽器...
-    start http://localhost:5173
+    start http://localhost:18003/index.html
     timeout /t 2 /nobreak > nul
-    start http://localhost:8000/docs
+    start http://localhost:18002/docs
 )
 
 echo 按任意鍵結束啟動程序...

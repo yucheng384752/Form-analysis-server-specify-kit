@@ -62,26 +62,79 @@ form-analysis-spec-kit/
 
 ##  快速開始
 
-### 1. 啟動系統
+### 選擇啟動方式
+
+系統提供兩種啟動方式，請根據您的需求選擇：
+
+#### 方式一：Docker 完整部署（推薦用於生產環境）
 ```bash
-# 使用批次檔啟動（推薦）
+# 使用 Docker Compose 啟動完整系統
 .\scripts\start-system.bat
 
 # 或使用 PowerShell
 .\scripts\start-system.ps1
 ```
 
-### 2. 存取應用程式
-- **前端應用**: http://localhost:5173
-- **API 文檔**: http://localhost:8000/docs
-- **API 測試**: http://localhost:8000/redoc
+**特點**：
+- 完整的容器化環境（PostgreSQL + Backend + Frontend）
+- 自動健康檢查和錯誤診斷
+- 自動資料庫初始化和遷移
+- 監控終端自動開啟
+- **需要 Docker Desktop**
+- **啟動時間較長（2-3 分鐘）**
 
-### 3. 停止系統
+**適用場景**：
+- 第一次部署系統
+- 正式環境部署
+- 團隊開發（保證環境一致性）
+- 完整功能測試
+
+#### 方式二：本地開發模式（推薦用於日常開發）
+```bash
+# 直接啟動本地服務
+.\scripts\start_services.bat
+
+# 或使用 PowerShell
+.\scripts\start_services.ps1
+```
+
+**特點**：
+- 快速啟動（10-20 秒）
+- 支援熱重載（即時看到代碼修改）
+- 輕量級（不需要 Docker）
+- 需手動啟動 PostgreSQL
+- 需手動配置虛擬環境
+
+**適用場景**：
+- 日常開發調試
+- 前端/後端單獨開發
+- 快速測試修改
+- 資源受限的電腦
+
+**前置要求**：
+1. PostgreSQL 服務已運行（端口 18001）
+2. Python 虛擬環境已設置（`backend\venv`）
+3. Node.js 已安裝
+
+---
+
+### 存取應用程式
+- **前端應用**: http://localhost:18003/index.html
+- **API 文檔**: http://localhost:18002/docs
+- **API 測試**: http://localhost:18002/redoc
+- **資料庫**: localhost:18001 (PostgreSQL)
+
+### 停止系統
+
+**Docker 模式**：
 ```bash
 .\scripts\stop-system.bat
 ```
 
-## 📖 功能說明
+**本地開發模式**：
+- 直接關閉啟動的終端視窗即可
+
+## 功能說明
 
 ### 檔案上傳與驗證
 - 支援 CSV 和 Excel (.xlsx) 格式（不支援 .xls）
@@ -99,7 +152,7 @@ form-analysis-spec-kit/
 - 自動化資料匯入
 - 錯誤記錄追蹤
 
-## 🛠️ 開發工具
+## 開發工具
 
 ### 測試資料
 使用 `test-data/` 目錄中的檔案進行功能測試：

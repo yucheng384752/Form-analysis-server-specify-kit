@@ -95,10 +95,11 @@ docker-compose ps
 
 | 服務 | 網址 | 說明 |
 |------|------|------|
-| **前端應用** | http://localhost:5173 | 主要操作介面 |
-| **API 文檔** | http://localhost:8000/docs | Swagger UI 文檔 |
-| **API 替代文檔** | http://localhost:8000/redoc | ReDoc 文檔 |
-| **資料庫管理** | http://localhost:5050 | pgAdmin (可選) |
+| **前端應用** | http://localhost:18003/index.html | 主要操作介面 |
+| **API 文檔** | http://localhost:18002/docs | Swagger UI 文檔 |
+| **API 替代文檔** | http://localhost:18002/redoc | ReDoc 文檔 |
+| **資料庫** | localhost:18001 | PostgreSQL 資料庫 |
+| **資料庫管理** | http://localhost:18004 | pgAdmin (可選) |
 
 ##  專案結構
 
@@ -154,17 +155,17 @@ form-analysis-spec-kit/
 2. **修改環境設定** (可選)
    ```bash
    # 資料庫連接（本地開發使用 asyncpg，建議用於 FastAPI 非同步應用）
-   DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:5432/form_analysis_db
+   DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:18001/form_analysis_db
    
-   # Docker 環境使用 psycopg（同步驅動）
+   # Docker 環境使用 psycopg（同步驅動，容器內部使用 db:5432）
    # DATABASE_URL=postgresql+psycopg://app:app_secure_password@db:5432/form_analysis_db
    
    # API 服務
    API_HOST=0.0.0.0
-   API_PORT=8000
+   API_PORT=18002
    
    # 前端服務
-   FRONTEND_PORT=5173
+   FRONTEND_PORT=18003
    ```
 
 ### 本地開發

@@ -50,13 +50,13 @@ Start-Sleep -Seconds 5
 
 # 打開瀏覽器
 Write-Host "🌍 正在打開瀏覽器..." -ForegroundColor Green
-Start-Process "http://localhost:5173"
+Start-Process "http://localhost:18003/index.html"
 
 Write-Host ""
 Write-Host " 服務啟動完成！" -ForegroundColor Green
-Write-Host " 後端 API: http://localhost:8000" -ForegroundColor Cyan
-Write-Host " 前端界面: http://localhost:5173" -ForegroundColor Cyan  
-Write-Host " API 文檔: http://localhost:8000/docs" -ForegroundColor Cyan
+Write-Host " 後端 API: http://localhost:18002" -ForegroundColor Cyan
+Write-Host " 前端界面: http://localhost:18003/index.html" -ForegroundColor Cyan  
+Write-Host " API 文檔: http://localhost:18002/docs" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "關閉此窗口將不會停止服務" -ForegroundColor Yellow
 Write-Host "要停止服務，請關閉對應的 PowerShell 窗口" -ForegroundColor Yellow
@@ -67,7 +67,7 @@ Write-Host "🧪 測試服務連接..." -ForegroundColor Magenta
 Start-Sleep -Seconds 3
 
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:8000/healthz" -TimeoutSec 5
+    $response = Invoke-WebRequest -Uri "http://localhost:18002/healthz" -TimeoutSec 5
     if ($response.StatusCode -eq 200) {
         Write-Host " 後端服務連接成功" -ForegroundColor Green
     }
@@ -76,7 +76,7 @@ try {
 }
 
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:5173" -TimeoutSec 5  
+    $response = Invoke-WebRequest -Uri "http://localhost:18003" -TimeoutSec 5  
     if ($response.StatusCode -eq 200) {
         Write-Host " 前端服務連接成功" -ForegroundColor Green
     }
