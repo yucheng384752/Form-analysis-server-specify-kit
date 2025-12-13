@@ -10,7 +10,7 @@
 - 重構計劃 (RESTRUCTURE_PLAN.md)
 - 啟動指南 (MANUAL_STARTUP_GUIDE.md)
 
-### 🛠️ **scripts/** - 系統腳本
+###  **scripts/** - 系統腳本
 **用途**: 存放自動化腳本和系統管理工具
 **包含**:
 - 系統啟動/停止腳本
@@ -51,7 +51,7 @@ form-analysis-server/
 └── docker-compose.yml
 ```
 
-## 🎯 使用指南
+##  使用指南
 
 ### 新增檔案時的分類規則
 
@@ -71,7 +71,7 @@ form-analysis-server/
 5. **舊版代碼** → `legacy-components/`
    - 不再使用但保留參考的程式碼
 
-### 🚨 注意事項
+###  注意事項
 
 - **不要** 將實際上傳的檔案提交到版本控制
 - **保留** test-data 中的測試檔案

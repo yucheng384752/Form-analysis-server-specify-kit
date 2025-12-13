@@ -37,9 +37,9 @@ foreach ($url in $urls) {
     Write-Host "測試: $url" -NoNewline
     try {
         $response = Invoke-WebRequest -Uri $url -Method Head -TimeoutSec 5 -ErrorAction Stop
-        Write-Host " -> ✅ 成功 ($($response.StatusCode))" -ForegroundColor Green
+        Write-Host " -> 成功 ($($response.StatusCode))" -ForegroundColor Green
     } catch {
-        Write-Host " -> ❌ 失敗" -ForegroundColor Red
+        Write-Host " -> 失敗" -ForegroundColor Red
     }
 }
 

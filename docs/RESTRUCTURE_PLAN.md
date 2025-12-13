@@ -1,6 +1,6 @@
 # Specify-Kit 專案重構計劃
 
-## 🎯 重構目標
+##  重構目標
 
 1. **統一專案架構** - 整理目前混合的專案結構
 2. **PostgreSQL 完整遷移** - 從 SQLite 遷移到 PostgreSQL

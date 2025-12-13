@@ -5,7 +5,7 @@ cd /d "C:\Users\yucheng\Desktop\Form-analysis-server-specify-kit\form-analysis-s
 echo ======================================== 
 echo     前端應用日誌監控 
 echo ======================================== 
-echo 前端應用 URL: http://localhost:5173 
+echo 前端應用 URL: http://localhost:18003/index.html 
 echo ======================================== 
 echo. 
 docker-compose logs -f frontend 

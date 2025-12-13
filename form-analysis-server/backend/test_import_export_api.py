@@ -59,7 +59,7 @@ def test_upload_and_get_process_id():
             result = response.json()
             process_id = result.get('process_id')
             print(f" 檔案上傳成功，Process ID: {process_id}")
-            print(f"📈 統計：總 {result.get('total_rows')}，有效 {result.get('valid_rows')}，錯誤 {result.get('invalid_rows')}")
+            print(f"統計：總 {result.get('total_rows')}，有效 {result.get('valid_rows')}，錯誤 {result.get('invalid_rows')}")
             return process_id
         else:
             print(f" 上傳失敗：{response.text}")
@@ -89,7 +89,7 @@ def test_import_api(process_id):
         if response.status_code == 200:
             result = response.json()
             print(" 資料匯入成功")
-            print(f"📈 匯入結果：")
+            print(f"匯入結果：")
             print(f"   - 成功匯入：{result['imported_rows']} 筆")
             print(f"   - 跳過錯誤：{result['skipped_rows']} 筆")
             print(f"   - 處理耗時：{result['elapsed_ms']} ms")
@@ -295,7 +295,7 @@ def main():
     if all([import_test, export_test, repeat_import_test, invalid_id_test]):
         print("\n🎊 所有測試通過！匯入和匯出 API 運作正常。")
         print(f" API 文檔：http://localhost:8000/docs")
-        print(f"🔗 測試用的 Process ID：{process_id}")
+        print(f" 測試用的 Process ID：{process_id}")
     else:
         print("\n  部分測試失敗，請檢查 API 實作。")
 

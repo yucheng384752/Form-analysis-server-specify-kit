@@ -27,8 +27,8 @@ echo ═════════════════════════
 echo.
 echo  可用選項：
 echo    [1]  查看應用程式日誌 (最新50行)
-echo    [2] 🚨 查看錯誤日誌 (最新50行) 
-echo    [3] 📈 即時監控日誌
+echo    [2]  查看錯誤日誌 (最新50行) 
+echo    [3] 即時監控日誌
 echo    [4]  統計資訊
 echo    [5]  搜尋日誌
 echo    [6]  清理舊日誌
@@ -61,7 +61,7 @@ goto MENU
 
 :VIEW_ERROR_LOG
 cls
-echo 🚨 錯誤日誌 (最新50行):
+echo  錯誤日誌 (最新50行):
 echo ════════════════════════════════════════
 if exist "%ERROR_LOG%" (
     powershell -Command "Get-Content '%ERROR_LOG%' -Tail 50 | ForEach-Object { $_ }"
@@ -74,7 +74,7 @@ goto MENU
 
 :MONITOR_LOG
 cls
-echo 📈 即時監控日誌 (Ctrl+C 停止):
+echo 即時監控日誌 (Ctrl+C 停止):
 echo ════════════════════════════════════════
 if exist "%APP_LOG%" (
     powershell -Command "Get-Content '%APP_LOG%' -Wait -Tail 10"
@@ -90,7 +90,7 @@ echo  日誌統計資訊:
 echo ════════════════════════════════════════
 
 if exist "%APP_LOG%" (
-    echo 📈 應用程式日誌統計:
+    echo 應用程式日誌統計:
     for /f %%i in ('powershell -Command "(Get-Content '%APP_LOG%' | Measure-Object -Line).Lines"') do (
         echo    總行數: %%i
     )

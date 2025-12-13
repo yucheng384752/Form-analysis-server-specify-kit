@@ -144,7 +144,7 @@ def explain_design_benefits():
     }
     
     for category, items in benefits.items():
-        print(f"\n  🎯 {category}")
+        print(f"\n   {category}")
         for item in items:
             print(f"    {item}")
 

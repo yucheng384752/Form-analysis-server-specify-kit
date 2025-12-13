@@ -6,7 +6,7 @@
 
 ##  問題診斷
 
-### 🚨 根本原因
+###  根本原因
 前端應用的 API 基礎 URL 配置不正確：
 - **錯誤配置**: `VITE_API_URL=http://backend:8000`
 - **正確配置**: `VITE_API_URL=http://localhost:8000`
@@ -41,7 +41,7 @@ docker-compose up -d --build frontend
 2. **瀏覽器請求**: 前端應用在用戶瀏覽器中運行，瀏覽器無法解析 Docker 容器名稱
 3. **端口映射**: Docker 將容器端口映射到主機 `localhost:8000`
 
-### 🏗️ 網絡架構
+###  網絡架構
 ```
 瀏覽器 → localhost:5173 (前端) → localhost:8000 (後端 API)
           ↑                      ↑
@@ -76,7 +76,7 @@ GET http://localhost:8000/api/logs/stats → 200 OK
 - **API 文檔**: http://localhost:8000/docs
 - **健康檢查**: http://localhost:8000/healthz
 
-### 🐳 Docker 容器
+###  Docker 容器
 | 容器名稱 | 狀態 | 端口 | 健康檢查 |
 |---------|------|------|----------|
 | form_analysis_db | 🟢 Running | 5432 |  Healthy |
@@ -85,7 +85,7 @@ GET http://localhost:8000/api/logs/stats → 200 OK
 
 ##  預防措施
 
-### 🔒 配置文件管理
+###  配置文件管理
 1. **環境變數一致性**: 確保 `.env` 文件與 `docker-compose.yml` 一致
 2. **文檔更新**: 更新 `.env.example` 文件中的註釋
 3. **驗證腳本**: 使用診斷腳本定期檢查配置
@@ -101,7 +101,7 @@ VITE_API_URL=https://your-api-domain.com
 
 ##  故障排除指南
 
-### 🚨 如果再次遇到連接問題
+###  如果再次遇到連接問題
 1. **檢查環境變數**:
    ```bash
    docker exec form_analysis_frontend printenv | findstr VITE_API_URL
@@ -123,7 +123,7 @@ VITE_API_URL=https://your-api-domain.com
    docker-compose up -d --build frontend
    ```
 
-## ✨ 系統功能確認
+## 系統功能確認
 
 ###  日誌管理系統
 現在可以正常使用所有日誌管理功能：
@@ -133,7 +133,7 @@ VITE_API_URL=https://your-api-domain.com
 -  檔案下載
 -  日誌清理
 
-### 🎯 用戶操作指南
+###  用戶操作指南
 1. 開啟 http://localhost:5173
 2. 點擊 "系統日誌" 標籤
 3. 即可查看和管理系統日誌

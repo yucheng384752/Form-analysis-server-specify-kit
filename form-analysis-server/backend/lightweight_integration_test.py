@@ -254,7 +254,7 @@ async def main():
             print("   • 防重複匯入檢查")
             print("   • 基本錯誤處理")
             
-            print("\n🎯 測試特點：")
+            print("\n 測試特點：")
             print("   • 使用臨時 SQLite 資料庫")
             print("   • 模擬真實的檔案上傳場景")
             print("   • 驗證完整的 API 工作流程")

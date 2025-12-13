@@ -43,7 +43,7 @@ npm run dev
 2. 等待 Docker Engine 完全啟動（通常需要 1-2 分鐘）
 3. 然後再執行：`docker-compose up -d`
 
-## 🎯 功能測試
+##  功能測試
 
 ### 測試上傳功能：
 1. 訪問 http://localhost:5173
@@ -78,7 +78,7 @@ python comprehensive_verification_test.py
  Form Analysis API starting on 0.0.0.0:8000
  Database: sqlite+aiosqlite:///./dev_test.db
  Upload limit: 10MB
-🔒 CORS origins: ['http://localhost:5173', 'http://localhost:3000']
+ CORS origins: ['http://localhost:5173', 'http://localhost:3000']
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 ```

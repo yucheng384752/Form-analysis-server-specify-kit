@@ -4,7 +4,7 @@
 
 這是一個完整的異步測試套件，用於測試三個 SQLAlchemy 模型：`UploadJob`、`Record`、`UploadError`。
 
-### 🎯 測試目標
+###  測試目標
 
  **完成的測試項目**:
 - UploadJob 模型的完整 CRUD 操作
@@ -180,7 +180,7 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 -  **清潔**: 測試結束後自動清理
 -  **免安裝**: 無需外部資料庫服務
 
-## 📈 覆蓋率報告
+## 覆蓋率報告
 
 執行覆蓋率測試：
 ```bash
@@ -192,7 +192,7 @@ python run_tests.py coverage
 - **HTML 報告**: `htmlcov/index.html`
 - **XML 報告**: `coverage.xml` (CI/CD 用)
 
-## 🎯 測試最佳實踐
+##  測試最佳實踐
 
 ### 1. 異步測試
 ```python

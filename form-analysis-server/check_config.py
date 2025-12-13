@@ -112,7 +112,7 @@ def main():
     print(f"   docker-compose.yml 變數數: {len(docker_vars)}")
     
     # 3. 檢查 DATABASE_URL 一致性
-    print(f"\n🔗 DATABASE_URL 一致性檢查:")
+    print(f"\n DATABASE_URL 一致性檢查:")
     db_issues = check_database_url_consistency(base_dir)
     for issue in db_issues:
         print(f"   {issue}")
@@ -143,7 +143,7 @@ def main():
             print(f"      - {var}")
     
     # 5. Docker Compose 環境變數檢查
-    print(f"\n🐳 Docker Compose 環境變數檢查:")
+    print(f"\n Docker Compose 環境變數檢查:")
     docker_only = docker_vars - env_vars
     if docker_only:
         print(f"     只在 docker-compose.yml 中定義的變數:")

@@ -186,7 +186,7 @@ class LogAnalyzer:
             
         if self.error_log.exists():
             size = self.error_log.stat().st_size
-            print(f"   🚨 error.log: {size:,} bytes ({size/1024/1024:.2f} MB)")
+            print(f"    error.log: {size:,} bytes ({size/1024/1024:.2f} MB)")
         print()
         
         # API 使用統計
@@ -204,9 +204,9 @@ class LogAnalyzer:
         
         # 效能統計
         if api_analysis["performance"]:
-            print("⚡ 效能統計:")
+            print(" 效能統計:")
             for api, perf in api_analysis["performance"].items():
-                print(f"   🎯 {api.upper()}:")
+                print(f"    {api.upper()}:")
                 print(f"      平均處理時間: {perf['avg_ms']:.2f} ms")
                 print(f"      最大處理時間: {perf['max_ms']:.2f} ms")
                 print(f"      最小處理時間: {perf['min_ms']:.2f} ms")
@@ -214,7 +214,7 @@ class LogAnalyzer:
             print()
         
         # 錯誤分析
-        print("🚨 錯誤分析:")
+        print(" 錯誤分析:")
         error_analysis = self.analyze_error_patterns()
         print(f"   總錯誤數: {error_analysis['error_count']}")
         
@@ -248,7 +248,7 @@ def main():
     analyzer = LogAnalyzer(args.log_dir)
     
     if args.watch:
-        print("📈 即時監控模式 (Ctrl+C 停止)")
+        print("即時監控模式 (Ctrl+C 停止)")
         print("-" * 30)
         try:
             import time

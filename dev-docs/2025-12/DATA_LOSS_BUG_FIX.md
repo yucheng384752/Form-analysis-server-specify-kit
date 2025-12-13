@@ -196,7 +196,7 @@ docker exec form_analysis_db psql -U app -d form_analysis_db -c "SELECT COUNT(*)
 3. **系統需求**:
    - `SYSTEM_REQUIREMENTS.md` - 補充 Volume 管理說明
 
-## 🎯 最佳實踐建議
+##  最佳實踐建議
 
 ### 開發環境
 
@@ -218,7 +218,7 @@ docker run --rm -v form-analysis-server_postgres_data:/data -v %cd%:/backup alpi
 2. **自動化備份**: 設定 cron job 定期備份
 3. **監控告警**: 設定資料庫監控和備份驗證
 
-## 🔗 相關參考
+##  相關參考
 
 - Docker Compose Down 文件: https://docs.docker.com/engine/reference/commandline/compose_down/
 - Docker Volume 管理: https://docs.docker.com/storage/volumes/

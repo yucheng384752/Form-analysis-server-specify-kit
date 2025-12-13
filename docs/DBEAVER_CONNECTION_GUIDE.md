@@ -14,7 +14,7 @@
 
 ```yaml
 主機: localhost
-端口: 18001  ⚠️ 注意：非標準端口 (避免與其他 PostgreSQL 衝突)
+端口: 18001  注意：非標準端口 (避免與其他 PostgreSQL 衝突)
 資料庫名稱: form_analysis_db
 使用者名稱: app
 密碼: app_secure_password_2024
@@ -68,7 +68,7 @@ form_analysis_db    postgres:16    Up 5 minutes (healthy)    0.0.0.0:18001->5432
 | 欄位 | 值 | 說明 |
 |------|-----|------|
 | **Host** | `localhost` | 本地主機 |
-| **Port** | `18001` | ⚠️ 自訂端口(非標準 5432) |
+| **Port** | `18001` | 自訂端口(非標準 5432) |
 | **Database** | `form_analysis_db` | 資料庫名稱 |
 | **Username** | `app` | 使用者名稱 |
 | **Password** | `app_secure_password_2024` | 密碼 |
@@ -246,7 +246,7 @@ docker exec form_analysis_db env | findstr POSTGRES
 #### 本地開發環境（從主機連線）
 ```
 Host: localhost
-Port: 18001  ⚠️ 外部端口
+Port: 18001  外部端口
 Database: form_analysis_db
 Username: app
 Password: app_secure_password_2024
@@ -299,7 +299,7 @@ docker exec -i form_analysis_db psql -U app form_analysis_db < backup.sql
 │     DBeaver 快速連線資訊                │
 ├─────────────────────────────────────────┤
 │ 主機:       localhost                   │
-│ 端口:       18001  ⚠️ 非標準端口        │
+│ 端口:       18001  非標準端口        │
 │ 資料庫:     form_analysis_db            │
 │ 使用者:     app                         │
 │ 密碼:       app_secure_password_2024    │

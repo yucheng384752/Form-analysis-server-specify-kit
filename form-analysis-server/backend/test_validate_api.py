@@ -63,7 +63,7 @@ def test_upload_and_get_process_id():
             result = response.json()
             process_id = result.get('process_id')
             print(f" 檔案上傳成功，Process ID: {process_id}")
-            print(f"📈 統計：總行數 {result.get('total_rows')}, 有效 {result.get('valid_rows')}, 錯誤 {result.get('invalid_rows')}")
+            print(f"統計：總行數 {result.get('total_rows')}, 有效 {result.get('valid_rows')}, 錯誤 {result.get('invalid_rows')}")
             return process_id
         else:
             print(f" 上傳失敗：{response.text}")
@@ -225,7 +225,7 @@ def main():
     if all([basic_test, invalid_id_test, pagination_test]):
         print("\n🎊 所有測試通過！驗證結果 API 運作正常。")
         print(f" API 文檔：http://localhost:8000/docs")
-        print(f"🔗 測試用的 Process ID：{process_id}")
+        print(f" 測試用的 Process ID：{process_id}")
     else:
         print("\n  部分測試失敗，請檢查 API 實作。")
 

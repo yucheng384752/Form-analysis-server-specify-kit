@@ -983,7 +983,7 @@ docker-compose -f docker-compose.test.yml up --abort-on-container-exit
 - **列級錯誤**: 資料格式或內容錯誤，該列會被跳過
 - **警告**: 資料品質問題，不影響匯入但建議檢查
 
-## 🛠️ 開發指南
+##  開發指南
 
 ### 程式碼品質
 ```bash
@@ -1061,7 +1061,7 @@ docker-compose restart db
 - 大檔案處理時間較長，請耐心等待驗證完成
 - 可透過 `/healthz` 端點檢查系統狀態
 
-## 📈 監控與維運
+## 監控與維運
 
 ### 健康檢查
 - API: `GET /healthz`
@@ -1109,12 +1109,8 @@ docker-compose -f docker-compose.prod.yml exec backend alembic upgrade head
 - [ ] `CORS_ORIGINS` 設定正確的前端網域
 - [ ] `LOG_LEVEL=INFO` 適當的日誌級別
 
-## 📞 支援
-
-- 🐛 Bug 回報: [GitHub Issues](https://github.com/your-org/form-analysis-server/issues)
-- 📖 API 文件: http://localhost:8000/docs
--  專案看板: [GitHub Projects](https://github.com/your-org/form-analysis-server/projects)
-
+## 支援
+None
 ---
 
 **版本**: v1.0.0 | **更新日期**: 2025-11-08

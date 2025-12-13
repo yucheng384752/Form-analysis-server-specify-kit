@@ -13,11 +13,11 @@ try {
     if ($result -match "1") {
         Write-Host "✓ data_type column EXISTS in records table" -ForegroundColor Green
     } else {
-        Write-Host "❌ data_type column MISSING in records table" -ForegroundColor Red
+        Write-Host "data_type column MISSING in records table" -ForegroundColor Red
         exit 1
     }
 } catch {
-    Write-Host "❌ Failed to check database structure" -ForegroundColor Red
+    Write-Host "Failed to check database structure" -ForegroundColor Red
     exit 1
 }
 
@@ -31,10 +31,10 @@ try {
     if ($result -match "1") {
         Write-Host "✓ data_type_enum EXISTS" -ForegroundColor Green
     } else {
-        Write-Host "❌ data_type_enum MISSING" -ForegroundColor Red
+        Write-Host "data_type_enum MISSING" -ForegroundColor Red
     }
 } catch {
-    Write-Host "❌ Failed to check enum type" -ForegroundColor Red
+    Write-Host "Failed to check enum type" -ForegroundColor Red
 }
 
 Write-Host ""
@@ -45,7 +45,7 @@ $status = docker-compose ps backend --format "table {{.Status}}" 2>$null | Selec
 if ($status) {
     Write-Host "✓ Backend service is HEALTHY" -ForegroundColor Green
 } else {
-    Write-Host "⚠️ Backend service status unknown" -ForegroundColor Yellow
+    Write-Host "Backend service status unknown" -ForegroundColor Yellow
 }
 
 Write-Host ""
@@ -56,14 +56,14 @@ try {
     $response = Invoke-WebRequest -Uri "http://localhost:18002/docs" -Method Head -TimeoutSec 5 -ErrorAction Stop
     Write-Host "✓ API documentation accessible (Status: $($response.StatusCode))" -ForegroundColor Green
 } catch {
-    Write-Host "❌ API not accessible" -ForegroundColor Red
+    Write-Host "API not accessible" -ForegroundColor Red
 }
 
 try {
     $healthResponse = Invoke-WebRequest -Uri "http://localhost:18002/healthz" -Method Get -TimeoutSec 5 -ErrorAction Stop
     Write-Host "✓ API health endpoint working (Status: $($healthResponse.StatusCode))" -ForegroundColor Green
 } catch {
-    Write-Host "⚠️ API health endpoint not available" -ForegroundColor Yellow
+    Write-Host "API health endpoint not available" -ForegroundColor Yellow
 }
 
 Write-Host ""
@@ -74,7 +74,7 @@ $logs = docker-compose logs --tail=20 backend 2>$null | Select-String "error|ERR
 if ($logs.Count -eq 0) {
     Write-Host "✓ No recent errors in backend logs" -ForegroundColor Green
 } else {
-    Write-Host "⚠️ Found $($logs.Count) error entries in recent logs" -ForegroundColor Yellow
+    Write-Host "Found $($logs.Count) error entries in recent logs" -ForegroundColor Yellow
 }
 
 Write-Host ""

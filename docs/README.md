@@ -7,7 +7,7 @@
 [![React](https://img.shields.io/badge/React-18-blue.svg)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue.svg)](https://www.typescriptlang.org/)
 
-## 🌟 功能特色
+##  功能特色
 
 -  **檔案上傳與驗證** - 支援 CSV、Excel (.xlsx) 格式，即時驗證資料格式（不支援 .xls）
 -  **資料預覽與編輯** - 上傳後即時預覽，支援錯誤修正
@@ -17,7 +17,7 @@
 -  **Docker 容器化** - 一鍵啟動，環境隔離
 -  **API 文檔** - 完整的 OpenAPI/Swagger 文檔
 
-## 🏗️ 系統架構
+##  系統架構
 
 ```
 表單分析系統
@@ -89,7 +89,7 @@ sleep 15
 docker-compose ps
 ```
 
-## 🔗 服務連結
+##  服務連結
 
 啟動完成後，您可以訪問以下服務：
 
@@ -110,9 +110,9 @@ form-analysis-spec-kit/
 ├──  start-system.bat             # Windows 啟動腳本
 ├──  start-system.ps1             # PowerShell 啟動腳本
 ├── form-analysis-server/           # 主要服務目錄
-│   ├── 🐳 docker-compose.yml       # 容器編排檔案
+│   ├──  docker-compose.yml       # 容器編排檔案
 │   ├── backend/                    # 後端服務 (FastAPI)
-│   │   ├── 🐳 Dockerfile           
+│   │   ├──  Dockerfile           
 │   │   ├──  requirements.txt     
 │   │   ├── ⚙️ alembic.ini          # 資料庫遷移配置
 │   │   ├── migrations/             # 資料庫遷移檔案
@@ -125,9 +125,9 @@ form-analysis-spec-kit/
 │   │       ├── api/                # API 路由
 │   │       └── services/           # 業務邏輯
 │   └── frontend/                   # 前端應用 (React + TypeScript)
-│       ├── 🐳 Dockerfile           
+│       ├──  Dockerfile           
 │       ├──  package.json         
-│       ├── ⚡ vite.config.ts       
+│       ├──  vite.config.ts       
 │       └── src/                    # 原始碼
 │           ├── components/         # UI 元件
 │           │   ├── ui/             # 基礎 UI 元件
@@ -234,7 +234,7 @@ docker-compose down -v --remove-orphans
 
 詳細的資料庫 Schema 請參考：[API 文檔](http://localhost:8000/docs)
 
-## 🔒 安全性設定
+##  安全性設定
 
 -  JWT 權杖認證 (準備中)
 -  CORS 跨域保護
@@ -277,7 +277,7 @@ curl -X GET "http://localhost:8000/api/phase1/2503033_03"
 
 更多 API 範例請參考：[Swagger 文檔](http://localhost:8000/docs)
 
-## 🚨 故障排除
+##  故障排除
 
 ### 常見問題
 
@@ -333,7 +333,7 @@ docker system prune -a
 .\start-system.bat
 ```
 
-## 🤝 貢獻指南
+##  貢獻指南
 
 1. Fork 此專案
 2. 建立功能分支 (`git checkout -b feature/amazing-feature`)
@@ -345,23 +345,19 @@ docker system prune -a
 
 此專案採用 MIT 授權條款。詳細內容請參考 [LICENSE](LICENSE) 檔案。
 
-## 📞 聯絡資訊
+## 聯絡資訊
 
-- **專案維護者**: [Your Name]
-- **電子郵件**: [your.email@example.com]
-- **問題回報**: [GitHub Issues](https://github.com/your-repo/form-analysis-spec-kit/issues)
+- **專案維護者**: [yucheng384752]
+- **電子郵件**: [None]
+- **問題回報**: [GitHub Issues](https://github.com/yucheng384752/form-analysis-spec-kit/issues)
 
-## 🎯 版本歷史
+##  版本歷史
 
 ### v1.0.0 (2024-11-08)
-- ✨ 初始版本發布
+- 初始版本發布
 -  PostgreSQL 資料庫整合
 -  現代化 React 前端
 -  Docker 容器化部署
 -  一鍵啟動腳本
 
 ---
-
-<p align="center">
-  Made with ❤️ for efficient form data processing
-</p>

@@ -2,7 +2,7 @@
 
 Form Analysis System 提供了完整的日誌管理工具包，支援日誌監控、分析、搜尋和清理等功能。
 
-## 🛠️ 工具概覽
+##  工具概覽
 
 ### 1.  Windows 批次檔工具
 **檔案**: `scripts/monitor-logs.bat`  
@@ -43,9 +43,9 @@ python tools/log_analyzer.py --watch --errors-only
 ```
 
 **功能**:
-- 📈 API 使用統計 (上傳/查詢/匯入)
+- API 使用統計 (上傳/查詢/匯入)
 -  錯誤模式分析
-- ⚡ 效能統計 (平均/最大/最小處理時間)
+-  效能統計 (平均/最大/最小處理時間)
 -  日誌級別分佈
 - 🕐 時間範圍篩選
 -  即時監控模式
@@ -75,7 +75,7 @@ python tools/log_analyzer.py --watch --errors-only
 - 📤 JSON 格式匯出
 -  詳細統計資訊 (檔案大小、日誌級別分佈)
 -  高亮搜尋結果
-- 📈 即時監控 (格式化顯示)
+- 即時監控 (格式化顯示)
 -  智能清理 (確認對話)
 - ⚙️  自定義參數
 
@@ -92,13 +92,13 @@ scripts\diagnose-system.bat
 ```
 
 **功能**:
-- 🖥️  系統環境檢查 (Python, Node.js, Docker)
+-  系統環境檢查 (Python, Node.js, Docker)
 -  專案結構驗證
 -  連接埠狀態檢查
 -  日誌系統狀態
 - 💾 磁碟空間監控
 - 🌍 網路連接測試
-- 🐳 Docker 容器狀態
+-  Docker 容器狀態
 -  運行程序檢查
 -  診斷報告生成
 
@@ -175,7 +175,7 @@ ENABLE_REQUEST_ID=true
 .\scripts\LogManager.ps1 -Hours 6
 ```
 
-## 📈 輸出範例
+## 輸出範例
 
 ### Python 分析報告
 ```
@@ -186,7 +186,7 @@ ENABLE_REQUEST_ID=true
 
  日誌檔案資訊:
     app.log: 2,345,678 bytes (2.23 MB)
-   🚨 error.log: 12,345 bytes (0.01 MB)
+    error.log: 12,345 bytes (0.01 MB)
 
  API 使用統計 (過去24小時):
     UPLOAD:
@@ -195,8 +195,8 @@ ENABLE_REQUEST_ID=true
       錯誤: 2
       成功率: 92.0%
 
-⚡ 效能統計:
-   🎯 QUERY:
+ 效能統計:
+    QUERY:
       平均處理時間: 145.67 ms
       最大處理時間: 892.34 ms
       最小處理時間: 23.45 ms
@@ -211,7 +211,7 @@ ENABLE_REQUEST_ID=true
 [15:30:48] 📘 INFO: 上傳完成 - processing_time: 2.34s
 ```
 
-## 🎯 最佳實踐
+##  最佳實踐
 
 ### 1. 日常監控
 - 使用 `python tools/log_analyzer.py` 生成每日報告

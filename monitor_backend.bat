@@ -5,8 +5,8 @@ cd /d "C:\Users\yucheng\Desktop\Form-analysis-server-specify-kit\form-analysis-s
 echo ======================================== 
 echo     後端 API 服務日誌監控 
 echo ======================================== 
-echo 後端服務 URL: http://localhost:8000 
-echo API 文檔: http://localhost:8000/docs 
+echo 後端服務 URL: http://localhost:18002 
+echo API 文檔: http://localhost:18002/docs 
 echo ======================================== 
 echo. 
 docker-compose logs -f backend db 

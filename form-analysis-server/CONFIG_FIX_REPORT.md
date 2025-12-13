@@ -1,6 +1,6 @@
 # 配置一致性修正報告
 
-## 🎯 **修正完成的問題**
+##  **修正完成的問題**
 
 ###  **問題 1: DATABASE_URL 主機名不一致**
 
@@ -62,7 +62,7 @@
 + # DATABASE_URL=postgresql+psycopg://app:app_secure_password_change_in_production@localhost:5432/form_analysis_db
 ```
 
-## 🐳 **Docker vs 本地開發配置**
+##  **Docker vs 本地開發配置**
 
 ### Docker 開發 (推薦)
 使用 `.env` (複製自 `.env.example`):
@@ -87,7 +87,7 @@ DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/form_analysis_db
  .env.example
  docker-compose.yml
 
-🔗 DATABASE_URL 一致性檢查:
+ DATABASE_URL 一致性檢查:
  config.py 使用正確的 Docker 服務名 'db'
  .env.example 使用 Docker 服務名 'db'
 

@@ -1,6 +1,6 @@
 # API 設計說明文件
 
-## 🎯 設計原則和決策理由
+##  設計原則和決策理由
 
 ### 1. 為什麼以 `lot_no` 作為唯一鍵？
 
@@ -38,7 +38,7 @@ production_lots (主表)
 - **擴展性**：未來新增階段或修改結構更靈活
 - **維護性**：各階段可獨立備份和維護
 
-#### 🔗 **外鍵關聯設計**
+####  **外鍵關聯設計**
 ```sql
 REFERENCES production_lots(lot_no) ON DELETE CASCADE
 ```
@@ -49,7 +49,7 @@ REFERENCES production_lots(lot_no) ON DELETE CASCADE
 
 ### 3. API 設計模式理由
 
-#### 🎯 **RESTful 資源導向**
+####  **RESTful 資源導向**
 ```
 GET    /api/production/lots/{lot_no}           # 獲取批次詳情
 POST   /api/data/p1/{lot_no}                   # 新增P1數據
@@ -78,7 +78,7 @@ DELETE /api/data/p1/{lot_no}/{record_id}      # 刪除P1記錄
 
 ### 4. 數據模型設計理由
 
-#### 🏗️ **Pydantic 模型層次**
+####  **Pydantic 模型層次**
 ```python
 ProductionLotBase      # 基礎欄位
 ├── ProductionLotCreate    # 創建請求 (繼承全部)
@@ -160,7 +160,7 @@ lot_no: str = Field(..., pattern=r'^\d{7}_\d{2}$')  # 格式驗證
 - **API版本**：路由設計支援多版本並存
 - **微服務**：模組化設計便於拆分成微服務
 
-## 🎯 使用範例
+##  使用範例
 
 ### 完整工作流程：
 ```python

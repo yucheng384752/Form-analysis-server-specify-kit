@@ -1,6 +1,6 @@
 #  日誌系統說明文檔
 
-## 🎯 日誌功能概覽
+##  日誌功能概覽
 
 Form Analysis Spec Kit 具有完整的結構化日誌系統，提供詳細的應用程式監控和除錯資訊。
 
@@ -183,7 +183,7 @@ cat logs/app.log | jq 'select(.process_time and (.process_time | tonumber) > 1)'
 cat logs/app.log | jq -r 'select(.filename) | .filename' | cut -d'_' -f1 | sort | uniq -c
 ```
 
-## 🚨 監控建議
+##  監控建議
 
 ### 1. 關鍵指標
 - **上傳成功率**: (成功上傳 / 總上傳) * 100%
@@ -242,8 +242,8 @@ scripts\monitor-logs.bat
 
 功能包括：
 -  查看應用程式日誌 (最新50行)
-- 🚨 查看錯誤日誌 (最新50行)
-- 📈 即時監控日誌
+-  查看錯誤日誌 (最新50行)
+- 即時監控日誌
 - � 統計資訊 (日誌級別統計、API使用統計)
 -  搜尋日誌內容
 -  清理舊日誌備份
@@ -284,13 +284,13 @@ scripts\diagnose-system.bat
 ```
 
 功能包括：
-- 🖥️  系統環境檢查 (Python, Node.js, Docker)
+-  系統環境檢查 (Python, Node.js, Docker)
 -  專案結構驗證
 -  連接埠狀態檢查
 -  日誌系統狀態
 - 💾 磁碟空間監控
 - 🌍 網路連接測試
-- 🐳 Docker 容器狀態 (如果可用)
+-  Docker 容器狀態 (如果可用)
 -  運行中的相關程序
 
 ##  日誌輪轉和清理

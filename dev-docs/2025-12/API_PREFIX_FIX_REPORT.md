@@ -9,7 +9,7 @@
 
 ##  問題診斷
 
-### 🚨 發現的問題
+###  發現的問題
 
 1. **後端路由重複前綴**
    - 路由文件: `APIRouter(prefix="/api")`
@@ -119,7 +119,7 @@ async downloadLogFile(logType: string): Promise<void> {
 }
 ```
 
-## 🎯 最終API路徑結構
+##  最終API路徑結構
 
 ###  統一的API端點路徑
 
@@ -170,7 +170,7 @@ form_analysis_frontend   Up (healthy)
 -  所有端點路徑正確顯示
 -  沒有重複的路徑前綴
 
-## 🏗️ 架構改進
+##  架構改進
 
 ### 💡 設計原則
 
@@ -201,7 +201,7 @@ ROUTE_CONFIG = [
 - **健康檢查**: http://localhost:8000/healthz
 - **日誌管理**: http://localhost:5173 (系統日誌標籤)
 
-### 🐳 Docker容器
+###  Docker容器
 | 容器名稱 | 狀態 | 端口 | 健康檢查 |
 |---------|------|------|----------|
 | form_analysis_db | 🟢 Running | 5432 |  Healthy |
@@ -210,7 +210,7 @@ ROUTE_CONFIG = [
 
 ##  故障排除指南
 
-### 🚨 如果API路徑仍有問題
+###  如果API路徑仍有問題
 
 1. **檢查路由配置**:
    ```bash
@@ -236,7 +236,7 @@ ROUTE_CONFIG = [
 
 ##  預防措施
 
-### 🔒 代碼質量保證
+###  代碼質量保證
 
 1. **路由文件規範**: 所有APIRouter不應設定prefix
 2. **main.py統一管理**: 所有路由前綴在main.py中配置

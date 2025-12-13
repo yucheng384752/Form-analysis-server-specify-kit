@@ -136,7 +136,7 @@ Write-Host "Overall Result: $passCount/$totalTests tests passed" -ForegroundColo
 if ($failCount -eq 0) {
     Write-Host "🎉 All core services are working correctly!" -ForegroundColor Green
 } else {
-    Write-Host "⚠️  Some issues detected. Please review the failed tests." -ForegroundColor Yellow
+    Write-Host " Some issues detected. Please review the failed tests." -ForegroundColor Yellow
 }
 
 Write-Host ""

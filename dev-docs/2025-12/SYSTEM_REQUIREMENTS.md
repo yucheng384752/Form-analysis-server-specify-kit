@@ -1,4 +1,4 @@
-# 🖥️ 系統需求檢查清單
+# 系統需求檢查清單
 
 在部署 Form Analysis Spec Kit 到新電腦前，請確認以下軟體已安裝：
 
@@ -47,7 +47,7 @@ pip --version
 git --version
 ```
 
-## ⚡ 一鍵安裝腳本
+##  一鍵安裝腳本
 
 ### Windows (使用 Chocolatey)
 ```powershell

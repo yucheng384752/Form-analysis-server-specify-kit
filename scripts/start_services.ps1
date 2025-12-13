@@ -85,6 +85,6 @@ try {
 }
 
 Write-Host ""
-Write-Host "🎯 開始測試您的應用吧！" -ForegroundColor Green
+Write-Host " 開始測試您的應用吧！" -ForegroundColor Green
 
 pause

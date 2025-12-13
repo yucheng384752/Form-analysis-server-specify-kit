@@ -32,7 +32,7 @@ echo. >> %REPORT_FILE%
 echo [1/12] 系統環境檢查...
 :: 系統資訊
 echo ──────────────────────────────────────── >> %REPORT_FILE%
-echo 🖥️  系統資訊 >> %REPORT_FILE%
+echo  系統資訊 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 systeminfo | findstr /C:"OS Name" /C:"OS Version" /C:"Total Physical Memory" /C:"Available Physical Memory" >> %REPORT_FILE% 2>nul
 echo. >> %REPORT_FILE%
@@ -69,7 +69,7 @@ echo. >> %REPORT_FILE%
 
 echo [4/12] Docker 環境檢查...
 echo ──────────────────────────────────────── >> %REPORT_FILE%
-echo 🐳 Docker 環境 >> %REPORT_FILE%
+echo  Docker 環境 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 docker --version >> %REPORT_FILE% 2>nul
 if errorlevel 1 (
@@ -198,7 +198,7 @@ echo. >> %REPORT_FILE%
 if "%DOCKER_AVAILABLE%"=="true" (
     echo [10/12] Docker 容器狀態檢查...
     echo ──────────────────────────────────────── >> %REPORT_FILE%
-    echo 🐳 Docker 容器狀態 >> %REPORT_FILE%
+    echo  Docker 容器狀態 >> %REPORT_FILE%
     echo ──────────────────────────────────────── >> %REPORT_FILE%
     
     cd "%SERVER_PATH%" 2>nul
@@ -215,7 +215,7 @@ if "%DOCKER_AVAILABLE%"=="true" (
     
     echo [11/12] Docker 映像檔和資源檢查...
     echo ──────────────────────────────────────── >> %REPORT_FILE%
-    echo 🐳 Docker 資源 >> %REPORT_FILE%
+    echo  Docker 資源 >> %REPORT_FILE%
     echo ──────────────────────────────────────── >> %REPORT_FILE%
     docker images >> %REPORT_FILE% 2>nul
     echo. >> %REPORT_FILE%
@@ -263,7 +263,7 @@ echo.
 echo ════════════════════════════════════════
 echo            � 常用修復指令
 echo ════════════════════════════════════════
-echo 🐳 Docker 相關：
+echo  Docker 相關：
 echo    停止所有容器: docker-compose down
 echo    清理所有資源: docker-compose down -v --remove-orphans
 echo    重建映像檔: docker-compose build --no-cache
@@ -289,6 +289,6 @@ if /i "%view_report%"=="y" (
 )
 
 echo.
-echo 👋 診斷完成！報告檔案: %REPORT_FILE%
-echo 📞 如果問題持續，請提供診斷報告尋求協助
+echo 診斷完成！報告檔案: %REPORT_FILE%
+echo 如果問題持續，請提供診斷報告尋求協助
 pause

@@ -13,6 +13,11 @@ form-analysis-spec-kit/
 │   ├── RESTRUCTURE_PLAN.md        # 重構計劃
 │   └── MANUAL_STARTUP_GUIDE.md    # 手動啟動指南
 │
+├── dev-docs/                       #  開發與維護文件（按月份歸檔）
+│   ├── 2025-11/                   # 2025年11月開發文件
+│   ├── 2025-12/                   # 2025年12月開發文件
+│   └── README.md                  # 開發文件索引
+│
 ├── scripts/                        # 系統腳本
 │   ├── diagnose-system.bat        # 系統診斷腳本
 │   ├── monitor_backend.bat        # 後端監控腳本

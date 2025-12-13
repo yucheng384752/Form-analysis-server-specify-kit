@@ -508,7 +508,7 @@ export function QueryPage() {
 
       return (
         <div className="additional-data-section">
-          <div className="section-title">📋 檢查項目明細</div>
+          <div className="section-title">檢查項目明細</div>
           <div className="table-container">
             <table className="data-table">
               <thead>
@@ -540,7 +540,7 @@ export function QueryPage() {
     // 一般鍵值對資料顯示
     return (
       <div className="additional-data-section">
-        <div className="section-title">📋 CSV 表格完整資料</div>
+        <div className="section-title">CSV 表格完整資料</div>
         <div className="additional-data-grid">
           {Object.entries(additionalData).map(([key, value]) => (
             <div key={key} className="detail-row">

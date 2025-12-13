@@ -374,7 +374,7 @@ async def main():
         print(f"    測試流程：上傳 → 驗證 → 匯出 → 匯入")
         
         # 設置測試環境
-        print(f"\n🛠️  環境設置：")
+        print(f"\n  環境設置：")
         if not await test.setup():
             success = False
             return success
@@ -396,7 +396,7 @@ async def main():
             if 'status' in test.test_results:
                 status = test.test_results['status']
                 print(f"    狀態查詢：{status.get('status', '未知')}")
-                print(f"   📈 資料統計：總計 {status.get('total_rows', 0)} 列，"
+                print(f"   資料統計：總計 {status.get('total_rows', 0)} 列，"
                       f"錯誤 {status.get('error_count', 0)} 列，"
                       f"有效 {status.get('valid_count', 0)} 列")
             
@@ -420,7 +420,7 @@ async def main():
                 print(f"    最終狀態：{final.get('status', '未知')}")
             
             # 測試覆蓋範圍
-            print("\n🎯 測試覆蓋範圍：")
+            print("\n 測試覆蓋範圍：")
             print("   • 完整資料庫表格建立和初始化 ")
             print("   • 檔案上傳和驗證處理 (POST /api/upload) ")
             print("   • 工作狀態查詢 (GET /api/upload/{id}/status) ")

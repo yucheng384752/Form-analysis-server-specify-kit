@@ -141,7 +141,7 @@ def test_services():
 
 def main():
     """主函數"""
-    print("🎯 Form Analysis System - 快速啟動")
+    print(" Form Analysis System - 快速啟動")
     print("=" * 50)
     
     # 檢查是否安裝了 requests

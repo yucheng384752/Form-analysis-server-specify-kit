@@ -104,7 +104,7 @@ function Show-LogStats {
     if ($logFiles.ErrorLogExists) {
         $size = (Get-Item $logFiles.ErrorLog).Length
         $sizeGB = [math]::Round($size / 1GB, 3)
-        Write-Host "   🚨 error.log: " -NoNewline
+        Write-Host "    error.log: " -NoNewline
         Write-Host "$($size.ToString('N0')) bytes ($sizeGB GB)" -ForegroundColor Red
     }
     
@@ -242,7 +242,7 @@ function Watch-Logs {
         return
     }
     
-    Write-ColoredOutput "📈 開始監控 $($logFiles.AppLog)..." "Info"
+    Write-ColoredOutput "開始監控 $($logFiles.AppLog)..." "Info"
     Write-Host ""
     
     Get-Content $logFiles.AppLog -Wait -Tail 10 | ForEach-Object {
@@ -391,9 +391,9 @@ function Show-Menu {
         
         Write-ColoredOutput " 可用操作：" "Info"
         Write-Host "   [1]  查看應用程式日誌 (最新50行)"
-        Write-Host "   [2] 🚨 查看錯誤日誌 (最新50行)"
+        Write-Host "   [2]  查看錯誤日誌 (最新50行)"
         Write-Host "   [3]  統計資訊"
-        Write-Host "   [4] 📈 即時監控"
+        Write-Host "   [4] 即時監控"
         Write-Host "   [5]  搜尋日誌"
         Write-Host "   [6] 📤 匯出 JSON"
         Write-Host "   [7]  清理舊日誌"

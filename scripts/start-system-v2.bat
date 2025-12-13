@@ -138,21 +138,21 @@ echo [4/7] 預先診斷檢查...
 
 REM 檢查端口佔用
 set "port_conflict=false"
-netstat -an | find ":5432" | find "LISTENING" >nul 2>&1
+netstat -an | find ":18001" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo   檢測到端口 5432 PostgreSQL 被佔用，將自動清理
+    echo   檢測到端口 18001 PostgreSQL 被佔用，將自動清理
     set "port_conflict=true"
 )
 
-netstat -an | find ":8000" | find "LISTENING" >nul 2>&1
+netstat -an | find ":18002" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo   檢測到端口 8000 API 被佔用，將自動清理
+    echo   檢測到端口 18002 API 被佔用，將自動清理
     set "port_conflict=true"
 )
 
-netstat -an | find ":5173" | find "LISTENING" >nul 2>&1
+netstat -an | find ":18003" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo   檢測到端口 5173 前端被佔用，將自動清理
+    echo   檢測到端口 18003 前端被佔用，將自動清理
     set "port_conflict=true"
 )
 
@@ -264,9 +264,10 @@ echo             系統啟動完成！
 echo ========================================
 echo.
 echo  服務連結：
-echo     前端應用: http://localhost:5173
-echo     API 文檔: http://localhost:8000/docs  
-echo     API 測試: http://localhost:8000/redoc
+echo     前端應用: http://localhost:18003/index.html
+echo     API 文檔: http://localhost:18002/docs  
+echo     API 測試: http://localhost:18002/redoc
+echo     資料庫: localhost:18001 (PostgreSQL)
 echo.
 echo  服務狀態：
 %DOCKER_COMPOSE% ps
@@ -275,16 +276,16 @@ echo.
 echo  測試服務連通性...
 timeout /t 3 /nobreak > nul
 
-curl -s http://localhost:8000/healthz >nul 2>&1
+curl -s http://localhost:18002/healthz >nul 2>&1
 if not errorlevel 1 (
-    echo  後端 API 服務正常 (http://localhost:8000)
+    echo  後端 API 服務正常 (http://localhost:18002)
 ) else (
     echo   後端 API 可能尚未完全就緒
 )
 
-curl -s http://localhost:5173 >nul 2>&1
+curl -s http://localhost:18003 >nul 2>&1
 if not errorlevel 1 (
-    echo  前端應用服務正常 (http://localhost:5173)
+    echo  前端應用服務正常 (http://localhost:18003/index.html)
 ) else (
     echo   前端應用可能尚未完全就緒
 )

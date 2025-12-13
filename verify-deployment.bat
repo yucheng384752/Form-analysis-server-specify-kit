@@ -104,6 +104,6 @@ echo    1. 執行: .\scripts\start-system.bat
 echo    2. 開啟瀏覽器: http://localhost:5173
 echo    3. 測試上傳功能和查詢功能
 echo.
-echo 📞 如有問題，請參考 DEPLOYMENT_GUIDE.md
+echo 如有問題，請參考 DEPLOYMENT_GUIDE.md
 echo.
 pause

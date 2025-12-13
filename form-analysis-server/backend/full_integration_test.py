@@ -432,7 +432,7 @@ async def main():
             print("   • 錯誤處理流程")
             print("   • 防重複匯入測試")
             
-            print("\n🎯 測試場景驗證：")
+            print("\n 測試場景驗證：")
             print("   • CSV 檔案：5 列資料 ")
             print("   • 錯誤資料：2 列（空白欄位、格式錯誤）")
             print("   • 有效資料：3 列 ")

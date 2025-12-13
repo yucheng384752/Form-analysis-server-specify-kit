@@ -279,7 +279,7 @@ docker compose down -v
 docker compose down -v --rmi all
 ```
 
-## 🎯 快速驗證檢查表
+##  快速驗證檢查表
 
 - [ ] 所有容器正常啟動: `docker compose ps`
 - [ ] 基本健康檢查通過: `curl -f http://localhost:8000/healthz`
