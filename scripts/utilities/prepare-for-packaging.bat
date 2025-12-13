@@ -109,7 +109,7 @@ echo    git add .
 echo    git commit -m "Ready for deployment"
 echo    git push origin main
 echo.
-echo 📖 部署說明：
+echo 部署說明：
 echo    - 目標電腦請參考 DEPLOYMENT_GUIDE.md
 echo    - 首次部署執行 verify-deployment.bat
 echo    - 使用 scripts\start-system.bat 啟動

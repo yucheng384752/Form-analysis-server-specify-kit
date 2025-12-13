@@ -60,7 +60,7 @@ def create_test_csv_file():
 
 def test_file_upload():
     """測試檔案上傳"""
-    print("\n🧪 測試檔案上傳...")
+    print("\n測試檔案上傳...")
     
     csv_content = create_test_csv_file()
     
@@ -91,7 +91,7 @@ def test_upload_status(process_id):
     if not process_id:
         return False
         
-    print(f"\n🧪 測試狀態查詢 (Process ID: {process_id})...")
+    print(f"\n測試狀態查詢 (Process ID: {process_id})...")
     
     try:
         response = requests.get(f"{API_BASE_URL}/api/upload/{process_id}/status")

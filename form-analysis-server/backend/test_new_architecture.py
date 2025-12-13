@@ -20,7 +20,7 @@ def test_database_connection():
 
 def test_lot_no_validation():
     """測試 lot_no 格式驗證"""
-    print("🧪 測試 lot_no 格式驗證...")
+    print("測試 lot_no 格式驗證...")
     
     # 有效的 lot_no 格式
     valid_lots = [

@@ -77,7 +77,7 @@ python tools/log_analyzer.py --watch --errors-only
 -  高亮搜尋結果
 - 即時監控 (格式化顯示)
 -  智能清理 (確認對話)
-- ⚙️  自定義參數
+-  自定義參數
 
 ---
 
@@ -144,7 +144,7 @@ python tools/log_analyzer.py --hours 24
 .\scripts\LogManager.ps1 -Action export
 ```
 
-## ⚙️ 配置選項
+## 配置選項
 
 ### 環境變數配置 (.env.logging)
 ```ini

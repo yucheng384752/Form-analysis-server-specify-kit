@@ -197,7 +197,7 @@ export const colors = {
 - **專業元件**: FileUpload, DataPreview 等
 - **版面元件**: Header, Navigation, Layout 等
 
-## ⚙️ 技術規格
+## 技術規格
 
 ### 後端技術棧
 - **框架**: FastAPI with async/await

@@ -114,7 +114,7 @@ form-analysis-spec-kit/
 │   ├── backend/                    # 後端服務 (FastAPI)
 │   │   ├──  Dockerfile           
 │   │   ├──  requirements.txt     
-│   │   ├── ⚙️ alembic.ini          # 資料庫遷移配置
+│   │   ├── alembic.ini          # 資料庫遷移配置
 │   │   ├── migrations/             # 資料庫遷移檔案
 │   │   └── app/                    # 應用程式碼
 │   │       ├── main.py             # FastAPI 應用入口

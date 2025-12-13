@@ -202,7 +202,7 @@ class LightweightIntegrationTest:
                     print(f"  防重複匯入回應: {response.status_code} - {response.text[:200]}")
         
         # ========== 步驟 8：錯誤處理測試 ==========
-        print(f"\n🧪 步驟 8：測試錯誤處理")
+        print(f"\n步驟 8：測試錯誤處理")
         
         fake_uuid = str(uuid.uuid4())
         
@@ -217,7 +217,7 @@ class LightweightIntegrationTest:
 
 async def main():
     """主要測試函數"""
-    print("🧪 開始輕量級完整流程整合測試")
+    print("開始輕量級完整流程整合測試")
     print("=" * 60)
     
     # 建立測試 CSV 檔案

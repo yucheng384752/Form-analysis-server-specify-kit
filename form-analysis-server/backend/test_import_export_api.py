@@ -44,7 +44,7 @@ def create_test_csv_with_errors():
 def test_upload_and_get_process_id():
     """上傳檔案並獲取 process_id"""
     
-    print("🧪 步驟 1: 上傳包含錯誤的測試檔案...")
+    print("步驟 1: 上傳包含錯誤的測試檔案...")
     
     csv_content = create_test_csv_with_errors()
     
@@ -73,7 +73,7 @@ def test_upload_and_get_process_id():
 def test_import_api(process_id):
     """測試資料匯入 API"""
     
-    print(f"\n🧪 步驟 2: 測試資料匯入...")
+    print(f"\n步驟 2: 測試資料匯入...")
     
     try:
         data = {"process_id": process_id}
@@ -116,7 +116,7 @@ def test_import_api(process_id):
 def test_export_errors_csv(process_id):
     """測試錯誤匯出 CSV API"""
     
-    print(f"\n🧪 步驟 3: 測試錯誤匯出 CSV...")
+    print(f"\n步驟 3: 測試錯誤匯出 CSV...")
     
     try:
         params = {"process_id": process_id}
@@ -173,7 +173,7 @@ def test_export_errors_csv(process_id):
 def test_import_already_imported(process_id):
     """測試重複匯入檢查"""
     
-    print(f"\n🧪 步驟 4: 測試重複匯入檢查...")
+    print(f"\n步驟 4: 測試重複匯入檢查...")
     
     try:
         data = {"process_id": process_id}
@@ -207,7 +207,7 @@ def test_import_already_imported(process_id):
 def test_invalid_process_id_apis():
     """測試無效 process_id 的處理"""
     
-    print(f"\n🧪 步驟 5: 測試無效 process_id...")
+    print(f"\n步驟 5: 測試無效 process_id...")
     
     invalid_uuid = "00000000-0000-0000-0000-000000000000"
     

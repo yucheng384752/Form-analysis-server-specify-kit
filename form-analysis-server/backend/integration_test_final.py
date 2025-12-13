@@ -325,7 +325,7 @@ class FinalIntegrationTest:
             print(f"  防重複匯入回應: {response.status_code} - {response.text[:200]}")
         
         # ========== 步驟 7：錯誤處理測試 ==========
-        print("\n🧪 步驟 7：錯誤處理測試")
+        print("\n步驟 7：錯誤處理測試")
         
         fake_uuid = str(uuid.uuid4())
         
@@ -354,7 +354,7 @@ class FinalIntegrationTest:
 
 async def main():
     """主要測試函數"""
-    print("🧪 最終版完整流程整合測試")
+    print("最終版完整流程整合測試")
     print("=" * 60)
     
     # 建立測試 CSV 檔案

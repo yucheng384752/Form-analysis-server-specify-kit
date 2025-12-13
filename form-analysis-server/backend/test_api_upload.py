@@ -87,7 +87,7 @@ async def test_api_connection():
 async def test_valid_file_upload():
     """測試有效檔案上傳"""
     
-    print("\n🧪 測試有效檔案上傳...")
+    print("\n測試有效檔案上傳...")
     print("-" * 40)
     
     csv_content = create_valid_test_csv()
@@ -123,7 +123,7 @@ async def test_valid_file_upload():
 async def test_invalid_file_upload():
     """測試無效檔案上傳"""
     
-    print("\n🧪 測試包含錯誤的檔案上傳...")
+    print("\n測試包含錯誤的檔案上傳...")
     print("-" * 40)
     
     csv_content = create_invalid_test_csv()
@@ -157,7 +157,7 @@ async def test_upload_status(process_id):
     if not process_id:
         return False
         
-    print(f"\n🧪 測試狀態查詢 (Process ID: {process_id})...")
+    print(f"\n測試狀態查詢 (Process ID: {process_id})...")
     print("-" * 40)
     
     try:

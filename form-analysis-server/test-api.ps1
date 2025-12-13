@@ -11,7 +11,7 @@ function Write-Pass { param($Message) Write-Host "[PASS] $Message" -ForegroundCo
 function Write-Fail { param($Message) Write-Host "[FAIL] $Message" -ForegroundColor Red }
 function Write-Skip { param($Message) Write-Host "[SKIP] $Message" -ForegroundColor Yellow }
 
-Write-Host "🧪 Form Analysis API 測試腳本" -ForegroundColor Cyan
+Write-Host "Form Analysis API 測試腳本" -ForegroundColor Cyan
 Write-Host "=============================" -ForegroundColor Cyan
 
 # 檢查 curl 是否可用

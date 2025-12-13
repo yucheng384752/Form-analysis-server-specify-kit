@@ -54,7 +54,7 @@ Index("ix_records_data_type", Record.data_type)
 2. **JSONB 彈性欄位**: `additional_data` 可儲存任何額外的 P3 欄位
 3. **已有索引支援**: `lot_no` 和 `data_type` 都有索引，查詢效能良好
 
-### 🔧 實作方案
+### 實作方案
 
 #### 方案 A：基本欄位搜尋（推薦）
 
@@ -228,7 +228,7 @@ def _is_supported_file(filename: str) -> bool:
             filename_lower.endswith('.xls'))
 ```
 
-### 🔧 實作方案
+### 實作方案
 
 #### 整體修改方向
 
@@ -580,7 +580,7 @@ function FileUpload() {
 - P3: 從 "P3_No." 欄位提取 lot_no
 - 生產日期: 可能為空白或不正確
 
-### 🔧 實作方案
+### 實作方案
 
 #### 步驟 1: 建立 lot_no 解析工具
 
@@ -998,7 +998,7 @@ function QueryResults({ records }: { records: QueryRecord[] }) {
 | PDF 上傳 | 可行 | 中-高 | 中 |
 | 生產日期套用 | 完全可行 | 低-中 | 高 |
 
-### 🔧 實作順序建議
+### 實作順序建議
 
 1. **第一階段**: P3 欄位搜尋（1-2天）
    - 實作基本欄位搜尋 API

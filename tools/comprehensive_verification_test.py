@@ -39,7 +39,7 @@ def print_header(title: str):
 
 def print_test(description: str):
     """打印測試描述"""
-    print(f"\n🧪 測試: {description}")
+    print(f"\n測試: {description}")
 
 def print_pass(message: str):
     """打印通過消息"""

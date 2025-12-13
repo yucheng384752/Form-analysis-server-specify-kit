@@ -565,7 +565,7 @@ async def upload_pdf_with_retry(file_content: bytes, filename: str):
 
 ### 結論：完全可以實作！
 
-### 🔧 實作方案
+### 實作方案
 
 #### 方案 A：多欄位動態排序（推薦）
 
@@ -945,7 +945,7 @@ function P3SearchWithSort() {
 | **API 回傳** | 直接使用 | 需要原始欄位 |
 | **測試** | 容易測試 | 需要模擬資料 |
 
-### 🔧 實作方案
+### 實作方案
 
 #### 步驟 1: 修改資料庫模型
 

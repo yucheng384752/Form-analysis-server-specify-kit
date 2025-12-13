@@ -294,7 +294,7 @@ class SimpleIntegrationTest:
     
     async def test_error_handling(self):
         """測試錯誤處理"""
-        print(f"\n🧪 測試錯誤處理")
+        print(f"\n測試錯誤處理")
         
         fake_uuid = str(uuid.uuid4())
         
@@ -321,7 +321,7 @@ class SimpleIntegrationTest:
 
 async def main():
     """主要測試函數"""
-    print("🧪 開始完整流程整合測試")
+    print("開始完整流程整合測試")
     print("=" * 60)
     
     # 建立測試 CSV 檔案

@@ -56,7 +56,7 @@ def check_dependencies():
 
 def run_integration_test():
     """執行整合測試"""
-    print("\n🧪 開始執行整合測試...")
+    print("\n開始執行整合測試...")
     
     # 檢查相依性
     if not check_dependencies():
@@ -92,7 +92,7 @@ def run_integration_test():
 
 def run_direct_test():
     """直接執行測試（不使用 pytest）"""
-    print("\n🧪 直接執行整合測試...")
+    print("\n直接執行整合測試...")
     
     try:
         from test_integration_full_flow import TestFullFlowIntegration, TEST_CSV_CONTENT

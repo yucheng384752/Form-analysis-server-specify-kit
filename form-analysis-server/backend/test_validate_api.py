@@ -46,7 +46,7 @@ def create_test_csv_with_errors():
 def test_upload_and_get_process_id():
     """上傳檔案並獲取 process_id"""
     
-    print("🧪 步驟 1: 上傳包含錯誤的測試檔案...")
+    print("步驟 1: 上傳包含錯誤的測試檔案...")
     
     csv_content = create_test_csv_with_errors()
     
@@ -77,7 +77,7 @@ def test_upload_and_get_process_id():
 def test_validate_api(process_id, page=1, page_size=10):
     """測試驗證結果 API"""
     
-    print(f"\n🧪 步驟 2: 查詢驗證結果（頁 {page}，每頁 {page_size} 筆）...")
+    print(f"\n步驟 2: 查詢驗證結果（頁 {page}，每頁 {page_size} 筆）...")
     
     try:
         params = {
@@ -141,7 +141,7 @@ def test_validate_api(process_id, page=1, page_size=10):
 def test_invalid_process_id():
     """測試無效的 process_id"""
     
-    print(f"\n🧪 步驟 3: 測試無效的 process_id...")
+    print(f"\n步驟 3: 測試無效的 process_id...")
     
     invalid_uuid = "00000000-0000-0000-0000-000000000000"
     
@@ -168,7 +168,7 @@ def test_invalid_process_id():
 def test_pagination(process_id):
     """測試分頁功能"""
     
-    print(f"\n🧪 步驟 4: 測試分頁功能...")
+    print(f"\n步驟 4: 測試分頁功能...")
     
     # 測試第一頁，每頁 3 筆
     success1 = test_validate_api(process_id, page=1, page_size=3)

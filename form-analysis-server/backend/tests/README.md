@@ -215,7 +215,7 @@ job_data = TestDataFactory.upload_job_data(filename="test.xlsx")
 job = UploadJob(**job_data)
 ```
 
-## 🐛 常見問題排解
+## 常見問題排解
 
 ### 1. 匯入錯誤
 ```bash
@@ -263,7 +263,7 @@ async def test_function(db_session, clean_db):
 # 完整測試執行
 $ python run_tests.py models
 
-🧪 Form Analysis Backend - 測試執行器
+Form Analysis Backend - 測試執行器
 ============================================================
  執行模型測試
 執行命令: python -m pytest tests/test_upload_job.py tests/test_record.py tests/test_upload_error.py tests/test_integration.py

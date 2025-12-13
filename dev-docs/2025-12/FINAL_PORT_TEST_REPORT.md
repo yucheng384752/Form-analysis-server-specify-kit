@@ -42,13 +42,13 @@ API 文檔: http://localhost:18002/docs -> 可訪問
 根路徑: http://localhost:18003/ -> 404 Not Found  
 直接頁面: http://localhost:18003/index.html -> 200 OK
 容器內部: http://localhost:5173/ -> 正常
-🔧 端口映射: 18003:5173 -> 正確
+端口映射: 18003:5173 -> 正確
 ```
 
 #### 4. pgAdmin 服務 (端口 18004)
 ```
 狀態: 配置完成，未啟動 (profiles: tools)
-🔧 啟動方式: docker-compose --profile tools up pgladmin
+啟動方式: docker-compose --profile tools up pgladmin
 ```
 
 ## 問題分析與解決

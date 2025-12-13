@@ -112,7 +112,7 @@ def test_endpoints():
         return False
 
 if __name__ == "__main__":
-    print("🧪 Testing Form Analysis API endpoints...")
+    print("Testing Form Analysis API endpoints...")
     print("=" * 50)
     
     success = test_endpoints()

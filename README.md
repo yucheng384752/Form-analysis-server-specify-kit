@@ -2,81 +2,120 @@
 
 表單分析規格套件 - 一個用於處理和分析表單資料的完整系統。
 
+## 快速啟動（常用腳本）
+
+### 方式一：本地開發模式（推薦日常開發）
+```bash
+# Windows
+.\scripts\start_services.bat
+
+# PowerShell
+.\scripts\start_services.ps1
+```
+**適合**：日常開發、快速測試、代碼修改（10-20秒啟動）
+
+### 方式二：Docker 完整部署（推薦生產環境）
+```bash
+# Windows
+.\scripts\start-system.bat
+
+# PowerShell
+.\scripts\start-system.ps1
+```
+**適合**：首次部署、正式環境、團隊開發（2-3分鐘啟動）
+
+### 監控與診斷
+```bash
+# 監控後端日誌
+.\scripts\monitor_backend.bat
+
+# 監控前端日誌
+.\scripts\monitor_frontend.bat
+
+# 系統診斷
+.\scripts\diagnose-system.bat
+
+# 停止系統（Docker模式）
+.\scripts\stop-system.bat
+```
+
+### 服務存取
+- **前端應用**: http://localhost:18003/index.html
+- **API 文檔**: http://localhost:18002/docs
+- **API 測試**: http://localhost:18002/redoc
+- **資料庫**: localhost:18001 (PostgreSQL)
+
+---
+
+##  專案結構
+
 ##  專案結構
 
 ```
-form-analysis-spec-kit/
-├── docs/                           #  專案文檔
+Form-analysis-server-specify-kit/
+├── README.md                    # 專案說明（您正在閱讀）
+├── .env.example                 # 環境變數範例
+├── .gitignore                   # Git 忽略清單
+│
+├── form-analysis-server/        # 主要應用程式
+│   ├── backend/                   # 後端 FastAPI 服務
+│   ├── frontend/                  # 前端 React 應用
+│   └── docker-compose.yml         # Docker 編排設定
+│
+├── scripts/                     # 系統腳本（啟動、監控、診斷）
+│   ├── start_services.bat         # 本地開發啟動
+│   ├── start-system.bat           # Docker 完整啟動
+│   ├── monitor_backend.bat        # 後端監控
+│   ├── monitor_frontend.bat       # 前端監控
+│   ├── stop-system.bat            # 停止系統
+│   └── utilities/                 # 工具腳本
+│       ├── prepare-for-packaging.bat
+│       ├── verify-deployment.bat
+│       └── test-api-connection.js
+│
+├── docs/                        # 專案文檔
 │   ├── PRD.md                     # 產品需求文檔
 │   ├── PRD2.md                    # 產品需求文檔 v2
-│   ├── README.md                  # 原始說明文檔
-│   ├── RESTRUCTURE_PLAN.md        # 重構計劃
-│   └── MANUAL_STARTUP_GUIDE.md    # 手動啟動指南
+│   ├── MANUAL_STARTUP_GUIDE.md    # 手動啟動指南
+│   └── ...                        # 其他文檔
 │
-├── dev-docs/                       #  開發與維護文件（按月份歸檔）
+├── dev-docs/                    # 開發與維護文件（按月歸檔）
 │   ├── 2025-11/                   # 2025年11月開發文件
 │   ├── 2025-12/                   # 2025年12月開發文件
 │   └── README.md                  # 開發文件索引
 │
-├── scripts/                        # 系統腳本
-│   ├── diagnose-system.bat        # 系統診斷腳本
-│   ├── monitor_backend.bat        # 後端監控腳本
-│   ├── monitor_frontend.bat       # 前端監控腳本
-│   ├── start-system.bat           # 系統啟動腳本
-│   ├── start-system.ps1           # PowerShell 啟動腳本
-│   ├── start_services.bat         # 服務啟動腳本
-│   ├── start_services.ps1         # PowerShell 服務腳本
-│   └── stop-system.bat            # 系統停止腳本
-│
-├── test-data/                      #  測試資料
+├── test-data/                   # 測試資料
 │   ├── P1/                        # P1 類型測試檔案
-│   │   ├── P1_12345_6_error.csv
-│   │   ├── P1_2411012_04_test_valid.csv
-│   │   ├── P1_2503033_01.csv
-│   │   ├── P1_invalid_batch_format.csv
-│   │   └── P1_no_batch_number.csv
 │   ├── P2/                        # P2 類型測試檔案
-│   │   ├── P2_1234567890_01_too_long.csv
-│   │   ├── P2_2503033_02_test_valid.csv
-│   │   ├── P2_abc1234_99_error.csv
-│   │   └── P2_wrong_format_123.csv
 │   ├── P3/                        # P3 類型測試檔案
-│   │   ├── P3_test_data.csv
-│   │   └── P3_test_validation_errors.csv
-│   └── test_data.csv              # 通用測試資料
+│   └── root-test-files/           # 根目錄測試檔案歸檔
 │
-├── legacy-components/              #  舊版組件
-│   ├── CSVEditor.tsx              # 舊版 CSV 編輯器
-│   └── FileUpload.tsx             # 舊版檔案上傳組件
-│
-├── tools/                          #  開發工具
-│   ├── comprehensive_verification_test.py  # 綜合驗證測試
-│   ├── fix_imports.py             # 匯入修復工具
+├── tools/                       # 開發工具
+│   ├── log_analyzer.py            # 日誌分析工具
 │   ├── quick_start.py             # 快速啟動工具
-│   └── test_server.py             # 測試伺服器
+│   └── ...                        # 其他工具
 │
-├── form-analysis-server/           #  主要應用程式
-│   ├── backend/                   # 後端 API 服務
-│   ├── frontend/                  # 前端 React 應用
-│   └── docker-compose.yml         # Docker 編排設定
-│
-├── uploads/                        # 上傳檔案儲存
-├── .venv/                         # Python 虛擬環境
-└── .env.example                   # 環境變數範例
+└── legacy-components/           # 舊版組件（參考用）
 ```
 
-##  快速開始
+---
 
-### 選擇啟動方式
+##  詳細啟動說明
 
-系統提供兩種啟動方式，請根據您的需求選擇：
+### Docker 完整部署模式
 
-#### 方式一：Docker 完整部署（推薦用於生產環境）
+**適用場景**：
+- 第一次部署系統
+- 正式環境部署
+- 團隊開發（保證環境一致性）
+- 完整功能測試
+
+**啟動命令**：
 ```bash
-# 使用 Docker Compose 啟動完整系統
+# Windows 批次檔
 .\scripts\start-system.bat
 
-# 或使用 PowerShell
+# PowerShell
 .\scripts\start-system.ps1
 ```
 
@@ -85,30 +124,12 @@ form-analysis-spec-kit/
 - 自動健康檢查和錯誤診斷
 - 自動資料庫初始化和遷移
 - 監控終端自動開啟
-- **需要 Docker Desktop**
-- **啟動時間較長（2-3 分鐘）**
+- 需要 Docker Desktop
+- 啟動時間較長（2-3 分鐘）
 
-**適用場景**：
-- 第一次部署系統
-- 正式環境部署
-- 團隊開發（保證環境一致性）
-- 完整功能測試
+---
 
-#### 方式二：本地開發模式（推薦用於日常開發）
-```bash
-# 直接啟動本地服務
-.\scripts\start_services.bat
-
-# 或使用 PowerShell
-.\scripts\start_services.ps1
-```
-
-**特點**：
-- 快速啟動（10-20 秒）
-- 支援熱重載（即時看到代碼修改）
-- 輕量級（不需要 Docker）
-- 需手動啟動 PostgreSQL
-- 需手動配置虛擬環境
+### 本地開發模式
 
 **適用場景**：
 - 日常開發調試
@@ -116,18 +137,28 @@ form-analysis-spec-kit/
 - 快速測試修改
 - 資源受限的電腦
 
+**啟動命令**：
+```bash
+# Windows 批次檔
+.\scripts\start_services.bat
+
+# PowerShell
+.\scripts\start_services.ps1
+```
+
+**特點**：
+- 快速啟動（10-20 秒）
+- 支援熱重載（即時看到代碼修改）
+- 輕量級（不需要 Docker）
+- 需手動啟動 PostgreSQL（端口 18001）
+- 需手動配置虛擬環境（backend\venv）
+
 **前置要求**：
 1. PostgreSQL 服務已運行（端口 18001）
 2. Python 虛擬環境已設置（`backend\venv`）
-3. Node.js 已安裝
+3. Node.js 已安裝（18+）
 
 ---
-
-### 存取應用程式
-- **前端應用**: http://localhost:18003/index.html
-- **API 文檔**: http://localhost:18002/docs
-- **API 測試**: http://localhost:18002/redoc
-- **資料庫**: localhost:18001 (PostgreSQL)
 
 ### 停止系統
 
@@ -138,6 +169,8 @@ form-analysis-spec-kit/
 
 **本地開發模式**：
 - 直接關閉啟動的終端視窗即可
+
+---
 
 ## 功能說明
 
@@ -158,6 +191,24 @@ form-analysis-spec-kit/
 - 錯誤記錄追蹤
 
 ## 開發工具
+
+### 監控與診斷
+```bash
+# 監控後端日誌
+.\scripts\monitor_backend.bat
+
+# 監控前端日誌
+.\scripts\monitor_frontend.bat
+
+# 系統診斷
+.\scripts\diagnose-system.bat
+
+# 日誌管理
+.\scripts\monitor-logs.bat
+python tools\log_analyzer.py
+```
+
+詳細說明請參考：[日誌管理工具文檔](docs/LOG_MANAGEMENT_TOOLS.md)
 
 ### 測試資料
 使用 `test-data/` 目錄中的檔案進行功能測試：
@@ -204,6 +255,20 @@ python tools\log_analyzer.py
 
 詳細說明請參考：[日誌管理工具文檔](docs/LOG_MANAGEMENT_TOOLS.md)
 
+### 其他工具
+```bash
+# 部署打包
+.\scripts\utilities\prepare-for-packaging.bat
+
+# 部署驗證
+.\scripts\utilities\verify-deployment.bat
+
+# API 連線測試
+node scripts\utilities\test-api-connection.js
+```
+
+---
+
 ##  技術棧
 
 - **前端**: React + TypeScript + Vite
@@ -214,11 +279,22 @@ python tools\log_analyzer.py
 
 ##  環境要求
 
-- Docker & Docker Compose
+- Docker & Docker Compose（Docker 模式需要）
 - Node.js 18+
 - Python 3.8+
+- PostgreSQL 16+（本地開發模式需要）
 - PowerShell 5.0+（Windows）
 
 ---
 
-**最後更新**: 2025年11月9日
+## 相關文檔
+
+- [產品需求文檔 (PRD)](docs/PRD2.md)
+- [手動啟動指南](docs/MANUAL_STARTUP_GUIDE.md)
+- [日誌管理工具](docs/LOG_MANAGEMENT_TOOLS.md)
+- [開發維護文件](dev-docs/README.md)
+- [DBeaver 連線指南](docs/DBEAVER_CONNECTION_GUIDE.md)
+
+---
+
+**最後更新**: 2025年12月13日

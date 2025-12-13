@@ -42,7 +42,7 @@ async def setup_database():
 
 async def test_database_operations():
     """測試基本 CRUD 操作"""
-    print("\n🧪 測試資料庫操作...")
+    print("\n測試資料庫操作...")
     
     async with get_db_context() as session:
         # 創建測試工作

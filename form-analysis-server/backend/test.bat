@@ -1,6 +1,6 @@
 @echo off
 REM Windows 測試執行批次檔
-echo 🧪 Form Analysis Backend - 測試執行器 (Windows)
+echo Form Analysis Backend - 測試執行器 (Windows)
 echo ===============================================
 
 REM 檢查 Python 是否可用

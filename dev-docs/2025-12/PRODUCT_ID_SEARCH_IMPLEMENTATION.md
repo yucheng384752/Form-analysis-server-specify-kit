@@ -743,7 +743,7 @@ export const ProductIDSearch: React.FC = () => {
           {/* P1 資料 */}
           {searchResult.p1_data.length > 0 && (
             <div className="data-section p1-section">
-              <h4>📦 P1 - 產品基本資料 ({searchResult.p1_count} 筆)</h4>
+              <h4>P1 - 產品基本資料 ({searchResult.p1_count} 筆)</h4>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -1123,7 +1123,7 @@ CREATE INDEX ix_records_lot_no_data_type ON records(lot_no, data_type);
 
 ---
 
-## 🧪 測試計畫
+## 測試計畫
 
 ### 1. 單元測試
 
@@ -1276,7 +1276,7 @@ psql -h localhost -p 18001 -U postgres -d form_analysis_db -c "\d records"
 
 ---
 
-## 🐛 常見問題
+## 常見問題
 
 ### Q1: Product ID 格式錯誤怎麼辦？
 

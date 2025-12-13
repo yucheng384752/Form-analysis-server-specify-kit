@@ -63,7 +63,7 @@ Write-Host "要停止服務，請關閉對應的 PowerShell 窗口" -ForegroundC
 
 # 測試服務連接
 Write-Host ""
-Write-Host "🧪 測試服務連接..." -ForegroundColor Magenta
+Write-Host "測試服務連接..." -ForegroundColor Magenta
 Start-Sleep -Seconds 3
 
 try {

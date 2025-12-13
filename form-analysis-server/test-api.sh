@@ -5,7 +5,7 @@
 
 set -e
 
-echo "🧪 Form Analysis API 測試腳本"
+echo "Form Analysis API 測試腳本"
 echo "============================="
 
 # 設定 API Base URL

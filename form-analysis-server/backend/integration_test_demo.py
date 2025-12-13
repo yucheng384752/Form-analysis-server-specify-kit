@@ -28,7 +28,7 @@ class IntegrationTestDemo:
     
     def show_test_architecture(self):
         """展示測試架構"""
-        print("🧪 整合測試架構")
+        print("整合測試架構")
         print("=" * 70)
         
         print("\n 測試資料結構：")

@@ -181,7 +181,7 @@ export default defineConfig({
 | `/healthz` | GET | 基本健康檢查 |
 | `/healthz/detailed` | GET | 詳細健康檢查 |
 
-## 🐛 常見問題
+## 常見問題
 
 ### 檔案上傳問題
 

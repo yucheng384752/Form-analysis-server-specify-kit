@@ -397,7 +397,7 @@ function Show-Menu {
         Write-Host "   [5]  搜尋日誌"
         Write-Host "   [6] 📤 匯出 JSON"
         Write-Host "   [7]  清理舊日誌"
-        Write-Host "   [8] ⚙️  自定義查看"
+        Write-Host "   [8]  自定義查看"
         Write-Host "   [0]  退出"
         Write-Host ""
         

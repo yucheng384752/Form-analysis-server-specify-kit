@@ -76,7 +76,7 @@ DATABASE_URL=postgresql+psycopg://app:app@db:5432/form_analysis_db
 DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/form_analysis_db
 ```
 
-## 🧪 **驗證結果**
+## **驗證結果**
 
 運行 `python check_config.py` 的結果:
 ```

@@ -25,7 +25,7 @@ def run_command(command, description):
 
 def main():
     """主執行函數"""
-    print("🧪 Form Analysis Backend - 測試執行器")
+    print("Form Analysis Backend - 測試執行器")
     print("=" * 60)
     
     # 確保在正確的目錄

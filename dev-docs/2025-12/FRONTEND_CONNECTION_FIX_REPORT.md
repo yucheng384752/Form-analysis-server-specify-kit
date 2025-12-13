@@ -58,7 +58,7 @@ docker-compose up -d --build frontend
 - **環境變數**:  正確配置 (`VITE_API_URL=http://localhost:8000`)
 - **容器狀態**:  所有服務健康
 
-### 🧪 測試結果
+### 測試結果
 ```bash
 # API 健康檢查 - 成功
 GET http://localhost:8000/healthz → 200 OK
