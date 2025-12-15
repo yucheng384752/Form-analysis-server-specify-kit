@@ -2,7 +2,7 @@
 資料查詢路由
 
 提供查詢已匯入資料的API端點。
-支援P1/P2/P3三種不同類型的數據查詢。
+支援P1/P2/P3三種不同類型的資料查詢。
 """
 
 from typing import List, Optional, Dict, Any
@@ -57,7 +57,7 @@ class QueryRecord(BaseModel):
     # P3專用欄位
     p3_no: Optional[str] = None
     
-    # 額外資料欄位 (來自CSV的其他欄位，包含溫度數據等)
+    # 額外資料欄位 (來自CSV的其他欄位，包含溫度資料等)
     additional_data: Optional[Dict[str, Any]] = None
 
 
@@ -150,7 +150,7 @@ async def query_lot_groups(
         count_result = await db.execute(count_query)
         total_count = count_result.scalar() or 0
         
-        # 分頁查詢基礎數據
+        # 分頁查詢基礎資料
         offset = (page - 1) * page_size
         final_query = lot_query.order_by(func.max(Record.created_at).desc()).offset(offset).limit(page_size)
         
@@ -162,7 +162,7 @@ async def query_lot_groups(
         for row in lot_rows:
             lot_no = row.lot_no
             
-            # 查詢各數據類型的數量
+            # 查詢各資料類型的數量
             p1_count_query = select(func.count()).where(
                 and_(Record.lot_no == lot_no, Record.data_type == DataType.P1)
             )
@@ -205,6 +205,167 @@ async def query_lot_groups(
         raise HTTPException(
             status_code=500,
             detail=f"查詢批號分組時發生錯誤：{str(e)}"
+        )
+
+
+@router.get(
+    "/records/advanced",
+    response_model=QueryResponse,
+    summary="高級搜尋資料記錄",
+    description="""
+    使用多個條件進行高級搜尋
+    
+    **查詢參數（所有參數均為選填，支援模糊搜尋）：**
+    - lot_no: 批號（模糊搜尋）
+    - production_date_from: 生產日期起始（YYYY-MM-DD）
+    - production_date_to: 生產日期結束（YYYY-MM-DD）
+    - machine_no: 機台號碼（模糊搜尋，如: P24, P21）
+    - mold_no: 下膠編號/模具編號（模糊搜尋，如: 238-2）
+    - product_name: P3規格/產品名稱（模糊搜尋）
+    - data_type: 資料類型 (P1/P2/P3)
+    - page: 頁碼（從1開始）
+    - page_size: 每頁記錄數量
+    
+    **回傳內容：**
+    - total_count: 總記錄數
+    - page: 當前頁碼
+    - page_size: 每頁大小
+    - records: 記錄列表
+    """
+)
+async def advanced_search_records(
+    lot_no: Optional[str] = Query(None, description="批號（模糊搜尋）"),
+    production_date_from: Optional[date] = Query(None, description="生產日期起始（YYYY-MM-DD）"),
+    production_date_to: Optional[date] = Query(None, description="生產日期結束（YYYY-MM-DD）"),
+    machine_no: Optional[str] = Query(None, description="機台號碼（模糊搜尋）"),
+    mold_no: Optional[str] = Query(None, description="下膠編號/模具編號（模糊搜尋）"),
+    product_name: Optional[str] = Query(None, description="P3規格/產品名稱（模糊搜尋）"),
+    data_type: Optional[DataType] = Query(None, description="資料類型 (P1/P2/P3)"),
+    page: int = Query(1, ge=1, description="頁碼"),
+    page_size: int = Query(10, ge=1, le=100, description="每頁記錄數"),
+    db: AsyncSession = Depends(get_db)
+) -> QueryResponse:
+    """高級搜尋資料記錄 - 支援多條件模糊搜尋"""
+    try:
+        logger.info("開始高級搜尋", 
+                   lot_no=lot_no,
+                   production_date_from=production_date_from,
+                   production_date_to=production_date_to,
+                   machine_no=machine_no,
+                   mold_no=mold_no,
+                   product_name=product_name,
+                   data_type=data_type,
+                   page=page,
+                   page_size=page_size)
+        
+        # 建構查詢條件列表
+        conditions = []
+        
+        # 批號模糊搜尋
+        if lot_no and lot_no.strip():
+            conditions.append(Record.lot_no.ilike(f"%{lot_no.strip()}%"))
+        
+        # 生產日期範圍搜尋
+        if production_date_from:
+            conditions.append(Record.production_date >= production_date_from)
+        if production_date_to:
+            conditions.append(Record.production_date <= production_date_to)
+        
+        # 機台號碼模糊搜尋（P3專用）
+        if machine_no and machine_no.strip():
+            conditions.append(Record.machine_no.ilike(f"%{machine_no.strip()}%"))
+        
+        # 模具編號模糊搜尋（P3專用）
+        if mold_no and mold_no.strip():
+            conditions.append(Record.mold_no.ilike(f"%{mold_no.strip()}%"))
+        
+        # 產品名稱模糊搜尋（P3規格）
+        if product_name and product_name.strip():
+            conditions.append(Record.product_name.ilike(f"%{product_name.strip()}%"))
+        
+        # 資料類型過濾
+        if data_type:
+            conditions.append(Record.data_type == data_type)
+        
+        # 如果沒有任何條件，返回空結果
+        if not conditions:
+            logger.warning("高級搜尋沒有提供任何搜尋條件")
+            return QueryResponse(
+                total_count=0,
+                page=page,
+                page_size=page_size,
+                records=[]
+            )
+        
+        # 組合查詢
+        query_stmt = select(Record).where(and_(*conditions))
+        
+        # 計算總數
+        count_query = select(func.count(Record.id)).where(and_(*conditions))
+        result = await db.execute(count_query)
+        total_count = result.scalar() or 0
+        
+        # 分頁查詢
+        offset = (page - 1) * page_size
+        query_stmt = query_stmt.order_by(Record.created_at.desc()).offset(offset).limit(page_size)
+        
+        result = await db.execute(query_stmt)
+        records = result.scalars().all()
+        
+        # 轉換為回應格式
+        query_records = []
+        for record in records:
+            query_record = QueryRecord(
+                id=str(record.id),
+                lot_no=record.lot_no,
+                data_type=record.data_type.value,
+                production_date=record.production_date.isoformat() if record.production_date else None,
+                created_at=record.created_at.isoformat(),
+                display_name=record.display_name,
+                additional_data=record.additional_data
+            )
+            
+            # 根據資料類型設置對應欄位
+            if record.data_type == DataType.P1:
+                query_record.product_name = record.product_name
+                query_record.quantity = record.quantity
+                query_record.notes = record.notes
+            elif record.data_type == DataType.P2:
+                query_record.sheet_width = record.sheet_width
+                query_record.thickness1 = record.thickness1
+                query_record.thickness2 = record.thickness2
+                query_record.thickness3 = record.thickness3
+                query_record.thickness4 = record.thickness4
+                query_record.thickness5 = record.thickness5
+                query_record.thickness6 = record.thickness6
+                query_record.thickness7 = record.thickness7
+                query_record.appearance = record.appearance
+                query_record.rough_edge = record.rough_edge
+                query_record.slitting_result = record.slitting_result
+            elif record.data_type == DataType.P3:
+                query_record.product_name = record.product_name
+                query_record.quantity = record.quantity
+                query_record.notes = record.notes
+            
+            query_records.append(query_record)
+        
+        logger.info("高級搜尋完成", 
+                   total_count=total_count,
+                   returned_count=len(query_records),
+                   conditions_count=len(conditions))
+        
+        return QueryResponse(
+            total_count=total_count,
+            page=page,
+            page_size=page_size,
+            records=query_records
+        )
+        
+    except Exception as e:
+        logger.error("高級搜尋失敗", error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"高級搜尋時發生錯誤：{str(e)}"
         )
 
 
@@ -271,7 +432,7 @@ async def query_records(
                 additional_data=record.additional_data  # 包含所有額外欄位
             )
             
-            # 根據數據類型設置對應欄位
+            # 根據資料類型設置對應欄位
             if record.data_type == DataType.P1:
                 query_record.product_name = record.product_name
                 query_record.quantity = record.quantity
@@ -397,7 +558,7 @@ async def get_record(
             display_name=record.display_name
         )
         
-        # 根據數據類型設置對應欄位
+        # 根據資料類型設置對應欄位
         if record.data_type == DataType.P1:
             query_record.product_name = record.product_name
             query_record.quantity = record.quantity
@@ -510,14 +671,14 @@ async def get_record_stats(
 
 @router.post(
     "/records/create-test-data",
-    summary="創建測試數據",
+    summary="創建測試資料",
     description="為演示目的創建一些測試記錄（僅開發環境使用）"
 )
 async def create_test_data(
     db: AsyncSession = Depends(get_db)
 ) -> dict:
     """
-    創建測試數據
+    創建測試資料
     
     Args:
         db: 資料庫會話
@@ -527,7 +688,7 @@ async def create_test_data(
     """
     try:
         test_records = [
-            # P1 測試數據
+            # P1 測試資料
             Record(
                 lot_no="2503033_01",
                 data_type=DataType.P1,
@@ -544,7 +705,7 @@ async def create_test_data(
                 production_date=date(2024, 1, 16),
                 notes="另一個測試產品"
             ),
-            # P2 測試數據
+            # P2 測試資料
             Record(
                 lot_no="2503033_01",
                 data_type=DataType.P2,
@@ -561,7 +722,7 @@ async def create_test_data(
                 slitting_result=1,
                 production_date=date(2024, 1, 15)
             ),
-            # P3 測試數據
+            # P3 測試資料
             Record(
                 lot_no="2503033_01",
                 data_type=DataType.P3,
@@ -579,7 +740,7 @@ async def create_test_data(
         await db.commit()
         
         return {
-            "message": "測試數據創建成功",
+            "message": "測試資料創建成功",
             "created_records": len(test_records)
         }
         
@@ -587,5 +748,5 @@ async def create_test_data(
         await db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"創建測試數據時發生錯誤：{str(e)}"
+            detail=f"創建測試資料時發生錯誤：{str(e)}"
         )
