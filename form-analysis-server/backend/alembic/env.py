@@ -36,8 +36,8 @@ settings = get_settings()
 # 將異步 URL 轉換為同步版本給 Alembic 使用
 db_url = settings.database_url
 if db_url.startswith("postgresql+asyncpg://"):
-    # 轉換為 psycopg2 版本給 Alembic 使用
-    db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+    # 轉換為 psycopg3 版本給 Alembic 使用 (不是 psycopg2)
+    db_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
 elif db_url.startswith("sqlite+aiosqlite://"):
     # 轉換為同步 SQLite 版本給 Alembic 使用
     db_url = db_url.replace("sqlite+aiosqlite://", "sqlite://")

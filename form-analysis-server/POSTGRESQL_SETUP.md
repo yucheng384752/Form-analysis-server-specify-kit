@@ -43,13 +43,13 @@ npm run dev
 2. **創建資料庫**
 ```sql
 CREATE DATABASE form_analysis_db;
-CREATE USER app WITH PASSWORD 'app_secure_password';
+CREATE USER app WITH PASSWORD 'app_secure_password_2024';
 GRANT ALL PRIVILEGES ON DATABASE form_analysis_db TO app;
 ```
 
 3. **配置連接**
 ```env
-DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:5432/form_analysis_db
+DATABASE_URL=postgresql+asyncpg://app:app_secure_password_2024@localhost:18001/form_analysis_db
 ```
 
 ##  配置檔案
@@ -57,7 +57,7 @@ DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:5432/form_an
 ### `.env` 設定
 ```properties
 # PostgreSQL 資料庫 (必須)
-DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:5432/form_analysis_db
+DATABASE_URL=postgresql+asyncpg://app:app_secure_password_2024@localhost:18001/form_analysis_db
 
 # API 設定
 API_HOST=0.0.0.0

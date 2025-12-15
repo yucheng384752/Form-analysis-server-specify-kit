@@ -67,7 +67,7 @@
 1. **安裝 PostgreSQL**
    - 下載並安裝 PostgreSQL 16
    - 創建資料庫: `form_analysis_db`
-   - 創建用戶: `app` (密碼: `app_secure_password_change_in_production`)
+   - 創建用戶: `app` (密碼: `app_secure_password_2024`)
 
 2. **執行 SQL 腳本**
    ```bash
