@@ -288,5 +288,5 @@ if __name__ == "__main__":
     success = asyncio.run(main())
     exit_code = 0 if success else 1
     print(f"\n 測試總結：{'成功' if success else '失敗'}")
-    print(f"程式結束，退出代碼：{exit_code}")
+    print(f"程式結束，退出程式碼：{exit_code}")
     sys.exit(exit_code)

@@ -2,7 +2,7 @@
 """
 簡單的P1/P2/P3測試資料創建腳本
 
-使用curl調用API創建測試數據
+使用curl調用API創建測試資料
 """
 
 import subprocess

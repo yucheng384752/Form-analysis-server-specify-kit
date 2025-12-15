@@ -1,4 +1,4 @@
--- 資料庫遷移設計 - 以 lot_no 為唯一鍵的生產數據管理系統
+-- 資料庫遷移設計 - 以 lot_no 為唯一鍵的生產資料管理系統
 -- 設計日期: 2025-11-08
 
 -- ========================================
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS p1_extrusion_data (
 );
 
 -- ========================================
--- 3. P2階段 - 品質檢測數據
+-- 3. P2階段 - 品質檢測資料
 -- ========================================
 CREATE TABLE IF NOT EXISTS p2_quality_data (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS p2_quality_data (
 );
 
 -- ========================================
--- 4. P3階段 - 最終檢驗數據
+-- 4. P3階段 - 最終檢驗資料
 -- ========================================
 CREATE TABLE IF NOT EXISTS p3_inspection_data (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -194,7 +194,7 @@ ALTER TABLE production_lots
     ADD CONSTRAINT chk_lot_no_format CHECK (lot_no ~ '^\d{7}_\d{2}$');
 
 -- ========================================
--- 10. 視圖 - 生產數據彙總
+-- 10. 視圖 - 生產資料彙總
 -- ========================================
 CREATE OR REPLACE VIEW production_summary AS
 SELECT 

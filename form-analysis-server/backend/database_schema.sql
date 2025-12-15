@@ -59,7 +59,7 @@ COMMENT ON COLUMN upload_errors.id IS '錯誤記錄ID';
 COMMENT ON COLUMN upload_errors.job_id IS '關聯的上傳工作ID';
 COMMENT ON COLUMN upload_errors.row_index IS '發生錯誤的行索引（從0開始）';
 COMMENT ON COLUMN upload_errors.field IS '發生錯誤的欄位名稱';
-COMMENT ON COLUMN upload_errors.error_code IS '錯誤代碼，如：INVALID_FORMAT、REQUIRED_FIELD等';
+COMMENT ON COLUMN upload_errors.error_code IS '錯誤程式碼，如：INVALID_FORMAT、REQUIRED_FIELD等';
 COMMENT ON COLUMN upload_errors.message IS '錯誤訊息描述';
 COMMENT ON COLUMN upload_errors.created_at IS '錯誤記錄建立時間';
 

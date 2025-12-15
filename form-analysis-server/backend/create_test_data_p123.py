@@ -2,7 +2,7 @@
 """
 P1/P2/P3測試資料創建腳本
 
-直接使用SQLAlchemy創建測試數據，無需啟動完整服務器。
+直接使用SQLAlchemy創建測試資料，無需啟動完整服務器。
 """
 
 import asyncio
@@ -58,7 +58,7 @@ class TestRecord(Base):
     rough_edge: Mapped[int] = mapped_column(Integer, nullable=True)
     slitting_result: Mapped[int] = mapped_column(Integer, nullable=True)
     
-    # 額外數據
+    # 額外資料
     additional_data: Mapped[str] = mapped_column(JSON, nullable=True)
     
     # 時間戳記

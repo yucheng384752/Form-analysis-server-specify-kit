@@ -279,7 +279,7 @@ class TestUploadErrorModel:
     
     @pytest.mark.asyncio
     async def test_upload_error_field_variations(self, db_session, clean_db):
-        """測試不同欄位名稱和錯誤代碼"""
+        """測試不同欄位名稱和錯誤程式碼"""
         # 創建 UploadJob
         job_data = TestDataFactory.upload_job_data()
         job = UploadJob(**job_data)
@@ -287,7 +287,7 @@ class TestUploadErrorModel:
         await db_session.commit()
         await db_session.refresh(job)
         
-        # 測試各種欄位和錯誤代碼組合
+        # 測試各種欄位和錯誤程式碼組合
         test_cases = [
             ("lot_no", "INVALID_FORMAT", "批號格式錯誤"),
             ("product_name", "TOO_LONG", "產品名稱過長"),

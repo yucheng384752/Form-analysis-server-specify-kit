@@ -205,22 +205,22 @@ INLINE_FILE_ID=$(echo "${INLINE_RESPONSE}" | grep -o '"file_id":"[^"]*"' | cut -
 if [ -n "${INLINE_FILE_ID}" ]; then
     print_success "內聯 CSV 上傳成功，file_id: ${INLINE_FILE_ID}"
     
-    # 測試匯入內聯數據
+    # 測試匯入內聯資料
     echo ""
-    print_test "10. 測試內聯數據匯入"
+    print_test "10. 測試內聯資料匯入"
     
     INLINE_IMPORT_RESPONSE=$(curl -s -X POST \
         -H "Content-Type: application/json" \
         -d "{\"file_id\":\"${INLINE_FILE_ID}\"}" \
         "${API_BASE}/api/import")
     
-    echo "內聯數據匯入回應:"
+    echo "內聯資料匯入回應:"
     echo "${INLINE_IMPORT_RESPONSE}" | jq . 2>/dev/null || echo "${INLINE_IMPORT_RESPONSE}"
     
     if echo "${INLINE_IMPORT_RESPONSE}" | grep -q '"success":true'; then
-        print_success "內聯數據匯入成功"
+        print_success "內聯資料匯入成功"
     else
-        echo -e "${YELLOW}[SKIP]${NC} 內聯數據匯入失敗"
+        echo -e "${YELLOW}[SKIP]${NC} 內聯資料匯入失敗"
     fi
 else
     print_error "內聯 CSV 上傳失敗"

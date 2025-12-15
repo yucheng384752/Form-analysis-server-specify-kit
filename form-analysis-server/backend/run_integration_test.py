@@ -83,7 +83,7 @@ def run_integration_test():
             print("\n 整合測試執行成功！")
             return True
         else:
-            print(f"\n 整合測試失敗，退出代碼：{result.returncode}")
+            print(f"\n 整合測試失敗，退出程式碼：{result.returncode}")
             return False
             
     except Exception as e:

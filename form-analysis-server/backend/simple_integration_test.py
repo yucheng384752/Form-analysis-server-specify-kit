@@ -419,5 +419,5 @@ async def main():
 if __name__ == "__main__":
     success = asyncio.run(main())
     exit_code = 0 if success else 1
-    print(f"\n程式結束，退出代碼：{exit_code}")
+    print(f"\n程式結束，退出程式碼：{exit_code}")
     sys.exit(exit_code)

@@ -470,7 +470,7 @@ if __name__ == "__main__":
     print(f"\n" + "=" * 60)
     print(f" 整合測試總結：{' 測試通過' if success else ' 測試失敗'}")
     print(f" 系統狀態：{'準備就緒' if success else '需要修正'}")
-    print(f" 退出代碼：{exit_code}")
+    print(f" 退出程式碼：{exit_code}")
     print("=" * 60)
     
     sys.exit(exit_code)

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Modal } from "../components/common/Modal";
 import "../styles/query-page.css";
 
-// 數據類型枚舉
+// 資料類型枚舉
 type DataType = 'P1' | 'P2' | 'P3';
 
 interface QueryRecord {

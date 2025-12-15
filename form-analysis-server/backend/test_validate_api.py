@@ -110,7 +110,7 @@ def test_validate_api(process_id, page=1, page_size=10):
             print(f"\n 錯誤項目（當前頁面 {len(errors)} 筆）：")
             for i, error in enumerate(errors, 1):
                 print(f"   {i}. 行 {error['row_index']}, 欄位 '{error['field']}'")
-                print(f"      錯誤代碼：{error['error_code']}")
+                print(f"      錯誤程式碼：{error['error_code']}")
                 print(f"      訊息：{error['message']}")
                 print()
             

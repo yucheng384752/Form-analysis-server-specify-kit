@@ -311,7 +311,7 @@ export function UploadPage() {
     if (!target || !target.csvData || !target.hasUnsavedChanges) return;
 
     try {
-      // TODO: 實作將修改後的數據發送到後端的邏輯
+      // TODO: 實作將修改後的資料發送到後端的邏輯
       // 這裡可以發送修改後的 csvData 到後端進行暫存
       // 目前先在前端標記為已儲存
       
@@ -562,7 +562,7 @@ export function UploadPage() {
       );
 
       showToast("success", 
-        `${target.name} 匯入完成：匯入 ${importResult.imported_rows} 行數據`
+        `${target.name} 匯入完成：匯入 ${importResult.imported_rows} 行資料`
       );
       
       // 延遲後根據檔案數量決定行為
@@ -832,7 +832,7 @@ function UploadedFileCard({
   // 檢查檔案是否有驗證錯誤
   const hasValidationErrors = file.validationErrors && file.validationErrors.length > 0;
     
-  // 儲存按鈕是否可用：必須有CSV數據且有未儲存變更
+  // 儲存按鈕是否可用：必須有CSV資料且有未儲存變更
   const disabledSave = 
     !file.csvData || !file.hasUnsavedChanges;
 
@@ -1134,7 +1134,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                               justifyContent: 'center',
                               cursor: 'help'
                             }}
-                            title={`錯誤代碼: ${cellError.error_code}\n${cellError.message}`}
+                            title={`錯誤程式碼: ${cellError.error_code}\n${cellError.message}`}
                           >
                             !
                           </div>
@@ -1195,7 +1195,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                   第 {error.row_index + 1} 行 • {error.field} 欄位
                 </div>
                 <div style={{ color: '#7f1d1d', marginTop: '4px' }}>
-                  錯誤代碼: {error.error_code}
+                  錯誤程式碼: {error.error_code}
                 </div>
                 <div style={{ color: '#374151', marginTop: '4px' }}>
                   {error.message}

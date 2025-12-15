@@ -236,7 +236,7 @@ async def test_function():
 ```python
 # 使用 clean_db fixture 避免資料衝突
 async def test_function(db_session, clean_db):
-    # 測試代碼
+    # 測試程式碼
 ```
 
 ##  新增測試的步驟

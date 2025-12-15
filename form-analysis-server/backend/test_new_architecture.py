@@ -46,10 +46,10 @@ def test_lot_no_validation():
         print(f"   無效: {lot_no}")
 
 def create_sample_data():
-    """創建範例數據"""
-    print("\n 創建範例生產批次數據...")
+    """創建範例資料"""
+    print("\n 創建範例生產批次資料...")
     
-    # 範例數據結構
+    # 範例資料結構
     sample_lots = [
         {
             "lot_no": "2503033_01",
@@ -94,9 +94,9 @@ def demonstrate_api_structure():
             "刪除批次": "DELETE /api/production/lots/{lot_no}",
             "查詢列表": "GET /api/production/lots?phase=P1&date_start=2025-03-01"
         },
-        "P1階段數據": {
-            "新增數據": "POST /api/data/p1/{lot_no}",
-            "獲取數據": "GET /api/data/p1/{lot_no}",
+        "P1階段資料": {
+            "新增資料": "POST /api/data/p1/{lot_no}",
+            "獲取資料": "GET /api/data/p1/{lot_no}",
             "更新記錄": "PUT /api/data/p1/{lot_no}/{record_id}",
             "刪除記錄": "DELETE /api/data/p1/{lot_no}/{record_id}"
         },
@@ -105,7 +105,7 @@ def demonstrate_api_structure():
             "上傳JSON": "POST /api/upload/json/{lot_no}",
             "下載範本": "GET /api/upload/template/{phase}"
         },
-        "數據分析": {
+        "資料分析": {
             "生產彙總": "GET /api/analytics/summary",
             "品質趨勢": "GET /api/analytics/trends/{lot_no}",
             "批次比較": "GET /api/analytics/comparison?lot_numbers=2503033_01,2503033_02",
@@ -125,12 +125,12 @@ def explain_design_benefits():
     benefits = {
         "以 lot_no 為唯一鍵的優勢": [
             " 業務邏輯自然：lot_no 是生產流程的核心標識符",
-            " 跨階段追溯：P1-P3 所有數據都可通過 lot_no 關聯",
+            " 跨階段追溯：P1-P3 所有資料都可通過 lot_no 關聯",
             " 查詢效能：直接使用業務主鍵，避免不必要的 JOIN",
             " 檔案對應：現有檔案命名已包含 lot_no 資訊"
         ],
         "分階段表設計的優勢": [
-            " 資料隔離：不同階段數據結構差異很大，分表更清晰",
+            " 資料隔離：不同階段資料結構差異很大，分表更清晰",
             " 效能優化：避免單表過寬，提升查詢效能", 
             " 擴展性：未來新增階段或修改結構更靈活",
             " 維護性：各階段可獨立備份和維護"
@@ -150,7 +150,7 @@ def explain_design_benefits():
 
 def main():
     """主測試函數"""
-    print(" 生產數據管理系統 - 資料庫架構和 API 設計驗證")
+    print(" 生產資料管理系統 - 資料庫架構和 API 設計驗證")
     print("=" * 60)
     
     # 1. 測試資料庫連接
@@ -163,8 +163,8 @@ def main():
     # 2. 驗證 lot_no 格式
     test_lot_no_validation()
     
-    # 3. 展示範例數據
-    print("\n 範例數據結構:")
+    # 3. 展示範例資料
+    print("\n 範例資料結構:")
     sample_data = create_sample_data()
     for lot in sample_data:
         print(f"  • {lot['lot_no']}: {lot['phase']} 階段 - {lot['product_spec']} ({lot['material']})")
@@ -178,7 +178,7 @@ def main():
     print("\n 架構設計驗證完成！")
     print("\n 詳細說明請參考:")
     print("  • database_migration_design.sql - 資料庫架構")
-    print("  • api_models_design.py - API 數據模型")
+    print("  • api_models_design.py - API 資料模型")
     print("  • api_routes_design.py - API 路由設計")
     print("  • API_DESIGN_EXPLANATION.md - 完整設計說明")
 

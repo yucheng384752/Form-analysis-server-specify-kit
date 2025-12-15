@@ -39,14 +39,14 @@ docker compose up -d
 echo [INFO] 等待服務啟動...
 timeout /t 10 /nobreak >nul
 
-REM 等待數據庫就緒
-echo [INFO] 等待數據庫就緒...
+REM 等待資料庫就緒
+echo [INFO] 等待資料庫就緒...
 set RETRY_COUNT=0
 set MAX_RETRIES=30
 
 :wait_db
 if !RETRY_COUNT! geq !MAX_RETRIES! (
-    echo [ERROR] 數據庫啟動超時
+    echo [ERROR] 資料庫啟動超時
     docker compose logs db
     pause
     exit /b 1
@@ -61,7 +61,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [SUCCESS] 數據庫已就緒
+echo [SUCCESS] 資料庫已就緒
 
 REM 等待後端 API 就緒
 echo [INFO] 等待後端 API 就緒...
@@ -149,7 +149,7 @@ echo 3456789_03,測試產品C,75,2024-01-17 >> %TEMP_CSV%
 echo 4567890_04,測試產品D,200,2024-01-18 >> %TEMP_CSV%
 echo 5678901_05,測試產品E,125,2024-01-19 >> %TEMP_CSV%
 
-echo [INFO] 測試檔案上傳（5 列測試數據）...
+echo [INFO] 測試檔案上傳（5 列測試資料）...
 
 REM 使用 curl 上傳文件
 curl -s -X POST -F "file=@%TEMP_CSV%" http://localhost:8000/api/upload > %TEMP%\upload_response.json
@@ -192,12 +192,12 @@ echo.
 echo 使用以下命令查看日誌：
 echo   docker compose logs -f backend    # 後端日誌
 echo   docker compose logs -f frontend   # 前端日誌
-echo   docker compose logs -f db         # 數據庫日誌
+echo   docker compose logs -f db         # 資料庫日誌
 echo.
 echo 停止服務：
 echo   docker compose down
 echo.
-echo 停止並清理數據：
+echo 停止並清理資料：
 echo   docker compose down -v
 echo.
 

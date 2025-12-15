@@ -88,8 +88,8 @@ if ($LASTEXITCODE -ne 0) {
 Write-Info "等待服務啟動..."
 Start-Sleep 15
 
-# 等待數據庫就緒
-Write-Info "等待數據庫就緒..."
+# 等待資料庫就緒
+Write-Info "等待資料庫就緒..."
 $maxRetries = 30
 $retryCount = 0
 
@@ -97,7 +97,7 @@ while ($retryCount -lt $maxRetries) {
     try {
         $result = docker compose exec -T db pg_isready -U app 2>$null
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "數據庫已就緒"
+            Write-Success "資料庫已就緒"
             break
         }
     } catch {}
@@ -108,7 +108,7 @@ while ($retryCount -lt $maxRetries) {
 }
 
 if ($retryCount -eq $maxRetries) {
-    Write-Error "數據庫啟動超時"
+    Write-Error "資料庫啟動超時"
     docker compose logs db
     exit 1
 }
@@ -249,7 +249,7 @@ lot_no,product_name,quantity,production_date
     $tempCsv = [System.IO.Path]::GetTempFileName() + ".csv"
     $testCsvContent | Out-File -FilePath $tempCsv -Encoding UTF8
 
-    Write-Info "測試檔案上傳（5 列測試數據）..."
+    Write-Info "測試檔案上傳（5 列測試資料）..."
 
     try {
         if ($useCurl) {
@@ -339,12 +339,12 @@ Write-Host ""
 Write-Host "使用以下命令查看日誌："
 Write-Host "  docker compose logs -f backend    # 後端日誌"
 Write-Host "  docker compose logs -f frontend   # 前端日誌"
-Write-Host "  docker compose logs -f db         # 數據庫日誌"
+Write-Host "  docker compose logs -f db         # 資料庫日誌"
 Write-Host ""
 Write-Host "停止服務："
 Write-Host "  docker compose down"
 Write-Host ""
-Write-Host "停止並清理數據："
+Write-Host "停止並清理資料："
 Write-Host "  docker compose down -v"
 Write-Host ""
 

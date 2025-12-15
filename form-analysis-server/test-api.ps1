@@ -216,9 +216,9 @@ if ($inlineResponse -match '"file_id":"([^"]*)"') {
     $inlineFileId = $Matches[1]
     Write-Pass "內聯 CSV 上傳成功，file_id: $inlineFileId"
     
-    # 測試匯入內聯數據
+    # 測試匯入內聯資料
     Write-Host ""
-    Write-Test "10. 測試內聯數據匯入"
+    Write-Test "10. 測試內聯資料匯入"
     
     $inlineImportPayload = @{
         file_id = $inlineFileId
@@ -229,13 +229,13 @@ if ($inlineResponse -match '"file_id":"([^"]*)"') {
         -d $inlineImportPayload `
         "$ApiBase/api/import"
     
-    Write-Host "內聯數據匯入回應:"
+    Write-Host "內聯資料匯入回應:"
     Write-Host $inlineImportResponse
     
     if ($inlineImportResponse -match '"success":true') {
-        Write-Pass "內聯數據匯入成功"
+        Write-Pass "內聯資料匯入成功"
     } else {
-        Write-Skip "內聯數據匯入失敗"
+        Write-Skip "內聯資料匯入失敗"
     }
 } else {
     Write-Fail "內聯 CSV 上傳失敗"

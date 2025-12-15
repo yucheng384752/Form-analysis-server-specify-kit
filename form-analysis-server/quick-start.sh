@@ -59,14 +59,14 @@ docker compose up -d
 print_status "等待服務啟動..."
 sleep 10
 
-# 等待數據庫就緒
-print_status "等待數據庫就緒..."
+# 等待資料庫就緒
+print_status "等待資料庫就緒..."
 MAX_RETRIES=30
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     if docker compose exec -T db pg_isready -U app >/dev/null 2>&1; then
-        print_success "數據庫已就緒"
+        print_success "資料庫已就緒"
         break
     fi
     RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -75,7 +75,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
 done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    print_error "數據庫啟動超時"
+    print_error "資料庫啟動超時"
     docker compose logs db
     exit 1
 fi
@@ -162,7 +162,7 @@ TEST_CSV_CONTENT="lot_no,product_name,quantity,production_date
 TEMP_CSV=$(mktemp --suffix=.csv)
 echo "$TEST_CSV_CONTENT" > "$TEMP_CSV"
 
-print_status "測試檔案上傳（5 列測試數據）..."
+print_status "測試檔案上傳（5 列測試資料）..."
 
 UPLOAD_RESPONSE=$(curl -s -X POST \
     -F "file=@$TEMP_CSV" \
@@ -230,10 +230,10 @@ echo ""
 echo "使用以下命令查看日誌："
 echo "  docker compose logs -f backend    # 後端日誌"
 echo "  docker compose logs -f frontend   # 前端日誌"
-echo "  docker compose logs -f db         # 數據庫日誌"
+echo "  docker compose logs -f db         # 資料庫日誌"
 echo ""
 echo "停止服務："
 echo "  docker compose down"
 echo ""
-echo "停止並清理數據："
+echo "停止並清理資料："
 echo "  docker compose down -v"

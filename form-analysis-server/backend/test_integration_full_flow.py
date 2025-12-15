@@ -214,7 +214,7 @@ class TestFullFlowIntegration:
         assert "already_imported" in duplicate_error["detail"]["error_code"].lower()
         
         print(f" 防重複匯入測試通過")
-        print(f"   錯誤代碼: {duplicate_error['detail']['error_code']}")
+        print(f"   錯誤程式碼: {duplicate_error['detail']['error_code']}")
         
         print("\n 完整流程整合測試成功完成！")
         
