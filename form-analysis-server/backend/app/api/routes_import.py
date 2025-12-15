@@ -239,7 +239,7 @@ async def import_data(
                 }
             )
         
-        # 從檔案名稱確定數據類型
+        # 從檔案名稱確定資料類型
         filename = job.filename
         filename_lower = filename.lower()
         
@@ -261,10 +261,26 @@ async def import_data(
             if len(parts) >= 3:
                 lot_no = f"{parts[1]}_{parts[2]}"
         elif data_type == DataType.P3:
-            # P3 檔案：從 P3_No. 欄位提取 lot_no
-            if 'P3_No.' in df.columns and not df['P3_No.'].empty:
+            # P3 檔案：支援新舊兩種格式
+            # 1. 新格式：從 "lot no" 欄位提取（優先）
+            # 2. 舊格式：從 "P3_No." 欄位提取
+            
+            if 'lot no' in df.columns and not df['lot no'].empty:
+                # 新格式：直接從 "lot no" 欄位讀取
+                first_lot_no = str(df['lot no'].iloc[0]).strip()
+                
+                # 正規化批號（支援 7+2+2 或更多段格式，自動截取前 9 碼）
+                import re
+                flexible_pattern = re.compile(r'^(\d{7}_\d{2})(?:_.+)?$')
+                match = flexible_pattern.match(first_lot_no)
+                if match:
+                    lot_no = match.group(1)  # 提取前 9 碼
+                else:
+                    lot_no = first_lot_no  # 如果不符合格式，保留原值讓驗證處理
+                    
+            elif 'P3_No.' in df.columns and not df['P3_No.'].empty:
+                # 舊格式：從 P3_No. 欄位提取前 9 碼
                 first_p3_no = str(df['P3_No.'].iloc[0])
-                # 從 P3_No. 提取前9碼作為 lot_no
                 if len(first_p3_no) >= 10:
                     lot_no = first_p3_no[:10]  # 提取前10碼 (7數字_2數字)
             

@@ -33,8 +33,11 @@ class FileValidationService:
     # 必要欄位集合 - 移除product_name, quantity, production_date的必要性
     REQUIRED_COLUMNS = set()  # 不再強制要求特定欄位
     
-    # 批號正規表示式：7位數字_2位數字
+    # 批號正規表示式：7位數字_2位數字（標準格式）
     LOT_NO_PATTERN = re.compile(r'^\d{7}_\d{2}$')
+    
+    # 批號彈性格式：支援 7+2 或 7+2+任意後續 (例如 7+2+2, 7+2+2+3)
+    LOT_NO_FLEXIBLE_PATTERN = re.compile(r'^(\d{7}_\d{2})(?:_.+)?$')
     
     # P1/P2檔案名稱中的批號擷取模式
     P1_P2_PATTERN = re.compile(r'P[12]_(\d{7}_\d{2})')
@@ -126,13 +129,9 @@ class FileValidationService:
         # 取得實際欄位集合（移除空白字元）
         actual_columns = {col.strip() for col in df.columns if col and col.strip()}
         
-        # 檢查是否為P3檔案，如果是則需要P3_No.欄位
-        if self.P3_PATTERN.search(filename):
-            if 'P3_No.' not in actual_columns:
-                raise ValidationError("P3檔案缺少必要欄位：P3_No.")
-        
-        # 不再檢查其他必要欄位和未知欄位
-        # 允許任何欄位存在
+        # P3 檔案不再強制要求 P3_No. 欄位（新舊格式都支援）
+        # 新格式 P3 檔案會有 Machine NO, Mold NO, lot no 等欄位
+        # 不再檢查必要欄位，允許任何欄位存在
     
     def extract_lot_no_from_filename(self, filename: str) -> str:
         """
@@ -183,10 +182,43 @@ class FileValidationService:
                 return potential_lot_no
         
         return ""
+    
+    def normalize_lot_no(self, lot_no_value: Any) -> str:
+        """
+        正規化批號：將 7+2+2 格式截取為標準 7+2 格式
+        
+        支援格式：
+        - 7+2: 2507173_02 → 2507173_02
+        - 7+2+2: 2507173_02_17 → 2507173_02
+        - 7+2+其他: 2507173_02_xxx → 2507173_02
+        
+        Args:
+            lot_no_value: 批號值
+            
+        Returns:
+            str: 正規化後的批號（7+2格式），如果無法解析則返回空字串
+        """
+        if pd.isna(lot_no_value) or lot_no_value is None:
+            return ""
+        
+        lot_no_str = str(lot_no_value).strip()
+        
+        # 檢查是否符合彈性格式（7+2 或 7+2+x）
+        match = self.LOT_NO_FLEXIBLE_PATTERN.match(lot_no_str)
+        if match:
+            # 提取前 9 碼（7位數字_2位數字）
+            return match.group(1)
+        
+        # 如果不符合任何格式，返回原值（讓後續驗證處理）
+        return lot_no_str
 
     def validate_lot_no(self, lot_no: Any, row_index: int) -> bool:
         """
-        驗證批號格式
+        驗證批號格式（支援彈性格式）
+        
+        支援格式：
+        - 標準格式：7位數字_2位數字 (例如：2507173_02)
+        - 擴充格式：7位數字_2位數字_其他 (例如：2507173_02_17，會自動截取前9碼)
         
         Args:
             lot_no: 批號值
@@ -204,12 +236,16 @@ class FileValidationService:
             self.add_error(row_index, 'lot_no', 'REQUIRED_FIELD', '批號不能為空')
             return False
         
-        if not self.LOT_NO_PATTERN.match(lot_no_str):
+        # 先嘗試正規化（支援 7+2+2 格式）
+        normalized_lot_no = self.normalize_lot_no(lot_no)
+        
+        # 驗證正規化後的批號
+        if not normalized_lot_no or not self.LOT_NO_PATTERN.match(normalized_lot_no):
             self.add_error(
                 row_index, 
                 'lot_no', 
                 'INVALID_FORMAT', 
-                f'批號格式錯誤，應為7位數字_2位數字格式，實際值：{lot_no_str}'
+                f'批號格式錯誤，應為 7位數字_2位數字 格式（或 7位數字_2位數字_其他），實際值：{lot_no_str}'
             )
             return False
         
@@ -320,46 +356,7 @@ class FileValidationService:
             )
             return False
     
-    def normalize_lot_no(self, lot_no: str) -> str:
-        """
-        正規化 lot_no：將底線後面的部分轉換為兩位數字
-        
-        範例：
-        - 2507173_02_17 → 2507173-02
-        - 2507173_2_17 → 2507173-02
-        - 2507173_02 → 2507173-02
-        
-        Args:
-            lot_no: 原始批號字串
-            
-        Returns:
-            str: 正規化後的批號（格式：7位數字-2位數字）
-        """
-        if not lot_no:
-            return ""
-        
-        lot_no_str = str(lot_no).strip()
-        
-        # 使用底線分割
-        parts = lot_no_str.split('_')
-        
-        if len(parts) < 2:
-            return lot_no_str  # 格式不符，直接返回
-        
-        # 取前兩部分：日期(7位) + 機台/批次(1-2位)
-        date_part = parts[0]  # 7位數字
-        machine_part = parts[1]  # 1-2位數字
-        
-        # 確保機台部分是兩位數字（左側補0）
-        try:
-            machine_num = int(machine_part)
-            machine_part_normalized = f"{machine_num:02d}"
-        except (ValueError, TypeError):
-            return lot_no_str  # 無法轉換，返回原值
-        
-        # 使用連字符拼接
-        return f"{date_part}-{machine_part_normalized}"
-    
+
     def extract_source_winder(self, lot_no: str) -> Optional[int]:
         """
         從 P3 的 lot_no 中提取 source_winder（來源收卷機編號）
@@ -505,18 +502,36 @@ class FileValidationService:
             
             # 根據檔案類型驗證lot_no
             if is_p3_file:
-                # P3檔案：從P3_No.欄位擷取lot_no
-                p3_no_value = row.get('P3_No.')
-                if pd.isna(p3_no_value) or p3_no_value is None:
-                    self.add_error(row_index, 'P3_No.', 'REQUIRED_FIELD', 'P3_No.欄位不能為空')
+                # P3檔案：支援新舊兩種格式
+                # 1. 新格式：從 "lot no" 欄位提取（優先）
+                # 2. 舊格式：從 "P3_No." 欄位提取
+                
+                lot_no_value = None
+                source_field = None
+                
+                # 嘗試從新格式的 "lot no" 欄位提取
+                if 'lot no' in row.index:
+                    lot_no_value = row.get('lot no')
+                    source_field = 'lot no'
+                # 回退到舊格式的 "P3_No." 欄位
+                elif 'P3_No.' in row.index:
+                    p3_no_value = row.get('P3_No.')
+                    if pd.notna(p3_no_value):
+                        lot_no_value = self.extract_lot_no_from_p3_field(p3_no_value)
+                        source_field = 'P3_No.'
+                
+                # 驗證批號
+                if not lot_no_value or pd.isna(lot_no_value):
+                    self.add_error(row_index, source_field or 'lot_no', 'REQUIRED_FIELD', 
+                                 'P3檔案需要批號欄位（"lot no" 或 "P3_No."）')
                     row_has_error.add(row_index)
                 else:
-                    extracted_lot_no = self.extract_lot_no_from_p3_field(p3_no_value)
-                    if not extracted_lot_no:
-                        self.add_error(row_index, 'P3_No.', 'INVALID_FORMAT', f'無法從P3_No.欄位擷取有效的批號（需至少9碼），實際值：{p3_no_value}')
-                        row_has_error.add(row_index)
-                    elif not self.LOT_NO_PATTERN.match(extracted_lot_no):
-                        self.add_error(row_index, 'P3_No.', 'INVALID_FORMAT', f'從P3_No.擷取的批號格式錯誤，應為7位數字_2位數字格式，擷取值：{extracted_lot_no}')
+                    # 正規化批號（支援 7+2+2 格式）
+                    normalized_lot_no = self.normalize_lot_no(lot_no_value)
+                    
+                    if not normalized_lot_no or not self.LOT_NO_PATTERN.match(normalized_lot_no):
+                        self.add_error(row_index, source_field, 'INVALID_FORMAT', 
+                                     f'批號格式錯誤，應為 7位數字_2位數字 格式（或 7位數字_2位數字_其他），實際值：{lot_no_value}')
                         row_has_error.add(row_index)
             else:
                 # P1/P2檔案：從檔案名稱擷取lot_no

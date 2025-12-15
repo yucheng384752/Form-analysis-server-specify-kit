@@ -45,11 +45,14 @@ class CSVFieldMapper:
     }
     
     # P3 特徵欄位（最終檢驗）
+    # P3_No. 為可選欄位（舊格式有，新格式沒有）
     P3_SIGNATURE_COLUMNS = {
-        'P3_No.',
         'E_Value',
+        'E Value',  # 新格式
         'Burr',
-        'Finish'
+        'Finish',
+        'Machine NO',  # 新格式特徵
+        'Mold NO'      # 新格式特徵
     }
     
     # P1/P2 可能的材料代號欄位名稱
@@ -84,6 +87,7 @@ class CSVFieldMapper:
     
     # P3 可能的機台編號欄位名稱（從檔案名稱或欄位提取）
     MACHINE_NO_FIELD_NAMES = [
+        'Machine NO',  # 新格式（大寫 NO）
         'Machine No',
         'Machine',
         'machine_no',
@@ -94,6 +98,7 @@ class CSVFieldMapper:
     
     # P3 可能的模具編號欄位名稱（從檔案名稱或欄位提取）
     MOLD_NO_FIELD_NAMES = [
+        'Mold NO',     # 新格式（大寫 NO）
         'Mold No',
         'Mold',
         'mold_no',
@@ -128,8 +133,9 @@ class CSVFieldMapper:
         # 根據欄位特徵判斷
         column_set = set(columns)
         
-        # 檢查 P3 特徵（最明顯）
-        if 'P3_No.' in column_set:
+        # 檢查 P3 特徵（檢查多個特徵欄位）
+        p3_matches = len(self.P3_SIGNATURE_COLUMNS & column_set)
+        if p3_matches >= 3:  # 至少匹配 3 個 P3 特徵欄位（Burr, Finish, E_Value/E Value, Machine NO, Mold NO 等）
             return CSVType.P3
         
         # 檢查 P2 特徵
