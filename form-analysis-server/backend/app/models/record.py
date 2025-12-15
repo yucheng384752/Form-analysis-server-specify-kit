@@ -2,7 +2,7 @@
 記錄模型
 
 代表經過驗證並成功匯入的資料記錄。
-支援 P1/P2/P3 三種不同類型的數據結構。
+支援 P1/P2/P3 三種不同類型的資料結構。
 """
 
 import uuid
@@ -18,7 +18,7 @@ from app.core.database import Base
 
 
 class DataType(str, Enum):
-    """數據類型枚舉"""
+    """資料類型枚舉"""
     P1 = "P1"  # 產品基本資料
     P2 = "P2"  # 尺寸檢測資料  
     P3 = "P3"  # 追蹤編號
@@ -28,10 +28,30 @@ class Record(Base):
     """
     資料記錄模型
     
-    儲存經過驗證並成功匯入的業務資料，支援P1/P2/P3三種不同的數據類型：
-    - P1: 產品基本資料 (product_name, quantity, production_date, notes)
-    - P2: 尺寸檢測資料 (sheet_width, thickness1-7, appearance, rough_edge, slitting_result)  
-    - P3: 追蹤編號 (p3_no, product_name, quantity, production_date, notes)
+    儲存經過驗證並成功匯入的業務資料，支援 P1/P2/P3 三種不同的資料類型：
+    
+    - P1: 產品基本資料
+      * 批號 (lot_no)
+      * 材料代碼 (material_code)
+      * 生產日期 (production_date)
+      * 其他製程參數存於 additional_data
+      
+    - P2: 尺寸檢測資料
+      * 批號 (lot_no)
+      * 材料代碼 (material_code)
+      * 分條機編號 (slitting_machine_number)
+      * 分條編號 (winder_number)：1-20
+      * 厚度檢測資料 (thickness1-7, sheet_width等)
+      * 品質檢測 (appearance, rough_edge, slitting_result)
+      
+    - P3: 追蹤編號（成品加工資料）
+      * 批號 (lot_no)：標準化格式
+      * Product ID (product_id)：唯一識別碼 YYYY-MM-DD_machine_mold_lot
+      * 生產機台 (machine_no)：P24, P21 等
+      * 模具編號 (mold_no)：238-2 等
+      * 生產序號 (production_lot)：301, 302 等
+      * 來源分條 (source_winder)：用於追溯到對應的 P2 記錄
+      * 其他品質資料存於 additional_data
     """
     __tablename__ = "records"
 
@@ -53,7 +73,7 @@ class Record(Base):
     data_type: Mapped[DataType] = mapped_column(
         SQLEnum(DataType, name="data_type_enum"),
         nullable=False,
-        comment="數據類型：P1(產品基本資料), P2(尺寸檢測資料), P3(追蹤編號)"
+        comment="資料類型：P1(產品基本資料), P2(尺寸檢測資料), P3(追蹤編號)"
     )
     
     # 生產日期 (所有類型共有)
@@ -148,11 +168,79 @@ class Record(Base):
         comment="切割結果 (P2使用，0或1)"
     )
     
-    # 額外數據存儲 (JSONB格式，用於存儲CSV中的所有其他欄位)
+    # ==================== 材料與機台欄位（新增） ====================
+    
+    # 材料代碼 (P1, P2 使用)
+    material_code: Mapped[Optional[str]] = mapped_column(
+        String(10),
+        nullable=True,
+        index=True,
+        comment="材料代碼 (P1/P2使用)：H2, H5, H8 等"
+    )
+    
+    # 分條機編號 (P2 使用)
+    slitting_machine_number: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True,
+        comment="分條機編號 (P2使用)：1, 2 等"
+    )
+    
+    # 分條編號 (P2 使用)
+    winder_number: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True,
+        comment="分條編號/Winder number (P2使用)：1-20"
+    )
+    
+    # ==================== P3 Product_ID 相關欄位 ====================
+    
+    # 生產機台編號 (P3 使用)
+    machine_no: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        index=True,
+        comment="生產機台編號 (P3使用)：P24, P21 等"
+    )
+    
+    # 模具編號 (P3 使用)
+    mold_no: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        index=True,
+        comment="模具編號 (P3使用)：238-2, 123-1 等"
+    )
+    
+    # 生產序號 (P3 使用)
+    production_lot: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="生產序號 (P3使用，來自 lot 欄位)：301, 302, 303..."
+    )
+    
+    # 來源分條編號 (P3 使用，用於追溯)
+    source_winder: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True,
+        comment="來源分條編號 (P3使用，從 lot_no 提取)：2507173_02_17 → 17"
+    )
+    
+    # Product ID (P3 使用，唯一識別碼)
+    product_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        unique=True,
+        index=True,
+        comment="產品唯一識別碼 (P3使用)：YYYY-MM-DD_machine_mold_lot，如：2025-09-02_P24_238-2_301"
+    )
+    
+    # 額外資料存儲 (JSONB格式，用於存儲CSV中的所有其他欄位)
     additional_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=True,
-        comment="額外數據，JSONB格式，用於存儲CSV檔案中的所有其他欄位（如溫度數據、自定義欄位等）"
+        comment="額外資料，JSONB格式，用於存儲CSV檔案中的所有其他欄位（如溫度資料、自定義欄位等）"
     )
     
     # 時間戳記
@@ -175,7 +263,7 @@ class Record(Base):
         if self.data_type == DataType.P1:
             return self.product_name or "未知產品"
         elif self.data_type == DataType.P2:
-            return f"檢測數據 ({self.lot_no})"
+            return f"檢測資料 ({self.lot_no})"
         elif self.data_type == DataType.P3:
             return f"P3-{self.p3_no}" if self.p3_no else f"P3追蹤 ({self.lot_no})"
         return f"{self.data_type} ({self.lot_no})"

@@ -10,6 +10,14 @@ from typing import List, Dict, Any, Tuple, Optional
 import pandas as pd
 from pydantic import ValidationError
 
+# 導入常數配置
+from app.config.constants import (
+    VALID_MATERIALS,
+    VALID_SLITTING_MACHINES,
+    get_material_list,
+    get_slitting_machine_list
+)
+
 
 class ValidationError(Exception):
     """驗證錯誤例外"""
@@ -312,6 +320,148 @@ class FileValidationService:
             )
             return False
     
+    def normalize_lot_no(self, lot_no: str) -> str:
+        """
+        正規化 lot_no：將底線後面的部分轉換為兩位數字
+        
+        範例：
+        - 2507173_02_17 → 2507173-02
+        - 2507173_2_17 → 2507173-02
+        - 2507173_02 → 2507173-02
+        
+        Args:
+            lot_no: 原始批號字串
+            
+        Returns:
+            str: 正規化後的批號（格式：7位數字-2位數字）
+        """
+        if not lot_no:
+            return ""
+        
+        lot_no_str = str(lot_no).strip()
+        
+        # 使用底線分割
+        parts = lot_no_str.split('_')
+        
+        if len(parts) < 2:
+            return lot_no_str  # 格式不符，直接返回
+        
+        # 取前兩部分：日期(7位) + 機台/批次(1-2位)
+        date_part = parts[0]  # 7位數字
+        machine_part = parts[1]  # 1-2位數字
+        
+        # 確保機台部分是兩位數字（左側補0）
+        try:
+            machine_num = int(machine_part)
+            machine_part_normalized = f"{machine_num:02d}"
+        except (ValueError, TypeError):
+            return lot_no_str  # 無法轉換，返回原值
+        
+        # 使用連字符拼接
+        return f"{date_part}-{machine_part_normalized}"
+    
+    def extract_source_winder(self, lot_no: str) -> Optional[int]:
+        """
+        從 P3 的 lot_no 中提取 source_winder（來源收卷機編號）
+        
+        範例：
+        - 2507173_02_17 → 17
+        - 2507173_02_5 → 5
+        - 2507173_02 → None
+        
+        Args:
+            lot_no: 批號字串（格式：YYYYMDD_MM_WW）
+            
+        Returns:
+            Optional[int]: 收卷機編號，如果無法提取則返回 None
+        """
+        if not lot_no:
+            return None
+        
+        lot_no_str = str(lot_no).strip()
+        
+        # 使用底線分割
+        parts = lot_no_str.split('_')
+        
+        # P3 格式應該至少有 3 部分：日期_機台_收卷機
+        if len(parts) < 3:
+            return None
+        
+        # 取第三部分（收卷機編號）
+        winder_part = parts[2]
+        
+        try:
+            return int(winder_part)
+        except (ValueError, TypeError):
+            return None
+    
+    def validate_material_code(self, material_code: Any, row_index: int) -> bool:
+        """
+        驗證材料代號是否在有效清單中
+        
+        Args:
+            material_code: 材料代號值
+            row_index: 行索引
+            
+        Returns:
+            bool: 驗證是否通過
+        """
+        if pd.isna(material_code) or material_code is None:
+            # 材料代號可選，不是必填欄位
+            return True
+        
+        material_str = str(material_code).strip().upper()
+        
+        if material_str not in VALID_MATERIALS:
+            valid_list = get_material_list()
+            self.add_error(
+                row_index,
+                'material_code',
+                'INVALID_VALUE',
+                f'材料代號無效：{material_str}，有效值為：{", ".join(valid_list)}'
+            )
+            return False
+        
+        return True
+    
+    def validate_slitting_machine_number(self, machine_number: Any, row_index: int) -> bool:
+        """
+        驗證分條機編號是否在有效清單中
+        
+        Args:
+            machine_number: 分條機編號值
+            row_index: 行索引
+            
+        Returns:
+            bool: 驗證是否通過
+        """
+        if pd.isna(machine_number) or machine_number is None:
+            # 分條機編號可選，不是必填欄位
+            return True
+        
+        try:
+            machine_int = int(float(machine_number))
+        except (ValueError, TypeError):
+            self.add_error(
+                row_index,
+                'slitting_machine_number',
+                'INVALID_FORMAT',
+                f'分條機編號必須為整數，實際值：{machine_number}'
+            )
+            return False
+        
+        if machine_int not in VALID_SLITTING_MACHINES:
+            valid_list = get_slitting_machine_list()
+            self.add_error(
+                row_index,
+                'slitting_machine_number',
+                'INVALID_VALUE',
+                f'分條機編號無效：{machine_int}，有效值為：{", ".join(map(str, valid_list))}'
+            )
+            return False
+        
+        return True
+    
     def add_error(self, row_index: int, field: str, error_code: str, message: str) -> None:
         """
         添加驗證錯誤
@@ -319,7 +469,7 @@ class FileValidationService:
         Args:
             row_index: 行索引（從0開始）
             field: 欄位名稱
-            error_code: 錯誤代碼
+            error_code: 錯誤程式碼
             message: 錯誤訊息
         """
         error = {
@@ -380,7 +530,7 @@ class FileValidationService:
             
             # 不再驗證product_name, quantity, production_date等欄位
         
-        # 計算統計數據
+        # 計算統計資料
         self.invalid_rows = len(row_has_error)
         self.valid_rows = self.total_rows - self.invalid_rows
         
@@ -429,7 +579,7 @@ class FileValidationService:
         # 5. 驗證資料列
         total_rows, valid_rows, invalid_rows = self.validate_data_rows(df, filename)
         
-        # 6. 判斷數據類型
+        # 6. 判斷資料類型
         from app.models.record import DataType
         filename_lower = filename.lower()
         detected_data_type = DataType.P1  # 預設值

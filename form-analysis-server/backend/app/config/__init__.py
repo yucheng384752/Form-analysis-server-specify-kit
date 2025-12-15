@@ -1,0 +1,15 @@
+"""
+配置模組
+"""
+
+from .constants import (
+    VALID_MATERIALS,
+    VALID_SLITTING_MACHINES,
+    SLITTING_MACHINE_DISPLAY_NAMES
+)
+
+__all__ = [
+    "VALID_MATERIALS",
+    "VALID_SLITTING_MACHINES",
+    "SLITTING_MACHINE_DISPLAY_NAMES"
+]

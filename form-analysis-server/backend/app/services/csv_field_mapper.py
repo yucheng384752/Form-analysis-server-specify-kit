@@ -1,0 +1,381 @@
+"""
+CSV 欄位映射器
+
+根據檔案名稱和欄位內容自動偵測 CSV 類型（P1/P2/P3），
+並將 CSV 欄位映射到 Record 模型的資料庫欄位。
+"""
+
+import re
+from typing import Dict, Any, Optional, List
+from enum import Enum
+import pandas as pd
+
+
+class CSVType(str, Enum):
+    """CSV 檔案類型"""
+    P1 = "P1"
+    P2 = "P2"
+    P3 = "P3"
+    UNKNOWN = "UNKNOWN"
+
+
+class CSVFieldMapper:
+    """CSV 欄位映射器類"""
+    
+    # 檔案名稱模式
+    P1_FILENAME_PATTERN = re.compile(r'^P1_', re.IGNORECASE)
+    P2_FILENAME_PATTERN = re.compile(r'^P2_', re.IGNORECASE)
+    P3_FILENAME_PATTERN = re.compile(r'^P3_', re.IGNORECASE)
+    
+    # P1 特徵欄位（吹膜製程參數）
+    P1_SIGNATURE_COLUMNS = {
+        'Actual Temp_C1(℃)',
+        'Set Temp_C1(℃)',
+        'Line Speed(M/min)',
+        'Screw Pressure(psi)',
+        'Extruder Speed(rpm)'
+    }
+    
+    # P2 特徵欄位（分條檢驗）
+    P2_SIGNATURE_COLUMNS = {
+        'Sheet Width(mm)',
+        'Thicknessss1(μm)',
+        'Appearance',
+        'Slitting Result'
+    }
+    
+    # P3 特徵欄位（最終檢驗）
+    P3_SIGNATURE_COLUMNS = {
+        'P3_No.',
+        'E_Value',
+        'Burr',
+        'Finish'
+    }
+    
+    # P1/P2 可能的材料代號欄位名稱
+    MATERIAL_CODE_FIELD_NAMES = [
+        'Material',
+        'Material Code',
+        'material',
+        'material_code',
+        '材料',
+        '材料代號'
+    ]
+    
+    # P2 可能的分條機編號欄位名稱
+    SLITTING_MACHINE_FIELD_NAMES = [
+        'Slitting Machine',
+        'Slitting machine',
+        'slitting_machine',
+        'Machine',
+        'machine',
+        '分條機'
+    ]
+    
+    # P2 可能的收卷機編號欄位名稱
+    WINDER_NUMBER_FIELD_NAMES = [
+        'Winder',
+        'Winder Number',
+        'winder',
+        'winder_number',
+        '收卷機',
+        '收卷機編號'
+    ]
+    
+    # P3 可能的機台編號欄位名稱（從檔案名稱或欄位提取）
+    MACHINE_NO_FIELD_NAMES = [
+        'Machine No',
+        'Machine',
+        'machine_no',
+        'machine',
+        '機台',
+        '機台編號'
+    ]
+    
+    # P3 可能的模具編號欄位名稱（從檔案名稱或欄位提取）
+    MOLD_NO_FIELD_NAMES = [
+        'Mold No',
+        'Mold',
+        'mold_no',
+        'mold',
+        '模具',
+        '模具編號'
+    ]
+    
+    def __init__(self):
+        """初始化映射器"""
+        pass
+    
+    def detect_csv_type(self, filename: str, columns: List[str]) -> CSVType:
+        """
+        根據檔案名稱和欄位內容偵測 CSV 類型
+        
+        Args:
+            filename: 檔案名稱
+            columns: CSV 欄位列表
+            
+        Returns:
+            CSVType: 偵測到的 CSV 類型
+        """
+        # 優先根據檔案名稱判斷
+        if self.P1_FILENAME_PATTERN.match(filename):
+            return CSVType.P1
+        elif self.P2_FILENAME_PATTERN.match(filename):
+            return CSVType.P2
+        elif self.P3_FILENAME_PATTERN.match(filename):
+            return CSVType.P3
+        
+        # 根據欄位特徵判斷
+        column_set = set(columns)
+        
+        # 檢查 P3 特徵（最明顯）
+        if 'P3_No.' in column_set:
+            return CSVType.P3
+        
+        # 檢查 P2 特徵
+        p2_matches = len(self.P2_SIGNATURE_COLUMNS & column_set)
+        if p2_matches >= 2:  # 至少匹配 2 個 P2 特徵欄位
+            return CSVType.P2
+        
+        # 檢查 P1 特徵
+        p1_matches = len(self.P1_SIGNATURE_COLUMNS & column_set)
+        if p1_matches >= 3:  # 至少匹配 3 個 P1 特徵欄位
+            return CSVType.P1
+        
+        return CSVType.UNKNOWN
+    
+    def extract_from_csv_row(
+        self, 
+        row: pd.Series, 
+        csv_type: CSVType,
+        filename: str
+    ) -> Dict[str, Any]:
+        """
+        從 CSV 行中提取映射資料
+        
+        Args:
+            row: pandas Series（CSV 的一行）
+            csv_type: CSV 類型
+            filename: 檔案名稱（用於 P3 提取機台和模具編號）
+            
+        Returns:
+            Dict[str, Any]: 映射後的欄位資料
+        """
+        result = {}
+        
+        if csv_type == CSVType.P1:
+            # P1: 提取材料代號
+            result['material_code'] = self._extract_field_value(
+                row, 
+                self.MATERIAL_CODE_FIELD_NAMES
+            )
+        
+        elif csv_type == CSVType.P2:
+            # P2: 提取材料代號、分條機編號、收卷機編號
+            result['material_code'] = self._extract_field_value(
+                row, 
+                self.MATERIAL_CODE_FIELD_NAMES
+            )
+            result['slitting_machine_number'] = self._extract_integer_field(
+                row, 
+                self.SLITTING_MACHINE_FIELD_NAMES
+            )
+            result['winder_number'] = self._extract_integer_field(
+                row, 
+                self.WINDER_NUMBER_FIELD_NAMES
+            )
+        
+        elif csv_type == CSVType.P3:
+            # P3: 提取機台編號、模具編號、生產批號、來源收卷機
+            # 優先從 P3_No. 欄位提取
+            p3_no = row.get('P3_No.')
+            if pd.notna(p3_no):
+                p3_parts = self._parse_p3_no(str(p3_no))
+                result.update(p3_parts)
+            
+            # 如果 P3_No. 沒有提供完整資訊，嘗試從其他欄位或檔案名稱提取
+            if not result.get('machine_no'):
+                result['machine_no'] = (
+                    self._extract_field_value(row, self.MACHINE_NO_FIELD_NAMES)
+                    or self._extract_machine_from_filename(filename)
+                )
+            
+            if not result.get('mold_no'):
+                result['mold_no'] = (
+                    self._extract_field_value(row, self.MOLD_NO_FIELD_NAMES)
+                    or self._extract_mold_from_filename(filename)
+                )
+        
+        return result
+    
+    def _extract_field_value(
+        self, 
+        row: pd.Series, 
+        field_names: List[str]
+    ) -> Optional[str]:
+        """
+        從多個可能的欄位名稱中提取值
+        
+        Args:
+            row: pandas Series
+            field_names: 可能的欄位名稱列表
+            
+        Returns:
+            Optional[str]: 提取的值，如果都不存在則返回 None
+        """
+        for field_name in field_names:
+            if field_name in row.index:
+                value = row[field_name]
+                if pd.notna(value):
+                    return str(value).strip()
+        return None
+    
+    def _extract_integer_field(
+        self, 
+        row: pd.Series, 
+        field_names: List[str]
+    ) -> Optional[int]:
+        """
+        從多個可能的欄位名稱中提取整數值
+        
+        Args:
+            row: pandas Series
+            field_names: 可能的欄位名稱列表
+            
+        Returns:
+            Optional[int]: 提取的整數值，如果都不存在或無法轉換則返回 None
+        """
+        value_str = self._extract_field_value(row, field_names)
+        if value_str:
+            try:
+                return int(float(value_str))
+            except (ValueError, TypeError):
+                pass
+        return None
+    
+    def _parse_p3_no(self, p3_no: str) -> Dict[str, Any]:
+        """
+        解析 P3_No. 欄位
+        
+        格式：YYYYMDD_MM_WW_LLL
+        - YYYYMDD: 7位數字日期
+        - MM: 2位數字機台/批次
+        - WW: 收卷機編號（來源）
+        - LLL: 生產批號
+        
+        範例：2411012_04_34_301
+        - lot_no: 2411012_04 （正規化後：2411012-04）
+        - source_winder: 34
+        - production_lot: 301
+        
+        Args:
+            p3_no: P3_No. 欄位值
+            
+        Returns:
+            Dict[str, Any]: 解析後的資料
+        """
+        result = {}
+        
+        if not p3_no:
+            return result
+        
+        parts = p3_no.split('_')
+        
+        if len(parts) >= 4:
+            # 提取各部分
+            date_part = parts[0]  # YYYYMDD
+            machine_part = parts[1]  # MM
+            winder_part = parts[2]  # WW
+            lot_part = parts[3]  # LLL
+            
+            # source_winder: 收卷機編號
+            try:
+                result['source_winder'] = int(winder_part)
+            except (ValueError, TypeError):
+                pass
+            
+            # production_lot: 生產批號
+            try:
+                result['production_lot'] = int(lot_part)
+            except (ValueError, TypeError):
+                pass
+        
+        return result
+    
+    def _extract_machine_from_filename(self, filename: str) -> Optional[str]:
+        """
+        從 P3 檔案名稱中提取機台編號
+        
+        範例：
+        - P3_0902_P24.csv → P24
+        - P3_0210_P02.csv → P02
+        
+        Args:
+            filename: 檔案名稱
+            
+        Returns:
+            Optional[str]: 機台編號，如果無法提取則返回 None
+        """
+        # P3 檔案名稱格式：P3_日期_機台.csv
+        pattern = re.compile(r'P3_\d+_(P\d+)', re.IGNORECASE)
+        match = pattern.search(filename)
+        if match:
+            return match.group(1).upper()
+        return None
+    
+    def _extract_mold_from_filename(self, filename: str) -> Optional[str]:
+        """
+        從檔案名稱中提取模具編號（如果有）
+        
+        Args:
+            filename: 檔案名稱
+            
+        Returns:
+            Optional[str]: 模具編號，如果無法提取則返回 None
+        """
+        # 模具編號通常需要從其他來源提供，檔案名稱中不一定包含
+        # 這裡預留擴充功能
+        return None
+    
+    def map_csv_to_record_fields(
+        self,
+        df: pd.DataFrame,
+        filename: str,
+        csv_type: Optional[CSVType] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        將整個 DataFrame 映射到 Record 欄位
+        
+        Args:
+            df: pandas DataFrame
+            filename: 檔案名稱
+            csv_type: CSV 類型（如果為 None 則自動偵測）
+            
+        Returns:
+            List[Dict[str, Any]]: 映射後的資料列表
+        """
+        # 自動偵測 CSV 類型
+        if csv_type is None:
+            csv_type = self.detect_csv_type(filename, df.columns.tolist())
+        
+        results = []
+        
+        for _, row in df.iterrows():
+            mapped_data = self.extract_from_csv_row(row, csv_type, filename)
+            
+            # 將整行資料作為 additional_data（JSONB）
+            row_dict = row.to_dict()
+            # 清理 NaN 值
+            cleaned_row = {
+                k: (None if pd.isna(v) else v) 
+                for k, v in row_dict.items()
+            }
+            
+            mapped_data['additional_data'] = cleaned_row
+            results.append(mapped_data)
+        
+        return results
+
+
+# 創建單例實例
+csv_field_mapper = CSVFieldMapper()
