@@ -1,9 +1,10 @@
 // src/pages/QueryPage.tsx
 import { useState, useRef } from "react";
 import { Modal } from "../components/common/Modal";
+import { AdvancedSearch, AdvancedSearchParams } from "../components/AdvancedSearch";
 import "../styles/query-page.css";
 
-// 數據類型枚舉
+// 資料類型枚舉
 type DataType = 'P1' | 'P2' | 'P3';
 
 interface QueryRecord {
@@ -35,7 +36,7 @@ interface QueryRecord {
   // P3專用欄位
   p3_no?: string;
   
-  // 額外資料欄位 (來自CSV的其他欄位，包含溫度數據等)
+  // 額外資料欄位 (來自CSV的其他欄位，包含溫度資料等)
   additional_data?: { [key: string]: any };
 }
 
@@ -54,6 +55,10 @@ export function QueryPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionLoading, setSuggestionLoading] = useState(false);
   
+  // 高級搜尋相關狀態
+  const [advancedSearchExpanded, setAdvancedSearchExpanded] = useState(false);
+  const [advancedSearchParams, setAdvancedSearchParams] = useState<AdvancedSearchParams | null>(null);
+  
   // 記錄列表相關狀態
   const [records, setRecords] = useState<QueryRecord[]>([]);
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
@@ -67,20 +72,31 @@ export function QueryPage() {
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const pageSize = 50;
 
-  // 搜尋記錄
-  const searchRecords = async (search: string, page: number = 1) => {
+  // 搜尋記錄 (支援基本搜尋和高級搜尋)
+  const searchRecords = async (search: string, page: number = 1, advancedParams?: AdvancedSearchParams) => {
     setLoading(true);
     try {
+      let apiUrl = '/api/query/records';
       const params = new URLSearchParams({
         page: page.toString(),
         page_size: pageSize.toString()
       });
       
-      if (search) {
+      // 優先使用高級搜尋參數
+      if (advancedParams) {
+        apiUrl = '/api/query/records/advanced';
+        if (advancedParams.lot_no) params.append('lot_no', advancedParams.lot_no);
+        if (advancedParams.production_date_from) params.append('production_date_from', advancedParams.production_date_from);
+        if (advancedParams.production_date_to) params.append('production_date_to', advancedParams.production_date_to);
+        if (advancedParams.machine_no) params.append('machine_no', advancedParams.machine_no);
+        if (advancedParams.mold_no) params.append('mold_no', advancedParams.mold_no);
+        if (advancedParams.product_name) params.append('product_name', advancedParams.product_name);
+        if (advancedParams.data_type) params.append('data_type', advancedParams.data_type);
+      } else if (search) {
         params.append('lot_no', search);
       }
       
-      const response = await fetch(`/api/query/records?${params}`);
+      const response = await fetch(`${apiUrl}?${params}`);
       if (response.ok) {
         const data: QueryResponse = await response.json();
         setRecords(data.records);
@@ -131,12 +147,28 @@ export function QueryPage() {
     }
   };
 
-  // 處理搜尋
+  // 處理基本搜尋
   const handleSearch = async () => {
     if (searchKeyword.trim()) {
+      setAdvancedSearchParams(null); // 清除高級搜尋參數
       await searchRecords(searchKeyword.trim());
       setShowSuggestions(false);
     }
+  };
+  
+  // 處理高級搜尋
+  const handleAdvancedSearch = async (params: AdvancedSearchParams) => {
+    setAdvancedSearchParams(params);
+    setSearchKeyword(''); // 清除基本搜尋關鍵字
+    await searchRecords('', 1, params);
+  };
+  
+  // 重置高級搜尋
+  const handleAdvancedReset = () => {
+    setAdvancedSearchParams(null);
+    setRecords([]);
+    setSearchPerformed(false);
+    setTotalCount(0);
   };
 
   // 處理輸入變化
@@ -337,7 +369,7 @@ export function QueryPage() {
             <div className="section-header">
               <div className="section-title-wrapper">
                 <span className="section-icon">📊</span>
-                <h5>檢測數據</h5>
+                <h5>檢測資料</h5>
                 <span className="field-count-badge">{rows.length} 筆</span>
               </div>
               <button
@@ -650,7 +682,8 @@ export function QueryPage() {
           資料查詢
           
           <div className="query-description">
-            <p> <strong>批號查詢：</strong>輸入批號進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料</p>
+            <p><strong>批號查詢：</strong>輸入批號進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料</p>
+            <p><strong>高級搜尋：</strong>可依日期範圍、機台號碼、模具編號、產品名稱等條件進行多條件組合搜尋</p>
           </div>
 
           <div className="query-search-input-wrapper autocomplete-wrapper">
@@ -711,6 +744,14 @@ export function QueryPage() {
               </button>
             )}
           </div>
+          
+          {/* 高級搜尋面板 */}
+          <AdvancedSearch
+            onSearch={handleAdvancedSearch}
+            onReset={handleAdvancedReset}
+            isExpanded={advancedSearchExpanded}
+            onToggle={() => setAdvancedSearchExpanded(!advancedSearchExpanded)}
+          />
         </label>
       </section>
 
@@ -786,14 +827,14 @@ export function QueryPage() {
               {totalCount > pageSize && (
                 <div className="pagination">
                   <button
-                    onClick={() => searchRecords(searchKeyword, currentPage - 1)}
+                    onClick={() => searchRecords(searchKeyword, currentPage - 1, advancedSearchParams || undefined)}
                     disabled={currentPage <= 1}
                   >
                     上一頁
                   </button>
                   <span>第 {currentPage} 頁</span>
                   <button
-                    onClick={() => searchRecords(searchKeyword, currentPage + 1)}
+                    onClick={() => searchRecords(searchKeyword, currentPage + 1, advancedSearchParams || undefined)}
                     disabled={currentPage * pageSize >= totalCount}
                   >
                     下一頁

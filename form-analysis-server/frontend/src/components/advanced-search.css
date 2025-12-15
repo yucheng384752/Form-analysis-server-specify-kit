@@ -1,0 +1,208 @@
+/* AdvancedSearch.tsx 樣式 */
+
+.advanced-search {
+  margin-top: 1.5rem;
+  width: 100%;
+}
+
+.advanced-search-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #495057;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.advanced-search-toggle:hover {
+  background-color: #e9ecef;
+  border-color: #adb5bd;
+}
+
+.toggle-icon {
+  display: inline-block;
+  transition: transform 0.2s ease;
+  color: #6c757d;
+  font-size: 0.8rem;
+}
+
+.toggle-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.advanced-search-panel {
+  margin-top: 1rem;
+  padding: 1.5rem;
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* 搜尋欄位網格 */
+.search-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.search-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.search-field label {
+  font-weight: 500;
+  color: #495057;
+  font-size: 0.9rem;
+}
+
+.search-field input[type="text"],
+.search-field input[type="number"],
+.search-field select {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  transition: border-color 0.15s ease;
+}
+
+.search-field input:focus,
+.search-field select:focus {
+  outline: none;
+  border-color: #80bdff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.search-field input::placeholder {
+  color: #adb5bd;
+}
+
+/* 日期輸入欄位 */
+.date-field {
+  grid-column: span 2;
+}
+
+.date-inputs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.date-inputs input {
+  flex: 1;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.date-year {
+  max-width: 100px;
+}
+
+.date-month,
+.date-day {
+  max-width: 70px;
+}
+
+.date-separator {
+  color: #6c757d;
+  font-weight: 500;
+}
+
+/* 操作按鈕 */
+.search-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e9ecef;
+}
+
+.btn-reset,
+.btn-search {
+  padding: 0.625rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-reset {
+  background-color: #6c757d;
+  color: white;
+}
+
+.btn-reset:hover {
+  background-color: #5a6268;
+}
+
+.btn-search {
+  background-color: #007bff;
+  color: white;
+}
+
+.btn-search:hover {
+  background-color: #0056b3;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+  .search-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .date-field {
+    grid-column: span 1;
+  }
+  
+  .date-inputs {
+    flex-wrap: wrap;
+  }
+  
+  .date-year,
+  .date-month,
+  .date-day {
+    max-width: none;
+    min-width: 80px;
+  }
+  
+  .search-actions {
+    flex-direction: column;
+  }
+  
+  .btn-reset,
+  .btn-search {
+    width: 100%;
+  }
+}
+
+/* Chrome, Safari, Edge 數字輸入框樣式 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+}
+
+/* Firefox 數字輸入框樣式 */
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+input[type="number"]:hover,
+input[type="number"]:focus {
+  -moz-appearance: number-input;
+}

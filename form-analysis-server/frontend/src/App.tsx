@@ -30,12 +30,12 @@ function App() {
           >
             資料查詢
           </button>
-          <button
+          {/* <button
             className={`app-main-tab ${tab === "logs" ? "is-active" : ""}`}
             onClick={() => setTab("logs")}
           >
             系統日誌
-          </button>
+          </button> */}
         </div>
       </header>
 
