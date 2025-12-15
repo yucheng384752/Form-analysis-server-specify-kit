@@ -27,6 +27,8 @@ from app.core.database import init_db, Base
 from app.core.logging import setup_logging
 from app.core.middleware import RequestLoggingMiddleware, add_process_time_header
 from app.api import routes_health, routes_upload, routes_validate, routes_import, routes_export, routes_query, routes_logs
+from app.api import constants as routes_constants
+from app.api import traceability as routes_traceability
 
 # Import all models to ensure they're registered with Base
 from app.models import UploadJob, UploadError, Record
@@ -185,6 +187,18 @@ app.include_router(
     routes_logs.router,
     prefix="/api/logs",
     tags=["日誌管理"]
+)
+
+# 系統常數查詢路由
+app.include_router(
+    routes_constants.router,
+    tags=["系統常數"]
+)
+
+# 生產追溯查詢路由
+app.include_router(
+    routes_traceability.router,
+    tags=["生產追溯"]
 )
 
 
