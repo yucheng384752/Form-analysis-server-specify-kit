@@ -218,7 +218,7 @@ export const colors = {
 
 ### 開發工具
 - **容器化**: Docker + Docker Compose
-- **代碼品質**: ESLint + Prettier + Black
+- **程式碼品質**: ESLint + Prettier + Black
 - **類型檢查**: TypeScript + mypy
 - **Git Hooks**: Husky + lint-staged
 
@@ -259,14 +259,14 @@ Write-Host " All services started!" -ForegroundColor Green
 
 ### docs/DEVELOPMENT.md
 - 開發環境設置
-- 代碼規範和最佳實踐
+- 程式碼規範和最佳實踐
 - 測試指南
 - 偵錯技巧
 
 ### docs/API.md
 - 完整 API 文檔
 - 請求/回應範例
-- 錯誤代碼說明
+- 錯誤程式碼說明
 - 認證和授權
 
 ### docs/DEPLOYMENT.md

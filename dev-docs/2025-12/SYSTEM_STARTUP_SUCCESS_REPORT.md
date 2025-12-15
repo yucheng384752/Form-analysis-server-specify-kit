@@ -90,7 +90,7 @@ docker-compose restart db
 # 停止所有服務
 docker-compose down
 
-# 完全清理（包含數據卷）
+# 完全清理（包含資料卷）
 docker-compose down -v --remove-orphans
 ```
 

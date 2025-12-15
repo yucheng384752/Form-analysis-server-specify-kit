@@ -32,7 +32,7 @@ class UploadErrorBase(BaseModel):
         ...,
         min_length=1,
         max_length=50,
-        description="錯誤代碼",
+        description="錯誤程式碼",
         examples=["INVALID_FORMAT", "REQUIRED_FIELD", "INVALID_DATE"]
     )
     

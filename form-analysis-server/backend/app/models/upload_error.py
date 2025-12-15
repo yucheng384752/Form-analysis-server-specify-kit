@@ -59,7 +59,7 @@ class UploadError(Base):
     error_code: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        comment="錯誤代碼，如：INVALID_FORMAT、REQUIRED_FIELD等"
+        comment="錯誤程式碼，如：INVALID_FORMAT、REQUIRED_FIELD等"
     )
     
     message: Mapped[str] = mapped_column(

@@ -68,7 +68,7 @@ form-analysis-server/
 4. **工具程式** → `tools/`
    - .py 開發輔助工具
 
-5. **舊版代碼** → `legacy-components/`
+5. **舊版程式碼** → `legacy-components/`
    - 不再使用但保留參考的程式碼
 
 ###  注意事項

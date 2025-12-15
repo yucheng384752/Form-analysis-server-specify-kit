@@ -114,7 +114,7 @@ async downloadLogFile(logType: string): Promise<void> {
   try {
     const API_BASE_URL = (import.meta.env?.VITE_API_URL as string) || 'http://localhost:8000';
     const response = await fetch(`${API_BASE_URL}${this.baseUrl}/download/${logType}`);
-    // ... 其餘代碼
+    // ... 其餘程式碼
   }
 }
 ```
@@ -236,7 +236,7 @@ ROUTE_CONFIG = [
 
 ##  預防措施
 
-###  代碼質量保證
+###  程式碼質量保證
 
 1. **路由文件規範**: 所有APIRouter不應設定prefix
 2. **main.py統一管理**: 所有路由前綴在main.py中配置

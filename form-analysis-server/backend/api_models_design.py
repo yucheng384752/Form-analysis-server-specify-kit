@@ -1,5 +1,5 @@
 """
-API 設計說明 - 以 lot_no 為唯一鍵的生產數據管理系統
+API 設計說明 - 以 lot_no 為唯一鍵的生產資料管理系統
 設計日期: 2025-11-08
 設計原則: RESTful API, 以資源為導向, lot_no 作為主要標識符
 """
@@ -69,14 +69,14 @@ class ProductionLotResponse(ProductionLotBase):
         from_attributes = True
 
 # ========================================
-# 3. P1階段 - 押出機數據模型
+# 3. P1階段 - 押出機資料模型
 # ========================================
 
 class P1ExtrusionDataBase(BaseModel):
-    """P1押出機數據基礎模型"""
+    """P1押出機資料基礎模型"""
     lot_no: str = Field(..., pattern=r'^\d{7}_\d{2}$')
     
-    # 溫度數據 (實際溫度16點)
+    # 溫度資料 (實際溫度16點)
     actual_temps: List[Optional[float]] = Field(default_factory=lambda: [None] * 16, min_items=16, max_items=16)
     set_temps: List[Optional[float]] = Field(default_factory=lambda: [None] * 16, min_items=16, max_items=16)
     
@@ -103,11 +103,11 @@ class P1ExtrusionDataBase(BaseModel):
     screw_rotation_speed: Optional[float] = Field(None, description="螺桿轉速(rpm)")
 
 class P1ExtrusionDataCreate(P1ExtrusionDataBase):
-    """創建P1數據請求"""
+    """創建P1資料請求"""
     pass
 
 class P1ExtrusionDataResponse(P1ExtrusionDataBase):
-    """P1數據響應模型"""
+    """P1資料響應模型"""
     id: str
     record_timestamp: datetime
     
@@ -119,7 +119,7 @@ class P1ExtrusionDataResponse(P1ExtrusionDataBase):
 # ========================================
 
 class P2QualityDataBase(BaseModel):
-    """P2品質數據基礎模型"""
+    """P2品質資料基礎模型"""
     lot_no: str = Field(..., pattern=r'^\d{7}_\d{2}$')
     sheet_width: Optional[float] = Field(None, description="板寬(mm)")
     thicknesses: List[Optional[float]] = Field(default_factory=lambda: [None] * 7, min_items=7, max_items=7, description="厚度測量(μm)")
@@ -128,11 +128,11 @@ class P2QualityDataBase(BaseModel):
     slitting_result: Optional[QualityStatus] = Field(None, description="分切結果")
 
 class P2QualityDataCreate(P2QualityDataBase):
-    """創建P2數據請求"""
+    """創建P2資料請求"""
     pass
 
 class P2QualityDataResponse(P2QualityDataBase):
-    """P2數據響應模型"""
+    """P2資料響應模型"""
     id: str
     measurement_time: datetime
     
@@ -144,7 +144,7 @@ class P2QualityDataResponse(P2QualityDataBase):
 # ========================================
 
 class P3InspectionDataBase(BaseModel):
-    """P3檢驗數據基礎模型"""
+    """P3檢驗資料基礎模型"""
     lot_no: str = Field(..., pattern=r'^\d{7}_\d{2}$')
     p3_no: Optional[str] = Field(None, max_length=50, description="P3編號")
     e_value: Optional[int] = Field(None, description="E值")
@@ -161,11 +161,11 @@ class P3InspectionDataBase(BaseModel):
     finish: Optional[QualityStatus] = Field(None, description="完成狀態")
 
 class P3InspectionDataCreate(P3InspectionDataBase):
-    """創建P3數據請求"""
+    """創建P3資料請求"""
     pass
 
 class P3InspectionDataResponse(P3InspectionDataBase):
-    """P3數據響應模型"""
+    """P3資料響應模型"""
     id: str
     inspection_time: datetime
     
@@ -201,7 +201,7 @@ class DefectRecordResponse(DefectRecordBase):
 # ========================================
 
 class ProductionQuery(BaseModel):
-    """生產數據查詢參數"""
+    """生產資料查詢參數"""
     lot_no: Optional[str] = Field(None, description="批號篩選(支援模糊查詢)")
     phase: Optional[PhaseType] = Field(None, description="階段篩選")
     production_date_start: Optional[date] = Field(None, description="生產日期起")
@@ -253,7 +253,7 @@ class BulkUploadRequest(BaseModel):
     """批量上傳請求"""
     file_type: PhaseType = Field(..., description="檔案類型")
     lot_no: str = Field(..., pattern=r'^\d{7}_\d{2}$', description="批號")
-    override_existing: bool = Field(False, description="是否覆蓋既有數據")
+    override_existing: bool = Field(False, description="是否覆蓋既有資料")
 
 class BulkUploadResponse(BaseModel):
     """批量上傳響應"""
@@ -268,7 +268,7 @@ class BulkUploadResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """錯誤響應模型"""
-    error_code: str = Field(..., description="錯誤代碼")
+    error_code: str = Field(..., description="錯誤程式碼")
     message: str = Field(..., description="錯誤訊息")
     details: Optional[Dict[str, Any]] = Field(None, description="錯誤詳情")
     timestamp: datetime = Field(default_factory=datetime.now, description="錯誤時間")

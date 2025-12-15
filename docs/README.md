@@ -155,10 +155,10 @@ form-analysis-spec-kit/
 2. **修改環境設定** (可選)
    ```bash
    # 資料庫連接（本地開發使用 asyncpg，建議用於 FastAPI 非同步應用）
-   DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:18001/form_analysis_db
+   DATABASE_URL=postgresql+asyncpg://app:app_secure_password_2024@localhost:18001/form_analysis_db
    
    # Docker 環境使用 psycopg（同步驅動，容器內部使用 db:5432）
-   # DATABASE_URL=postgresql+psycopg://app:app_secure_password@db:5432/form_analysis_db
+   # DATABASE_URL=postgresql+psycopg://app:app_secure_password_2024@db:5432/form_analysis_db
    
    # API 服務
    API_HOST=0.0.0.0

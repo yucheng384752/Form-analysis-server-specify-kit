@@ -58,13 +58,13 @@ ALTER TABLE records ADD COLUMN IF NOT EXISTS appearance INTEGER;
 ALTER TABLE records ADD COLUMN IF NOT EXISTS rough_edge INTEGER;
 ALTER TABLE records ADD COLUMN IF NOT EXISTS slitting_result INTEGER;
 
--- 通用額外數據存儲
+-- 通用額外資料存儲
 ALTER TABLE records ADD COLUMN IF NOT EXISTS additional_data JSONB;
 ```
 
 ### 階段 3: 欄位約束調整
 ```sql
--- 將原有必填欄位改為可選，支援不同數據類型
+-- 將原有必填欄位改為可選，支援不同資料類型
 ALTER TABLE records ALTER COLUMN production_date DROP NOT NULL;
 ALTER TABLE records ALTER COLUMN product_name DROP NOT NULL;
 ALTER TABLE records ALTER COLUMN quantity DROP NOT NULL;
@@ -109,7 +109,7 @@ records 表現在包含:
 ✓ API 端點: 全部可訪問
 ```
 
-## 支援的數據類型
+## 支援的資料類型
 
 ### P1 - 產品基本資料
 - `lot_no`: 批號
@@ -126,7 +126,7 @@ records 表現在包含:
 - `appearance`: 外觀檢查結果
 - `rough_edge`: 粗糙邊緣檢查
 - `slitting_result`: 切割結果
-- `additional_data`: 溫度、壓力等額外測量數據
+- `additional_data`: 溫度、壓力等額外測量資料
 
 ### P3 - 追蹤編號
 - `lot_no`: 批號
@@ -167,4 +167,4 @@ records 表現在包含:
 **修復狀態**: 完全解決
 **測試狀態**: 待用戶驗證  
 **修復時間**: 2025-11-16 16:45
-**影響範圍**: 資料庫結構、檔案匯入功能、P1/P2/P3 數據類型支援
+**影響範圍**: 資料庫結構、檔案匯入功能、P1/P2/P3 資料類型支援

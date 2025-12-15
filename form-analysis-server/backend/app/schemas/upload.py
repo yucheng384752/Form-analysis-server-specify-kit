@@ -15,7 +15,7 @@ class UploadErrorResponse(BaseModel):
     
     row_index: int = Field(..., description="發生錯誤的行索引（從0開始）")
     field: str = Field(..., description="發生錯誤的欄位名稱")
-    error_code: str = Field(..., description="錯誤代碼")
+    error_code: str = Field(..., description="錯誤程式碼")
     message: str = Field(..., description="錯誤訊息")
 
 

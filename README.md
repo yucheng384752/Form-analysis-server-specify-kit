@@ -12,7 +12,7 @@
 # PowerShell
 .\scripts\start_services.ps1
 ```
-**適合**：日常開發、快速測試、代碼修改（10-20秒啟動）
+**適合**：日常開發、快速測試、程式碼修改（10-20秒啟動）
 
 ### 方式二：Docker 完整部署（推薦生產環境）
 ```bash
@@ -148,7 +148,7 @@ Form-analysis-server-specify-kit/
 
 **特點**：
 - 快速啟動（10-20 秒）
-- 支援熱重載（即時看到代碼修改）
+- 支援熱重載（即時看到程式碼修改）
 - 輕量級（不需要 Docker）
 - 需手動啟動 PostgreSQL（端口 18001）
 - 需手動配置虛擬環境（backend\venv）

@@ -16,7 +16,7 @@ print("""
     ErrorItem 模型：
    - row_index: 錯誤行號（從1開始，不包含標題行）
    - field: 錯誤欄位名稱
-   - error_code: 錯誤類型代碼
+   - error_code: 錯誤類型程式碼
    - message: 詳細錯誤描述
    
     ValidateResult 模型：
@@ -112,7 +112,7 @@ print("""
 • 錯誤處理：完整的 HTTP 狀態碼和錯誤訊息
 • 文檔完整：自動生成的 OpenAPI 文檔和範例
 
- 錯誤代碼對照：
+ 錯誤程式碼對照：
 ==========================================
 
 • INVALID_FORMAT: 格式錯誤（批號、日期等）

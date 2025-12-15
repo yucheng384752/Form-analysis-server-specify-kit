@@ -33,9 +33,9 @@ def upgrade() -> None:
 
     op.drop_table('forms')
     with op.batch_alter_table('records', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('data_type', sa.Enum('P1', 'P2', 'P3', name='data_type_enum'), nullable=True, comment='數據類型：P1(產品基本資料), P2(尺寸檢測資料), P3(追蹤編號)'))
+        batch_op.add_column(sa.Column('data_type', sa.Enum('P1', 'P2', 'P3', name='data_type_enum'), nullable=True, comment='資料類型：P1(產品基本資料), P2(尺寸檢測資料), P3(追蹤編號)'))
     
-    # 為現有記錄設置默認數據類型為 P1
+    # 為現有記錄設置默認資料類型為 P1
     op.execute("UPDATE records SET data_type = 'P1' WHERE data_type IS NULL")
     
     # 將 data_type 設為非空
@@ -54,7 +54,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column('appearance', sa.Integer(), nullable=True, comment='外觀 (P2使用，0或1)'))
         batch_op.add_column(sa.Column('rough_edge', sa.Integer(), nullable=True, comment='粗糙邊緣 (P2使用，0或1)'))
         batch_op.add_column(sa.Column('slitting_result', sa.Integer(), nullable=True, comment='切割結果 (P2使用，0或1)'))
-        batch_op.add_column(sa.Column('additional_data', postgresql.JSONB(astext_type=sa.Text()), nullable=True, comment='額外數據，JSONB格式'))
+        batch_op.add_column(sa.Column('additional_data', postgresql.JSONB(astext_type=sa.Text()), nullable=True, comment='額外資料，JSONB格式'))
         batch_op.alter_column('production_date',
                existing_type=sa.DATE(),
                nullable=True,

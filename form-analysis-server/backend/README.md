@@ -206,9 +206,9 @@ row_index,field,error_code,message
 - **quantity**: 必須為非負整數
 - **production_date**: 必須為有效的 YYYY-MM-DD 日期格式
 
-## 錯誤代碼說明
+## 錯誤程式碼說明
 
-| 錯誤代碼 | 說明 | 範例訊息 |
+| 錯誤程式碼 | 說明 | 範例訊息 |
 |---------|------|---------|
 | `INVALID_FORMAT` | 格式不正確 | 批號格式錯誤，應為7位數字_2位數字格式 |
 | `REQUIRED_FIELD` | 必填欄位為空 | 產品名稱不能為空 |

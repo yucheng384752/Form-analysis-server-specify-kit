@@ -27,7 +27,7 @@
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop) 已安裝並運行
 - [curl](https://curl.se/download.html) 已安裝（用於 API 測試）
-- 可用埠口：5173（前端）、8000（後端）、5432（數據庫）
+- 可用埠口：5173（前端）、8000（後端）、5432（資料庫）
 
 ### 一鍵啟動
 
@@ -63,7 +63,7 @@ chmod +x quick-start.sh
    # 基本健康檢查
    curl -f http://localhost:8000/healthz
    
-   # 詳細健康檢查（包含數據庫連接）
+   # 詳細健康檢查（包含資料庫連接）
    curl -f http://localhost:8000/healthz/detailed
    ```
 
@@ -129,12 +129,12 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 
 - **asyncpg** - 建議用於本地開發和非同步 FastAPI 應用
   ```env
-  DATABASE_URL=postgresql+asyncpg://app:app_secure_password@localhost:5432/form_analysis_db
+  DATABASE_URL=postgresql+asyncpg://app:app_secure_password_2024@localhost:18001/form_analysis_db
   ```
 
 - **psycopg** - 用於 Docker 環境（支援同步和非同步模式）
   ```env
-  DATABASE_URL=postgresql+psycopg://app:app_secure_password@db:5432/form_analysis_db
+  DATABASE_URL=postgresql+psycopg://app:app_secure_password_2024@db:5432/form_analysis_db
   ```
 
 ### vite.config.ts 代理設定
@@ -225,23 +225,23 @@ A: 確認：
 - API Base URL 配置正確
 - 網路連線正常
 
-### 數據庫連接問題
+### 資料庫連接問題
 
-**Q: 數據庫連接失敗**
+**Q: 資料庫連接失敗**
 A: 檢查：
 ```bash
-# 檢查數據庫容器狀態
+# 檢查資料庫容器狀態
 docker compose ps
 
-# 檢查數據庫日誌
+# 檢查資料庫日誌
 docker compose logs db
 
-# 測試數據庫連接
+# 測試資料庫連接
 docker compose exec db pg_isready -U app
 ```
 
 **Q: 資料持久化問題**
-A: 數據庫資料存儲在 Docker Volume 中：
+A: 資料庫資料存儲在 Docker Volume 中：
 ```bash
 # 檢視 volumes
 docker volume ls
@@ -311,12 +311,12 @@ docker compose up -d --build
    npm run dev
    ```
 
-3. **數據庫設置**
+3. **資料庫設置**
    ```bash
    # 使用 Docker 運行 PostgreSQL
    docker run -d --name postgres \
      -e POSTGRES_USER=app \
-     -e POSTGRES_PASSWORD=app_secure_password \
+     -e POSTGRES_PASSWORD=app_secure_password_2024 \
      -e POSTGRES_DB=form_analysis_db \
      -p 5432:5432 postgres:16
    ```

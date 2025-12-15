@@ -6,7 +6,7 @@
 
 提供查詢已匯入資料的API端點。提供查詢已匯入資料的API端點。
 
-支援P1/P2/P3三種不同類型的數據查詢。支援P1/P2/P3三種不同類型的數據查詢。
+支援P1/P2/P3三種不同類型的資料查詢。支援P1/P2/P3三種不同類型的資料查詢。
 
 """"""
 
@@ -500,7 +500,7 @@ async def query_records(async def query_records(
 
                         
 
-            # 根據數據類型設置對應欄位            # 根據數據類型設置對應欄位
+            # 根據資料類型設置對應欄位            # 根據資料類型設置對應欄位
 
             if record.data_type == DataType.P1:            if record.data_type == DataType.P1:
 
@@ -752,7 +752,7 @@ async def get_record(        date_result = await db.execute(date_query)
 
             """
 
-        # 根據數據類型設置對應欄位    取得批號搜尋建議
+        # 根據資料類型設置對應欄位    取得批號搜尋建議
 
         if record.data_type == DataType.P1:    
 
@@ -898,7 +898,7 @@ async def get_record_stats(    record_id: UUID,
 
         unique_lots = unique_lots_result.scalar() or 0        
 
-                # 根據數據類型設置對應欄位
+                # 根據資料類型設置對應欄位
 
         # P1/P2/P3分類統計        if record.data_type == DataType.P1:
 
@@ -978,7 +978,7 @@ async def get_record_stats(    record_id: UUID,
 
     "/records/create-test-data",)
 
-    summary="創建測試數據",async def get_record_stats(
+    summary="創建測試資料",async def get_record_stats(
 
     description="為演示目的創建一些測試記錄（僅開發環境使用）"    db: AsyncSession = Depends(get_db)
 
@@ -992,7 +992,7 @@ async def create_test_data(    """
 
     """    Args:
 
-    創建測試數據        db: 資料庫會話
+    創建測試資料        db: 資料庫會話
 
             
 
@@ -1012,7 +1012,7 @@ async def create_test_data(    """
 
         test_records = [        total_records = total_result.scalar() or 0
 
-            # P1 測試數據        
+            # P1 測試資料        
 
             Record(        if total_records == 0:
 
@@ -1046,7 +1046,7 @@ async def create_test_data(    """
 
             ),        # 唯一產品數
 
-            # P2 測試數據        unique_products_query = select(func.count(func.distinct(Record.product_name)))
+            # P2 測試資料        unique_products_query = select(func.count(func.distinct(Record.product_name)))
 
             Record(        unique_products_result = await db.execute(unique_products_query)
 
@@ -1080,7 +1080,7 @@ async def create_test_data(    """
 
             ),        
 
-            # P3 測試數據        return RecordStats(
+            # P3 測試資料        return RecordStats(
 
             Record(            total_records=total_records,
 
@@ -1116,7 +1116,7 @@ async def create_test_data(    """
 
         return {    "/records/create-test-data",
 
-            "message": "測試數據創建成功",    summary="創建測試數據",
+            "message": "測試資料創建成功",    summary="創建測試資料",
 
             "created_records": len(test_records)    description="為演示目的創建一些測試記錄（僅開發環境使用）"
 
@@ -1130,9 +1130,9 @@ async def create_test_data(    """
 
         raise HTTPException(    """
 
-            status_code=500,    創建測試數據
+            status_code=500,    創建測試資料
 
-            detail=f"創建測試數據時發生錯誤：{str(e)}"    
+            detail=f"創建測試資料時發生錯誤：{str(e)}"    
 
         )    Args:
         db: 資料庫會話
@@ -1180,7 +1180,7 @@ async def create_test_data(    """
         await db.commit()
         
         return {
-            "message": "測試數據創建成功",
+            "message": "測試資料創建成功",
             "created_records": len(test_records)
         }
         
@@ -1188,5 +1188,5 @@ async def create_test_data(    """
         await db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"創建測試數據時發生錯誤：{str(e)}"
+            detail=f"創建測試資料時發生錯誤：{str(e)}"
         )

@@ -79,7 +79,7 @@ class RecordCreate(RecordBase):
 
 
 class DataType(str, Enum):
-    """數據類型枚舉"""
+    """資料類型枚舉"""
     P1 = "P1"
     P2 = "P2"  
     P3 = "P3"
@@ -90,7 +90,7 @@ class RecordRead(BaseModel):
     
     id: uuid.UUID = Field(..., description="記錄ID")
     lot_no: str = Field(..., description="批號")
-    data_type: DataType = Field(..., description="數據類型")
+    data_type: DataType = Field(..., description="資料類型")
     production_date: Optional[date] = Field(None, description="生產日期")
     
     # P1/P3 共用欄位
@@ -117,7 +117,7 @@ class RecordRead(BaseModel):
     # 額外欄位 (來自CSV的其他欄位)
     additional_data: Optional[Dict[str, Any]] = Field(
         None, 
-        description="額外數據，包含CSV檔案中的其他欄位（如溫度數據等）"
+        description="額外資料，包含CSV檔案中的其他欄位（如溫度資料等）"
     )
     
     created_at: datetime = Field(..., description="記錄建立時間")
@@ -133,7 +133,7 @@ class RecordRead(BaseModel):
                     "product_name": "來自P1_2503213_02.csv的產品",
                     "quantity": 100,
                     "production_date": "2025-11-10",
-                    "notes": "從P1檔案匯入的數據",
+                    "notes": "從P1檔案匯入的資料",
                     "additional_data": {
                         "batch_size": 1000,
                         "quality_grade": "A",

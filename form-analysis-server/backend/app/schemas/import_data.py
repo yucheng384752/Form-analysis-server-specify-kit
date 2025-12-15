@@ -103,6 +103,6 @@ class ImportErrorResponse(BaseModel):
     
     error_code: str = Field(
         ...,
-        description="錯誤代碼",
+        description="錯誤程式碼",
         examples=["JOB_NOT_FOUND", "JOB_NOT_READY", "JOB_ALREADY_IMPORTED"]
     )

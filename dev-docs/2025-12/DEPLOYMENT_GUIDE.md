@@ -182,8 +182,8 @@ form-analysis-sepc-kit/
 ├── scripts/                 #  啟動腳本
 ├── test-data/              #  測試資料
 ├── form-analysis-server/   #  主應用
-│   ├── backend/           #  後端代碼
-│   ├── frontend/          #  前端代碼
+│   ├── backend/           #  後端程式碼
+│   ├── frontend/          #  前端程式碼
 │   └── docker-compose.yml #  Docker 配置
 ├── README.md              #  說明文檔
 └── .env.example          #  環境配置範例

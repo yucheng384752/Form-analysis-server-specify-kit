@@ -55,7 +55,7 @@ def upgrade() -> None:
         sa.Column('job_id', postgresql.UUID(as_uuid=True), nullable=False, comment='關聯的上傳工作ID'),
         sa.Column('row_index', sa.Integer(), nullable=False, comment='發生錯誤的行索引（從0開始）'),
         sa.Column('field', sa.String(100), nullable=False, comment='發生錯誤的欄位名稱'),
-        sa.Column('error_code', sa.String(50), nullable=False, comment='錯誤代碼，如：INVALID_FORMAT、REQUIRED_FIELD等'),
+        sa.Column('error_code', sa.String(50), nullable=False, comment='錯誤程式碼，如：INVALID_FORMAT、REQUIRED_FIELD等'),
         sa.Column('message', sa.String(500), nullable=False, comment='錯誤訊息描述'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='錯誤記錄建立時間'),
         sa.ForeignKeyConstraint(['job_id'], ['upload_jobs.id'], ondelete='CASCADE'),

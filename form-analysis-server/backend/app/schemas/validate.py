@@ -44,7 +44,7 @@ class ErrorItem(BaseModel):
     
     error_code: str = Field(
         ...,
-        description="錯誤類型代碼",
+        description="錯誤類型程式碼",
         max_length=50,
         examples=[
             "INVALID_FORMAT",    # 格式錯誤
@@ -223,5 +223,5 @@ class ErrorNotFoundResponse(BaseModel):
     
     error_code: str = Field(
         default="JOB_NOT_FOUND",
-        description="錯誤代碼"
+        description="錯誤程式碼"
     )
