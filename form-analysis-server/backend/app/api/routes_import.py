@@ -22,6 +22,7 @@ from app.schemas.import_data import (
     ImportErrorResponse
 )
 from app.services.validation import file_validation_service
+from app.services.production_date_extractor import production_date_extractor
 
 # 獲取日誌記錄器
 logger = get_logger(__name__)
@@ -318,6 +319,9 @@ async def import_data(
                     # 清理 NaN 值
                     cleaned_row = {k: (v if pd.notna(v) else None) for k, v in row_dict.items()}
                     all_rows.append(cleaned_row)
+
+                # 取第一列作為代表（P2/P3 合併為單一記錄時，用於填充可檢索欄位）
+                first_row = all_rows[0] if all_rows else {}
                 
                 # 檢查是否已存在相同的 lot_no + data_type 記錄
                 existing_stmt = select(Record).where(
@@ -329,8 +333,77 @@ async def import_data(
                 
                 if existing_record:
                     # 更新現有記錄
+                    # 提取生產日期
+                    production_date = production_date_extractor.extract_production_date(
+                        row_data={'additional_data': all_rows[0] if all_rows else {}},
+                        data_type=data_type.value
+                    ) or date.today()  # 如果提取失敗，fallback 到當前日期
+                    
                     existing_record.additional_data = {'rows': all_rows}
-                    existing_record.production_date = date.today()
+                    existing_record.production_date = production_date
+
+                    # P3：同步填充可檢索欄位（避免只存在 JSON 內造成欄位全為 NULL）
+                    if data_type == DataType.P3 and first_row:
+                        machine_no_val = (
+                            first_row.get('Machine NO')
+                            or first_row.get('Machine No')
+                            or first_row.get('Machine')
+                            or first_row.get('machine_no')
+                            or first_row.get('machine')
+                        )
+                        mold_no_val = (
+                            first_row.get('Mold NO')
+                            or first_row.get('Mold No')
+                            or first_row.get('Mold')
+                            or first_row.get('mold_no')
+                            or first_row.get('mold')
+                        )
+                        specification_val = (
+                            first_row.get('Specification')
+                            or first_row.get('specification')
+                            or first_row.get('規格')
+                            or first_row.get('Spec')
+                        )
+                        bottom_tape_val = (
+                            first_row.get('Bottom Tape')
+                            or first_row.get('bottom tape')
+                            or first_row.get('Bottom Tape LOT')
+                            or first_row.get('下膠編號')
+                            or first_row.get('下膠')
+                        )
+
+                        production_lot_val = first_row.get('lot')
+                        try:
+                            production_lot_val = int(production_lot_val) if production_lot_val is not None else None
+                        except (ValueError, TypeError):
+                            production_lot_val = None
+
+                        if machine_no_val:
+                            existing_record.machine_no = str(machine_no_val).strip()
+                        if mold_no_val:
+                            existing_record.mold_no = str(mold_no_val).strip()
+                        if specification_val:
+                            existing_record.specification = str(specification_val).strip()
+                        if bottom_tape_val:
+                            existing_record.bottom_tape_lot = str(bottom_tape_val).strip()
+                        if production_lot_val is not None:
+                            existing_record.production_lot = production_lot_val
+
+                        # product_id（若必要欄位齊全且尚未有值）
+                        if (
+                            not existing_record.product_id
+                            and existing_record.machine_no
+                            and existing_record.mold_no
+                            and existing_record.production_lot is not None
+                            and existing_record.production_date
+                        ):
+                            from app.services.product_id_generator import generate_product_id
+                            existing_record.product_id = generate_product_id(
+                                existing_record.production_date,
+                                existing_record.machine_no,
+                                existing_record.mold_no,
+                                existing_record.production_lot,
+                            )
                     
                     logger.info("更新現有P2/P3記錄",
                                lot_no=lot_no,
@@ -340,12 +413,82 @@ async def import_data(
                                process_id=str(request.process_id))
                 else:
                     # 創建新記錄
-                    record = Record(
-                        lot_no=lot_no,
-                        data_type=data_type,
-                        production_date=date.today(),
-                        additional_data={'rows': all_rows}
-                    )
+                    # 提取生產日期
+                    production_date = production_date_extractor.extract_production_date(
+                        row_data={'additional_data': all_rows[0] if all_rows else {}},
+                        data_type=data_type.value
+                    ) or date.today()  # 如果提取失敗，fallback 到當前日期
+
+                    record_kwargs = {
+                        'lot_no': lot_no,
+                        'data_type': data_type,
+                        'production_date': production_date,
+                        'additional_data': {'rows': all_rows}
+                    }
+
+                    # P3：同步填充可檢索欄位
+                    if data_type == DataType.P3 and first_row:
+                        machine_no_val = (
+                            first_row.get('Machine NO')
+                            or first_row.get('Machine No')
+                            or first_row.get('Machine')
+                            or first_row.get('machine_no')
+                            or first_row.get('machine')
+                        )
+                        mold_no_val = (
+                            first_row.get('Mold NO')
+                            or first_row.get('Mold No')
+                            or first_row.get('Mold')
+                            or first_row.get('mold_no')
+                            or first_row.get('mold')
+                        )
+                        specification_val = (
+                            first_row.get('Specification')
+                            or first_row.get('specification')
+                            or first_row.get('規格')
+                            or first_row.get('Spec')
+                        )
+                        bottom_tape_val = (
+                            first_row.get('Bottom Tape')
+                            or first_row.get('bottom tape')
+                            or first_row.get('Bottom Tape LOT')
+                            or first_row.get('下膠編號')
+                            or first_row.get('下膠')
+                        )
+
+                        production_lot_val = first_row.get('lot')
+                        try:
+                            production_lot_val = int(production_lot_val) if production_lot_val is not None else None
+                        except (ValueError, TypeError):
+                            production_lot_val = None
+
+                        if machine_no_val:
+                            record_kwargs['machine_no'] = str(machine_no_val).strip()
+                        if mold_no_val:
+                            record_kwargs['mold_no'] = str(mold_no_val).strip()
+                        if specification_val:
+                            record_kwargs['specification'] = str(specification_val).strip()
+                        if bottom_tape_val:
+                            record_kwargs['bottom_tape_lot'] = str(bottom_tape_val).strip()
+                        if production_lot_val is not None:
+                            record_kwargs['production_lot'] = production_lot_val
+
+                        # product_id（若必要欄位齊全）
+                        if (
+                            record_kwargs.get('machine_no')
+                            and record_kwargs.get('mold_no')
+                            and record_kwargs.get('production_lot') is not None
+                            and record_kwargs.get('production_date')
+                        ):
+                            from app.services.product_id_generator import generate_product_id
+                            record_kwargs['product_id'] = generate_product_id(
+                                record_kwargs['production_date'],
+                                record_kwargs['machine_no'],
+                                record_kwargs['mold_no'],
+                                record_kwargs['production_lot'],
+                            )
+
+                    record = Record(**record_kwargs)
                     db.add(record)
                     
                     logger.info("創建新P2/P3記錄",
@@ -395,7 +538,15 @@ async def import_data(
                         except (ValueError, TypeError):
                             pass
                     
-                    if 'production_date' in row_dict and pd.notna(row_dict['production_date']):
+                    # 使用 production_date_extractor 提取日期
+                    extracted_date = production_date_extractor.extract_production_date(
+                        row_data={'additional_data': row_dict},
+                        data_type=DataType.P1.value
+                    )
+                    if extracted_date:
+                        known_fields['production_date'] = extracted_date
+                    elif 'production_date' in row_dict and pd.notna(row_dict['production_date']):
+                        # 保留原有的 fallback 邏輯，以防 extractor 失敗但欄位存在
                         try:
                             if isinstance(row_dict['production_date'], str):
                                 known_fields['production_date'] = datetime.strptime(row_dict['production_date'], '%Y-%m-%d').date()

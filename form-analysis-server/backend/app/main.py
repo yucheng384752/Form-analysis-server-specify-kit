@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print(f" Database: PostgreSQL - {settings.database_url.split('@')[-1]}")  # Hide credentials
     print(f" Upload limit: {settings.max_upload_size_mb}MB")
     print(f" CORS origins: {settings.cors_origins}")
-    print(f"🛡️  Database Type: PostgreSQL Only (固定使用PostgreSQL)")
+    print(f" Database Type: PostgreSQL Only (固定使用PostgreSQL)")
     
     yield
     

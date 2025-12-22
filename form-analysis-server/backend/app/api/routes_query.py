@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from datetime import datetime, date
@@ -56,6 +56,15 @@ class QueryRecord(BaseModel):
     
     # P3專用欄位
     p3_no: Optional[str] = None
+
+    # P3 追溯/檢索欄位
+    product_id: Optional[str] = None
+    machine_no: Optional[str] = None
+    mold_no: Optional[str] = None
+    production_lot: Optional[int] = None
+    source_winder: Optional[int] = None
+    specification: Optional[str] = None
+    bottom_tape_lot: Optional[str] = None
     
     # 額外資料欄位 (來自CSV的其他欄位，包含溫度資料等)
     additional_data: Optional[Dict[str, Any]] = None
@@ -220,8 +229,9 @@ async def query_lot_groups(
     - production_date_from: 生產日期起始（YYYY-MM-DD）
     - production_date_to: 生產日期結束（YYYY-MM-DD）
     - machine_no: 機台號碼（模糊搜尋，如: P24, P21）
-    - mold_no: 下膠編號/模具編號（模糊搜尋，如: 238-2）
-    - product_name: P3規格/產品名稱（模糊搜尋）
+    - mold_no: 下膠編號 (Bottom Tape)（模糊搜尋，如: M250523-06-0159）
+    - product_id: 產品編號（模糊搜尋）
+    - p3_specification: P3規格（模糊搜尋）
     - data_type: 資料類型 (P1/P2/P3)
     - page: 頁碼（從1開始）
     - page_size: 每頁記錄數量
@@ -238,8 +248,9 @@ async def advanced_search_records(
     production_date_from: Optional[date] = Query(None, description="生產日期起始（YYYY-MM-DD）"),
     production_date_to: Optional[date] = Query(None, description="生產日期結束（YYYY-MM-DD）"),
     machine_no: Optional[str] = Query(None, description="機台號碼（模糊搜尋）"),
-    mold_no: Optional[str] = Query(None, description="下膠編號/模具編號（模糊搜尋）"),
-    product_name: Optional[str] = Query(None, description="P3規格/產品名稱（模糊搜尋）"),
+    mold_no: Optional[str] = Query(None, description="下膠編號 (Bottom Tape)（模糊搜尋）"),
+    product_id: Optional[str] = Query(None, description="產品編號（模糊搜尋）"),
+    p3_specification: Optional[str] = Query(None, description="P3規格（模糊搜尋）"),
     data_type: Optional[DataType] = Query(None, description="資料類型 (P1/P2/P3)"),
     page: int = Query(1, ge=1, description="頁碼"),
     page_size: int = Query(10, ge=1, le=100, description="每頁記錄數"),
@@ -253,7 +264,8 @@ async def advanced_search_records(
                    production_date_to=production_date_to,
                    machine_no=machine_no,
                    mold_no=mold_no,
-                   product_name=product_name,
+                   product_id=product_id,
+                   p3_specification=p3_specification,
                    data_type=data_type,
                    page=page,
                    page_size=page_size)
@@ -275,13 +287,17 @@ async def advanced_search_records(
         if machine_no and machine_no.strip():
             conditions.append(Record.machine_no.ilike(f"%{machine_no.strip()}%"))
         
-        # 模具編號模糊搜尋（P3專用）
+        # 下膠編號模糊搜尋（P3專用，使用獨立欄位搜尋）
         if mold_no and mold_no.strip():
-            conditions.append(Record.mold_no.ilike(f"%{mold_no.strip()}%"))
+            conditions.append(Record.bottom_tape_lot.ilike(f"%{mold_no.strip()}%"))
         
-        # 產品名稱模糊搜尋（P3規格）
-        if product_name and product_name.strip():
-            conditions.append(Record.product_name.ilike(f"%{product_name.strip()}%"))
+        # 產品編號模糊搜尋
+        if product_id and product_id.strip():
+            conditions.append(Record.product_id.ilike(f"%{product_id.strip()}%"))
+        
+        # P3 規格搜尋（使用獨立欄位搜尋）
+        if p3_specification and p3_specification.strip():
+            conditions.append(Record.specification.ilike(f"%{p3_specification.strip()}%"))
         
         # 資料類型過濾
         if data_type:
@@ -343,9 +359,18 @@ async def advanced_search_records(
                 query_record.rough_edge = record.rough_edge
                 query_record.slitting_result = record.slitting_result
             elif record.data_type == DataType.P3:
+                query_record.p3_no = record.p3_no
                 query_record.product_name = record.product_name
                 query_record.quantity = record.quantity
                 query_record.notes = record.notes
+
+                query_record.product_id = record.product_id
+                query_record.machine_no = record.machine_no
+                query_record.mold_no = record.mold_no
+                query_record.production_lot = record.production_lot
+                query_record.source_winder = record.source_winder
+                query_record.specification = record.specification
+                query_record.bottom_tape_lot = record.bottom_tape_lot
             
             query_records.append(query_record)
         
@@ -454,6 +479,14 @@ async def query_records(
                 query_record.product_name = record.product_name
                 query_record.quantity = record.quantity
                 query_record.notes = record.notes
+
+                query_record.product_id = record.product_id
+                query_record.machine_no = record.machine_no
+                query_record.mold_no = record.mold_no
+                query_record.production_lot = record.production_lot
+                query_record.source_winder = record.source_winder
+                query_record.specification = record.specification
+                query_record.bottom_tape_lot = record.bottom_tape_lot
             
             query_records.append(query_record)
         
