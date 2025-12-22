@@ -7,7 +7,8 @@ export interface AdvancedSearchParams {
   production_date_to?: string;
   machine_no?: string;
   mold_no?: string;
-  product_name?: string;
+  product_id?: string;
+  p3_specification?: string;
   data_type?: string;
 }
 
@@ -38,7 +39,8 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   // 其他搜尋條件
   const [machineNo, setMachineNo] = useState('');
   const [moldNo, setMoldNo] = useState('');
-  const [productName, setProductName] = useState('');
+  const [productId, setProductId] = useState('');
+  const [p3Specification, setP3Specification] = useState('');
   const [dataType, setDataType] = useState('');
 
   // 驗證至少填寫一個條件
@@ -49,7 +51,8 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
       dateToYear || dateToMonth || dateToDay ||
       machineNo.trim() ||
       moldNo.trim() ||
-      productName.trim() ||
+      productId.trim() ||
+      p3Specification.trim() ||
       dataType
     );
   };
@@ -84,7 +87,8 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     
     if (machineNo.trim()) params.machine_no = machineNo.trim();
     if (moldNo.trim()) params.mold_no = moldNo.trim();
-    if (productName.trim()) params.product_name = productName.trim();
+    if (productId.trim()) params.product_id = productId.trim();
+    if (p3Specification.trim()) params.p3_specification = p3Specification.trim();
     if (dataType) params.data_type = dataType;
 
     onSearch(params);
@@ -101,7 +105,8 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     setDateToDay('');
     setMachineNo('');
     setMoldNo('');
-    setProductName('');
+    setProductId('');
+    setP3Specification('');
     setDataType('');
     onReset();
   };
@@ -216,27 +221,39 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
               />
             </div>
 
-            {/* 模具編號 */}
+            {/* 下膠編號 (Bottom Tape) */}
             <div className="search-field">
-              <label htmlFor="adv-mold-no">模具編號</label>
+              <label htmlFor="adv-mold-no">下膠編號</label>
               <input
                 id="adv-mold-no"
                 type="text"
                 value={moldNo}
                 onChange={(e) => setMoldNo(e.target.value)}
-                placeholder="輸入模具編號 (模糊搜尋)"
+                placeholder="輸入下膠編號 (模糊搜尋)"
               />
             </div>
 
-            {/* 產品名稱 */}
+            {/* 產品編號 */}
             <div className="search-field">
-              <label htmlFor="adv-product-name">產品名稱</label>
+              <label htmlFor="adv-product-id">產品編號</label>
               <input
-                id="adv-product-name"
+                id="adv-product-id"
                 type="text"
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-                placeholder="輸入產品名稱 (模糊搜尋)"
+                value={productId}
+                onChange={(e) => setProductId(e.target.value)}
+                placeholder="輸入產品編號 (模糊搜尋)"
+              />
+            </div>
+
+            {/* P3 規格 */}
+            <div className="search-field">
+              <label htmlFor="adv-p3-specification">P3 規格</label>
+              <input
+                id="adv-p3-specification"
+                type="text"
+                value={p3Specification}
+                onChange={(e) => setP3Specification(e.target.value)}
+                placeholder="輸入 P3 規格 (模糊搜尋)"
               />
             </div>
 

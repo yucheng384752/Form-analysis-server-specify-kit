@@ -35,6 +35,13 @@ interface QueryRecord {
   
   // P3專用欄位
   p3_no?: string;
+  product_id?: string;
+  machine_no?: string;
+  mold_no?: string;
+  production_lot?: number;
+  source_winder?: number;
+  specification?: string;
+  bottom_tape_lot?: string;
   
   // 額外資料欄位 (來自CSV的其他欄位，包含溫度資料等)
   additional_data?: { [key: string]: any };
@@ -72,6 +79,83 @@ export function QueryPage() {
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const pageSize = 50;
 
+  // 輔助函數：格式化欄位值（處理多種 boolean 轉換和日期轉換）
+  const formatFieldValue = (header: string, value: any): string => {
+    // 10Po 欄位的 boolean 轉換
+    if (header === '10Po' || header === '10PO') {
+      if (typeof value === 'boolean') {
+        return value ? 'V' : 'X';
+      }
+      if (value === 1 || value === '1' || value === true) {
+        return 'V';
+      }
+      if (value === 0 || value === '0' || value === false) {
+        return 'X';
+      }
+    }
+
+    // P3 欄位的 boolean 轉換: shift, iron, mold, rubber wheel, finish
+    const p3BooleanFields = ['shift', 'iron', 'mold', 'rubber wheel', 'finish', 'Shift', 'Iron', 'Mold', 'Rubber wheel', 'Finish'];
+    if (p3BooleanFields.includes(header)) {
+      if (typeof value === 'boolean') {
+        return value ? 'V' : 'X';
+      }
+      if (value === 1 || value === '1' || value === true) {
+        return 'V';
+      }
+      if (value === 0 || value === '0' || value === false) {
+        return 'X';
+      }
+    }
+
+    // P2 欄位的 boolean 轉換: appearance, rough edge, striped results
+    const p2BooleanFields = ['appearance', 'rough edge', 'striped results', 'Appearance', 'Rough edge', 'Striped results'];
+    if (p2BooleanFields.includes(header)) {
+      if (typeof value === 'boolean') {
+        return value ? 'V' : 'X';
+      }
+      if (value === 1 || value === '1' || value === true) {
+        return 'V';
+      }
+      if (value === 0 || value === '0' || value === false) {
+        return 'X';
+      }
+    }
+
+    // P2 分條時間民國年轉西元年
+    if (header === '分條時間' || header === 'slitting time') {
+      if (value && typeof value === 'string') {
+        // 嘗試解析民國年格式: YYY/MM/DD 或 YYY-MM-DD
+        const rocMatch = value.match(/^(\d{3})[\/-](\d{1,2})[\/-](\d{1,2})/);
+        if (rocMatch) {
+          const rocYear = parseInt(rocMatch[1]);
+          const month = rocMatch[2].padStart(2, '0');
+          const day = rocMatch[3].padStart(2, '0');
+          const adYear = rocYear + 1911;
+          return `${adYear}-${month}-${day}`;
+        }
+      }
+    }
+
+    // P2 分條機編號轉換顯示名稱
+    if (header === 'Slitting machine' || header === 'slitting machine' || header === 'slitting_machine_number') {
+      if (value === 1 || value === '1') {
+        return '分1Points 1';
+      }
+      if (value === 2 || value === '2') {
+        return '分2Points 2';
+      }
+    }
+    
+    // 數字格式化
+    if (typeof value === 'number') {
+      return value.toLocaleString();
+    }
+    
+    // 空值處理
+    return value || '-';
+  };
+
   // 搜尋記錄 (支援基本搜尋和高級搜尋)
   const searchRecords = async (search: string, page: number = 1, advancedParams?: AdvancedSearchParams) => {
     setLoading(true);
@@ -90,7 +174,8 @@ export function QueryPage() {
         if (advancedParams.production_date_to) params.append('production_date_to', advancedParams.production_date_to);
         if (advancedParams.machine_no) params.append('machine_no', advancedParams.machine_no);
         if (advancedParams.mold_no) params.append('mold_no', advancedParams.mold_no);
-        if (advancedParams.product_name) params.append('product_name', advancedParams.product_name);
+        if (advancedParams.product_id) params.append('product_id', advancedParams.product_id);
+        if (advancedParams.p3_specification) params.append('p3_specification', advancedParams.p3_specification);
         if (advancedParams.data_type) params.append('data_type', advancedParams.data_type);
       } else if (search) {
         params.append('lot_no', search);
@@ -421,6 +506,11 @@ export function QueryPage() {
     const basicData = {
       lot_no: record.lot_no,
       p3_no: record.p3_no || '-',
+      product_id: record.product_id || '-',
+      machine_no: record.machine_no || '-',
+      mold_no: record.mold_no || '-',
+      specification: record.specification || '-',
+      bottom_tape_lot: record.bottom_tape_lot || '-',
       updated_at: new Date(record.created_at).toLocaleString('zh-TW'),
       created_at: new Date(record.created_at).toLocaleString('zh-TW')
     };
@@ -482,9 +572,7 @@ export function QueryPage() {
                         <tr key={idx}>
                           {Object.keys(rows[0]).map(header => (
                             <td key={header}>
-                              {typeof row[header] === 'number' 
-                                ? row[header].toLocaleString() 
-                                : row[header] || '-'}
+                              {formatFieldValue(header, row[header])}
                             </td>
                           ))}
                         </tr>
@@ -555,9 +643,7 @@ export function QueryPage() {
                   <tr key={idx}>
                     {headers.map(header => (
                       <td key={header}>
-                        {typeof row[header] === 'number' 
-                          ? row[header].toLocaleString() 
-                          : row[header] || '-'}
+                        {formatFieldValue(header, row[header])}
                       </td>
                     ))}
                   </tr>
@@ -660,6 +746,26 @@ export function QueryPage() {
         <strong>P3編號：</strong>
         <span>{record.p3_no}</span>
       </div>
+      <div className="detail-row">
+        <strong>Product ID：</strong>
+        <span>{record.product_id || '-'}</span>
+      </div>
+      <div className="detail-row">
+        <strong>機台：</strong>
+        <span>{record.machine_no || '-'}</span>
+      </div>
+      <div className="detail-row">
+        <strong>模具：</strong>
+        <span>{record.mold_no || '-'}</span>
+      </div>
+      <div className="detail-row">
+        <strong>規格：</strong>
+        <span>{record.specification || '-'}</span>
+      </div>
+      <div className="detail-row">
+        <strong>下膠編號：</strong>
+        <span>{record.bottom_tape_lot || '-'}</span>
+      </div>
       {record.notes && (
         <div className="detail-row">
           <strong>備註：</strong>
@@ -683,7 +789,7 @@ export function QueryPage() {
           
           <div className="query-description">
             <p><strong>批號查詢：</strong>輸入批號進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料</p>
-            <p><strong>高級搜尋：</strong>可依日期範圍、機台號碼、模具編號、產品名稱等條件進行多條件組合搜尋</p>
+            <p><strong>高級搜尋：</strong>可依日期範圍、機台號碼、下膠編號、產品編號、P3規格等條件進行多條件組合搜尋</p>
           </div>
 
           <div className="query-search-input-wrapper autocomplete-wrapper">

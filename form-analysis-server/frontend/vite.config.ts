@@ -13,11 +13,11 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     cors: true,
-    hmr: {
-      host: 'localhost',
-      port: 5173,
-      clientPort: 18003
-    },
+    // hmr: {
+    //   host: 'localhost',
+    //   port: 5173,
+    //   clientPort: 18003
+    // },
     // Fix SPA routing - serve index.html for all routes
     middlewareMode: false,
     fs: {

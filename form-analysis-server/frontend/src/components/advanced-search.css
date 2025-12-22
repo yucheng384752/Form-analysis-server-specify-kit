@@ -90,7 +90,8 @@
 
 /* 日期輸入欄位 */
 .date-field {
-  grid-column: span 2;
+  grid-column: span 1;
+  min-width: 280px;
 }
 
 .date-inputs {
