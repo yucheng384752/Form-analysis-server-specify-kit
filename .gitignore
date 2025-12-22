@@ -27,6 +27,8 @@ env/
 
 # 忽略上傳檔案
 uploads/
+.csv
+
 # 但保留測試資料
 !test-data/**/*.csv
 !test-data/**/*.xlsx
