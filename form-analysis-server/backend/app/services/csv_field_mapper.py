@@ -106,6 +106,23 @@ class CSVFieldMapper:
         '模具',
         '模具編號'
     ]
+
+    # P3 可能的規格欄位名稱
+    SPECIFICATION_FIELD_NAMES = [
+        'Specification',
+        'specification',
+        '規格',
+        'Spec'
+    ]
+
+    # P3 可能的下膠編號欄位名稱
+    BOTTOM_TAPE_FIELD_NAMES = [
+        'Bottom Tape',
+        'bottom tape',
+        'Bottom Tape LOT',
+        '下膠編號',
+        '下膠'
+    ]
     
     def __init__(self):
         """初始化映射器"""
@@ -211,6 +228,11 @@ class CSVFieldMapper:
                     self._extract_field_value(row, self.MOLD_NO_FIELD_NAMES)
                     or self._extract_mold_from_filename(filename)
                 )
+            
+            # 提取規格與下膠編號
+            result['specification'] = self._extract_field_value(row, self.SPECIFICATION_FIELD_NAMES)
+            result['bottom_tape_lot'] = self._extract_field_value(row, self.BOTTOM_TAPE_FIELD_NAMES)
+
         
         return result
     

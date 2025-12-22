@@ -27,12 +27,19 @@ env/
 
 # 忽略上傳檔案
 uploads/
-.csv
 
-# 但保留測試資料
+# 忽略 CSV 檔案，但保留測試資料
+*.csv
+
+# 保留測試資料目錄內的檔案
 !test-data/**/*.csv
 !test-data/**/*.xlsx
 !test-data/**/*.xls
+
+# 保留根目錄測試檔案（以 P 開頭的測試檔）
+!P1_*.csv
+!P2_*.csv
+!P3_*.csv
 
 # 忽略日誌檔案
 *.log

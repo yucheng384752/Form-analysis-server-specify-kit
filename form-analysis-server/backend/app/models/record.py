@@ -211,6 +211,22 @@ class Record(Base):
         index=True,
         comment="模具編號 (P3使用)：238-2, 123-1 等"
     )
+
+    # 規格 (P3 使用，原存於 additional_data)
+    specification: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+        comment="規格 (P3使用)"
+    )
+
+    # 下膠編號 (P3 使用，原存於 additional_data)
+    bottom_tape_lot: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+        comment="下膠編號/Bottom Tape (P3使用)"
+    )
     
     # 生產序號 (P3 使用)
     production_lot: Mapped[Optional[int]] = mapped_column(
