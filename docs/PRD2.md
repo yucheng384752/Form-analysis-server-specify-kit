@@ -48,10 +48,108 @@
    - [X] 需要頻繁查詢的欄位定義個別欄位，其餘使用JSONB格式儲存
 - [X] 資料庫內容需要可以輸出成 Dataframe 格式(後續)
 - [X] 需要確認p2, p3的關聯性(2507173_02_17 -> 17 為對應的P2 lot_no 中的 winder number)
-- [ ] p1, p3 specification是否有關
-- [ ] "Qaulity inspecrion"、"Qaulity control"是否需要從表?
+- [X] p1, p3 specification是否有關
+- [X] "Qaulity inspecrion"、"Qaulity control"是否需要從表?
 - [X] 下拉選單內需要有"日期(指定西元年)""P3規格""機台號碼""下膠編號" => 需要都套用模糊搜尋
 - [X] P3_No. 欄位已不再使用，移除必要驗證（保留在 additional_data 中以兼容舊資料）
-- [ ] 移除"資料查詢頁面" - "高級查詢" - 產品名稱搜尋列 -> 改成"產品編號查詢"
-- [ ] "高級查詢" 生產日期起訖日需要做對齊
-- [ ] "高級查尋" 加入 "使用P3的規格進行搜尋"的功能
+- [X] 移除"資料查詢頁面" - "高級查詢" - 產品名稱搜尋列 -> 改成"產品編號查詢"
+- [X] "高級查詢" 生產日期起訖日需要做對齊
+- [X] "高級查尋" 加入 "使用P3的規格進行搜尋"的功能
+- [X] adjustment record 是否有對應 A, B, C 的選項?
+- [X] 10Po 前端boolean轉換(V/X)
+- [X] P2 "分條時間" 顯示時需要 "民國年轉西元年"
+- [X] P3 shift、iron、mold、rubber wheel、finish 欄位需前端boolean轉換
+- [X] P2 appearance、rough edge、striped results 欄位需要前端boolean轉換
+- [X] slitting machine 沒有對應到從表(轉換表)，需要修正
+- [ ] P1 的 product date 需要使用"日期"格式，並且轉換成西元年(YYYY-MM-DD)
+- [ ] P3 需顯示組合後的 product_id，並且要可以用在搜尋(替代前端"基本資料"p3_no欄位)
+- [X] 生產日期欄位統一：P1→"Production Date"、P2→"分條時間"、P3→"year-month-day"
+  - 所有日期統一轉換為 YYYY-MM-DD 格式
+  - 民國年自動轉西元年
+  - 儲存到 production_date 欄位
+  - 已整合到匯入流程 (routes_import.py)
+- [ ] updated_at 邏輯不變，created_at 要套用下列邏輯:
+  - P1: Production Date → data_date (建議新增欄位)
+  - P2: Semi-finished productsLOT NO → data_date
+  - P3: year-month-day → data_date
+- [X] 高級搜尋內，模具編號改成使用下膠編號(Bottom Tape)搜尋對應資料
+
+## 實作方案
+
+### 生產日期提取邏輯 已完成
+已建立 production_date_extractor.py 服務並整合到 routes_import.py：
+- P1: 從 "Production Date" 提取，支援 YYYY-MM-DD、YYMMDD、YY-MM-DD
+- P2: 從 "分條時間" 提取，支援民國年格式 YYY/MM/DD、YYY-MM-DD、YYYMMDD
+- P3: 從 "year-month-day" 提取，支援 "114年09月02日"、YYY/MM/DD
+- 所有格式統一轉換為 date 物件儲存到 production_date 欄位
+
+### 🔄 部署步驟
+
+#### 1. 重建 Docker 映像（如使用 Docker）
+```bash
+cd form-analysis-server
+docker-compose down
+docker-compose build
+docker-compose up -d
+```
+
+#### 2. 或直接重啟後端服務（本地開發）
+```bash
+cd form-analysis-server/backend
+# 停止現有服務
+# 重新啟動
+python -m uvicorn app.main:app --reload --port 18002
+```
+
+#### 3. 測試新功能
+上傳一個 P2 或 P3 檔案，確認：
+- production_date 欄位正確填入
+- 民國年正確轉換為西元年
+- P1 的日期正確解析
+
+### 使用範例
+```python
+# P1 範例
+production_date = production_date_extractor.extract_production_date(
+    row_data={'additional_data': {'Production Date': '2024-01-15'}},
+    data_type='P1'
+)  # 結果: date(2024, 1, 15)
+
+# P2 範例（民國年）
+production_date = production_date_extractor.extract_production_date(
+    row_data={'additional_data': {'分條時間': '114/09/02'}},
+    data_type='P2'
+)  # 結果: date(2025, 9, 2)
+
+# P3 範例（中文格式）
+production_date = production_date_extractor.extract_production_date(
+    row_data={'additional_data': {'year-month-day': '114年09月02日'}},
+    data_type='P3'
+)  # 結果: date(2025, 9, 2)
+```
+
+## 技術分析備註
+### #1 P1/P2 Material 關聯
+-  兩者都使用 material_code 欄位
+-  有效材料：H2, H5, H8
+-  可透過 lot_no + material_code 追溯關聯
+
+### #2 Quality Inspection/Control
+-  P2 欄位，品檢品管人員輸入
+-  儲存在 additional_data JSONB
+-  無需建立從表
+
+### #3 Slitting Machine 轉換
+-  後端對應表: {1: "分1Points 1", 2: "分2Points 2"}
+-  前端已實作 formatFieldValue 轉換
+
+### #5 Product_ID 組合邏輯
+- 格式: YYYY-MM-DD_機台_模號_LOT
+- 範例: 2025-09-02_P24_238-2_301
+-  後端產生器已實作
+-  高級搜尋已支援
+- ❓ 前端顯示位置需確認
+
+### 高級搜尋策略
+- 建議：除批號外，其他搜尋以P3為主
+- 實作：P3 → lot_no/winder → P2 → P1 追溯鏈
