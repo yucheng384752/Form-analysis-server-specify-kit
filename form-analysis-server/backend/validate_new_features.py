@@ -53,7 +53,7 @@ def test_constants():
     assert display_name == "分1Points 1", "分條機1顯示名稱不正確"
     print("✓ get_slitting_machine_display_name() 正確")
     
-    print("\n✅ 常數配置測試通過!\n")
+    print("\n常數配置測試通過!\n")
 
 
 def test_validation():
@@ -108,7 +108,7 @@ def test_validation():
     assert len(service.errors) == 1
     print(f"✓ 無效分條機編號驗證通過: 3 被拒絕")
     
-    print("\n✅ 驗證服務測試通過!\n")
+    print("\n驗證服務測試通過!\n")
 
 
 def test_csv_mapper():
@@ -179,7 +179,7 @@ def test_csv_mapper():
     print(f"✓ 完整映射測試: 2 行資料 → {len(results)} 筆結果")
     print(f"  - 第1行: source_winder={results[0]['source_winder']}, machine_no={results[0]['machine_no']}")
     
-    print("\n✅ CSV 欄位映射器測試通過!\n")
+    print("\nCSV 欄位映射器測試通過!\n")
 
 
 def test_record_model():
@@ -206,7 +206,7 @@ def test_record_model():
         assert hasattr(Record, field), f"Record 模型缺少欄位: {field}"
         print(f"✓ Record.{field} 存在")
     
-    print("\n✅ Record 模型欄位測試通過!\n")
+    print("\nRecord 模型欄位測試通過!\n")
 
 
 def main():
@@ -225,10 +225,10 @@ def main():
         print("🎉 所有測試通過！")
         print("=" * 60)
         print("\n測試摘要:")
-        print("✅ 1. 常數配置 (constants.py)")
-        print("✅ 2. 驗證服務 (validation.py)")
-        print("✅ 3. CSV 欄位映射器 (csv_field_mapper.py)")
-        print("✅ 4. Record 模型新欄位")
+        print("1. 常數配置 (constants.py)")
+        print("2. 驗證服務 (validation.py)")
+        print("3. CSV 欄位映射器 (csv_field_mapper.py)")
+        print("4. Record 模型新欄位")
         print("\n")
         
         return 0

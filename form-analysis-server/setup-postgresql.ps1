@@ -36,7 +36,7 @@ Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host " PostgreSQL設置完成！" -ForegroundColor Green
 Write-Host ""
-Write-Host "💡 提示:" -ForegroundColor Yellow
+Write-Host "提示:" -ForegroundColor Yellow
 Write-Host "   - 使用 docker-compose logs db 查看資料庫日誌" -ForegroundColor White
 Write-Host "   - 使用 docker-compose down 停止服務" -ForegroundColor White  
 Write-Host "   - 使用 docker-compose up -d pgadmin --profile tools 啟動pgAdmin" -ForegroundColor White

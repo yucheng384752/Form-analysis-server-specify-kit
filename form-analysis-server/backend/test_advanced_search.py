@@ -116,7 +116,7 @@ async def test_advanced_search():
         count = result.scalar()
         print(f"有 Product_ID 的記錄: {count}")
         
-        print("\n✅ 測試完成")
+        print("\n測試完成")
 
 
 if __name__ == "__main__":

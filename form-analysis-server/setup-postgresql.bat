@@ -37,7 +37,7 @@ echo.
 echo ==========================================
 echo  PostgreSQL設置完成！
 echo.
-echo 💡 提示:
+echo 提示:
 echo    - 使用 docker-compose logs db 查看資料庫日誌
 echo    - 使用 docker-compose down 停止服務
 echo    - 使用 docker-compose up -d pgadmin --profile tools 啟動pgAdmin

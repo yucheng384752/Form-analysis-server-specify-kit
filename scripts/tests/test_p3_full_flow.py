@@ -21,7 +21,7 @@ def test_full_flow():
         return
     
     upload_result = response.json()
-    print(f"✅ 上傳成功!")
+    print(f"上傳成功!")
     print(json.dumps(upload_result, indent=2, ensure_ascii=False))
     
     process_id = upload_result['process_id']
@@ -43,7 +43,7 @@ def test_full_flow():
         return
     
     import_result = response.json()
-    print(f"✅ 匯入成功!")
+    print(f"匯入成功!")
     print(json.dumps(import_result, indent=2, ensure_ascii=False))
     
     # Step 3: 驗證資料庫
@@ -59,13 +59,13 @@ def test_full_flow():
     
     if response.status_code == 200:
         records = response.json()
-        print(f"\n✅ 找到 {len(records.get('items', []))} 筆記錄")
+        print(f"\n找到 {len(records.get('items', []))} 筆記錄")
         for record in records.get('items', [])[:3]:  # 只顯示前 3 筆
             print(f"  - 批號: {record.get('lot_no')}, "
                   f"機台: {record.get('machine_no')}, "
                   f"模具: {record.get('mold_no')}")
     else:
-        print(f"⚠️  查詢失敗: {response.status_code}")
+        print(f" 查詢失敗: {response.status_code}")
 
 if __name__ == "__main__":
     test_full_flow()

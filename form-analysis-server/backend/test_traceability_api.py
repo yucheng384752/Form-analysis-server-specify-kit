@@ -123,7 +123,7 @@ try:
         assert data['p2'] is not None
         assert data['p1'] is not None
         assert data['trace_complete'] is True
-        print("\n✅ Product_ID 追溯測試通過！")
+        print("\nProduct_ID 追溯測試通過！")
     else:
         print(f"❌ 錯誤: {response.json()}")
         sys.exit(1)
@@ -150,7 +150,7 @@ try:
         assert data['p1'] is not None
         assert data['summary']['total_p2'] >= 1
         assert data['summary']['total_p3'] >= 1
-        print("\n✅ Lot_No 追溯測試通過！")
+        print("\nLot_No 追溯測試通過！")
     else:
         print(f"❌ 錯誤: {response.json()}")
         sys.exit(1)
@@ -176,7 +176,7 @@ try:
         assert data['winder_number'] == 17
         assert data['p2'] is not None
         assert data['p1'] is not None
-        print("\n✅ Winder 追溯測試通過！")
+        print("\nWinder 追溯測試通過！")
     else:
         print(f"❌ 錯誤: {response.json()}")
         sys.exit(1)
@@ -198,7 +198,7 @@ try:
     assert response.status_code == 404
     print(f"✓ 正確回傳 404: {response.json()['detail']}")
     
-    print("\n✅ 錯誤處理測試通過！")
+    print("\n錯誤處理測試通過！")
     
     print("\n" + "=" * 60)
     print("🎉 所有追溯 API 測試通過！")

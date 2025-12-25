@@ -45,7 +45,7 @@ def test_upload():
                 
                 # 檢查驗證結果
                 if response.status_code == 200:
-                    print("\n✅ 檔案上傳成功！")
+                    print("\n檔案上傳成功！")
                     
                     if 'validation_result' in data:
                         validation = data['validation_result']

@@ -60,7 +60,7 @@ for test_lot in test_cases:
     print(f"標準格式驗證: {standard_match is not None}")
     
     if standard_match:
-        print("✅ 通過驗證")
+        print("通過驗證")
     else:
         print("❌ 驗證失敗")
 

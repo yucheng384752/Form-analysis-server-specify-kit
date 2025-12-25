@@ -193,7 +193,7 @@ try:
         # 驗證追溯完整性
         trace_complete = all([p3, found_p2, found_p1])
         if trace_complete:
-            print(f"  ✅ 追溯鏈完整: P1 → P2 → P3")
+            print(f"  追溯鏈完整: P1 → P2 → P3")
         else:
             print(f"  ⚠ 追溯鏈不完整")
     
@@ -286,11 +286,11 @@ try:
         print("🎉 整合測試全部通過！")
         print("=" * 60)
         print("\n功能驗證:")
-        print("  ✅ CSV 欄位映射器運作正常")
-        print("  ✅ Product_ID 自動生成正確")
-        print("  ✅ 追溯鏈邏輯完整 (P3→P2→P1)")
-        print("  ✅ 資料驗證功能正常")
-        print("  ✅ 資料庫儲存與查詢正常")
+        print("  CSV 欄位映射器運作正常")
+        print("  Product_ID 自動生成正確")
+        print("  追溯鏈邏輯完整 (P3→P2→P1)")
+        print("  資料驗證功能正常")
+        print("  資料庫儲存與查詢正常")
     else:
         print("\n❌ 部分測試失敗")
         sys.exit(1)

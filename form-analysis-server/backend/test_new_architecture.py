@@ -47,7 +47,7 @@ def test_lot_no_validation():
 
 def create_sample_data():
     """創建範例資料"""
-    print("\n 創建範例生產批次資料...")
+    print("\n 創建範例生產序號次資料...")
     
     # 範例資料結構
     sample_lots = [
@@ -87,7 +87,7 @@ def demonstrate_api_structure():
     print("\n API 結構設計示範：")
     
     api_examples = {
-        "生產批次管理": {
+        "生產序號次管理": {
             "創建批次": "POST /api/production/lots",
             "獲取批次": "GET /api/production/lots/{lot_no}",
             "更新批次": "PUT /api/production/lots/{lot_no}",
@@ -120,7 +120,7 @@ def demonstrate_api_structure():
 
 def explain_design_benefits():
     """說明設計優勢"""
-    print("\n💡 設計優勢說明：")
+    print("\n設計優勢說明：")
     
     benefits = {
         "以 lot_no 為唯一鍵的優勢": [
