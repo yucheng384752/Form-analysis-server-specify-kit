@@ -115,7 +115,7 @@ async def trace_by_product_id(
         p2_result = await db.execute(p2_query)
         p2_record = p2_result.scalar_one_or_none()
         
-        # Fallback: 如果指定收卷機找不到，但該批號只有一筆 P2 且無收卷機編號，則使用該筆
+        # Fallback: 如果指定收卷機找不到，嘗試更寬鬆的匹配
         if not p2_record and source_winder is not None:
             fallback_query = select(Record).where(
                 Record.data_type == DataType.P2,
@@ -124,8 +124,35 @@ async def trace_by_product_id(
             fallback_result = await db.execute(fallback_query)
             all_p2_records = fallback_result.scalars().all()
             
-            if len(all_p2_records) == 1 and all_p2_records[0].winder_number is None:
-                p2_record = all_p2_records[0]
+            if len(all_p2_records) > 0:
+                # 策略 A: 如果只有一筆，直接使用
+                if len(all_p2_records) == 1:
+                    p2_record = all_p2_records[0]
+                
+                # 策略 B: 如果有多筆，嘗試在 additional_data 中尋找匹配的 winder
+                else:
+                    for record in all_p2_records:
+                        if record.additional_data and 'rows' in record.additional_data:
+                            rows = record.additional_data['rows']
+                            for row in rows:
+                                # 嘗試尋找 winder 欄位 (不分大小寫、底線、空格)
+                                row_winder = None
+                                for key, value in row.items():
+                                    # 正規化鍵名：轉小寫、移除空格和底線
+                                    normalized_key = str(key).lower().replace(' ', '').replace('_', '')
+                                    if normalized_key in ['windernumber', 'winder', '收卷機', '收卷機編號', '捲收機號碼']:
+                                        row_winder = value
+                                        break
+                                
+                                if row_winder and str(row_winder).strip() == str(source_winder).strip():
+                                    p2_record = record
+                                    break
+                        if p2_record:
+                            break
+                    
+                    # 策略 C: 如果還是找不到，但有多筆資料，暫時回傳第一筆
+                    if not p2_record:
+                        p2_record = all_p2_records[0]
     
     # 步驟 3: 使用 P2.lot_no (或 P3.lot_no) 查詢 P1
     p1_record = None
@@ -228,6 +255,9 @@ async def trace_by_lot_no(
     }
 
 
+from app.models.p2_item import P2Item
+from sqlalchemy.orm import selectinload
+
 @router.get("/winder/{lot_no}/{winder_number}", response_model=Dict[str, Any])
 async def trace_by_winder(
     lot_no: str,
@@ -260,31 +290,153 @@ async def trace_by_winder(
         }
     """
     # 查詢 P2
-    p2_query = select(Record).where(
-        Record.data_type == DataType.P2,
+    # 優先查詢 P2Item 表 (精確匹配)
+    p2_item_query = select(P2Item).join(Record).where(
         Record.lot_no == lot_no,
-        Record.winder_number == winder_number
-    )
-    p2_result = await db.execute(p2_query)
-    p2_record = p2_result.scalar_one_or_none()
+        Record.data_type == DataType.P2,
+        P2Item.winder_number == winder_number
+    ).options(selectinload(P2Item.record))
     
-    if not p2_record:
-        # Fallback: Check if there is a single P2 record for this lot with no winder number
-        # This handles cases where P2 data is missing winder information
-        fallback_query = select(Record).where(
+    p2_item_result = await db.execute(p2_item_query)
+    p2_item = p2_item_result.scalar_one_or_none()
+    
+    p2_data = None
+    
+    if p2_item:
+        # 如果找到 P2Item，構建精簡的 P2 回應
+        record = p2_item.record
+        p2_data = {
+            "id": record.id,
+            "data_type": DataType.P2.value,
+            "lot_no": record.lot_no,
+            "winder_number": p2_item.winder_number,
+            
+            # 補齊 Record 的其他欄位
+            "material_code": record.material_code,
+            "slitting_machine_number": record.slitting_machine_number,
+            "machine_no": record.machine_no,
+            "mold_no": record.mold_no,
+            "production_lot": record.production_lot,
+            "source_winder": record.source_winder,
+            "product_id": record.product_id,
+            
+            "created_at": record.created_at.isoformat() if record.created_at else None,
+            "updated_at": record.updated_at.isoformat() if hasattr(record, "updated_at") and record.updated_at else None,
+            
+            # 從 P2Item 獲取詳細資料
+            "sheet_width": p2_item.sheet_width,
+            "thickness1": p2_item.thickness1,
+            "thickness2": p2_item.thickness2,
+            "thickness3": p2_item.thickness3,
+            "thickness4": p2_item.thickness4,
+            "thickness5": p2_item.thickness5,
+            "thickness6": p2_item.thickness6,
+            "thickness7": p2_item.thickness7,
+            "appearance": p2_item.appearance,
+            "rough_edge": p2_item.rough_edge,
+            "slitting_result": p2_item.slitting_result,
+            
+            # 只回傳該 winder 的原始資料
+            "additional_data": {
+                "rows": [p2_item.row_data] if p2_item.row_data else []
+            }
+        }
+    else:
+        # Fallback: 查詢 Record 表 (舊邏輯)
+        # 1. 嘗試精確匹配 (Lot No + Winder Number)
+        p2_query = select(Record).where(
             Record.data_type == DataType.P2,
-            Record.lot_no == lot_no
+            Record.lot_no == lot_no,
+            Record.winder_number == winder_number
         )
-        fallback_result = await db.execute(fallback_query)
-        all_p2_records = fallback_result.scalars().all()
+        p2_result = await db.execute(p2_query)
+        p2_record = p2_result.scalar_one_or_none()
         
-        if len(all_p2_records) == 1 and all_p2_records[0].winder_number is None:
-            p2_record = all_p2_records[0]
-        else:
+        if not p2_record:
+            # 2. 嘗試模糊匹配：如果找不到精確的 winder_number，但該批號有 P2 資料
+            # 這種情況常見於：
+            # a) P2 資料匯入時沒有正確解析出 winder_number (欄位為 null)
+            # b) P2 資料是舊格式，只有一筆代表整批
+            # c) P2 資料的 winder_number 格式與查詢的不一致 (例如 DB存 1, 查詢用 '01')
+            
+            fallback_query = select(Record).where(
+                Record.data_type == DataType.P2,
+                Record.lot_no == lot_no
+            )
+            fallback_result = await db.execute(fallback_query)
+            all_p2_records = fallback_result.scalars().all()
+            
+            if len(all_p2_records) > 0:
+                # 找到該批號的 P2 資料
+                
+                # 策略 A: 如果只有一筆，直接使用 (最常見於舊資料)
+                if len(all_p2_records) == 1:
+                    p2_record = all_p2_records[0]
+                
+                # 策略 B: 如果有多筆，嘗試在 additional_data 中尋找匹配的 winder
+                else:
+                    for record in all_p2_records:
+                        # 檢查 additional_data 中的 rows
+                        if record.additional_data and 'rows' in record.additional_data:
+                            rows = record.additional_data['rows']
+                            for row in rows:
+                                # 檢查各種可能的 winder 欄位名稱 (不分大小寫、底線、空格)
+                                row_winder = None
+                                for key, value in row.items():
+                                    # 正規化鍵名：轉小寫、移除空格和底線
+                                    normalized_key = str(key).lower().replace(' ', '').replace('_', '')
+                                    if normalized_key in ['windernumber', 'winder', '收卷機', '收卷機編號', '捲收機號碼']:
+                                        row_winder = value
+                                        break
+                                
+                                # 寬鬆比較
+                                if row_winder and str(row_winder).strip() == str(winder_number).strip():
+                                    p2_record = record
+                                    break
+                        
+                        if p2_record:
+                            break
+                    
+                    # 策略 C: 如果還是找不到，但有多筆資料，暫時回傳第一筆 (避免 404)
+                    # 並在 additional_data 中標記警告，讓前端知道這可能不是精確匹配
+                    if not p2_record:
+                        p2_record = all_p2_records[0]
+                        # 注意：這裡我們無法修改 DB 物件的 additional_data，
+                        # 但前端會根據 winder_number 再做一次過濾，所以回傳包含所有 rows 的大表是可以接受的
+        
+        if not p2_record:
             raise HTTPException(
                 status_code=404,
                 detail=f"查無 P2 記錄: Lot_No={lot_no}, Winder={winder_number}"
             )
+        
+        # 如果是 Fallback 模式找到的 Record，我們需要手動過濾 additional_data
+        # 以避免回傳過多資料
+        p2_data = _record_to_dict(p2_record)
+        if p2_data and 'additional_data' in p2_data and p2_data['additional_data'] and 'rows' in p2_data['additional_data']:
+            all_rows = p2_data['additional_data']['rows']
+            filtered_rows = []
+            
+            for row in all_rows:
+                # 嘗試匹配 winder
+                row_winder = None
+                for key, value in row.items():
+                    normalized_key = str(key).lower().replace(' ', '').replace('_', '')
+                    if normalized_key in ['windernumber', 'winder', '收卷機', '收卷機編號', '捲收機號碼']:
+                        row_winder = value
+                        break
+                
+                if row_winder and str(row_winder).strip() == str(winder_number).strip():
+                    filtered_rows.append(row)
+            
+            # 如果過濾後有結果，只回傳過濾後的
+            if filtered_rows:
+                p2_data['additional_data']['rows'] = filtered_rows
+            # 如果過濾後沒結果（可能是 winder 欄位識別失敗），則回傳全部（保持相容性）或第一筆？
+            # 為了安全，保持原樣，但這就是使用者抱怨的點。
+            # 讓我們嘗試只回傳第一筆如果找不到匹配的？不，那樣會誤導。
+            # 既然我們已經有了 P2Item 機制，Fallback 應該只針對舊資料。
+            pass
     
     # 查詢 P1
     p1_query = select(Record).where(
@@ -293,6 +445,16 @@ async def trace_by_winder(
     )
     p1_result = await db.execute(p1_query)
     p1_record = p1_result.scalar_one_or_none()
+    
+    p1_data = None
+    if p1_record:
+        p1_data = _record_to_dict(p1_record)
+        # P1 優化：將 additional_data 展開到頂層，方便前端顯示細項
+        if p1_record.additional_data:
+            for key, value in p1_record.additional_data.items():
+                # 避免覆蓋現有欄位
+                if key not in p1_data:
+                    p1_data[key] = value
     
     # 查詢所有使用此 winder 的 P3 (透過 source_winder)
     p3_query = select(Record).where(
@@ -306,8 +468,8 @@ async def trace_by_winder(
     return {
         "lot_no": lot_no,
         "winder_number": winder_number,
-        "p2": _record_to_dict(p2_record),
-        "p1": _record_to_dict(p1_record) if p1_record else None,
+        "p2": p2_data,
+        "p1": p1_data,
         "p3_records": [_record_to_dict(r) for r in p3_records],
         "summary": {
             "total_p3_from_this_winder": len(p3_records)

@@ -87,22 +87,20 @@ export const TraceabilityFlow: React.FC<TraceabilityFlowProps> = ({ productId, p
           {type === 'P1' && (
             <>
               <div className="trace-row"><label>批號:</label> <span>{record.lot_no || <span style={{color: 'red'}}>資料缺失</span>}</span></div>
-              <div className="trace-row"><label>材料:</label> <span>{record.material_code || '-'}</span></div>
+              <div className="trace-row"><label>材料:</label> <span>{record.material_code || record.Material || record.material || '-'}</span></div>
             </>
           )}
           {type === 'P2' && (
             <>
               <div className="trace-row"><label>捲收機號碼:</label> <span>{record.winder_number}</span></div>
-              <div className="trace-row"><label>機台:</label> <span>{record.machine_no || '-'}</span></div>
-              <div className="trace-row"><label>半成品:</label> <span>{record.lot_no}</span></div>
-              {/* <div className="trace-row"><label>半成品:</label> <span>{record.material_code || '-'}</span></div> */}
+              <div className="trace-row"><label>半成品編號:</label> <span>{record.lot_no}</span></div>
             </>
           )}
           {type === 'P3' && (
             <>
               <div className="trace-row"><label>ID:</label> <span title={record.product_id}>{record.product_id}</span></div>
               <div className="trace-row"><label>批號:</label> <span>{record.lot_no}</span></div>
-              <div className="trace-row"><label>模號:</label> <span>{record.mold_no}</span></div>
+              <div className="trace-row"><label>模具號碼:</label> <span>{record.mold_no}</span></div>
               <div className="trace-row"><label>生產序號:</label> <span>{record.production_lot}</span></div>
             </>
           )}
@@ -121,7 +119,7 @@ export const TraceabilityFlow: React.FC<TraceabilityFlowProps> = ({ productId, p
       <div className="trace-flow">
         {renderCard('P1 原料', data.p1, 'P1')}
         <div className={`trace-arrow ${!data.p1 || !data.p2 ? 'broken' : ''}`}>➜</div>
-        {renderCard('P2 半成品', data.p2, 'P2')}
+        {renderCard('P2 半成品編號', data.p2, 'P2')}
         <div className={`trace-arrow ${!data.p2 || !data.p3 ? 'broken' : ''}`}>➜</div>
         {renderCard('P3 成品', data.p3, 'P3')}
       </div>

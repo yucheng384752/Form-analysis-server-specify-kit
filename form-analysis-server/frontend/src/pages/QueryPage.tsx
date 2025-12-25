@@ -1,5 +1,5 @@
 // src/pages/QueryPage.tsx
-import { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { Modal } from "../components/common/Modal";
 import { AdvancedSearch, AdvancedSearchParams } from "../components/AdvancedSearch";
 import { TraceabilityFlow } from "../components/TraceabilityFlow";
@@ -22,6 +22,8 @@ interface QueryRecord {
   notes?: string;
   
   // P2專用欄位
+  slitting_machine_number?: number;
+  winder_number?: number;
   sheet_width?: number;
   thickness1?: number;
   thickness2?: number;
@@ -273,7 +275,7 @@ export function QueryPage() {
     // 2. 機台
     const machine = record.machine_no || row['machine'] || row['Machine'] || 'Unknown';
 
-    // 3. 模號
+    // 3. 模具號碼
     const mold = record.mold_no || row['mold'] || row['Mold'] || 'Unknown';
 
     // 4. Lot (優先使用 row 中的 lot 資訊)
@@ -391,6 +393,19 @@ export function QueryPage() {
       
       const traceData = await traceResponse.json();
       
+      console.log('[Traceability Debug] Backend response traceData:', traceData);
+      if (traceData.p2) {
+          console.log('[Traceability Debug] P2 data from backend:', traceData.p2);
+          console.log('[Traceability Debug] P2 additional_data:', traceData.p2.additional_data);
+          if (traceData.p2.additional_data && traceData.p2.additional_data.rows) {
+              console.log('[Traceability Debug] P2 rows count:', traceData.p2.additional_data.rows.length);
+          } else {
+              console.warn('[Traceability Debug] P2 has no rows in additional_data');
+          }
+      } else {
+          console.warn('[Traceability Debug] No P2 data in response');
+      }
+
       // 轉換資料格式以符合 TraceabilityFlow 的需求
       // 建立一個新的 P3 記錄物件，並根據 row 資料更新欄位
       const p3Record = { ...record };
@@ -919,50 +934,87 @@ export function QueryPage() {
       );
     }
 
-    // 一般鍵值對資料顯示
+    // 一般鍵值對資料顯示 - 移除 "additional-data-section" 區塊，直接返回 null
+    // 根據使用者需求：移除前端的"additional-data-section"區塊
+    return null;
+  };
+
+  // 渲染P1詳細資料
+  const renderP1Details = (record: QueryRecord) => {
+    // 定義要排除的系統欄位
+    const excludedKeys = [
+      'id', 'lot_no', 'data_type', 'created_at', 'updated_at', 
+      'additional_data', 'notes', 'display_name', 'production_date',
+      'product_name', 'quantity'
+    ];
+
+    // 獲取所有非系統欄位的鍵值對 (包含後端展開的 additional_data 欄位)
+    const detailFields = Object.entries(record).filter(([key, value]) => {
+      return !excludedKeys.includes(key) && 
+             value !== null && 
+             value !== undefined && 
+             typeof value !== 'object'; // 排除物件類型
+    });
+
     return (
-      <div className="additional-data-section">
-        <div className="section-title">CSV 表格完整資料</div>
-        <div className="additional-data-grid">
-          {Object.entries(additionalData).map(([key, value]) => (
-            <div key={key} className="detail-row">
-              <strong>{key}：</strong>
-              <span>{formatFieldValue(key, value)}</span>
-            </div>
-          ))}
+      <div className="detail-grid">
+        <div className="detail-row">
+          <strong>批號：</strong>
+          <span>{record.lot_no}</span>
         </div>
+        {record.product_name && (
+           <div className="detail-row">
+            <strong>產品名稱：</strong>
+            <span>{record.product_name}</span>
+          </div>
+        )}
+        {record.quantity !== undefined && (
+           <div className="detail-row">
+            <strong>數量：</strong>
+            <span>{record.quantity}</span>
+          </div>
+        )}
+        {record.production_date && (
+           <div className="detail-row">
+            <strong>生產日期：</strong>
+            <span>{formatFieldValue('production_date', record.production_date)}</span>
+          </div>
+        )}
+        {record.notes && (
+          <div className="detail-row">
+            <strong>備註：</strong>
+            <span>{record.notes}</span>
+          </div>
+        )}
+        <div className="detail-row">
+          <strong>建立時間：</strong>
+          <span>{new Date(record.created_at).toLocaleString()}</span>
+        </div>
+        
+        {/* 動態渲染其他欄位 */}
+        {detailFields.map(([key, value]) => (
+          <div className="detail-row" key={key}>
+            <strong>{key}：</strong>
+            <span>{formatFieldValue(key, value)}</span>
+          </div>
+        ))}
+        
+        {renderAdditionalData(record.additional_data)}
       </div>
     );
   };
 
-  // 渲染P1詳細資料
-  const renderP1Details = (record: QueryRecord) => (
-    <div className="detail-grid">
-      <div className="detail-row">
-        <strong>批號：</strong>
-        <span>{record.lot_no}</span>
-      </div>
-      {record.notes && (
-        <div className="detail-row">
-          <strong>備註：</strong>
-          <span>{record.notes}</span>
-        </div>
-      )}
-      <div className="detail-row">
-        <strong>建立時間：</strong>
-        <span>{new Date(record.created_at).toLocaleString()}</span>
-      </div>
-      {renderAdditionalData(record.additional_data)}
-    </div>
-  );
-
   // 渲染P2詳細資料
   const renderP2Details = (record: QueryRecord) => {
+    console.log('[Traceability Debug] Rendering P2 details for record:', record);
+    
     // 準備要顯示的額外資料
     let displayData: { [key: string]: any } = {};
     
     // 1. 先加入標準欄位
     const standardFields: { [key: string]: any } = {
+      '分條機': record.slitting_machine_number,
+      '收卷機': record.winder_number,
       '片材寬度': record.sheet_width,
       '厚度1': record.thickness1,
       '厚度2': record.thickness2,
@@ -995,6 +1047,11 @@ export function QueryPage() {
       displayData = { ...displayData, ...record.additional_data };
     }
 
+    // 移除 rows 屬性，避免在 renderAdditionalData 中被誤判為表格顯示
+    if (displayData.rows) {
+        delete displayData.rows;
+    }
+
     return (
       <div className="detail-grid">
         <div className="detail-row">
@@ -1005,92 +1062,175 @@ export function QueryPage() {
           <strong>建立時間：</strong>
           <span>{new Date(record.created_at).toLocaleString()}</span>
         </div>
-        {renderAdditionalData(displayData)}
+        
+        {/* 直接顯示合併後的 displayData，不使用 renderAdditionalData (因為已被禁用) */}
+        {Object.entries(displayData).map(([key, value]) => (
+            <div key={key} className="detail-row">
+              <strong>{key}：</strong>
+              <span>{formatFieldValue(key, value)}</span>
+            </div>
+        ))}
       </div>
     );
   };
 
   // 渲染P3詳細資料
-  const renderP3Details = (record: QueryRecord) => (
-    <div className="detail-grid">
-      <div className="detail-row">
-        <strong>批號：</strong>
-        <span>{record.lot_no}</span>
-      </div>
-      <div className="detail-row">
-        <strong>P3編號：</strong>
-        <span>{record.p3_no}</span>
-      </div>
-      <div className="detail-row">
-        <strong>Product ID：</strong>
-        <span>{record.product_id || '-'}</span>
-        {record.product_id && (
-          <button 
-            className="btn-trace"
-            onClick={(e) => {
-              e.stopPropagation();
-              setTraceabilityRecordId(record.id === traceabilityRecordId ? null : record.id);
-            }}
-            style={{ 
-              marginLeft: '10px', 
-              padding: '2px 8px', 
-              fontSize: '0.8rem',
-              backgroundColor: '#e7f5ff',
-              border: '1px solid #a5d8ff',
-              borderRadius: '4px',
-              color: '#1c7ed6',
-              cursor: 'pointer'
-            }}
-          >
-            {record.id === traceabilityRecordId ? '隱藏追溯' : '追溯流程'}
-          </button>
+  const renderP3Details = (record: QueryRecord) => {
+    // 準備要顯示的額外資料
+    let displayData = record.additional_data || {};
+
+    // 如果 P3 資料包含 rows 且只有一筆，提取出來以 Grid 方式顯示 (像 P1/P2 一樣)
+    // 這樣可以顯示單個 row 的所有細項，而不是顯示一個單行的表格
+    if (displayData.rows && 
+        Array.isArray(displayData.rows) && 
+        displayData.rows.length === 1) {
+      // 移除 rows，並合併第一筆 row 的資料
+      const { rows, ...rest } = displayData;
+      displayData = { ...rest, ...rows[0] };
+    }
+
+    return (
+      <div className="detail-grid">
+        <div className="detail-row">
+          <strong>批號：</strong>
+          <span>{record.lot_no}</span>
+        </div>
+        <div className="detail-row">
+          <strong>P3編號：</strong>
+          <span>{record.p3_no}</span>
+        </div>
+        <div className="detail-row">
+          <strong>Product ID：</strong>
+          <span>{record.product_id || '-'}</span>
+        </div>
+        
+        <div className="detail-row">
+          <strong>機台：</strong>
+          <span>{record.machine_no || '-'}</span>
+        </div>
+        <div className="detail-row">
+          <strong>模具：</strong>
+          <span>{record.mold_no || '-'}</span>
+        </div>
+        <div className="detail-row">
+          <strong>規格：</strong>
+          <span>{record.specification || '-'}</span>
+        </div>
+        <div className="detail-row">
+          <strong>下膠編號：</strong>
+          <span>{record.bottom_tape_lot || '-'}</span>
+        </div>
+        {record.notes && (
+          <div className="detail-row">
+            <strong>備註：</strong>
+            <span>{record.notes}</span>
+          </div>
+        )}
+        <div className="detail-row">
+          <strong>建立時間：</strong>
+          <span>{new Date(record.created_at).toLocaleString()}</span>
+        </div>
+        {displayData.rows && Array.isArray(displayData.rows) && displayData.rows.length > 0 ? (
+          <div className="additional-data-section">
+            <div className="section-title">檢查項目明細</div>
+            <div className="text-display-container">
+              {displayData.rows.map((row: any, idx: number) => {
+                const rowProductId = generateRowProductId(record, row);
+                return (
+                  <div key={idx} className="text-item-row" style={{ marginBottom: '15px', padding: '15px', borderBottom: '1px solid #eee', backgroundColor: '#f9f9f9', borderRadius: '4px' }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>#{idx + 1} - Product ID: {rowProductId}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px' }}>
+                      {Object.keys(row).map(header => (
+                        <div key={header} style={{ fontSize: '14px', display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ color: '#666', fontSize: '12px', marginBottom: '2px' }}>{header}</span>
+                          <span style={{ fontWeight: '500' }}>{formatFieldValue(header, row[header])}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          renderAdditionalData(displayData)
         )}
       </div>
-      
-      {traceabilityRecordId === record.id && record.product_id && (
-        <div style={{ gridColumn: '1 / -1' }}>
-          <TraceabilityFlow 
-            productId={record.product_id} 
-            onClose={() => setTraceabilityRecordId(null)} 
-            onRecordClick={handleTraceabilityRecordClick}
-          />
-        </div>
-      )}
-
-      <div className="detail-row">
-        <strong>機台：</strong>
-        <span>{record.machine_no || '-'}</span>
-      </div>
-      <div className="detail-row">
-        <strong>模具：</strong>
-        <span>{record.mold_no || '-'}</span>
-      </div>
-      <div className="detail-row">
-        <strong>規格：</strong>
-        <span>{record.specification || '-'}</span>
-      </div>
-      <div className="detail-row">
-        <strong>下膠編號：</strong>
-        <span>{record.bottom_tape_lot || '-'}</span>
-      </div>
-      {record.notes && (
-        <div className="detail-row">
-          <strong>備註：</strong>
-          <span>{record.notes}</span>
-        </div>
-      )}
-      <div className="detail-row">
-        <strong>建立時間：</strong>
-        <span>{new Date(record.created_at).toLocaleString()}</span>
-      </div>
-      {renderAdditionalData(record.additional_data)}
-    </div>
-  );
+    );
+  };
 
   // 處理追溯流程中的卡片點擊
   const handleTraceabilityRecordClick = (record: any, type: 'P1' | 'P2' | 'P3') => {
+    console.log(`[Traceability Debug] Card clicked: ${type}`, record);
+    
     // 確保 record 有 data_type
-    const recordWithType = { ...record, data_type: type };
+    let recordWithType = { ...record, data_type: type };
+
+    // 優化顯示：如果有點擊特定紀錄，且該紀錄包含多筆 rows (例如 P2/P3)，
+    // 則嘗試過濾出對應的那一筆 row，避免顯示整張表的資料
+    if (recordWithType.additional_data && 
+        Array.isArray(recordWithType.additional_data.rows) && 
+        recordWithType.additional_data.rows.length > 1) {
+      
+      let filteredRows = recordWithType.additional_data.rows;
+
+      if (type === 'P3' && recordWithType.product_id) {
+        // P3: 根據 Product ID 過濾
+        filteredRows = recordWithType.additional_data.rows.filter((row: any) => {
+          // 嘗試多種可能的欄位名稱
+          const rowProductId = row['Product ID'] || row['product_id'] || row['ID'];
+          return rowProductId === recordWithType.product_id;
+        });
+      } else if (type === 'P2' && recordWithType.winder_number) {
+        console.log('[Traceability Debug] Filtering P2 rows for Winder:', recordWithType.winder_number);
+        console.log('[Traceability Debug] Available rows:', recordWithType.additional_data.rows);
+
+        // P2: 根據 捲收機號碼 過濾
+        filteredRows = recordWithType.additional_data.rows.filter((row: any) => {
+          // 嘗試多種可能的欄位名稱 (對應 csv_field_mapper.py 中的 WINDER_NUMBER_FIELD_NAMES)
+          const rowWinder = row['捲收機號碼'] || 
+                            row['winder_number'] || 
+                            row['Winder Number'] || 
+                            row['Winder number'] || 
+                            row['Winder'] || 
+                            row['winder'] || 
+                            row['收卷機'] || 
+                            row['收卷機編號'];
+          
+          const targetWinder = String(recordWithType.winder_number).trim();
+          const currentWinder = rowWinder !== undefined && rowWinder !== null ? String(rowWinder).trim() : '';
+          
+          const isMatch = currentWinder === targetWinder;
+          
+          // 記錄除錯資訊 (只顯示不匹配的，避免洗版，或者只顯示匹配的)
+          // console.log(`[Traceability Debug] Row check: "${currentWinder}" vs "${targetWinder}" => ${isMatch}`);
+          
+          return isMatch;
+        });
+
+        console.log('[Traceability Debug] Filtered result count:', filteredRows.length);
+        if (filteredRows.length === 0) {
+            console.warn('[Traceability Debug] No matching P2 row found! Check column names in CSV.');
+            if (recordWithType.additional_data.rows.length > 0) {
+                console.log('[Traceability Debug] Keys in first row:', Object.keys(recordWithType.additional_data.rows[0]));
+            }
+        }
+      }
+
+      // 如果成功過濾出唯一一筆，則更新 rows
+      if (filteredRows.length === 1) {
+        recordWithType = {
+          ...recordWithType,
+          additional_data: {
+            ...recordWithType.additional_data,
+            rows: filteredRows
+          }
+        };
+      }
+    }
+
     setDetailRecord(recordWithType);
   };
 
@@ -1200,8 +1340,8 @@ export function QueryPage() {
                 </thead>
                 <tbody>
                   {records.map((record) => (
-                    <>
-                      <tr key={record.id}>
+                    <React.Fragment key={record.id}>
+                      <tr>
                         <td>{record.lot_no}</td>
                         <td>
                           <span className={`data-type-label ${record.data_type.toLowerCase()}`}>
@@ -1238,7 +1378,7 @@ export function QueryPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
