@@ -181,7 +181,7 @@ from app.services.production_date_extractor import production_date_extractor
 
 ##  失敗的測試
 
-### ⚠️ 前端連線失敗 (Critical)
+### 前端連線失敗 (Critical)
 
 **測試 URL**: `http://localhost:18003`
 
@@ -264,7 +264,7 @@ docker network inspect form-analysis-server_app-network
 
 ---
 
-## 🔍 詳細測試記錄
+## 詳細測試記錄
 
 ### 測試 1: Docker 建構
 ```bash

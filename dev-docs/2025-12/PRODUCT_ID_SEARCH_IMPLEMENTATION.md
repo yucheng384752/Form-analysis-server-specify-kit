@@ -798,9 +798,9 @@ export const ProductIDSearch: React.FC = () => {
                       <td>{p2.thickness5?.toFixed(2) || '-'}</td>
                       <td>{p2.thickness6?.toFixed(2) || '-'}</td>
                       <td>{p2.thickness7?.toFixed(2) || '-'}</td>
-                      <td>{p2.appearance === 1 ? '✅' : p2.appearance === 0 ? '❌' : '-'}</td>
-                      <td>{p2.rough_edge === 1 ? '✅' : p2.rough_edge === 0 ? '❌' : '-'}</td>
-                      <td>{p2.slitting_result === 1 ? '✅' : p2.slitting_result === 0 ? '❌' : '-'}</td>
+                      <td>{p2.appearance === 1 ? '' : p2.appearance === 0 ? '❌' : '-'}</td>
+                      <td>{p2.rough_edge === 1 ? '' : p2.rough_edge === 0 ? '❌' : '-'}</td>
+                      <td>{p2.slitting_result === 1 ? '' : p2.slitting_result === 0 ? '❌' : '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1256,7 +1256,7 @@ psql -h localhost -p 18001 -U postgres -d form_analysis_db -c "\d records"
 
 ---
 
-## 💡 擴展建議
+## 擴展建議
 
 ### 1. 進階搜尋
 

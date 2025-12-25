@@ -255,7 +255,7 @@ Password: app_secure_password_2024
 #### Docker 內部連線（從其他容器）
 ```
 Host: db
-Port: 5432  ℹ️ 容器內部端口
+Port: 5432   容器內部端口
 Database: form_analysis_db
 Username: app
 Password: app_secure_password_2024

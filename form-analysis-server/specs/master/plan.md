@@ -1016,7 +1016,7 @@ export DEBUG=true
 export CORS_ORIGINS=*
 ```
 
-## ❓ 常見問題
+## 常見問題
 
 ### Windows PowerShell 權限問題
 ```powershell

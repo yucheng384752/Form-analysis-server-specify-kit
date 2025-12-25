@@ -337,7 +337,7 @@ A: 系統支援分頁查詢和批次處理，適合處理大量資料。
 
 - API 文檔：`http://localhost:8000/docs`
 - 問題回報：建立 Issue
-- 💡 功能建議：歡迎提交 Pull Request
+- 功能建議：歡迎提交 Pull Request
 
 ---
 

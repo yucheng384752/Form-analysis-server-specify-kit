@@ -68,7 +68,7 @@ CORS_ORIGINS=http://localhost:18003,http://localhost:3001,http://localhost:3000
 | API 健康檢查 | **PASS** | API 服務狀態: healthy |
 | API 文檔可訪問性 | **PASS** | Swagger UI 在端口 18002 可訪問 |
 | 前端服務檢查 | **PASS** | Vite 開發服務器內部運行正常 |
-| 端口配置檢查 | ℹ️ **INFO** | 所有端口 (18001, 18002, 18003) 正常開放 |
+| 端口配置檢查 |  **INFO** | 所有端口 (18001, 18002, 18003) 正常開放 |
 
 **總體結果**: 5/5 測試通過 🎉
 

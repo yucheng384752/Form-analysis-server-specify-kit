@@ -35,7 +35,7 @@ docker-compose up -d --build frontend
 
 ##  技術說明
 
-### 💡 為什麼需要 localhost 而不是 backend？
+### 為什麼需要 localhost 而不是 backend？
 
 1. **Docker 內部通信**: 容器之間使用容器名稱 `backend` 進行通信
 2. **瀏覽器請求**: 前端應用在用戶瀏覽器中運行，瀏覽器無法解析 Docker 容器名稱
