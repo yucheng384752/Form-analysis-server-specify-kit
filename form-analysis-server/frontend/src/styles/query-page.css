@@ -813,6 +813,41 @@
   background-color: #f9fafb;
 }
 
+/* P3 關聯查詢按鈕列樣式 */
+.data-table .action-column {
+  width: 100px;
+  min-width: 100px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.btn-link-search {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
+}
+
+.btn-link-search:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-link-search:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(59, 130, 246, 0.3);
+}
+
 /* 垂直表格樣式（用於 P1 押出機生產條件） */
 .data-table-vertical {
   width: 100%;
@@ -937,4 +972,15 @@
   font-size: 1.1rem;
   font-weight: 600;
   color: #111827;
+}
+
+.product-id-cell {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: #4b5563;
+  white-space: nowrap;
+  background-color: #f9fafb;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #e5e7eb;
 }

@@ -8,6 +8,7 @@ interface ModalProps {
   onConfirm?: () => void;
   confirmText?: string;
   children: ReactNode;
+  maxWidth?: string;
 }
 
 export function Modal({
@@ -17,11 +18,12 @@ export function Modal({
   onConfirm,
   confirmText = "確認",
   children,
+  maxWidth,
 }: ModalProps) {
   if (!open) return null;
   return (
     <div className="modal-backdrop">
-      <div className="modal-card">
+      <div className="modal-card" style={maxWidth ? { maxWidth } : undefined}>
         {title && <h3 className="modal-title">{title}</h3>}
         <div className="modal-body">{children}</div>
         <div className="modal-footer">

@@ -2,6 +2,7 @@
 import { useState, useRef } from "react";
 import { Modal } from "../components/common/Modal";
 import { AdvancedSearch, AdvancedSearchParams } from "../components/AdvancedSearch";
+import { TraceabilityFlow } from "../components/TraceabilityFlow";
 import "../styles/query-page.css";
 
 // 資料類型枚舉
@@ -74,6 +75,9 @@ export function QueryPage() {
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
+  const [traceabilityModalOpen, setTraceabilityModalOpen] = useState(false);
+  const [traceabilityData, setTraceabilityData] = useState<any>(null);
+  const [traceabilityRecordId, setTraceabilityRecordId] = useState<string | null>(null);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
@@ -109,7 +113,7 @@ export function QueryPage() {
     }
 
     // P2 欄位的 boolean 轉換: appearance, rough edge, striped results
-    const p2BooleanFields = ['appearance', 'rough edge', 'striped results', 'Appearance', 'Rough edge', 'Striped results'];
+    const p2BooleanFields = ['appearance', 'rough edge', 'striped results', 'Appearance', 'Rough edge', 'Striped results', '外觀', '毛邊', '分條結果'];
     if (p2BooleanFields.includes(header)) {
       if (typeof value === 'boolean') {
         return value ? 'V' : 'X';
@@ -146,8 +150,58 @@ export function QueryPage() {
         return '分2Points 2';
       }
     }
+
+    // P1 Production Date 格式處理（修正 250,717 這類數字顯示問題）
+    if (header === 'Production Date' || header === 'production_date') {
+      if (!value) return '-';
+      
+      // 如果是數字（可能是 Excel 序列值或 YYMMDD 格式）
+      if (typeof value === 'number') {
+        // 檢查是否為 YYMMDD 格式 (6位數字)
+        const numStr = value.toString();
+        if (numStr.length === 6) {
+          // 250717 -> 2025-07-17
+          const year = '20' + numStr.substring(0, 2);
+          const month = numStr.substring(2, 4);
+          const day = numStr.substring(4, 6);
+          return `${year}-${month}-${day}`;
+        }
+      }
+      
+      // 如果是字串格式
+      if (typeof value === 'string') {
+        // 如果已經是 YYYY-MM-DD 格式，直接返回
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          return value;
+        }
+        
+        // 如果是 YYMMDD 格式字串 (6位數字)
+        if (/^\d{6}$/.test(value)) {
+          const year = '20' + value.substring(0, 2);
+          const month = value.substring(2, 4);
+          const day = value.substring(4, 6);
+          return `${year}-${month}-${day}`;
+        }
+        
+        // 如果是 YYYY/MM/DD 或 YY/MM/DD 格式
+        if (value.includes('/')) {
+          const parts = value.split('/');
+          if (parts.length === 3) {
+            let year = parts[0];
+            const month = parts[1].padStart(2, '0');
+            const day = parts[2].padStart(2, '0');
+            
+            // 如果是兩位年份，補上 20
+            if (year.length === 2) {
+              year = '20' + year;
+            }
+            return `${year}-${month}-${day}`;
+          }
+        }
+      }
+    }
     
-    // 數字格式化
+    // 數字格式化（排除日期欄位）
     if (typeof value === 'number') {
       return value.toLocaleString();
     }
@@ -197,6 +251,196 @@ export function QueryPage() {
       setLoading(false);
     }
   };
+
+  // 輔助函數：產生 P3 Row 的 Product ID
+  const generateRowProductId = (record: QueryRecord, row: any): string => {
+    // 1. 取得日期 (YYYYMMDD)
+    let dateStr = '';
+    if (record.production_date) {
+      // 移除所有非數字字符
+      dateStr = record.production_date.replace(/\D/g, '');
+      // 確保是 8 位數 (YYYYMMDD)
+      if (dateStr.length > 8) dateStr = dateStr.substring(0, 8);
+    } else {
+      // 如果沒有 production_date，嘗試從 created_at 取得
+      const dateObj = new Date(record.created_at);
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      dateStr = `${year}${month}${day}`;
+    }
+
+    // 2. 機台
+    const machine = record.machine_no || row['machine'] || row['Machine'] || 'Unknown';
+
+    // 3. 模號
+    const mold = record.mold_no || row['mold'] || row['Mold'] || 'Unknown';
+
+    // 4. Lot (優先使用 row 中的 lot 資訊)
+    const lot = row['lot'] || row['Lot'] || row['production_lot'] || row['Production Lot'] || row['lot_no'] || row['Lot No'] || '0';
+
+    return `${dateStr}_${machine}_${mold}_${lot}`;
+  };
+
+  // 處理 P3 關聯查詢（使用規格和 winder_number 精確查詢對應的單筆 P2）
+  const handleP3LinkSearch = async (record: QueryRecord, row: any, rowProductId?: string) => {
+    try {
+      let baseLotNo = '';
+      let sourceWinder: number | null = null;
+      
+      // 1. 嘗試從 P3_No 解析 (最準確)
+      // P3_No 格式通常為: LotNo_Winder_Batch (例如: 2503273_03_14_301)
+      const p3No = row['P3_No.'] || row['P3 No.'] || row['p3_no'] || row['P3NO'];
+      
+      if (p3No) {
+        const parts = p3No.toString().trim().split('_');
+        // 假設格式至少有 3 部分: Lot_Winder_Batch 或 LotPart1_LotPart2_Winder_Batch
+        if (parts.length >= 3) {
+          // 倒數第二部分通常是 Winder
+          const winderPart = parts[parts.length - 2];
+          if (/^\d+$/.test(winderPart)) {
+            sourceWinder = parseInt(winderPart, 10);
+            // 剩下的前面部分是 Lot No
+            baseLotNo = parts.slice(0, parts.length - 2).join('_');
+            
+            console.log('從 P3_No 解析成功:', { p3No, baseLotNo, sourceWinder });
+          }
+        }
+      }
+      
+      // 2. 嘗試從 lot no 欄位解析 (使用者指定)
+      // 格式: 2507173_02_17 (Lot_Part_Winder)
+      if (!sourceWinder) {
+        const lotNoVal = row['lot no'] || row['lot_no'] || row['Lot No'] || row['Lot No.'];
+        if (lotNoVal) {
+          const parts = lotNoVal.toString().trim().split('_');
+          // 假設最後一部分是 Winder (例如 17)
+          if (parts.length >= 3) {
+            const lastPart = parts[parts.length - 1];
+            if (/^\d+$/.test(lastPart)) {
+              sourceWinder = parseInt(lastPart, 10);
+              // 剩下的前面部分是 Base Lot No (例如 2507173_02)
+              // 如果之前沒解析出 baseLotNo，就用這個
+              if (!baseLotNo) {
+                baseLotNo = parts.slice(0, parts.length - 1).join('_');
+              }
+              console.log('從 lot no 欄位解析成功:', { lotNoVal, baseLotNo, sourceWinder });
+            }
+          }
+        }
+      }
+
+      // 3. 如果無法從 P3_No 或 lot no 解析，嘗試從 record.lot_no 和 row 數據推斷
+      if (!baseLotNo || !sourceWinder) {
+        // 使用記錄的 lot_no 作為基礎
+        baseLotNo = record.lot_no;
+        
+        // 嘗試從 row 中找 winder 相關欄位
+        const winderVal = row['Winder'] || row['winder'] || row['Winder No'] || row['source_winder'];
+        if (winderVal && /^\d+$/.test(winderVal.toString())) {
+          sourceWinder = parseInt(winderVal.toString(), 10);
+        } else {
+          // 如果沒有 winder 欄位，嘗試從 lot_no 解析 (舊邏輯，可能不準確)
+          // 假設 lot_no 結尾是 winder (例如 2503033_01_17)
+          const parts = record.lot_no.split('_');
+          if (parts.length >= 3) {
+             // 只有當部分夠多時才嘗試拆分，避免把 2503033_03 拆成 Lot:2503033 Winder:03
+             const lastPart = parts[parts.length - 1];
+             if (/^\d{1,2}$/.test(lastPart)) {
+               // 這裡很危險，因為 _03 可能是批號的一部分
+               // 只有當我們確定它是 winder 時才用
+               // 暫時保留原值作為 LotNo，除非我們非常確定
+             }
+          }
+        }
+      }
+
+      if (!baseLotNo) {
+        alert('無法取得批號資訊');
+        return;
+      }
+      
+      if (!sourceWinder) {
+        alert('無法從 P3 資料中提取卷收機編號 (Winder Number)，無法進行關聯查詢。\n請確認 P3_No 格式 (Lot_Winder_Batch) 或欄位中包含 Winder 資訊。');
+        return;
+      }
+      
+      console.log('P3 關聯查詢執行:', {
+        baseLotNo,
+        sourceWinder,
+        message: '使用解析出的批號 + winder_number 搜尋 P2'
+      });
+      
+      setLoading(true);
+      
+      // 使用新的追溯 API 獲取完整資料
+      const traceResponse = await fetch(
+        `/api/traceability/winder/${encodeURIComponent(baseLotNo)}/${sourceWinder}`
+      );
+      
+      if (!traceResponse.ok) {
+        // 如果追溯 API 失敗，嘗試回退到舊的查詢方式，或者直接報錯
+        // 這裡我們假設追溯 API 應該要成功，如果 404 代表真的沒資料
+        if (traceResponse.status === 404) {
+           alert(`未找到對應的 P2 記錄（Lot: ${baseLotNo}, Winder: ${sourceWinder}）`);
+           setLoading(false);
+           return;
+        }
+        throw new Error(`追溯查詢失敗: ${traceResponse.statusText}`);
+      }
+      
+      const traceData = await traceResponse.json();
+      
+      // 轉換資料格式以符合 TraceabilityFlow 的需求
+      // 建立一個新的 P3 記錄物件，並根據 row 資料更新欄位
+      const p3Record = { ...record };
+      
+      // 如果有 rowProductId，更新 product_id
+      if (rowProductId) {
+        p3Record.product_id = rowProductId;
+      }
+      
+      // 嘗試從 row 更新其他欄位，例如 production_lot (批號)
+      // 檢查常見的批號欄位名稱
+      const lotVal = row['lot'] || row['Lot'] || row['production_lot'] || row['Production Lot'] || row['lot_no'] || row['Lot No'];
+      if (lotVal) {
+         p3Record.production_lot = lotVal;
+         // 同時更新 lot_no 以確保顯示一致 (視需求而定，通常 P3 的 lot_no 是指生產序號)
+         // p3Record.lot_no = lotVal; 
+      }
+
+      const flowData = {
+        product_id: rowProductId || record.product_id || `${baseLotNo}_${sourceWinder}`,
+        p3: p3Record, // 使用更新後的 P3 記錄
+        p2: traceData.p2,
+        p1: traceData.p1,
+        trace_complete: !!(record && traceData.p2 && traceData.p1),
+        missing_links: [] as string[]
+      };
+      
+      if (!traceData.p2) flowData.missing_links.push('P2');
+      if (!traceData.p1) flowData.missing_links.push('P1');
+      
+      setTraceabilityData(flowData);
+      setTraceabilityModalOpen(true);
+      
+      setLoading(false);
+      
+      // 滾動到搜尋結果
+      setTimeout(() => {
+        const searchResultsElement = document.querySelector('.data-container');
+        if (searchResultsElement) {
+          searchResultsElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 500);
+      
+    } catch (error: any) {
+      console.error('P3 關聯查詢失敗:', error);
+      alert(`查詢失敗: ${error.message || '未知錯誤'}`);
+      setLoading(false);
+    }
+  };
+
 
   // 獲取搜尋建議
   const fetchSuggestions = async (query: string) => {
@@ -315,9 +559,12 @@ export function QueryPage() {
     };
 
     Object.entries(data).forEach(([key, value]) => {
-      if (key.startsWith('actual_temp_') || key.startsWith('Actual_Temp_')) {
+      // 統一轉為小寫並移除空格進行判斷
+      const normalizedKey = key.toLowerCase().replace(/\s+/g, '_');
+      
+      if (normalizedKey.startsWith('actual_temp')) {
         groups.actual_temp[key] = value;
-      } else if (key.startsWith('set_temp_') || key.startsWith('Set_Temp_')) {
+      } else if (normalizedKey.startsWith('set_temp')) {
         groups.set_temp[key] = value;
       } else {
         groups.other[key] = value;
@@ -447,13 +694,13 @@ export function QueryPage() {
 
     return (
       <div className="grouped-data-container">
-        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, 'ℹ️')}
+        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, )}
         
         {hasRows && (
           <div className="data-section">
             <div className="section-header">
               <div className="section-title-wrapper">
-                <span className="section-icon">📊</span>
+                <span className="section-icon"></span>
                 <h5>檢測資料</h5>
                 <span className="field-count-badge">{rows.length} 筆</span>
               </div>
@@ -505,12 +752,12 @@ export function QueryPage() {
     // 基本資料
     const basicData = {
       lot_no: record.lot_no,
-      p3_no: record.p3_no || '-',
-      product_id: record.product_id || '-',
-      machine_no: record.machine_no || '-',
-      mold_no: record.mold_no || '-',
-      specification: record.specification || '-',
-      bottom_tape_lot: record.bottom_tape_lot || '-',
+      // p3_no: record.p3_no || '-',
+      // product_id: record.product_id || '-',
+      // machine_no: record.machine_no || '-',
+      // mold_no: record.mold_no || '-',
+      // specification: record.specification || '-',
+      // bottom_tape_lot: record.bottom_tape_lot || '-',
       updated_at: new Date(record.created_at).toLocaleString('zh-TW'),
       created_at: new Date(record.created_at).toLocaleString('zh-TW')
     };
@@ -538,14 +785,14 @@ export function QueryPage() {
           </div>
         </div>
 
-        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, 'ℹ️')}
+        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, '')}
         
         {/* 渲染檢查項目表格 */}
         {Array.isArray(rows) && rows.length > 0 && (
           <div className="data-section" key="check_items">
             <div className="section-header">
               <div className="section-title-wrapper">
-                <span className="section-icon">✅</span>
+                <span className="section-icon"></span>
                 <h5>檢查項目明細</h5>
                 <span className="field-count-badge">{rows.length} 筆</span>
               </div>
@@ -562,21 +809,38 @@ export function QueryPage() {
                   <table className="data-table">
                     <thead>
                       <tr>
+                        <th className="action-column">關聯查詢</th>
+                        <th>Product ID</th>
                         {Object.keys(rows[0]).map(header => (
                           <th key={header}>{header}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((row: any, idx: number) => (
-                        <tr key={idx}>
-                          {Object.keys(rows[0]).map(header => (
-                            <td key={header}>
-                              {formatFieldValue(header, row[header])}
+                      {rows.map((row: any, idx: number) => {
+                        const rowProductId = generateRowProductId(record, row);
+                        return (
+                          <tr key={idx}>
+                            <td className="action-column">
+                              <button
+                                className="btn-link-search"
+                                title="查詢對應的 P2 和 P1 資料"
+                                onClick={() => handleP3LinkSearch(record, row, rowProductId)}
+                              >
+                                查詢
+                              </button>
                             </td>
-                          ))}
-                        </tr>
-                      ))}
+                            <td className="product-id-cell" title={rowProductId}>
+                              {rowProductId}
+                            </td>
+                            {Object.keys(rows[0]).map(header => (
+                              <td key={header}>
+                                {formatFieldValue(header, row[header])}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -663,7 +927,7 @@ export function QueryPage() {
           {Object.entries(additionalData).map(([key, value]) => (
             <div key={key} className="detail-row">
               <strong>{key}：</strong>
-              <span>{typeof value === 'number' ? value.toLocaleString() : String(value)}</span>
+              <span>{formatFieldValue(key, value)}</span>
             </div>
           ))}
         </div>
@@ -693,47 +957,58 @@ export function QueryPage() {
   );
 
   // 渲染P2詳細資料
-  const renderP2Details = (record: QueryRecord) => (
-    <div className="detail-grid">
-      <div className="detail-row">
-        <strong>批號：</strong>
-        <span>{record.lot_no}</span>
-      </div>
-      <div className="detail-row">
-        <strong>片材寬度(mm)：</strong>
-        <span>{record.sheet_width}</span>
-      </div>
-      <div className="thickness-section">
-        <strong>厚度測量(μm)：</strong>
-        <div className="thickness-grid">
-          <span>厚度1: {record.thickness1}</span>
-          <span>厚度2: {record.thickness2}</span>
-          <span>厚度3: {record.thickness3}</span>
-          <span>厚度4: {record.thickness4}</span>
-          <span>厚度5: {record.thickness5}</span>
-          <span>厚度6: {record.thickness6}</span>
-          <span>厚度7: {record.thickness7}</span>
+  const renderP2Details = (record: QueryRecord) => {
+    // 準備要顯示的額外資料
+    let displayData: { [key: string]: any } = {};
+    
+    // 1. 先加入標準欄位
+    const standardFields: { [key: string]: any } = {
+      '片材寬度': record.sheet_width,
+      '厚度1': record.thickness1,
+      '厚度2': record.thickness2,
+      '厚度3': record.thickness3,
+      '厚度4': record.thickness4,
+      '厚度5': record.thickness5,
+      '厚度6': record.thickness6,
+      '厚度7': record.thickness7,
+      '外觀': record.appearance,
+      '毛邊': record.rough_edge,
+      '分條結果': record.slitting_result,
+    };
+
+    // 過濾掉 undefined/null 的標準欄位
+    Object.entries(standardFields).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        displayData[key] = value;
+      }
+    });
+
+    // 2. 合併額外資料
+    // 如果 P2 資料包含 rows 且只有一筆，提取出來以 Grid 方式顯示 (像 P1 一樣)
+    // 這樣可以顯示單個 row 的所有細項
+    if (record.additional_data && 
+        record.additional_data.rows && 
+        Array.isArray(record.additional_data.rows) && 
+        record.additional_data.rows.length === 1) {
+      displayData = { ...displayData, ...record.additional_data.rows[0] };
+    } else if (record.additional_data) {
+      displayData = { ...displayData, ...record.additional_data };
+    }
+
+    return (
+      <div className="detail-grid">
+        <div className="detail-row">
+          <strong>批號：</strong>
+          <span>{record.lot_no}</span>
         </div>
+        <div className="detail-row">
+          <strong>建立時間：</strong>
+          <span>{new Date(record.created_at).toLocaleString()}</span>
+        </div>
+        {renderAdditionalData(displayData)}
       </div>
-      <div className="detail-row">
-        <strong>外觀：</strong>
-        <span>{record.appearance === 1 ? '通過' : '不通過'}</span>
-      </div>
-      <div className="detail-row">
-        <strong>粗糙邊緣：</strong>
-        <span>{record.rough_edge === 1 ? '通過' : '不通過'}</span>
-      </div>
-      <div className="detail-row">
-        <strong>切割結果：</strong>
-        <span>{record.slitting_result === 1 ? '通過' : '不通過'}</span>
-      </div>
-      <div className="detail-row">
-        <strong>建立時間：</strong>
-        <span>{new Date(record.created_at).toLocaleString()}</span>
-      </div>
-      {renderAdditionalData(record.additional_data)}
-    </div>
-  );
+    );
+  };
 
   // 渲染P3詳細資料
   const renderP3Details = (record: QueryRecord) => (
@@ -749,7 +1024,39 @@ export function QueryPage() {
       <div className="detail-row">
         <strong>Product ID：</strong>
         <span>{record.product_id || '-'}</span>
+        {record.product_id && (
+          <button 
+            className="btn-trace"
+            onClick={(e) => {
+              e.stopPropagation();
+              setTraceabilityRecordId(record.id === traceabilityRecordId ? null : record.id);
+            }}
+            style={{ 
+              marginLeft: '10px', 
+              padding: '2px 8px', 
+              fontSize: '0.8rem',
+              backgroundColor: '#e7f5ff',
+              border: '1px solid #a5d8ff',
+              borderRadius: '4px',
+              color: '#1c7ed6',
+              cursor: 'pointer'
+            }}
+          >
+            {record.id === traceabilityRecordId ? '隱藏追溯' : '追溯流程'}
+          </button>
+        )}
       </div>
+      
+      {traceabilityRecordId === record.id && record.product_id && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          <TraceabilityFlow 
+            productId={record.product_id} 
+            onClose={() => setTraceabilityRecordId(null)} 
+            onRecordClick={handleTraceabilityRecordClick}
+          />
+        </div>
+      )}
+
       <div className="detail-row">
         <strong>機台：</strong>
         <span>{record.machine_no || '-'}</span>
@@ -779,6 +1086,13 @@ export function QueryPage() {
       {renderAdditionalData(record.additional_data)}
     </div>
   );
+
+  // 處理追溯流程中的卡片點擊
+  const handleTraceabilityRecordClick = (record: any, type: 'P1' | 'P2' | 'P3') => {
+    // 確保 record 有 data_type
+    const recordWithType = { ...record, data_type: type };
+    setDetailRecord(recordWithType);
+  };
 
   return (
     <div className="query-page">
@@ -894,7 +1208,7 @@ export function QueryPage() {
                             {record.data_type}
                           </span>
                         </td>
-                        <td>{record.production_date || '未設定'}</td>
+                        <td>{formatFieldValue('production_date', record.production_date)}</td>
                         <td>{new Date(record.created_at).toLocaleString('zh-TW', {
                           year: 'numeric',
                           month: '2-digit',
@@ -951,6 +1265,22 @@ export function QueryPage() {
           )}
         </section>
       )}
+
+      {/* 追溯流程模態框 (放在詳細資料模態框之前，確保詳細資料顯示在最上層) */}
+      <Modal
+        open={traceabilityModalOpen}
+        title="生產追溯流程"
+        onClose={() => setTraceabilityModalOpen(false)}
+        maxWidth="1000px"
+      >
+        {traceabilityData && (
+          <TraceabilityFlow 
+            preloadedData={traceabilityData}
+            onClose={() => setTraceabilityModalOpen(false)} 
+            onRecordClick={handleTraceabilityRecordClick}
+          />
+        )}
+      </Modal>
 
       {/* 詳細資料模態框 */}
       <Modal

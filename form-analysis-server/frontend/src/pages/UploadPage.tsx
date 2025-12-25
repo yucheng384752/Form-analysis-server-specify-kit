@@ -721,7 +721,7 @@ export function UploadPage() {
                   color: '#7f1d1d',
                   fontSize: '14px'
                 }}>
-                  ℹ️ 注意：有 {filesWithErrors.length} 個檔案因包含錯誤將被跳過
+                   注意：有 {filesWithErrors.length} 個檔案因包含錯誤將被跳過
                 </p>
               )}
               {validFilesWithoutErrors.length > 0 && (
