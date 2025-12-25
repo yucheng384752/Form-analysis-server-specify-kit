@@ -2,7 +2,7 @@
 -- 設計日期: 2025-11-08
 
 -- ========================================
--- 1. 生產批次主表 (Production Lots)
+-- 1. 生產序號次主表 (Production Lots)
 -- ========================================
 CREATE TABLE IF NOT EXISTS production_lots (
     lot_no VARCHAR(20) PRIMARY KEY,  -- 唯一鍵: 格式 2503033_01

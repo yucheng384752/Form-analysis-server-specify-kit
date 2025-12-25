@@ -7,14 +7,18 @@
 
 import uuid
 from datetime import datetime, date
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 from enum import Enum
 
 from sqlalchemy import String, Integer, Date, DateTime, func, Index, Text, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.p3_item import P3Item
+    from app.models.p2_item import P2Item
 
 
 class DataType(str, Enum):
@@ -265,6 +269,20 @@ class Record(Base):
         server_default=func.now(),
         nullable=False,
         comment="記錄建立時間"
+    )
+    
+    # P3 明細項目關聯（一對多）
+    p3_items: Mapped[list["P3Item"]] = relationship(
+        "P3Item",
+        back_populates="record",
+        cascade="all, delete-orphan"
+    )
+    
+    # P2 明細項目關聯（一對多）
+    p2_items: Mapped[list["P2Item"]] = relationship(
+        "P2Item",
+        back_populates="record",
+        cascade="all, delete-orphan"
     )
     
     def __repr__(self) -> str:

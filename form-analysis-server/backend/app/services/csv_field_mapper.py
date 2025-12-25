@@ -209,7 +209,7 @@ class CSVFieldMapper:
             )
         
         elif csv_type == CSVType.P3:
-            # P3: 提取機台編號、模具編號、生產批號、來源收卷機
+            # P3: 提取機台編號、模具編號、生產序號號、來源收卷機
             # 優先從 P3_No. 欄位提取
             p3_no = row.get('P3_No.')
             if pd.notna(p3_no):
@@ -289,7 +289,7 @@ class CSVFieldMapper:
         - YYYYMDD: 7位數字日期
         - MM: 2位數字機台/批次
         - WW: 收卷機編號（來源）
-        - LLL: 生產批號
+        - LLL: 生產序號號
         
         範例：2411012_04_34_301
         - lot_no: 2411012_04 （正規化後：2411012-04）
@@ -322,7 +322,7 @@ class CSVFieldMapper:
             except (ValueError, TypeError):
                 pass
             
-            # production_lot: 生產批號
+            # production_lot: 生產序號號
             try:
                 result['production_lot'] = int(lot_part)
             except (ValueError, TypeError):

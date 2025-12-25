@@ -96,14 +96,36 @@ async def trace_by_product_id(
     
     # 步驟 2: 使用 P3.lot_no 和 P3.source_winder 查詢對應的 P2
     p2_record = None
-    if p3_record.lot_no and p3_record.source_winder:
-        p2_query = select(Record).where(
+    
+    # 解析正確的來源收卷機編號
+    source_winder = _extract_winder_from_p3(p3_record)
+    
+    if p3_record.lot_no:
+        # 建構查詢條件
+        conditions = [
             Record.data_type == DataType.P2,
-            Record.lot_no == p3_record.lot_no,
-            Record.winder_number == p3_record.source_winder
-        )
+            Record.lot_no == p3_record.lot_no
+        ]
+        
+        # 如果有收卷機編號，加入查詢條件
+        if source_winder is not None:
+            conditions.append(Record.winder_number == source_winder)
+            
+        p2_query = select(Record).where(*conditions)
         p2_result = await db.execute(p2_query)
         p2_record = p2_result.scalar_one_or_none()
+        
+        # Fallback: 如果指定收卷機找不到，但該批號只有一筆 P2 且無收卷機編號，則使用該筆
+        if not p2_record and source_winder is not None:
+            fallback_query = select(Record).where(
+                Record.data_type == DataType.P2,
+                Record.lot_no == p3_record.lot_no
+            )
+            fallback_result = await db.execute(fallback_query)
+            all_p2_records = fallback_result.scalars().all()
+            
+            if len(all_p2_records) == 1 and all_p2_records[0].winder_number is None:
+                p2_record = all_p2_records[0]
     
     # 步驟 3: 使用 P2.lot_no (或 P3.lot_no) 查詢 P1
     p1_record = None
@@ -247,10 +269,22 @@ async def trace_by_winder(
     p2_record = p2_result.scalar_one_or_none()
     
     if not p2_record:
-        raise HTTPException(
-            status_code=404,
-            detail=f"查無 P2 記錄: Lot_No={lot_no}, Winder={winder_number}"
+        # Fallback: Check if there is a single P2 record for this lot with no winder number
+        # This handles cases where P2 data is missing winder information
+        fallback_query = select(Record).where(
+            Record.data_type == DataType.P2,
+            Record.lot_no == lot_no
         )
+        fallback_result = await db.execute(fallback_query)
+        all_p2_records = fallback_result.scalars().all()
+        
+        if len(all_p2_records) == 1 and all_p2_records[0].winder_number is None:
+            p2_record = all_p2_records[0]
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"查無 P2 記錄: Lot_No={lot_no}, Winder={winder_number}"
+            )
     
     # 查詢 P1
     p1_query = select(Record).where(
@@ -281,6 +315,32 @@ async def trace_by_winder(
     }
 
 
+def _extract_winder_from_p3(record: Record) -> Optional[int]:
+    """
+    從 P3 記錄中解析正確的來源收卷機編號
+    邏輯: 找到 P3的 "lot no" 欄位 (在 additional_data 中) -> 7+2+2碼 -> 最後兩碼為卷收機號碼
+    """
+    if not record or record.data_type != DataType.P3:
+        return getattr(record, 'source_winder', None) if record else None
+        
+    # 嘗試從 additional_data 中找到對應的原始 lot no
+    if record.additional_data and isinstance(record.additional_data, dict) and 'rows' in record.additional_data:
+        for row in record.additional_data['rows']:
+            # 比對 production_lot (lot)
+            # 注意：record.production_lot 可能是 int，row['lot'] 也可能是 int 或 str
+            if str(row.get('lot')) == str(record.production_lot):
+                raw_lot_no = row.get('lot no') # e.g. "2507173_02_17"
+                if raw_lot_no and isinstance(raw_lot_no, str) and len(raw_lot_no) >= 2:
+                    try:
+                        # 取最後兩碼
+                        winder_str = raw_lot_no[-2:]
+                        return int(winder_str)
+                    except ValueError:
+                        pass
+                        
+    return record.source_winder
+
+
 def _record_to_dict(record: Record) -> Dict[str, Any]:
     """
     將 Record 物件轉換為字典
@@ -294,11 +354,18 @@ def _record_to_dict(record: Record) -> Dict[str, Any]:
     if not record:
         return None
     
+    # 針對 P3 記錄，嘗試解析正確的 source_winder
+    source_winder = record.source_winder
+    if record.data_type == DataType.P3:
+        extracted_winder = _extract_winder_from_p3(record)
+        if extracted_winder is not None:
+            source_winder = extracted_winder
+    
     return {
         "id": record.id,
         "data_type": record.data_type.value if record.data_type else None,
         "lot_no": record.lot_no,
-        "upload_date": record.upload_date.isoformat() if record.upload_date else None,
+        # "upload_date": record.upload_date.isoformat() if hasattr(record, "upload_date") and record.upload_date else None,
         
         # 新增欄位
         "material_code": record.material_code,
@@ -307,7 +374,7 @@ def _record_to_dict(record: Record) -> Dict[str, Any]:
         "machine_no": record.machine_no,
         "mold_no": record.mold_no,
         "production_lot": record.production_lot,
-        "source_winder": record.source_winder,
+        "source_winder": source_winder,
         "product_id": record.product_id,
         
         # JSONB 額外資料
@@ -315,7 +382,7 @@ def _record_to_dict(record: Record) -> Dict[str, Any]:
         
         # 時間戳記
         "created_at": record.created_at.isoformat() if record.created_at else None,
-        "updated_at": record.updated_at.isoformat() if record.updated_at else None,
+        "updated_at": record.updated_at.isoformat() if hasattr(record, "updated_at") and record.updated_at else None,
     }
 
 

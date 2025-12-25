@@ -23,11 +23,11 @@ class QualityStatus(int, Enum):
     GOOD = 1
 
 # ========================================
-# 2. 生產批次相關模型
+# 2. 生產序號次相關模型
 # ========================================
 
 class ProductionLotBase(BaseModel):
-    """生產批次基礎模型"""
+    """生產序號次基礎模型"""
     lot_no: str = Field(..., pattern=r'^\d{7}_\d{2}$', description="批號，格式：7位數字_2位數字")
     production_date: date = Field(..., description="生產日期")
     production_time_start: Optional[time] = Field(None, description="生產開始時間")
@@ -43,11 +43,11 @@ class ProductionLotBase(BaseModel):
     phase: PhaseType = Field(..., description="生產階段")
 
 class ProductionLotCreate(ProductionLotBase):
-    """創建生產批次請求模型"""
+    """創建生產序號次請求模型"""
     pass
 
 class ProductionLotUpdate(BaseModel):
-    """更新生產批次請求模型"""
+    """更新生產序號次請求模型"""
     production_time_start: Optional[time] = None
     production_time_end: Optional[time] = None
     product_spec: Optional[str] = Field(None, max_length=100)
@@ -60,7 +60,7 @@ class ProductionLotUpdate(BaseModel):
     remarks: Optional[str] = None
 
 class ProductionLotResponse(ProductionLotBase):
-    """生產批次響應模型"""
+    """生產序號次響應模型"""
     created_at: datetime
     updated_at: datetime
     quality_rate: float = Field(..., description="良率百分比")

@@ -10,7 +10,7 @@ Create Date: 2025-12-15
 - winder_number: 收卷機編號 (P2, 1-20)
 - machine_no: 機台編號 (P3, 如 P24)
 - mold_no: 模具編號 (P3, 如 238-2)
-- production_lot: 生產批號 (P3, 如 301, 302)
+- production_lot: 生產序號號 (P3, 如 301, 302)
 - source_winder: 來源收卷機 (P3, 從 lot_no 提取)
 - product_id: 產品識別碼 (P3, 格式: YYYY-MM-DD_machine_mold_lot)
 
@@ -48,7 +48,7 @@ def upgrade() -> None:
     # P3 產品追蹤欄位
     op.add_column('records', sa.Column('machine_no', sa.String(length=20), nullable=True, comment='機台編號 (如 P24, P21)'))
     op.add_column('records', sa.Column('mold_no', sa.String(length=20), nullable=True, comment='模具編號 (如 238-2)'))
-    op.add_column('records', sa.Column('production_lot', sa.Integer(), nullable=True, comment='生產批號 (如 301, 302, 303)'))
+    op.add_column('records', sa.Column('production_lot', sa.Integer(), nullable=True, comment='生產序號號 (如 301, 302, 303)'))
     op.add_column('records', sa.Column('source_winder', sa.Integer(), nullable=True, comment='來源收卷機編號 (從 lot_no 提取，用於 P3→P2 追蹤)'))
     op.add_column('records', sa.Column('product_id', sa.String(length=100), nullable=True, comment='產品識別碼 (格式: YYYY-MM-DD_machine_mold_lot)'))
     

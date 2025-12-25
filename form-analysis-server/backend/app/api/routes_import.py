@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.core.logging import get_logger
 from app.models.upload_job import UploadJob, JobStatus
 from app.models.record import Record
+from app.models.p3_item import P3Item
 from app.schemas.import_data import (
     ImportRequest,
     ImportResponse,
@@ -309,8 +310,110 @@ async def import_data(
                    lot_no=lot_no,
                    data_type=data_type.value)
         
-        # P2/P3 特殊處理：將多行資料合併為單一記錄
-        if data_type in [DataType.P2, DataType.P3]:
+        # P2 特殊處理：父子表結構（Record + P2Items）
+        if data_type == DataType.P2:
+            try:
+                from app.models.p2_item import P2Item
+                
+                # 1. 準備資料
+                all_rows = []
+                for index, row in df.iterrows():
+                    row_dict = row.to_dict()
+                    cleaned_row = {k: (v if pd.notna(v) else None) for k, v in row_dict.items()}
+                    all_rows.append(cleaned_row)
+                
+                # 2. 檢查或創建父記錄
+                existing_stmt = select(Record).where(
+                    Record.lot_no == lot_no,
+                    Record.data_type == data_type
+                )
+                existing_result = await db.execute(existing_stmt)
+                existing_record = existing_result.scalar_one_or_none()
+                
+                # 提取生產日期
+                production_date = production_date_extractor.extract_production_date(
+                    row_data={'additional_data': all_rows[0] if all_rows else {}},
+                    data_type=data_type.value
+                ) or date.today()
+                
+                if existing_record:
+                    # 更新現有記錄
+                    existing_record.additional_data = {'rows': all_rows}
+                    existing_record.production_date = production_date
+                    # 清除舊的 P2Items (CASCADE 會自動處理，但顯式刪除更安全)
+                    if existing_record.p2_items:
+                        for old_item in existing_record.p2_items:
+                            await db.delete(old_item)
+                else:
+                    # 創建新記錄
+                    existing_record = Record(
+                        lot_no=lot_no,
+                        data_type=data_type,
+                        production_date=production_date,
+                        additional_data={'rows': all_rows}
+                    )
+                    db.add(existing_record)
+                    await db.flush() # 獲取 ID
+                
+                # 3. 創建 P2Items
+                for winder_index, row_data in enumerate(all_rows, start=1):
+                    # 處理數值轉換 helper
+                    def get_float(key):
+                        val = row_data.get(key)
+                        try:
+                            return float(val) if val is not None else None
+                        except (ValueError, TypeError):
+                            return None
+                            
+                    def get_int_or_status(key):
+                        val = row_data.get(key)
+                        if val == 'OK': return 1
+                        if val == 'NG': return 0
+                        try:
+                            return int(float(val)) if val is not None else None
+                        except (ValueError, TypeError):
+                            return None
+
+                    p2_item = P2Item(
+                        record_id=existing_record.id,
+                        winder_number=winder_index,
+                        sheet_width=get_float('Sheet Width(mm)'),
+                        thickness1=get_float('Thicknessss1(μm)'),
+                        thickness2=get_float('Thicknessss2(μm)'),
+                        thickness3=get_float('Thicknessss3(μm)'),
+                        thickness4=get_float('Thicknessss4(μm)'),
+                        thickness5=get_float('Thicknessss5(μm)'),
+                        thickness6=get_float('Thicknessss6(μm)'),
+                        thickness7=get_float('Thicknessss7(μm)'),
+                        appearance=get_int_or_status('Appearance'),
+                        rough_edge=get_int_or_status('rough edge'),
+                        slitting_result=get_int_or_status('Slitting Result'),
+                        row_data=row_data
+                    )
+                    db.add(p2_item)
+                
+                imported_rows = len(all_rows)
+                logger.info("P2資料匯入完成",
+                           lot_no=lot_no,
+                           total_winders=imported_rows,
+                           record_id=str(existing_record.id))
+                
+            except Exception as e:
+                logger.error("處理P2資料失敗",
+                           error=str(e),
+                           lot_no=lot_no,
+                           process_id=str(request.process_id))
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "detail": f"處理P2資料失敗：{str(e)}",
+                        "process_id": str(request.process_id),
+                        "error_code": "IMPORT_ERROR"
+                    }
+                )
+        
+        # P3 特殊處理：將多行資料合併為單一記錄
+        elif data_type == DataType.P3:
             try:
                 # 將所有行轉換為列表存入 additional_data
                 all_rows = []
@@ -388,6 +491,17 @@ async def import_data(
                             existing_record.bottom_tape_lot = str(bottom_tape_val).strip()
                         if production_lot_val is not None:
                             existing_record.production_lot = production_lot_val
+                        
+                        # 從 lot_no 提取卷收機編號（最後兩碼）
+                        if lot_no and len(lot_no) >= 2:
+                            try:
+                                # lot_no 格式：XXXXXXX_XX_YY，提取最後兩碼 YY
+                                # 或者直接從字串最後兩位提取
+                                last_two = lot_no[-2:]
+                                if last_two.isdigit():
+                                    existing_record.source_winder = int(last_two)
+                            except (ValueError, AttributeError):
+                                pass  # 如果無法提取，保持原值
 
                         # product_id（若必要欄位齊全且尚未有值）
                         if (
@@ -404,6 +518,86 @@ async def import_data(
                                 existing_record.mold_no,
                                 existing_record.production_lot,
                             )
+                        
+                        # 寫入 P3 明細項目子表
+                        # 先刪除舊的明細項目（CASCADE 會自動處理）
+                        if existing_record.p3_items:
+                            for old_item in existing_record.p3_items:
+                                await db.delete(old_item)
+                        
+                        # 為每一行創建 P3Item
+                        for row_no, row_data in enumerate(all_rows, start=1):
+                            # 提取 P3_No. 來組成 product_id
+                            p3_no_raw = (
+                                row_data.get('P3_No.')
+                                or row_data.get('P3 No.')
+                                or row_data.get('p3_no')
+                                or row_data.get('P3NO')
+                            )
+                            
+                            if p3_no_raw:
+                                # P3_No. 格式：XXXXXXXX_XX_YY (lot_no_機台_批次)
+                                # 組合成 product_id: YYYYMMDD_XX_YY_Z (日期_機台_模具_批次)
+                                p3_no_str = str(p3_no_raw).strip()
+                                parts = p3_no_str.split('_')
+                                
+                                if len(parts) >= 3:
+                                    machine_from_p3 = parts[1]  # 機台編號
+                                    lot_from_p3 = parts[2]      # 批次
+                                    
+                                    # 組成完整的 product_id
+                                    if existing_record.production_date and existing_record.mold_no:
+                                        date_str = existing_record.production_date.strftime('%Y%m%d')
+                                        item_product_id = f"{date_str}_{machine_from_p3}_{existing_record.mold_no}_{lot_from_p3}"
+                                    else:
+                                        item_product_id = None
+                                else:
+                                    item_product_id = None
+                            else:
+                                item_product_id = None
+                            
+                            # 提取其他欄位
+                            item_lot_no = row_data.get('lot') or row_data.get('LOT') or row_data.get('Lot')
+                            item_machine_no = (
+                                row_data.get('Machine NO')
+                                or row_data.get('Machine No')
+                                or row_data.get('Machine')
+                                or row_data.get('machine_no')
+                                or row_data.get('machine')
+                            )
+                            item_mold_no = (
+                                row_data.get('Mold NO')
+                                or row_data.get('Mold No')
+                                or row_data.get('Mold')
+                                or row_data.get('mold_no')
+                                or row_data.get('mold')
+                            )
+                            item_specification = (
+                                row_data.get('Specification')
+                                or row_data.get('specification')
+                                or row_data.get('規格')
+                                or row_data.get('Spec')
+                            )
+                            item_bottom_tape = (
+                                row_data.get('Bottom Tape')
+                                or row_data.get('bottom tape')
+                                or row_data.get('Bottom Tape LOT')
+                                or row_data.get('下膠編號')
+                                or row_data.get('下膠')
+                            )
+                            
+                            p3_item = P3Item(
+                                record_id=existing_record.id,
+                                product_id=item_product_id,
+                                lot_no=str(item_lot_no).strip() if item_lot_no else None,
+                                machine_no=str(item_machine_no).strip() if item_machine_no else None,
+                                mold_no=str(item_mold_no).strip() if item_mold_no else None,
+                                specification=str(item_specification).strip() if item_specification else None,
+                                bottom_tape_lot=str(item_bottom_tape).strip() if item_bottom_tape else None,
+                                row_no=row_no,
+                                row_data=row_data
+                            )
+                            db.add(p3_item)
                     
                     logger.info("更新現有P2/P3記錄",
                                lot_no=lot_no,
@@ -472,6 +666,16 @@ async def import_data(
                             record_kwargs['bottom_tape_lot'] = str(bottom_tape_val).strip()
                         if production_lot_val is not None:
                             record_kwargs['production_lot'] = production_lot_val
+                        
+                        # 從 lot_no 提取卷收機編號（最後兩碼）
+                        if lot_no and len(lot_no) >= 2:
+                            try:
+                                # lot_no 格式：XXXXXXX_XX_YY，提取最後兩碼 YY
+                                last_two = lot_no[-2:]
+                                if last_two.isdigit():
+                                    record_kwargs['source_winder'] = int(last_two)
+                            except (ValueError, AttributeError):
+                                pass  # 如果無法提取，跳過
 
                         # product_id（若必要欄位齊全）
                         if (
@@ -490,6 +694,82 @@ async def import_data(
 
                     record = Record(**record_kwargs)
                     db.add(record)
+                    await db.flush()  # 確保 record.id 可用
+                    
+                    # P3：寫入明細項目子表
+                    if data_type == DataType.P3:
+                        for row_no, row_data in enumerate(all_rows, start=1):
+                            # 提取 P3_No. 來組成 product_id
+                            p3_no_raw = (
+                                row_data.get('P3_No.')
+                                or row_data.get('P3 No.')
+                                or row_data.get('p3_no')
+                                or row_data.get('P3NO')
+                            )
+                            
+                            if p3_no_raw:
+                                # P3_No. 格式：XXXXXXXX_XX_YY (lot_no_機台_批次)
+                                # 組合成 product_id: YYYYMMDD_XX_YY_Z (日期_機台_模具_批次)
+                                p3_no_str = str(p3_no_raw).strip()
+                                parts = p3_no_str.split('_')
+                                
+                                if len(parts) >= 3:
+                                    machine_from_p3 = parts[1]  # 機台編號
+                                    lot_from_p3 = parts[2]      # 批次
+                                    
+                                    # 組成完整的 product_id
+                                    if record.production_date and record.mold_no:
+                                        date_str = record.production_date.strftime('%Y%m%d')
+                                        item_product_id = f"{date_str}_{machine_from_p3}_{record.mold_no}_{lot_from_p3}"
+                                    else:
+                                        item_product_id = None
+                                else:
+                                    item_product_id = None
+                            else:
+                                item_product_id = None
+                            
+                            # 提取其他欄位
+                            item_lot_no = row_data.get('lot') or row_data.get('LOT') or row_data.get('Lot')
+                            item_machine_no = (
+                                row_data.get('Machine NO')
+                                or row_data.get('Machine No')
+                                or row_data.get('Machine')
+                                or row_data.get('machine_no')
+                                or row_data.get('machine')
+                            )
+                            item_mold_no = (
+                                row_data.get('Mold NO')
+                                or row_data.get('Mold No')
+                                or row_data.get('Mold')
+                                or row_data.get('mold_no')
+                                or row_data.get('mold')
+                            )
+                            item_specification = (
+                                row_data.get('Specification')
+                                or row_data.get('specification')
+                                or row_data.get('規格')
+                                or row_data.get('Spec')
+                            )
+                            item_bottom_tape = (
+                                row_data.get('Bottom Tape')
+                                or row_data.get('bottom tape')
+                                or row_data.get('Bottom Tape LOT')
+                                or row_data.get('下膠編號')
+                                or row_data.get('下膠')
+                            )
+                            
+                            p3_item = P3Item(
+                                record_id=record.id,
+                                product_id=item_product_id,
+                                lot_no=str(item_lot_no).strip() if item_lot_no else None,
+                                machine_no=str(item_machine_no).strip() if item_machine_no else None,
+                                mold_no=str(item_mold_no).strip() if item_mold_no else None,
+                                specification=str(item_specification).strip() if item_specification else None,
+                                bottom_tape_lot=str(item_bottom_tape).strip() if item_bottom_tape else None,
+                                row_no=row_no,
+                                row_data=row_data
+                            )
+                            db.add(p3_item)
                     
                     logger.info("創建新P2/P3記錄",
                                lot_no=lot_no,

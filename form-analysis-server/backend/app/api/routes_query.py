@@ -10,6 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_, and_, String
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from datetime import datetime, date
@@ -17,6 +18,7 @@ from datetime import datetime, date
 from app.core.database import get_db
 from app.core.logging import get_logger
 from app.models.record import Record, DataType
+from app.models.p2_item import P2Item
 
 # 獲取日誌記錄器
 logger = get_logger(__name__)
@@ -251,6 +253,7 @@ async def advanced_search_records(
     mold_no: Optional[str] = Query(None, description="下膠編號 (Bottom Tape)（模糊搜尋）"),
     product_id: Optional[str] = Query(None, description="產品編號（模糊搜尋）"),
     p3_specification: Optional[str] = Query(None, description="P3規格（模糊搜尋）"),
+    winder_number: Optional[int] = Query(None, description="卷收機號碼（精確搜尋，用於 P2）"),
     data_type: Optional[DataType] = Query(None, description="資料類型 (P1/P2/P3)"),
     page: int = Query(1, ge=1, description="頁碼"),
     page_size: int = Query(10, ge=1, le=100, description="每頁記錄數"),
@@ -266,6 +269,7 @@ async def advanced_search_records(
                    mold_no=mold_no,
                    product_id=product_id,
                    p3_specification=p3_specification,
+                   winder_number=winder_number,
                    data_type=data_type,
                    page=page,
                    page_size=page_size)
@@ -276,6 +280,11 @@ async def advanced_search_records(
         # 批號模糊搜尋
         if lot_no and lot_no.strip():
             conditions.append(Record.lot_no.ilike(f"%{lot_no.strip()}%"))
+        
+        # 卷收機號碼精確搜尋（P2專用）
+        # 注意：這需要 join P2Item 表
+        if winder_number is not None:
+            conditions.append(P2Item.winder_number == winder_number)
         
         # 生產日期範圍搜尋
         if production_date_from:
@@ -314,15 +323,27 @@ async def advanced_search_records(
             )
         
         # 組合查詢
-        query_stmt = select(Record).where(and_(*conditions))
+        query_stmt = select(Record)
+        
+        # 如果有 winder_number 條件，需要 join P2Item
+        if winder_number is not None:
+            query_stmt = query_stmt.join(Record.p2_items)
+            
+        query_stmt = query_stmt.where(and_(*conditions))
         
         # 計算總數
-        count_query = select(func.count(Record.id)).where(and_(*conditions))
+        count_query = select(func.count(Record.id))
+        if winder_number is not None:
+            count_query = count_query.join(Record.p2_items)
+        count_query = count_query.where(and_(*conditions))
+        
         result = await db.execute(count_query)
         total_count = result.scalar() or 0
         
         # 分頁查詢
         offset = (page - 1) * page_size
+        # 預加載 p2_items
+        query_stmt = query_stmt.options(selectinload(Record.p2_items))
         query_stmt = query_stmt.order_by(Record.created_at.desc()).offset(offset).limit(page_size)
         
         result = await db.execute(query_stmt)
@@ -347,17 +368,26 @@ async def advanced_search_records(
                 query_record.quantity = record.quantity
                 query_record.notes = record.notes
             elif record.data_type == DataType.P2:
-                query_record.sheet_width = record.sheet_width
-                query_record.thickness1 = record.thickness1
-                query_record.thickness2 = record.thickness2
-                query_record.thickness3 = record.thickness3
-                query_record.thickness4 = record.thickness4
-                query_record.thickness5 = record.thickness5
-                query_record.thickness6 = record.thickness6
-                query_record.thickness7 = record.thickness7
-                query_record.appearance = record.appearance
-                query_record.rough_edge = record.rough_edge
-                query_record.slitting_result = record.slitting_result
+                # P2 改為從 p2_items 獲取資料並放入 additional_data['rows']
+                if record.p2_items:
+                    rows = []
+                    # 排序 p2_items (按 winder_number)
+                    sorted_items = sorted(record.p2_items, key=lambda x: x.winder_number)
+                    for item in sorted_items:
+                        # 如果有指定 winder_number，只返回該 winder 的資料
+                        if winder_number is not None and item.winder_number != winder_number:
+                            continue
+                            
+                        if item.row_data:
+                            rows.append(item.row_data)
+                    
+                    if not query_record.additional_data:
+                        query_record.additional_data = {}
+                    query_record.additional_data['rows'] = rows
+                
+                # 為了兼容舊前端顯示（如果有的話），也可以保留一些摘要資訊
+                # 但主要依賴 additional_data['rows']
+                
             elif record.data_type == DataType.P3:
                 query_record.p3_no = record.p3_no
                 query_record.product_name = record.product_name
@@ -439,6 +469,8 @@ async def query_records(
         
         # 分頁查詢
         offset = (page - 1) * page_size
+        # 預加載 p2_items
+        query_stmt = query_stmt.options(selectinload(Record.p2_items))
         query_stmt = query_stmt.order_by(Record.created_at.desc()).offset(offset).limit(page_size)
         
         result = await db.execute(query_stmt)
@@ -463,17 +495,18 @@ async def query_records(
                 query_record.quantity = record.quantity
                 query_record.notes = record.notes
             elif record.data_type == DataType.P2:
-                query_record.sheet_width = record.sheet_width
-                query_record.thickness1 = record.thickness1
-                query_record.thickness2 = record.thickness2
-                query_record.thickness3 = record.thickness3
-                query_record.thickness4 = record.thickness4
-                query_record.thickness5 = record.thickness5
-                query_record.thickness6 = record.thickness6
-                query_record.thickness7 = record.thickness7
-                query_record.appearance = record.appearance
-                query_record.rough_edge = record.rough_edge
-                query_record.slitting_result = record.slitting_result
+                # P2 改為從 p2_items 獲取資料並放入 additional_data['rows']
+                if record.p2_items:
+                    rows = []
+                    # 排序 p2_items (按 winder_number)
+                    sorted_items = sorted(record.p2_items, key=lambda x: x.winder_number)
+                    for item in sorted_items:
+                        if item.row_data:
+                            rows.append(item.row_data)
+                    
+                    if not query_record.additional_data:
+                        query_record.additional_data = {}
+                    query_record.additional_data['rows'] = rows
             elif record.data_type == DataType.P3:
                 query_record.p3_no = record.p3_no
                 query_record.product_name = record.product_name
@@ -572,7 +605,7 @@ async def get_record(
         QueryRecord: 記錄詳情
     """
     try:
-        query = select(Record).where(Record.id == record_id)
+        query = select(Record).where(Record.id == record_id).options(selectinload(Record.p2_items))
         result = await db.execute(query)
         record = result.scalar_one_or_none()
         
@@ -588,7 +621,8 @@ async def get_record(
             data_type=record.data_type.value,
             production_date=record.production_date.isoformat() if record.production_date else None,
             created_at=record.created_at.isoformat(),
-            display_name=record.display_name
+            display_name=record.display_name,
+            additional_data=record.additional_data
         )
         
         # 根據資料類型設置對應欄位
@@ -597,17 +631,18 @@ async def get_record(
             query_record.quantity = record.quantity
             query_record.notes = record.notes
         elif record.data_type == DataType.P2:
-            query_record.sheet_width = record.sheet_width
-            query_record.thickness1 = record.thickness1
-            query_record.thickness2 = record.thickness2
-            query_record.thickness3 = record.thickness3
-            query_record.thickness4 = record.thickness4
-            query_record.thickness5 = record.thickness5
-            query_record.thickness6 = record.thickness6
-            query_record.thickness7 = record.thickness7
-            query_record.appearance = record.appearance
-            query_record.rough_edge = record.rough_edge
-            query_record.slitting_result = record.slitting_result
+            # P2 改為從 p2_items 獲取資料並放入 additional_data['rows']
+            if record.p2_items:
+                rows = []
+                # 排序 p2_items (按 winder_number)
+                sorted_items = sorted(record.p2_items, key=lambda x: x.winder_number)
+                for item in sorted_items:
+                    if item.row_data:
+                        rows.append(item.row_data)
+                
+                if not query_record.additional_data:
+                    query_record.additional_data = {}
+                query_record.additional_data['rows'] = rows
         elif record.data_type == DataType.P3:
             query_record.p3_no = record.p3_no
             query_record.product_name = record.product_name

@@ -18,13 +18,13 @@ analytics_router = APIRouter(prefix="/api/analytics", tags=["資料分析"])
 upload_router = APIRouter(prefix="/api/upload", tags=["檔案上傳"])
 
 # ========================================
-# 1. 生產批次管理 API (以 lot_no 為主鍵)
+# 1. 生產序號次管理 API (以 lot_no 為主鍵)
 # ========================================
 
 @production_router.post("/lots", response_model=ProductionLotResponse)
 async def create_production_lot(lot_data: ProductionLotCreate):
     """
-    創建新的生產批次
+    創建新的生產序號次
     
     - lot_no 作為唯一標識符
     - 自動驗證 lot_no 格式 (7位數字_2位數字)
@@ -35,7 +35,7 @@ async def create_production_lot(lot_data: ProductionLotCreate):
 @production_router.get("/lots/{lot_no}", response_model=LotDetailResponse)
 async def get_production_lot_detail(lot_no: str):
     """
-    根據 lot_no 獲取完整的生產批次資料
+    根據 lot_no 獲取完整的生產序號次資料
     
     - 包含 P1, P2, P3 所有階段資料
     - 包含不良品記錄
@@ -46,7 +46,7 @@ async def get_production_lot_detail(lot_no: str):
 @production_router.put("/lots/{lot_no}", response_model=ProductionLotResponse)
 async def update_production_lot(lot_no: str, update_data: ProductionLotUpdate):
     """
-    更新生產批次基本資料
+    更新生產序號次基本資料
     
     - 只更新提供的欄位
     - 自動更新 updated_at 時間戳
@@ -57,7 +57,7 @@ async def update_production_lot(lot_no: str, update_data: ProductionLotUpdate):
 @production_router.delete("/lots/{lot_no}")
 async def delete_production_lot(lot_no: str):
     """
-    刪除生產批次及其所有相關資料
+    刪除生產序號次及其所有相關資料
     
     - 級聯刪除所有 P1, P2, P3 資料
     - 刪除所有不良品記錄
@@ -71,7 +71,7 @@ async def list_production_lots(
     pagination: PaginationParams = Depends()
 ):
     """
-    查詢生產批次列表
+    查詢生產序號次列表
     
     - 支援多條件篩選
     - 支援 lot_no 模糊搜尋
