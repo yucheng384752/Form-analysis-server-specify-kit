@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './advanced-search.css';
 
 export interface AdvancedSearchParams {
@@ -43,6 +43,35 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   const [p3Specification, setP3Specification] = useState('');
   const [dataType, setDataType] = useState('');
 
+  // 選項狀態
+  const [machineOptions, setMachineOptions] = useState<string[]>([]);
+  const [moldOptions, setMoldOptions] = useState<string[]>([]);
+  const [specOptions, setSpecOptions] = useState<string[]>([]);
+
+  // 載入選項
+  useEffect(() => {
+    if (isExpanded) {
+      const fetchOptions = async () => {
+        try {
+          // 平行請求所有選項
+          const [machineRes, moldRes, specRes] = await Promise.all([
+            fetch('/api/query/options/machine_no'),
+            fetch('/api/query/options/mold_no'),
+            fetch('/api/query/options/p3_specification')
+          ]);
+
+          if (machineRes.ok) setMachineOptions(await machineRes.json());
+          if (moldRes.ok) setMoldOptions(await moldRes.json());
+          if (specRes.ok) setSpecOptions(await specRes.json());
+        } catch (error) {
+          console.error('Failed to fetch search options:', error);
+        }
+      };
+
+      fetchOptions();
+    }
+  }, [isExpanded]);
+
   // 驗證至少填寫一個條件
   const validateSearchParams = (): boolean => {
     return !!(
@@ -77,7 +106,14 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
     const params: AdvancedSearchParams = {};
     
-    if (lotNo.trim()) params.lot_no = lotNo.trim();
+    // Lot No 正規化：去除前後空白，並將中間的空白轉換為底線
+    // 例如: "2507313 02" -> "2507313_02"
+    if (lotNo.trim()) {
+      let normalizedLot = lotNo.trim();
+      // 將連續的空白替換為單一底線
+      normalizedLot = normalizedLot.replace(/\s+/g, '_');
+      params.lot_no = normalizedLot;
+    }
     
     const dateFrom = buildDateString(dateFromYear, dateFromMonth, dateFromDay);
     if (dateFrom) params.production_date_from = dateFrom;
@@ -85,6 +121,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     const dateTo = buildDateString(dateToYear, dateToMonth, dateToDay);
     if (dateTo) params.production_date_to = dateTo;
     
+    // 其他欄位僅去除前後空白，後端已支援不分大小寫搜尋 (ilike)
     if (machineNo.trim()) params.machine_no = machineNo.trim();
     if (moldNo.trim()) params.mold_no = moldNo.trim();
     if (productId.trim()) params.product_id = productId.trim();
@@ -218,7 +255,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                 value={machineNo}
                 onChange={(e) => setMachineNo(e.target.value)}
                 placeholder="輸入機台號碼 (模糊搜尋)"
+                list="machine-options"
               />
+              <datalist id="machine-options">
+                {machineOptions.map((opt, idx) => (
+                  <option key={idx} value={opt} />
+                ))}
+              </datalist>
             </div>
 
             {/* 下膠編號 (Bottom Tape) */}
@@ -230,7 +273,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                 value={moldNo}
                 onChange={(e) => setMoldNo(e.target.value)}
                 placeholder="輸入下膠編號 (模糊搜尋)"
+                list="mold-options"
               />
+              <datalist id="mold-options">
+                {moldOptions.map((opt, idx) => (
+                  <option key={idx} value={opt} />
+                ))}
+              </datalist>
             </div>
 
             {/* 產品編號 */}
@@ -254,7 +303,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                 value={p3Specification}
                 onChange={(e) => setP3Specification(e.target.value)}
                 placeholder="輸入 P3 規格 (模糊搜尋)"
+                list="spec-options"
               />
+              <datalist id="spec-options">
+                {specOptions.map((opt, idx) => (
+                  <option key={idx} value={opt} />
+                ))}
+              </datalist>
             </div>
 
             {/* 資料類型 */}

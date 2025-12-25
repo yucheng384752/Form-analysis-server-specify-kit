@@ -1,5 +1,5 @@
 // src/pages/UploadPage.tsx
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useToast } from "../components/common/ToastContext";
 import { ProgressBar } from "../components/common/ProgressBar";
 import { Modal } from "../components/common/Modal";
@@ -116,6 +116,13 @@ export function UploadPage() {
   const [showBatchImportConfirm, setShowBatchImportConfirm] = useState(false);
   const { showToast } = useToast();
 
+  // 使用 ref 追蹤最新的 files 狀態，以解決在非同步操作（如 setTimeout）中存取過時狀態的問題
+  // 同時避免在 setFiles 的 updater function 中執行副作用（如 showToast）
+  const filesRef = useRef(files);
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
   const handleFiles = (fileList: FileList | null) => {
     if (!fileList) return;
 
@@ -125,6 +132,13 @@ export function UploadPage() {
         showToast("error", "僅支援 csv 檔案類型");
         return;
       }
+      
+      // 檢查是否重複上傳
+      if (files.some(f => f.name === file.name) || newFiles.some(f => f.name === file.name)) {
+        showToast("warning", `檔案 ${file.name} 已存在列表中，略過上傳`);
+        return;
+      }
+
       if (file.size > MAX_SIZE_BYTES) {
         showToast("error", "檔案大小超過 10MB 限制");
         return;
@@ -470,8 +484,15 @@ export function UploadPage() {
       
       // 處理匯入後的檔案清理 - 統一只移除已匯入的檔案，不區分單檔或多檔
       setTimeout(() => {
+        // 使用 ref 獲取最新狀態
+        const currentFiles = filesRef.current;
+        const remainingFiles = currentFiles.filter(f => 
+          !validatedFiles.some(vf => vf.id === f.id)
+        );
+
         // 移除已匯入的檔案，保留其他檔案（包括有錯誤的或待驗證的）
         setFiles(remainingFiles);
+        
         if (remainingFiles.length > 0) {
           const errorCount = remainingFiles.filter(f => 
             f.validationErrors && f.validationErrors.length > 0
@@ -567,20 +588,20 @@ export function UploadPage() {
       
       // 延遲後根據檔案數量決定行為
       setTimeout(() => {
-        setFiles((currentFiles) => {
-          const remainingFiles = currentFiles.filter(f => f.id !== id);
-          
-          // 如果原本只有一個檔案，重置整個頁面
-          if (currentFiles.length === 1) {
-            showToast("info", "頁面已重置，可以繼續上傳新檔案");
-            return [];
-          } 
-          // 如果有多個檔案，只移除已匯入的檔案
-          else {
-            showToast("info", `已移除匯入檔案，剩餘 ${remainingFiles.length} 個檔案`);
-            return remainingFiles;
-          }
-        });
+        // 使用 ref 獲取最新狀態，避免在 updater 中執行副作用
+        const currentFiles = filesRef.current;
+        const remainingFiles = currentFiles.filter(f => f.id !== id);
+        
+        // 如果原本只有一個檔案，重置整個頁面
+        if (currentFiles.length === 1) {
+          showToast("info", "頁面已重置，可以繼續上傳新檔案");
+          setFiles([]);
+        } 
+        // 如果有多個檔案，只移除已匯入的檔案
+        else {
+          showToast("info", `已移除匯入檔案，剩餘 ${remainingFiles.length} 個檔案`);
+          setFiles(remainingFiles);
+        }
       }, 2000);
       
     } catch (err) {
