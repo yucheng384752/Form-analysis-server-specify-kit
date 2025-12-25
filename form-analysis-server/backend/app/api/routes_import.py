@@ -10,6 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -326,7 +327,7 @@ async def import_data(
                 existing_stmt = select(Record).where(
                     Record.lot_no == lot_no,
                     Record.data_type == data_type
-                )
+                ).options(selectinload(Record.p2_items))
                 existing_result = await db.execute(existing_stmt)
                 existing_record = existing_result.scalar_one_or_none()
                 
@@ -337,13 +338,208 @@ async def import_data(
                 ) or date.today()
                 
                 if existing_record:
-                    # 更新現有記錄
-                    existing_record.additional_data = {'rows': all_rows}
-                    existing_record.production_date = production_date
-                    # 清除舊的 P2Items (CASCADE 會自動處理，但顯式刪除更安全)
+                    # 更新現有記錄 - 採用嚴格的去重模式
+                    # 1. 處理 P2Items (嚴格去重)
+                    # 獲取現有的 P2Items，建立 winder_number -> item 的映射
+                    existing_items_map = {}
                     if existing_record.p2_items:
-                        for old_item in existing_record.p2_items:
-                            await db.delete(old_item)
+                        for item in existing_record.p2_items:
+                            existing_items_map[item.winder_number] = item
+                    
+                    # 找出目前最大的 winder_number (用於沒有指定 winder 的新資料)
+                    current_max_winder = 0
+                    if existing_record.p2_items:
+                        current_max_winder = max([item.winder_number for item in existing_record.p2_items], default=0)
+                    
+                    # 定義 helper functions
+                    def get_float(row_d, key):
+                        val = row_d.get(key)
+                        try:
+                            return float(val) if val is not None else None
+                        except (ValueError, TypeError):
+                            return None
+                            
+                    def get_int_or_status(row_d, key):
+                        val = row_d.get(key)
+                        if val == 'OK': return 1
+                        if val == 'NG': return 0
+                        try:
+                            return int(float(val)) if val is not None else None
+                        except (ValueError, TypeError):
+                            return None
+
+                    # 處理每一行資料
+                    processed_winders = set()
+                    
+                    for index, row_data in enumerate(all_rows):
+                        # 嘗試從資料中獲取 winder_number
+                        winder_val = None
+                        for key in ['Winder number', 'winder number', 'Winder', 'winder', '收卷機', '收卷機編號', '捲收機號碼']:
+                            if key in row_data and row_data[key] is not None:
+                                try:
+                                    winder_val = int(float(row_data[key]))
+                                    break
+                                except (ValueError, TypeError):
+                                    pass
+                        
+                        # 如果資料中沒有 winder_number，則使用 (index + 1)
+                        # 注意：這裡假設如果檔案中沒有 winder 欄位，則檔案是完整的且從 1 開始
+                        # 如果是追加模式且沒有 winder 欄位，這可能會導致問題，但在嚴格模式下，我們優先信任檔案內容
+                        target_winder = winder_val if winder_val is not None else (index + 1)
+                        
+                        processed_winders.add(target_winder)
+                        
+                        if target_winder in existing_items_map:
+                            # 更新現有 item
+                            item = existing_items_map[target_winder]
+                            item.sheet_width = get_float(row_data, 'Sheet Width(mm)')
+                            item.thickness1 = get_float(row_data, 'Thicknessss1(μm)')
+                            item.thickness2 = get_float(row_data, 'Thicknessss2(μm)')
+                            item.thickness3 = get_float(row_data, 'Thicknessss3(μm)')
+                            item.thickness4 = get_float(row_data, 'Thicknessss4(μm)')
+                            item.thickness5 = get_float(row_data, 'Thicknessss5(μm)')
+                            item.thickness6 = get_float(row_data, 'Thicknessss6(μm)')
+                            item.thickness7 = get_float(row_data, 'Thicknessss7(μm)')
+                            item.appearance = get_int_or_status(row_data, 'Appearance')
+                            item.rough_edge = get_int_or_status(row_data, 'rough edge')
+                            item.slitting_result = get_int_or_status(row_data, 'Slitting Result')
+                            item.row_data = row_data
+                        else:
+                            # 新增 item
+                            p2_item = P2Item(
+                                record_id=existing_record.id,
+                                winder_number=target_winder,
+                                sheet_width=get_float(row_data, 'Sheet Width(mm)'),
+                                thickness1=get_float(row_data, 'Thicknessss1(μm)'),
+                                thickness2=get_float(row_data, 'Thicknessss2(μm)'),
+                                thickness3=get_float(row_data, 'Thicknessss3(μm)'),
+                                thickness4=get_float(row_data, 'Thicknessss4(μm)'),
+                                thickness5=get_float(row_data, 'Thicknessss5(μm)'),
+                                thickness6=get_float(row_data, 'Thicknessss6(μm)'),
+                                thickness7=get_float(row_data, 'Thicknessss7(μm)'),
+                                appearance=get_int_or_status(row_data, 'Appearance'),
+                                rough_edge=get_int_or_status(row_data, 'rough edge'),
+                                slitting_result=get_int_or_status(row_data, 'Slitting Result'),
+                                row_data=row_data
+                            )
+                            db.add(p2_item)
+
+                    # 2. 更新 additional_data['rows']
+                    # 我們需要確保 additional_data['rows'] 與 p2_items 保持一致
+                    # 策略：讀取所有最新的 p2_items (包含剛更新/新增的)，重新構建 rows
+                    # 由於 db.add() 尚未 commit，我們手動維護一個 rows 列表
+                    
+                    # 獲取舊的 rows (轉為 dict 以便更新)
+                    current_data = existing_record.additional_data or {}
+                    current_rows = current_data.get('rows', [])
+                    
+                    # 建立 winder -> row 的映射
+                    rows_map = {}
+                    
+                    # 先載入舊資料
+                    for row in current_rows:
+                        w_val = None
+                        for key in ['Winder number', 'winder number', 'Winder', 'winder', '收卷機', '收卷機編號', '捲收機號碼']:
+                            if key in row:
+                                try:
+                                    w_val = int(float(row[key]))
+                                    break
+                                except: pass
+                        
+                        # 如果舊資料沒有 winder 欄位，這會很難對應。
+                        # 暫時假設舊資料也有 winder 欄位，或者我們依賴 p2_items 的更新
+                        if w_val is not None:
+                            rows_map[w_val] = row
+                    
+                    # 使用新資料更新/新增
+                    for row in all_rows:
+                        w_val = None
+                        for key in ['Winder number', 'winder number', 'Winder', 'winder', '收卷機', '收卷機編號', '捲收機號碼']:
+                            if key in row:
+                                try:
+                                    w_val = int(float(row[key]))
+                                    break
+                                except: pass
+                        
+                        # 如果新資料沒有 winder 欄位，嘗試使用 index+1 (與上面邏輯一致)
+                        if w_val is None:
+                            # 這裡比較麻煩，因為我們在迴圈中無法輕易得知 index
+                            # 但我們可以假設 all_rows 的順序就是 1, 2, 3...
+                            # 為了簡化，我們直接使用上面處理 p2_items 時的邏輯：
+                            # 如果檔案中沒有 winder，我們就覆蓋整個 rows 列表，或者追加
+                            pass
+
+                    # 簡化策略：直接將 additional_data['rows'] 更新為 "舊資料(未被更新的) + 新資料"
+                    # 但為了避免複雜的合併邏輯導致錯誤，且考慮到 P2 通常是整批匯入
+                    # 我們採取：如果新資料包含 winder 資訊，則精確更新；否則追加
+                    
+                    # 實作：
+                    # 1. 建立一個以 winder 為 key 的 map，包含所有舊資料
+                    # 2. 遍歷新資料，更新 map
+                    # 3. 將 map 轉回 list
+                    
+                    # 注意：如果舊資料沒有 winder 欄位，可能會被遺失或重複。
+                    # 但在嚴格模式下，我們假設資料完整性較高。
+                    
+                    # 重新構建 rows_map (包含舊資料)
+                    # 為了安全，如果舊資料沒有 winder，我們保留它
+                    final_rows = []
+                    rows_map_by_winder = {}
+                    rows_without_winder = []
+                    
+                    for row in current_rows:
+                        w_val = None
+                        for key in ['Winder number', 'winder number', 'Winder', 'winder', '收卷機', '收卷機編號', '捲收機號碼']:
+                            if key in row:
+                                try:
+                                    w_val = int(float(row[key]))
+                                    break
+                                except: pass
+                        
+                        if w_val is not None:
+                            rows_map_by_winder[w_val] = row
+                        else:
+                            rows_without_winder.append(row)
+                            
+                    # 更新 map
+                    for index, row in enumerate(all_rows):
+                        w_val = None
+                        for key in ['Winder number', 'winder number', 'Winder', 'winder', '收卷機', '收卷機編號', '捲收機號碼']:
+                            if key in row:
+                                try:
+                                    w_val = int(float(row[key]))
+                                    break
+                                except: pass
+                        
+                        if w_val is not None:
+                            rows_map_by_winder[w_val] = row
+                        else:
+                            # 如果新資料沒有 winder，且我們在嚴格模式
+                            # 我們假設它是 winder = index + 1
+                            target_winder = index + 1
+                            rows_map_by_winder[target_winder] = row
+                            # 同時，我們應該移除 rows_without_winder 中可能對應的舊資料嗎？
+                            # 這很難判斷。為了安全，我們只更新有明確 winder 的。
+                            # 但如果依賴 index，則會覆蓋 map 中的 entry
+                    
+                    # 重組 final_rows
+                    # 先放入沒有 winder 的舊資料 (雖然這在 P2 中很少見)
+                    final_rows.extend(rows_without_winder)
+                    
+                    # 再放入 map 中的資料 (按 winder 排序)
+                    for winder in sorted(rows_map_by_winder.keys()):
+                        final_rows.append(rows_map_by_winder[winder])
+                    
+                    existing_record.additional_data = {**current_data, 'rows': final_rows}
+                    
+                    # 更新生產日期（如果新的有效）
+                    new_production_date = production_date_extractor.extract_production_date(
+                        row_data={'additional_data': all_rows[0] if all_rows else {}},
+                        data_type=data_type.value
+                    )
+                    if new_production_date:
+                        existing_record.production_date = new_production_date
+                    
                 else:
                     # 創建新記錄
                     existing_record = Record(
@@ -354,43 +550,56 @@ async def import_data(
                     )
                     db.add(existing_record)
                     await db.flush() # 獲取 ID
-                
-                # 3. 創建 P2Items
-                for winder_index, row_data in enumerate(all_rows, start=1):
-                    # 處理數值轉換 helper
-                    def get_float(key):
-                        val = row_data.get(key)
-                        try:
-                            return float(val) if val is not None else None
-                        except (ValueError, TypeError):
-                            return None
-                            
-                    def get_int_or_status(key):
-                        val = row_data.get(key)
-                        if val == 'OK': return 1
-                        if val == 'NG': return 0
-                        try:
-                            return int(float(val)) if val is not None else None
-                        except (ValueError, TypeError):
-                            return None
+                    
+                    # 3. 創建 P2Items (新記錄)
+                    for index, row_data in enumerate(all_rows):
+                        # 嘗試從資料中獲取 winder_number
+                        winder_val = None
+                        for key in ['Winder number', 'winder number', 'Winder', 'winder', '收卷機', '收卷機編號', '捲收機號碼']:
+                            if key in row_data and row_data[key] is not None:
+                                try:
+                                    winder_val = int(float(row_data[key]))
+                                    break
+                                except (ValueError, TypeError):
+                                    pass
+                        
+                        # 如果資料中沒有 winder_number，則使用 (index + 1)
+                        target_winder = winder_val if winder_val is not None else (index + 1)
 
-                    p2_item = P2Item(
-                        record_id=existing_record.id,
-                        winder_number=winder_index,
-                        sheet_width=get_float('Sheet Width(mm)'),
-                        thickness1=get_float('Thicknessss1(μm)'),
-                        thickness2=get_float('Thicknessss2(μm)'),
-                        thickness3=get_float('Thicknessss3(μm)'),
-                        thickness4=get_float('Thicknessss4(μm)'),
-                        thickness5=get_float('Thicknessss5(μm)'),
-                        thickness6=get_float('Thicknessss6(μm)'),
-                        thickness7=get_float('Thicknessss7(μm)'),
-                        appearance=get_int_or_status('Appearance'),
-                        rough_edge=get_int_or_status('rough edge'),
-                        slitting_result=get_int_or_status('Slitting Result'),
-                        row_data=row_data
-                    )
-                    db.add(p2_item)
+                        # 定義 helper functions (複製自上面)
+                        def get_float(key):
+                            val = row_data.get(key)
+                            try:
+                                return float(val) if val is not None else None
+                            except (ValueError, TypeError):
+                                return None
+                                
+                        def get_int_or_status(key):
+                            val = row_data.get(key)
+                            if val == 'OK': return 1
+                            if val == 'NG': return 0
+                            try:
+                                return int(float(val)) if val is not None else None
+                            except (ValueError, TypeError):
+                                return None
+
+                        p2_item = P2Item(
+                            record_id=existing_record.id,
+                            winder_number=target_winder,
+                            sheet_width=get_float('Sheet Width(mm)'),
+                            thickness1=get_float('Thicknessss1(μm)'),
+                            thickness2=get_float('Thicknessss2(μm)'),
+                            thickness3=get_float('Thicknessss3(μm)'),
+                            thickness4=get_float('Thicknessss4(μm)'),
+                            thickness5=get_float('Thicknessss5(μm)'),
+                            thickness6=get_float('Thicknessss6(μm)'),
+                            thickness7=get_float('Thicknessss7(μm)'),
+                            appearance=get_int_or_status('Appearance'),
+                            rough_edge=get_int_or_status('rough edge'),
+                            slitting_result=get_int_or_status('Slitting Result'),
+                            row_data=row_data
+                        )
+                        db.add(p2_item)
                 
                 imported_rows = len(all_rows)
                 logger.info("P2資料匯入完成",
@@ -430,23 +639,54 @@ async def import_data(
                 existing_stmt = select(Record).where(
                     Record.lot_no == lot_no,
                     Record.data_type == data_type
-                )
+                ).options(selectinload(Record.p3_items))
                 existing_result = await db.execute(existing_stmt)
                 existing_record = existing_result.scalar_one_or_none()
                 
                 if existing_record:
-                    # 更新現有記錄
-                    # 提取生產日期
-                    production_date = production_date_extractor.extract_production_date(
+                    # 更新現有記錄 - 採用嚴格的去重模式
+                    # 1. 合併 additional_data['rows']
+                    current_data = existing_record.additional_data or {}
+                    current_rows = current_data.get('rows', [])
+                    
+                    # 建立 product_id -> row 的映射 (如果可能)
+                    # 或者使用 row_data 的內容雜湊來去重
+                    import json
+                    import hashlib
+                    
+                    def get_row_hash(r):
+                        # 移除可能變動的欄位或不重要的欄位
+                        # 這裡簡單地將整個 dict 轉為 json string 並 hash
+                        # 注意：key 的順序可能會影響，所以要 sort_keys=True
+                        return hashlib.md5(json.dumps(r, sort_keys=True, default=str).encode()).hexdigest()
+                    
+                    existing_hashes = set()
+                    for r in current_rows:
+                        existing_hashes.add(get_row_hash(r))
+                    
+                    # 過濾掉已存在的 rows
+                    new_unique_rows = []
+                    for r in all_rows:
+                        h = get_row_hash(r)
+                        if h not in existing_hashes:
+                            new_unique_rows.append(r)
+                            existing_hashes.add(h) # 防止本次匯入內部的重複
+                    
+                    # 合併
+                    merged_rows = current_rows + new_unique_rows
+                    existing_record.additional_data = {**current_data, 'rows': merged_rows}
+                    
+                    # 更新生產日期（如果新的有效）
+                    new_production_date = production_date_extractor.extract_production_date(
                         row_data={'additional_data': all_rows[0] if all_rows else {}},
                         data_type=data_type.value
-                    ) or date.today()  # 如果提取失敗，fallback 到當前日期
-                    
-                    existing_record.additional_data = {'rows': all_rows}
-                    existing_record.production_date = production_date
+                    )
+                    if new_production_date:
+                        existing_record.production_date = new_production_date
 
                     # P3：同步填充可檢索欄位（避免只存在 JSON 內造成欄位全為 NULL）
                     if data_type == DataType.P3 and first_row:
+                        # ... (保留原有邏輯)
                         machine_no_val = (
                             first_row.get('Machine NO')
                             or first_row.get('Machine No')
@@ -519,13 +759,20 @@ async def import_data(
                                 existing_record.production_lot,
                             )
                         
-                        # 寫入 P3 明細項目子表
-                        # 先刪除舊的明細項目（CASCADE 會自動處理）
+                        # 寫入 P3 明細項目子表 - 採用嚴格去重模式
+                        # 獲取現有的 P3Items，建立 product_id -> item 的映射 (如果 product_id 存在)
+                        existing_items_map = {}
                         if existing_record.p3_items:
-                            for old_item in existing_record.p3_items:
-                                await db.delete(old_item)
+                            for item in existing_record.p3_items:
+                                if item.product_id:
+                                    existing_items_map[item.product_id] = item
                         
-                        # 為每一行創建 P3Item
+                        # 計算目前的 row_no 起始點 (如果是追加)
+                        current_max_row = 0
+                        if existing_record.p3_items:
+                            current_max_row = max([item.row_no for item in existing_record.p3_items], default=0)
+                        
+                        # 為每一行創建或更新 P3Item
                         for row_no, row_data in enumerate(all_rows, start=1):
                             # 提取 P3_No. 來組成 product_id
                             p3_no_raw = (
@@ -535,6 +782,7 @@ async def import_data(
                                 or row_data.get('P3NO')
                             )
                             
+                            item_product_id = None
                             if p3_no_raw:
                                 # P3_No. 格式：XXXXXXXX_XX_YY (lot_no_機台_批次)
                                 # 組合成 product_id: YYYYMMDD_XX_YY_Z (日期_機台_模具_批次)
@@ -549,12 +797,6 @@ async def import_data(
                                     if existing_record.production_date and existing_record.mold_no:
                                         date_str = existing_record.production_date.strftime('%Y%m%d')
                                         item_product_id = f"{date_str}_{machine_from_p3}_{existing_record.mold_no}_{lot_from_p3}"
-                                    else:
-                                        item_product_id = None
-                                else:
-                                    item_product_id = None
-                            else:
-                                item_product_id = None
                             
                             # 提取其他欄位
                             item_lot_no = row_data.get('lot') or row_data.get('LOT') or row_data.get('Lot')
@@ -586,18 +828,34 @@ async def import_data(
                                 or row_data.get('下膠')
                             )
                             
-                            p3_item = P3Item(
-                                record_id=existing_record.id,
-                                product_id=item_product_id,
-                                lot_no=str(item_lot_no).strip() if item_lot_no else None,
-                                machine_no=str(item_machine_no).strip() if item_machine_no else None,
-                                mold_no=str(item_mold_no).strip() if item_mold_no else None,
-                                specification=str(item_specification).strip() if item_specification else None,
-                                bottom_tape_lot=str(item_bottom_tape).strip() if item_bottom_tape else None,
-                                row_no=row_no,
-                                row_data=row_data
-                            )
-                            db.add(p3_item)
+                            # 檢查是否已存在 (透過 product_id)
+                            if item_product_id and item_product_id in existing_items_map:
+                                # 更新現有 item
+                                item = existing_items_map[item_product_id]
+                                item.lot_no = str(item_lot_no).strip() if item_lot_no else None
+                                item.machine_no = str(item_machine_no).strip() if item_machine_no else None
+                                item.mold_no = str(item_mold_no).strip() if item_mold_no else None
+                                item.specification = str(item_specification).strip() if item_specification else None
+                                item.bottom_tape_lot = str(item_bottom_tape).strip() if item_bottom_tape else None
+                                item.row_data = row_data
+                                # row_no 不更新，保持原樣
+                            else:
+                                # 新增 item
+                                # row_no 接續在現有最大值之後
+                                new_row_no = current_max_row + row_no
+                                
+                                p3_item = P3Item(
+                                    record_id=existing_record.id,
+                                    product_id=item_product_id,
+                                    lot_no=str(item_lot_no).strip() if item_lot_no else None,
+                                    machine_no=str(item_machine_no).strip() if item_machine_no else None,
+                                    mold_no=str(item_mold_no).strip() if item_mold_no else None,
+                                    specification=str(item_specification).strip() if item_specification else None,
+                                    bottom_tape_lot=str(item_bottom_tape).strip() if item_bottom_tape else None,
+                                    row_no=new_row_no,
+                                    row_data=row_data
+                                )
+                                db.add(p3_item)
                     
                     logger.info("更新現有P2/P3記錄",
                                lot_no=lot_no,

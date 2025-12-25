@@ -585,6 +585,67 @@ async def get_lot_suggestions(
 
 
 @router.get(
+    "/options/{field_name}",
+    response_model=List[str],
+    summary="取得欄位選項",
+    description="取得指定欄位的所有不重複值，用於前端下拉選單"
+)
+async def get_field_options(
+    field_name: str,
+    db: AsyncSession = Depends(get_db)
+) -> List[str]:
+    """
+    取得指定欄位的所有不重複值
+    
+    Args:
+        field_name: 欄位名稱 (specification, machine_no, bottom_tape_lot, material_code)
+        db: 資料庫會話
+    
+    Returns:
+        List[str]: 選項列表
+    """
+    try:
+        # 映射前端欄位名稱到資料庫模型欄位
+        field_map = {
+            "specification": Record.specification,
+            "p3_specification": Record.specification,
+            "machine_no": Record.machine_no,
+            "bottom_tape_lot": Record.bottom_tape_lot,
+            "mold_no": Record.bottom_tape_lot, # 前端 mold_no 對應 DB bottom_tape_lot
+            "material_code": Record.material_code,
+            "product_id": Record.product_id
+        }
+        
+        if field_name not in field_map:
+            raise HTTPException(status_code=400, detail=f"不支援的欄位名稱: {field_name}")
+            
+        target_column = field_map[field_name]
+        
+        # 查詢不重複值，排除空值
+        stmt = (
+            select(target_column)
+            .where(target_column.isnot(None))
+            .where(target_column != "")
+            .distinct()
+            .order_by(target_column)
+        )
+        
+        result = await db.execute(stmt)
+        options = [str(row[0]) for row in result.fetchall() if row[0]]
+        
+        return options
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"取得欄位選項失敗: {field_name}", error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"取得欄位選項時發生錯誤：{str(e)}"
+        )
+
+
+@router.get(
     "/records/{record_id}",
     response_model=QueryRecord,
     summary="取得單筆記錄",

@@ -79,6 +79,7 @@ class CSVFieldMapper:
     WINDER_NUMBER_FIELD_NAMES = [
         'Winder',
         'Winder Number',
+        'Winder number',
         'winder',
         'winder_number',
         '收卷機',
@@ -212,9 +213,22 @@ class CSVFieldMapper:
             # P3: 提取機台編號、模具編號、生產序號號、來源收卷機
             # 優先從 P3_No. 欄位提取
             p3_no = row.get('P3_No.')
+            # 新格式可能使用 'lot no'
+            if pd.isna(p3_no):
+                p3_no = row.get('lot no')
+
             if pd.notna(p3_no):
                 p3_parts = self._parse_p3_no(str(p3_no))
                 result.update(p3_parts)
+            
+            # 嘗試從 'lot' 欄位提取 production_lot (新格式)
+            if 'production_lot' not in result:
+                prod_lot = row.get('lot')
+                if pd.notna(prod_lot):
+                    try:
+                        result['production_lot'] = int(float(prod_lot))
+                    except (ValueError, TypeError):
+                        pass
             
             # 如果 P3_No. 沒有提供完整資訊，嘗試從其他欄位或檔案名稱提取
             if not result.get('machine_no'):
@@ -316,6 +330,9 @@ class CSVFieldMapper:
             winder_part = parts[2]  # WW
             lot_part = parts[3]  # LLL
             
+            # lot_no: YYYYMDD-MM
+            result['lot_no'] = f"{date_part}-{machine_part}"
+
             # source_winder: 收卷機編號
             try:
                 result['source_winder'] = int(winder_part)
@@ -325,6 +342,20 @@ class CSVFieldMapper:
             # production_lot: 生產序號號
             try:
                 result['production_lot'] = int(lot_part)
+            except (ValueError, TypeError):
+                pass
+        elif len(parts) == 3:
+            # 新格式：YYYYMDD_MM_WW (e.g. 2507173_02_17)
+            date_part = parts[0]
+            machine_part = parts[1]
+            winder_part = parts[2]
+            
+            # lot_no: YYYYMDD-MM
+            result['lot_no'] = f"{date_part}-{machine_part}"
+            
+            # source_winder: 收卷機編號
+            try:
+                result['source_winder'] = int(winder_part)
             except (ValueError, TypeError):
                 pass
         

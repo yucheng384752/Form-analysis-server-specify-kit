@@ -1,7 +1,7 @@
 """
 Product ID 產生器服務
 
-格式: YYYY-MM-DD_機台_模號_LOT
+格式: YYYY-MM-DD_機台_模具號碼_LOT
 範例: 2025-09-02_P24_238-2_301
 
 此服務提供：
@@ -20,7 +20,7 @@ class ProductIDGenerator:
     Product ID 格式: YYYYMMDD_machine_mold_lot
     - YYYYMMDD: 生產日期（8位數字）
     - machine: 機台編號（如 P24）
-    - mold: 模號（如 238-2）
+    - mold: 模具號碼（如 238-2）
     - lot: 批號（整數，如 301）
     
     範例:
@@ -57,7 +57,7 @@ class ProductIDGenerator:
         Args:
             production_date: 生產日期（date 物件）
             machine_no: 機台編號（如 "P24"）
-            mold_no: 模號（如 "238-2"）
+            mold_no: 模具號碼（如 "238-2"）
             production_lot: 批號（整數，如 301）
         
         Returns:
@@ -105,7 +105,7 @@ class ProductIDGenerator:
         Args:
             production_date_str: 生產日期字串（可接受多種格式）
             machine_no: 機台編號
-            mold_no: 模號
+            mold_no: 模具號碼
             production_lot: 批號
         
         Returns:
@@ -135,7 +135,7 @@ class ProductIDGenerator:
             包含以下欄位的字典:
             - production_date: date 物件
             - machine_no: 機台編號字串
-            - mold_no: 模號字串
+            - mold_no: 模具號碼字串
             - production_lot: 批號整數
         
         Raises:
