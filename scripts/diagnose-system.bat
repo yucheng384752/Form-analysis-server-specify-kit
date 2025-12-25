@@ -24,9 +24,9 @@ echo ═════════════════════════
 echo        Form Analysis System 診斷報告 >> %REPORT_FILE%
 echo ════════════════════════════════════════ >> %REPORT_FILE%
 echo 📅 報告時間: %date% %time% >> %REPORT_FILE%
-echo 💻 系統: %OS% >> %REPORT_FILE%
+echo 系統: %OS% >> %REPORT_FILE%
 echo 👤 使用者: %USERNAME% >> %REPORT_FILE%
-echo 📂 工作目錄: %CD% >> %REPORT_FILE%
+echo 工作目錄: %CD% >> %REPORT_FILE%
 echo. >> %REPORT_FILE%
 
 echo [1/12] 系統環境檢查...

@@ -114,7 +114,7 @@ def demonstrate_api_structure():
     }
     
     for category, endpoints in api_examples.items():
-        print(f"\n  📂 {category}")
+        print(f"\n  {category}")
         for description, endpoint in endpoints.items():
             print(f"    • {description}: {endpoint}")
 

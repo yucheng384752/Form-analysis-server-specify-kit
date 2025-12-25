@@ -68,7 +68,7 @@
 - [X] P3 需顯示組合後的 product_id，並且要可以用在搜尋(替代前端"基本資料"p3_no欄位)
   - 已實作 P3Item 子表模型，獨立欄位包含 product_id
   - product_id 自動生成邏輯已整合到 routes_import.py
-  - 格式：P3-YYMMDD-機台-模號-批號
+  - 格式：P3-YYMMDD-機台-模具號碼-批號
   - 支援高級搜尋功能
 - [X] 生產日期欄位統一：P1→"Production Date"、P2→"分條時間"、P3→"year-month-day"
   - 所有日期統一轉換為 YYYY-MM-DD 格式
@@ -163,7 +163,7 @@ production_date = production_date_extractor.extract_production_date(
 -  前端已實作 formatFieldValue 轉換
 
 ### #5 Product_ID 組合邏輯
-- 格式: YYYY-MM-DD_機台_模號_LOT
+- 格式: YYYY-MM-DD_機台_模具號碼_LOT
 - 範例: 2025-09-02_P24_238-2_301
 -  後端產生器已實作
 -  高級搜尋已支援

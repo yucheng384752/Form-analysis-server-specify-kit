@@ -52,7 +52,7 @@ python tools/log_analyzer.py --watch --errors-only
 
 ---
 
-### 3. 💻 PowerShell 進階工具
+### 3. PowerShell 進階工具
 **檔案**: `scripts/LogManager.ps1`  
 **用途**: 最完整的日誌管理解決方案  
 **特色**: 彩色輸出，交互式選單，JSON 匯出  
@@ -182,7 +182,7 @@ ENABLE_REQUEST_ID=true
  Form Analysis System - 日誌分析報告
 ==================================================
 📅 報告時間: 2024-11-09 15:30:45
-📂 日誌目錄: form-analysis-server/backend/logs
+日誌目錄: form-analysis-server/backend/logs
 
  日誌檔案資訊:
     app.log: 2,345,678 bytes (2.23 MB)

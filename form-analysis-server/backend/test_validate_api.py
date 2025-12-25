@@ -94,7 +94,7 @@ def test_validate_api(process_id, page=1, page_size=10):
             result = response.json()
             
             print(" 驗證結果查詢成功")
-            print(f"📂 檔案：{result['filename']}")
+            print(f"檔案：{result['filename']}")
             print(f"🏷️  狀態：{result['status']}")
             print(f" 建立時間：{result['created_at']}")
             

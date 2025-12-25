@@ -104,7 +104,7 @@ echo.
 echo  方式二：PowerShell 壓縮
 echo    Compress-Archive -Path "." -DestinationPath "..\form-analysis-kit.zip"
 echo.
-echo 📂 方式三：Git 倉庫
+echo 方式三：Git 倉庫
 echo    git add .
 echo    git commit -m "Ready for deployment"
 echo    git push origin main

@@ -175,7 +175,7 @@ class LogAnalyzer:
         print(" Form Analysis System - 日誌分析報告")
         print("=" * 50)
         print(f"📅 報告時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"📂 日誌目錄: {self.log_dir}")
+        print(f"日誌目錄: {self.log_dir}")
         print()
         
         # 檔案資訊

@@ -46,7 +46,7 @@ print("\n3. 解析 Product ID")
 parsed = generator.parse("2025-09-02_P24_238-2_301")
 print(f"   日期: {parsed['production_date']}")
 print(f"   機台: {parsed['machine_no']}")
-print(f"   模號: {parsed['mold_no']}")
+print(f"   模具號碼: {parsed['mold_no']}")
 print(f"   批號: {parsed['production_lot']}")
 assert parsed['production_date'] == date(2025, 9, 2)
 assert parsed['machine_no'] == "P24"
@@ -88,10 +88,10 @@ product_id = generator.generate(date(2025, 1, 1), "P01", "1", 0)
 assert "2025-01-01_P01_1_0" == product_id
 print("   ✓ 批號 0: 正確")
 
-# 包含特殊字元的模號
+# 包含特殊字元的模具號碼
 product_id = generator.generate(date(2025, 1, 1), "P99", "ABC-123-X", 999)
 assert "2025-01-01_P99_ABC-123-X_999" == product_id
-print("   ✓ 特殊字元模號: 正確")
+print("   ✓ 特殊字元模具號碼: 正確")
 
 print("\n" + "=" * 60)
 print("🎉 Product ID 產生器測試全部通過！")

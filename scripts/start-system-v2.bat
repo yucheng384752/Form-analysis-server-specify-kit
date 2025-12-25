@@ -296,7 +296,7 @@ echo     查看日誌: %DOCKER_COMPOSE% logs -f
 echo     停止服務: %DOCKER_COMPOSE% down
 echo     重啟服務: %DOCKER_COMPOSE% restart
 echo     健康檢查: %DOCKER_COMPOSE% ps
-echo    📂 開啟日誌監控: %DOCKER_COMPOSE% logs -f backend frontend db
+echo    開啟日誌監控: %DOCKER_COMPOSE% logs -f backend frontend db
 echo.
 
 set /p "open_browser= 是否立即開啟瀏覽器? (y/N): "
