@@ -35,7 +35,7 @@ chmod +x quick-start.sh
 
 ### 基本健康檢查
 ```bash
-curl -f http://localhost:8000/healthz
+curl -f http://localhost:18002/healthz
 ```
 
 **預期回應：**
@@ -49,7 +49,7 @@ curl -f http://localhost:8000/healthz
 
 ### 詳細健康檢查
 ```bash
-curl -f http://localhost:8000/healthz/detailed
+curl -f http://localhost:18002/healthz/detailed
 ```
 
 **預期回應：**
@@ -86,7 +86,7 @@ EOF
 ```bash
 curl -X POST \
      -F "file=@test_upload.csv" \
-     http://localhost:8000/api/upload
+     http://localhost:18002/api/upload
 ```
 
 **成功回應範例：**
@@ -106,7 +106,7 @@ curl -X POST \
 curl -X POST \
      -H "Content-Type: multipart/form-data" \
      --form 'file=@-;filename=inline.csv;type=text/csv' \
-     http://localhost:8000/api/upload << 'EOF'
+     http://localhost:18002/api/upload << 'EOF'
 lot_no,product_name,quantity,production_date
 7777777_01,內聯產品A,10,2024-02-01
 8888888_02,內聯產品B,20,2024-02-02
@@ -119,7 +119,7 @@ EOF
 ### 4. 下載錯誤報告（如果有錯誤）
 ```bash
 # 使用上傳回應中的 file_id
-curl "http://localhost:8000/api/errors.csv?file_id=550e8400-e29b-41d4-a716-446655440000"
+curl "http://localhost:18002/api/errors.csv?file_id=550e8400-e29b-41d4-a716-446655440000"
 ```
 
 **錯誤報告 CSV 格式：**
@@ -136,7 +136,7 @@ row,column,value,error
 curl -X POST \
      -H "Content-Type: application/json" \
      -d '{"file_id":"550e8400-e29b-41d4-a716-446655440000"}' \
-     http://localhost:8000/api/import
+     http://localhost:18002/api/import
 ```
 
 **成功匯入回應：**
@@ -168,22 +168,22 @@ chmod +x test-api.sh
 
 ```bash
 # 1. 健康檢查
-curl -f http://localhost:8000/healthz
+curl -f http://localhost:18002/healthz
 
 # 2. 上傳測試檔案
-FILE_ID=$(curl -s -X POST -F "file=@test_upload.csv" http://localhost:8000/api/upload | \
+FILE_ID=$(curl -s -X POST -F "file=@test_upload.csv" http://localhost:18002/api/upload | \
           grep -o '"file_id":"[^"]*"' | cut -d'"' -f4)
 
 echo "File ID: $FILE_ID"
 
 # 3. 檢查錯誤（如果有）
-curl "http://localhost:8000/api/errors.csv?file_id=$FILE_ID"
+curl "http://localhost:18002/api/errors.csv?file_id=$FILE_ID"
 
 # 4. 匯入資料
 curl -X POST \
      -H "Content-Type: application/json" \
      -d "{\"file_id\":\"$FILE_ID\"}" \
-     http://localhost:8000/api/import
+     http://localhost:18002/api/import
 
 # 5. 清理
 rm test_upload.csv
@@ -192,23 +192,23 @@ rm test_upload.csv
 ##  前端訪問
 
 ### URL 和埠口
-- **前端應用**: http://localhost:5173
-- **後端 API**: http://localhost:8000
-- **API 文件**: http://localhost:8000/docs
-- **ReDoc 文件**: http://localhost:8000/redoc
+- **前端應用**: http://localhost:18003
+- **後端 API**: http://localhost:18002
+- **API 文件**: http://localhost:18002/docs
+- **ReDoc 文件**: http://localhost:18002/redoc
 
 ### 前端環境配置
 
 **在 `.env` 文件中配置：**
 ```env
 # API 基礎 URL
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:18002
 
 # 最大檔案大小 (位元組)
 VITE_MAX_FILE_SIZE=10485760
 
 # CORS 來源
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+CORS_ORIGINS=http://localhost:18003,http://localhost:3000
 ```
 
 **在 `vite.config.ts` 中的代理設定：**
@@ -217,7 +217,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: process.env.VITE_API_URL || 'http://localhost:8000',
+        target: process.env.VITE_API_URL || 'http://localhost:18002',
         changeOrigin: true,
         secure: false,
       }
@@ -231,17 +231,17 @@ export default defineConfig({
 ### 後端 CORS 設定
 在 `.env` 文件中配置允許的來源：
 ```env
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173
+CORS_ORIGINS=http://localhost:18003,http://localhost:3000,http://127.0.0.1:18003
 ```
 
 ### 測試 CORS
 ```bash
 # 測試 OPTIONS 預檢請求
 curl -X OPTIONS \
-     -H "Origin: http://localhost:5173" \
+     -H "Origin: http://localhost:18003" \
      -H "Access-Control-Request-Method: POST" \
      -H "Access-Control-Request-Headers: Content-Type" \
-     http://localhost:8000/api/upload
+     http://localhost:18002/api/upload
 ```
 
 ##  常用除錯指令
@@ -282,25 +282,25 @@ docker compose down -v --rmi all
 ##  快速驗證檢查表
 
 - [ ] 所有容器正常啟動: `docker compose ps`
-- [ ] 基本健康檢查通過: `curl -f http://localhost:8000/healthz`
-- [ ] 詳細健康檢查通過: `curl -f http://localhost:8000/healthz/detailed`
+- [ ] 基本健康檢查通過: `curl -f http://localhost:18002/healthz`
+- [ ] 詳細健康檢查通過: `curl -f http://localhost:18002/healthz/detailed`
 - [ ] 檔案上傳功能正常: 使用測試 CSV
 - [ ] 錯誤報告下載正常: 如果有驗證錯誤
 - [ ] 資料匯入功能正常: 確認匯入 API
-- [ ] 前端可正常訪問: http://localhost:5173
-- [ ] API 文件可訪問: http://localhost:8000/docs
+- [ ] 前端可正常訪問: http://localhost:18003
+- [ ] API 文件可訪問: http://localhost:18002/docs
 
-## 🆘 常見問題快速修復
+## 常見問題快速修復
 
 ### 埠口衝突
 ```bash
 # 檢查埠口使用情況
-netstat -ano | findstr :8000    # Windows
-lsof -i :8000                   # Linux/macOS
+netstat -ano | findstr :18002    # Windows
+lsof -i :18002                   # Linux/macOS
 
 # 修改 .env 中的埠口設定
-API_PORT=8001
-FRONTEND_PORT=3000
+API_PORT=18002
+FRONTEND_PORT=18003
 ```
 
 ### Docker 權限問題
@@ -316,7 +316,7 @@ docker info
 ```bash
 # 檢查 .env 中的 CORS_ORIGINS 設定
 # 確保包含前端 URL
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+CORS_ORIGINS=http://localhost:18003,http://localhost:3000
 ```
 
 這個摘要提供了完整的一鍵啟動與驗證流程，可以快速驗證整個系統的功能！

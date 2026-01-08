@@ -26,7 +26,7 @@ from app.core.config import get_settings
 from app.core.database import init_db, Base
 from app.core.logging import setup_logging
 from app.core.middleware import RequestLoggingMiddleware, add_process_time_header
-from app.api import routes_health, routes_upload, routes_validate, routes_import, routes_export, routes_query, routes_logs
+from app.api import routes_health, routes_upload, routes_validate, routes_import, routes_export, routes_query, routes_logs, routes_import_v2, routes_tenants, routes_query_v2, routes_edit
 from app.api import constants as routes_constants
 from app.api import traceability as routes_traceability
 
@@ -50,9 +50,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     - Connection pool setup
     - Resource cleanup
     """
-    # Startup - 驗證PostgreSQL配置
-    if not settings.database_url.startswith('postgresql'):
-        raise ValueError(f" 系統只支援PostgreSQL資料庫！當前配置: {settings.database_url[:30]}...")
+    # Startup - 驗證PostgreSQL或SQLite配置
+    if not settings.database_url.startswith('postgresql') and not settings.database_url.startswith('sqlite'):
+        raise ValueError(f" 系統只支援PostgreSQL或SQLite資料庫！當前配置: {settings.database_url[:30]}...")
     
     # Initialize database connection
     await init_db()
@@ -168,6 +168,13 @@ app.include_router(
     tags=["資料匯入"]
 )
 
+# V2 Import Routes
+app.include_router(
+    routes_import_v2.router,
+    prefix="/api/v2/import",
+    tags=["Import V2"]
+)
+
 # 資料匯出路由
 app.include_router(
     routes_export.router,
@@ -189,6 +196,12 @@ app.include_router(
     tags=["日誌管理"]
 )
 
+# Tenant Routes
+app.include_router(
+    routes_tenants.router,
+    tags=["Tenants"]
+)
+
 # 系統常數查詢路由
 app.include_router(
     routes_constants.router,
@@ -201,6 +214,18 @@ app.include_router(
     tags=["生產追溯"]
 )
 
+
+app.include_router(
+    routes_query_v2.router,
+    prefix="/api/v2/query",
+    tags=["Query V2"]
+)
+
+app.include_router(
+    routes_edit.router,
+    prefix="/api/edit",
+    tags=["Inline Edit"]
+)
 
 @app.get("/", tags=["Root"])
 async def root() -> dict[str, str]:

@@ -721,44 +721,6 @@ async def import_data(
                         except (ValueError, TypeError):
                             production_lot_val = None
 
-                        if machine_no_val:
-                            existing_record.machine_no = str(machine_no_val).strip()
-                        if mold_no_val:
-                            existing_record.mold_no = str(mold_no_val).strip()
-                        if specification_val:
-                            existing_record.specification = str(specification_val).strip()
-                        if bottom_tape_val:
-                            existing_record.bottom_tape_lot = str(bottom_tape_val).strip()
-                        if production_lot_val is not None:
-                            existing_record.production_lot = production_lot_val
-                        
-                        # 從 lot_no 提取卷收機編號（最後兩碼）
-                        if lot_no and len(lot_no) >= 2:
-                            try:
-                                # lot_no 格式：XXXXXXX_XX_YY，提取最後兩碼 YY
-                                # 或者直接從字串最後兩位提取
-                                last_two = lot_no[-2:]
-                                if last_two.isdigit():
-                                    existing_record.source_winder = int(last_two)
-                            except (ValueError, AttributeError):
-                                pass  # 如果無法提取，保持原值
-
-                        # product_id（若必要欄位齊全且尚未有值）
-                        if (
-                            not existing_record.product_id
-                            and existing_record.machine_no
-                            and existing_record.mold_no
-                            and existing_record.production_lot is not None
-                            and existing_record.production_date
-                        ):
-                            from app.services.product_id_generator import generate_product_id
-                            existing_record.product_id = generate_product_id(
-                                existing_record.production_date,
-                                existing_record.machine_no,
-                                existing_record.mold_no,
-                                existing_record.production_lot,
-                            )
-                        
                         # 寫入 P3 明細項目子表 - 採用嚴格去重模式
                         # 獲取現有的 P3Items，建立 product_id -> item 的映射 (如果 product_id 存在)
                         existing_items_map = {}
@@ -774,31 +736,7 @@ async def import_data(
                         
                         # 為每一行創建或更新 P3Item
                         for row_no, row_data in enumerate(all_rows, start=1):
-                            # 提取 P3_No. 來組成 product_id
-                            p3_no_raw = (
-                                row_data.get('P3_No.')
-                                or row_data.get('P3 No.')
-                                or row_data.get('p3_no')
-                                or row_data.get('P3NO')
-                            )
-                            
-                            item_product_id = None
-                            if p3_no_raw:
-                                # P3_No. 格式：XXXXXXXX_XX_YY (lot_no_機台_批次)
-                                # 組合成 product_id: YYYYMMDD_XX_YY_Z (日期_機台_模具_批次)
-                                p3_no_str = str(p3_no_raw).strip()
-                                parts = p3_no_str.split('_')
-                                
-                                if len(parts) >= 3:
-                                    machine_from_p3 = parts[1]  # 機台編號
-                                    lot_from_p3 = parts[2]      # 批次
-                                    
-                                    # 組成完整的 product_id
-                                    if existing_record.production_date and existing_record.mold_no:
-                                        date_str = existing_record.production_date.strftime('%Y%m%d')
-                                        item_product_id = f"{date_str}_{machine_from_p3}_{existing_record.mold_no}_{lot_from_p3}"
-                            
-                            # 提取其他欄位
+                            # 提取欄位
                             item_lot_no = row_data.get('lot') or row_data.get('LOT') or row_data.get('Lot')
                             item_machine_no = (
                                 row_data.get('Machine NO')
@@ -807,6 +745,14 @@ async def import_data(
                                 or row_data.get('machine_no')
                                 or row_data.get('machine')
                             )
+                            
+                            # 如果無法從內容提取機台編號，嘗試從檔案名稱提取
+                            if not item_machine_no:
+                                parts = filename.replace('.csv', '').replace('.xlsx', '').split('_')
+                                if len(parts) >= 3:
+                                    # 假設格式為 P3_Date_Machine... (例如 P3_0902_P24)
+                                    item_machine_no = parts[2].replace(' copy', '').strip()
+
                             item_mold_no = (
                                 row_data.get('Mold NO')
                                 or row_data.get('Mold No')
@@ -827,6 +773,57 @@ async def import_data(
                                 or row_data.get('下膠編號')
                                 or row_data.get('下膠')
                             )
+
+                            # 提取 P3_No. 來組成 product_id
+                            p3_no_raw = (
+                                row_data.get('P3_No.')
+                                or row_data.get('P3 No.')
+                                or row_data.get('p3_no')
+                                or row_data.get('P3NO')
+                            )
+                            
+                            item_product_id = None
+                            if p3_no_raw:
+                                # P3_No. 格式：XXXXXXXX_XX_YY (lot_no_機台_批次)
+                                # 組合成 product_id: YYYYMMDD_XX_YY_Z (日期_機台_模具_批次)
+                                p3_no_str = str(p3_no_raw).strip()
+                                parts = p3_no_str.split('_')
+                                
+                                if len(parts) >= 3:
+                                    machine_from_p3 = parts[1]  # 機台編號
+                                    lot_from_p3 = parts[2]      # 批次
+                                    
+                                    # 組成完整的 product_id
+                                    # 優先使用 row_data 中的日期 (year-month-day)，如果沒有則使用 record 的 production_date
+                                    date_str = None
+                                    
+                                    # 嘗試從 row_data 提取日期
+                                    row_date_str = row_data.get('year-month-day')
+                                    if row_date_str:
+                                        try:
+                                            # 處理 "114年09月01日" 格式
+                                            if '年' in str(row_date_str) and '月' in str(row_date_str) and '日' in str(row_date_str):
+                                                y_str = str(row_date_str).split('年')[0]
+                                                m_str = str(row_date_str).split('年')[1].split('月')[0]
+                                                d_str = str(row_date_str).split('月')[1].split('日')[0]
+                                                # 民國年轉西元
+                                                if len(y_str) < 4:
+                                                    y_val = int(y_str) + 1911
+                                                else:
+                                                    y_val = int(y_str)
+                                                date_str = f"{y_val}{int(m_str):02d}{int(d_str):02d}"
+                                        except:
+                                            pass
+                                    
+                                    # 如果無法從 row 提取，則使用 record 的日期
+                                    if not date_str and existing_record.production_date:
+                                        date_str = existing_record.production_date.strftime('%Y%m%d')
+                                    
+                                    # 使用 item_mold_no (如果有的話)，否則嘗試使用 mold_no_val (從第一行提取的)
+                                    target_mold_no = item_mold_no or mold_no_val
+                                    
+                                    if date_str and target_mold_no:
+                                        item_product_id = f"{date_str}_{machine_from_p3}_{target_mold_no}_{lot_from_p3}"
                             
                             # 檢查是否已存在 (透過 product_id)
                             if item_product_id and item_product_id in existing_items_map:
@@ -914,42 +911,6 @@ async def import_data(
                         except (ValueError, TypeError):
                             production_lot_val = None
 
-                        if machine_no_val:
-                            record_kwargs['machine_no'] = str(machine_no_val).strip()
-                        if mold_no_val:
-                            record_kwargs['mold_no'] = str(mold_no_val).strip()
-                        if specification_val:
-                            record_kwargs['specification'] = str(specification_val).strip()
-                        if bottom_tape_val:
-                            record_kwargs['bottom_tape_lot'] = str(bottom_tape_val).strip()
-                        if production_lot_val is not None:
-                            record_kwargs['production_lot'] = production_lot_val
-                        
-                        # 從 lot_no 提取卷收機編號（最後兩碼）
-                        if lot_no and len(lot_no) >= 2:
-                            try:
-                                # lot_no 格式：XXXXXXX_XX_YY，提取最後兩碼 YY
-                                last_two = lot_no[-2:]
-                                if last_two.isdigit():
-                                    record_kwargs['source_winder'] = int(last_two)
-                            except (ValueError, AttributeError):
-                                pass  # 如果無法提取，跳過
-
-                        # product_id（若必要欄位齊全）
-                        if (
-                            record_kwargs.get('machine_no')
-                            and record_kwargs.get('mold_no')
-                            and record_kwargs.get('production_lot') is not None
-                            and record_kwargs.get('production_date')
-                        ):
-                            from app.services.product_id_generator import generate_product_id
-                            record_kwargs['product_id'] = generate_product_id(
-                                record_kwargs['production_date'],
-                                record_kwargs['machine_no'],
-                                record_kwargs['mold_no'],
-                                record_kwargs['production_lot'],
-                            )
-
                     record = Record(**record_kwargs)
                     db.add(record)
                     await db.flush()  # 確保 record.id 可用
@@ -957,35 +918,6 @@ async def import_data(
                     # P3：寫入明細項目子表
                     if data_type == DataType.P3:
                         for row_no, row_data in enumerate(all_rows, start=1):
-                            # 提取 P3_No. 來組成 product_id
-                            p3_no_raw = (
-                                row_data.get('P3_No.')
-                                or row_data.get('P3 No.')
-                                or row_data.get('p3_no')
-                                or row_data.get('P3NO')
-                            )
-                            
-                            if p3_no_raw:
-                                # P3_No. 格式：XXXXXXXX_XX_YY (lot_no_機台_批次)
-                                # 組合成 product_id: YYYYMMDD_XX_YY_Z (日期_機台_模具_批次)
-                                p3_no_str = str(p3_no_raw).strip()
-                                parts = p3_no_str.split('_')
-                                
-                                if len(parts) >= 3:
-                                    machine_from_p3 = parts[1]  # 機台編號
-                                    lot_from_p3 = parts[2]      # 批次
-                                    
-                                    # 組成完整的 product_id
-                                    if record.production_date and record.mold_no:
-                                        date_str = record.production_date.strftime('%Y%m%d')
-                                        item_product_id = f"{date_str}_{machine_from_p3}_{record.mold_no}_{lot_from_p3}"
-                                    else:
-                                        item_product_id = None
-                                else:
-                                    item_product_id = None
-                            else:
-                                item_product_id = None
-                            
                             # 提取其他欄位
                             item_lot_no = row_data.get('lot') or row_data.get('LOT') or row_data.get('Lot')
                             item_machine_no = (
@@ -995,6 +927,14 @@ async def import_data(
                                 or row_data.get('machine_no')
                                 or row_data.get('machine')
                             )
+                            
+                            # 如果無法從內容提取機台編號，嘗試從檔案名稱提取
+                            if not item_machine_no:
+                                parts = filename.replace('.csv', '').replace('.xlsx', '').split('_')
+                                if len(parts) >= 3:
+                                    # 假設格式為 P3_Date_Machine... (例如 P3_0902_P24)
+                                    item_machine_no = parts[2].replace(' copy', '').strip()
+
                             item_mold_no = (
                                 row_data.get('Mold NO')
                                 or row_data.get('Mold No')
@@ -1015,6 +955,38 @@ async def import_data(
                                 or row_data.get('下膠編號')
                                 or row_data.get('下膠')
                             )
+
+                            # 動態產生 Product ID
+                            # 規則：YYYYMMDD_Machine_Mold_Lot
+                            item_product_id = None
+                            
+                            # 優先從 row_data 提取日期
+                            item_date = None
+                            try:
+                                # 使用 production_date_extractor 提取日期
+                                # 注意：extract_production_date 預期輸入格式為 {'additional_data': row_data}
+                                item_date = production_date_extractor.extract_production_date(
+                                    {'additional_data': row_data},
+                                    DataType.P3.value
+                                )
+                            except Exception:
+                                pass
+                            
+                            # 如果無法從 row_data 提取，則使用 Record 的日期
+                            if not item_date:
+                                item_date = record.production_date
+
+                            if (
+                                item_date 
+                                and item_machine_no 
+                                and item_mold_no 
+                                and item_lot_no
+                            ):
+                                date_str = item_date.strftime('%Y%m%d')
+                                machine_str = str(item_machine_no).strip()
+                                mold_str = str(item_mold_no).strip()
+                                lot_str = str(item_lot_no).strip()
+                                item_product_id = f"{date_str}_{machine_str}_{mold_str}_{lot_str}"
                             
                             p3_item = P3Item(
                                 record_id=record.id,

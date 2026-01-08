@@ -1,0 +1,84 @@
+import uuid
+from datetime import datetime
+from enum import Enum
+from typing import Optional, Dict, Any, List
+
+from sqlalchemy import String, Integer, DateTime, ForeignKey, func, Boolean, JSON
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
+
+class ImportJobStatus(str, Enum):
+    UPLOADED = "UPLOADED"
+    PARSING = "PARSING"
+    VALIDATING = "VALIDATING"
+    FAILED = "FAILED"
+    READY = "READY"
+    COMMITTING = "COMMITTING"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+class ImportJob(Base):
+    __tablename__ = "import_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    table_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("table_registry.id"), nullable=False)
+    schema_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("schema_versions.id"), nullable=True)
+    
+    # 批次識別碼，方便人類閱讀與查詢
+    batch_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    
+    status: Mapped[str] = mapped_column(String(20), default=ImportJobStatus.UPLOADED, nullable=False)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    
+    total_files: Mapped[int] = mapped_column(Integer, default=0)
+    total_rows: Mapped[int] = mapped_column(Integer, default=0)
+    error_count: Mapped[int] = mapped_column(Integer, default=0)
+    
+    error_summary: Mapped[Dict[str, Any]] = mapped_column(JSON, server_default='{}', nullable=False)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    files: Mapped[List["ImportFile"]] = relationship("ImportFile", back_populates="job", cascade="all, delete-orphan")
+    staging_rows: Mapped[List["StagingRow"]] = relationship("StagingRow", back_populates="job", cascade="all, delete-orphan")
+
+class ImportFile(Base):
+    __tablename__ = "import_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_jobs.id", ondelete="CASCADE"), nullable=False)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    table_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("table_registry.id"), nullable=False)
+    
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False, comment="SHA-256")
+    storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    job: Mapped["ImportJob"] = relationship("ImportJob", back_populates="files")
+    staging_rows: Mapped[List["StagingRow"]] = relationship("StagingRow", back_populates="file")
+
+class StagingRow(Base):
+    __tablename__ = "staging_rows"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_files.id", ondelete="CASCADE"), nullable=False)
+    
+    row_index: Mapped[int] = mapped_column(Integer, nullable=False, comment="Original row number in file (1-based)")
+    
+    parsed_json: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    errors_json: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    
+    is_valid: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    
+    job: Mapped["ImportJob"] = relationship("ImportJob", back_populates="staging_rows")
+    file: Mapped["ImportFile"] = relationship("ImportFile", back_populates="staging_rows")

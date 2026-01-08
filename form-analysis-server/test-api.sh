@@ -9,7 +9,7 @@ echo "Form Analysis API 測試腳本"
 echo "============================="
 
 # 設定 API Base URL
-API_BASE="http://localhost:8000"
+API_BASE="http://localhost:18002"
 
 # 顏色定義
 GREEN='\033[0;32m'

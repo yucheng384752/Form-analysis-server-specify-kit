@@ -8,8 +8,8 @@ P2 每一列的詳細記錄（對應一個卷收機 winder），用於支援逐�
 import uuid
 from typing import Optional
 
-from sqlalchemy import String, Integer, Float, ForeignKey, Index, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import String, Integer, Float, ForeignKey, Index, UniqueConstraint, JSON
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -90,7 +90,7 @@ class P2Item(Base):
     
     # 原始資料
     row_data: Mapped[Optional[dict]] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         comment="原始列資料 (JSON)"
     )

@@ -75,7 +75,7 @@ if !RETRY_COUNT! geq !MAX_RETRIES! (
     exit /b 1
 )
 
-curl -f http://localhost:8000/healthz >nul 2>&1
+curl -f http://localhost:18002/healthz >nul 2>&1
 if errorlevel 1 (
     set /a RETRY_COUNT+=1
     echo|set /p="."
@@ -98,7 +98,7 @@ if !RETRY_COUNT! geq !MAX_RETRIES! (
     exit /b 1
 )
 
-curl -f http://localhost:5173 >nul 2>&1
+curl -f http://localhost:18003 >nul 2>&1
 if errorlevel 1 (
     set /a RETRY_COUNT+=1
     echo|set /p="."
@@ -117,7 +117,7 @@ echo 🩺 健康檢查驗證
 echo ==================
 
 echo [INFO] 測試基本健康檢查...
-curl -f http://localhost:8000/healthz
+curl -f http://localhost:18002/healthz
 if errorlevel 1 (
     echo [ERROR] 基本健康檢查失敗
     pause
@@ -127,7 +127,7 @@ echo [SUCCESS] 基本健康檢查通過
 
 echo.
 echo [INFO] 測試詳細健康檢查...
-curl -f http://localhost:8000/healthz/detailed >nul 2>&1
+curl -f http://localhost:18002/healthz/detailed >nul 2>&1
 if errorlevel 1 (
     echo [WARNING] 詳細健康檢查失敗（可能尚未實現）
 ) else (
@@ -152,7 +152,7 @@ echo 5678901_05,測試產品E,125,2024-01-19 >> %TEMP_CSV%
 echo [INFO] 測試檔案上傳（5 列測試資料）...
 
 REM 使用 curl 上傳文件
-curl -s -X POST -F "file=@%TEMP_CSV%" http://localhost:8000/api/upload > %TEMP%\upload_response.json
+curl -s -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
 
 echo 上傳回應:
 type %TEMP%\upload_response.json
@@ -168,9 +168,9 @@ del %TEMP%\upload_response.json >nul 2>&1
 echo.
 echo  前端訪問資訊
 echo ================
-echo [SUCCESS] 前端應用已啟動: http://localhost:5173
-echo [SUCCESS] 後端 API 文件: http://localhost:8000/docs
-echo [SUCCESS] 後端 API Redoc: http://localhost:8000/redoc
+echo [SUCCESS] 前端應用已啟動: http://localhost:18003
+echo [SUCCESS] 後端 API 文件: http://localhost:18002/docs
+echo [SUCCESS] 後端 API Redoc: http://localhost:18002/redoc
 
 echo.
 echo  環境配置說明

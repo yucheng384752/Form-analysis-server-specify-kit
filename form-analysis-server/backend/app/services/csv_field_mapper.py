@@ -97,6 +97,27 @@ class CSVFieldMapper:
         '機台編號'
     ]
     
+    # 日期欄位可能的名稱（包含 year-month-day 格式）
+    DATE_FIELD_NAMES = [
+        'year-month-day',
+        'Year-Month-Day',
+        'production_date',
+        'production date',
+        '生產日期',
+        'date',
+        'Date'
+    ]
+
+    # P3 可能的 lot 欄位名稱
+    LOT_FIELD_NAMES = [
+        'lot',
+        'Lot',
+        'lot_no',
+        'Lot No',
+        'lot no',
+        'production_lot'
+    ]
+    
     # P3 可能的模具編號欄位名稱（從檔案名稱或欄位提取）
     MOLD_NO_FIELD_NAMES = [
         'Mold NO',     # 新格式（大寫 NO）
@@ -223,12 +244,19 @@ class CSVFieldMapper:
             
             # 嘗試從 'lot' 欄位提取 production_lot (新格式)
             if 'production_lot' not in result:
-                prod_lot = row.get('lot')
-                if pd.notna(prod_lot):
+                prod_lot = self._extract_field_value(row, self.LOT_FIELD_NAMES)
+                if prod_lot:
                     try:
                         result['production_lot'] = int(float(prod_lot))
                     except (ValueError, TypeError):
-                        pass
+                        result['production_lot'] = prod_lot
+
+            # 日期優先：若存在 year-month-day 等欄位，嘗試正規化為 YYYYMMDD
+            date_val = self._extract_field_value(row, self.DATE_FIELD_NAMES)
+            if date_val:
+                yyyymmdd = self._normalize_date_to_yyyymmdd(str(date_val))
+                if yyyymmdd:
+                    result['production_date_yyyymmdd'] = yyyymmdd
             
             # 如果 P3_No. 沒有提供完整資訊，嘗試從其他欄位或檔案名稱提取
             if not result.get('machine_no'):
@@ -293,6 +321,64 @@ class CSVFieldMapper:
                 return int(float(value_str))
             except (ValueError, TypeError):
                 pass
+        return None
+
+    def _normalize_date_to_yyyymmdd(self, date_str: str) -> Optional[int]:
+        """
+        將常見日期字串正規化為 YYYYMMDD（整數）
+        支援格式：YYYY-MM-DD, YYYY/MM/DD, YYYYMMDD, YYMMDD, year-month-day 等
+        """
+        if not date_str:
+            return None
+        # 移除空白
+        s = date_str.strip()
+        # 用非數字字符分隔
+        import re
+        digits = re.findall(r"\d+", s)
+        if not digits:
+            return None
+
+        # 如果整串是純數字並長度為8，直接使用
+        if s.isdigit() and len(s) == 8:
+            try:
+                return int(s)
+            except ValueError:
+                return None
+
+        # 如果存在 '-' 或 '/'，嘗試以分隔符解析
+        if '-' in s or '/' in s:
+            sep = '-' if '-' in s else '/'
+            parts = s.split(sep)
+            if len(parts) == 3:
+                y, m, d = parts
+                # 處理兩位年（如 25 -> 2025）
+                if len(y) == 2:
+                    y = '20' + y
+                try:
+                    y_i = int(y)
+                    m_i = int(m)
+                    d_i = int(d)
+                    return y_i * 10000 + m_i * 100 + d_i
+                except ValueError:
+                    return None
+
+        # 若拆出多段數字，試用常見排列
+        all_digits = ''.join(digits)
+        if len(all_digits) == 8:
+            try:
+                return int(all_digits)
+            except ValueError:
+                return None
+        if len(all_digits) == 6:
+            # YYMMDD -> assume 20YY
+            try:
+                y = int(all_digits[:2])
+                m = int(all_digits[2:4])
+                d = int(all_digits[4:6])
+                y_full = 2000 + y
+                return y_full * 10000 + m * 100 + d
+            except ValueError:
+                return None
         return None
     
     def _parse_p3_no(self, p3_no: str) -> Dict[str, Any]:

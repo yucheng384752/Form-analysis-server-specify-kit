@@ -282,7 +282,7 @@ record: Mapped["Record"] = relationship(
 
 | 需求項目 | 實作狀態 | 說明 |
 |---------|---------|------|
-| P3 product_id 顯示與搜尋 |  完成 | P3Item 包含 product_id，高級搜尋支援 |
+| P3 product_id 顯示與搜尋 |  完成 | P3Item 包含 product_id，進階搜尋支援 |
 | P3 lot_no 卷收機編號提取 |  完成 | source_winder 欄位正確提取 |
 | P3 逐列資料存儲 |  完成 | P3Item 子表逐列存儲 |
 | 父子表關聯 |  完成 | Record ↔ P3Item 一對多關係 |

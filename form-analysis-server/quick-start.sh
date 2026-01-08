@@ -85,7 +85,7 @@ print_status "等待後端 API 就緒..."
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if curl -f http://localhost:8000/healthz >/dev/null 2>&1; then
+    if curl -f http://localhost:18002/healthz >/dev/null 2>&1; then
         print_success "後端 API 已就緒"
         break
     fi
@@ -105,7 +105,7 @@ print_status "等待前端就緒..."
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if curl -f http://localhost:5173 >/dev/null 2>&1; then
+    if curl -f http://localhost:18003 >/dev/null 2>&1; then
         print_success "前端已就緒"
         break
     fi
@@ -129,7 +129,7 @@ echo "🩺 健康檢查驗證"
 echo "=================="
 
 print_status "測試基本健康檢查..."
-if curl -f http://localhost:8000/healthz; then
+if curl -f http://localhost:18002/healthz; then
     print_success "基本健康檢查通過"
 else
     print_error "基本健康檢查失敗"
@@ -138,7 +138,7 @@ fi
 
 echo ""
 print_status "測試詳細健康檢查..."
-if curl -f http://localhost:8000/healthz/detailed; then
+if curl -f http://localhost:18002/healthz/detailed; then
     print_success "詳細健康檢查通過"
 else
     print_warning "詳細健康檢查失敗（可能尚未實現）"
@@ -166,7 +166,7 @@ print_status "測試檔案上傳（5 列測試資料）..."
 
 UPLOAD_RESPONSE=$(curl -s -X POST \
     -F "file=@$TEMP_CSV" \
-    http://localhost:8000/api/upload)
+    http://localhost:18002/api/upload)
 
 echo "上傳回應: $UPLOAD_RESPONSE"
 
@@ -178,7 +178,7 @@ if [ -n "$FILE_ID" ]; then
     
     # 測試錯誤報告下載
     print_status "測試錯誤報告下載..."
-    if curl -f "http://localhost:8000/api/errors.csv?file_id=$FILE_ID" -o /tmp/errors.csv; then
+    if curl -f "http://localhost:18002/api/errors.csv?file_id=$FILE_ID" -o /tmp/errors.csv; then
         print_success "錯誤報告下載成功"
         echo "錯誤報告內容："
         cat /tmp/errors.csv
@@ -192,7 +192,7 @@ if [ -n "$FILE_ID" ]; then
     IMPORT_RESPONSE=$(curl -s -X POST \
         -H "Content-Type: application/json" \
         -d "{\"file_id\":\"$FILE_ID\"}" \
-        http://localhost:8000/api/import)
+        http://localhost:18002/api/import)
     
     echo "匯入回應: $IMPORT_RESPONSE"
     print_success "資料匯入測試完成"
@@ -206,9 +206,9 @@ rm -f "$TEMP_CSV"
 echo ""
 echo " 前端訪問資訊"
 echo "================"
-print_success "前端應用已啟動: http://localhost:5173"
-print_success "後端 API 文件: http://localhost:8000/docs"
-print_success "後端 API Redoc: http://localhost:8000/redoc"
+print_success "前端應用已啟動: http://localhost:18003"
+print_success "後端 API 文件: http://localhost:18002/docs"
+print_success "後端 API Redoc: http://localhost:18002/redoc"
 
 echo ""
 echo " 環境配置說明"

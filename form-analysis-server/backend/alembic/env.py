@@ -19,7 +19,16 @@ from app.core.config import get_settings
 from app.core.database import Base
 
 # 匯入所有模型以確保 metadata 完整
-from app.models import UploadJob, UploadError, Record
+from app.models.core.tenant import Tenant
+from app.models.core.schema_registry import TableRegistry, SchemaVersion
+from app.models.p1_record import P1Record
+from app.models.p2_record import P2Record
+from app.models.p3_record import P3Record
+from app.models.import_job import ImportJob, ImportFile, StagingRow
+from app.models.upload_job import UploadJob
+from app.models.upload_error import UploadError
+# Record is deprecated but kept for reference if needed, though we are moving away from it.
+# from app.models.record import Record
 
 # Alembic 配置物件
 config = context.config

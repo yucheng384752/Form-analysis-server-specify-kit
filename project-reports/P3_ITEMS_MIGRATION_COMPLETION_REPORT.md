@@ -239,9 +239,9 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
-### 4. 高級搜尋測試（可選）
+### 4. 進階搜尋測試（可選）
 
-測試使用 `product_id` 進行高級搜尋：
+測試使用 `product_id` 進行進階搜尋：
 
 ```python
 # 在 Python 測試腳本中

@@ -120,13 +120,13 @@ $retryCount = 0
 while ($retryCount -lt $maxRetries) {
     try {
         if ($useCurl) {
-            curl -f http://localhost:8000/healthz -o $null -s 2>$null
+            curl -f http://localhost:18002/healthz -o $null -s 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "後端 API 已就緒"
                 break
             }
         } else {
-            $response = Invoke-WebRequest -Uri "http://localhost:8000/healthz" -TimeoutSec 5 -ErrorAction SilentlyContinue
+            $response = Invoke-WebRequest -Uri "http://localhost:18002/healthz" -TimeoutSec 5 -ErrorAction SilentlyContinue
             if ($response.StatusCode -eq 200) {
                 Write-Success "後端 API 已就緒"
                 break
@@ -152,13 +152,13 @@ $retryCount = 0
 while ($retryCount -lt $maxRetries) {
     try {
         if ($useCurl) {
-            curl -f http://localhost:5173 -o $null -s 2>$null
+            curl -f http://localhost:18003 -o $null -s 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "前端已就緒"
                 break
             }
         } else {
-            $response = Invoke-WebRequest -Uri "http://localhost:5173" -TimeoutSec 5 -ErrorAction SilentlyContinue
+            $response = Invoke-WebRequest -Uri "http://localhost:18003" -TimeoutSec 5 -ErrorAction SilentlyContinue
             if ($response.StatusCode -eq 200) {
                 Write-Success "前端已就緒"
                 break
@@ -191,11 +191,11 @@ if (-not $SkipTests) {
     Write-Info "測試基本健康檢查..."
     try {
         if ($useCurl) {
-            $response = curl -f http://localhost:8000/healthz -s
+            $response = curl -f http://localhost:18002/healthz -s
             Write-Host $response
             Write-Success "基本健康檢查通過"
         } else {
-            $response = Invoke-WebRequest -Uri "http://localhost:8000/healthz" -ErrorAction Stop
+            $response = Invoke-WebRequest -Uri "http://localhost:18002/healthz" -ErrorAction Stop
             Write-Host $response.Content
             Write-Success "基本健康檢查通過"
         }
@@ -208,7 +208,7 @@ if (-not $SkipTests) {
     Write-Info "測試詳細健康檢查..."
     try {
         if ($useCurl) {
-            $response = curl -f http://localhost:8000/healthz/detailed -s 2>$null
+            $response = curl -f http://localhost:18002/healthz/detailed -s 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Write-Host $response
                 Write-Success "詳細健康檢查通過"
@@ -216,7 +216,7 @@ if (-not $SkipTests) {
                 Write-Warning "詳細健康檢查失敗（可能尚未實現）"
             }
         } else {
-            $response = Invoke-WebRequest -Uri "http://localhost:8000/healthz/detailed" -ErrorAction SilentlyContinue
+            $response = Invoke-WebRequest -Uri "http://localhost:18002/healthz/detailed" -ErrorAction SilentlyContinue
             if ($response.StatusCode -eq 200) {
                 Write-Host $response.Content
                 Write-Success "詳細健康檢查通過"
@@ -253,7 +253,7 @@ lot_no,product_name,quantity,production_date
 
     try {
         if ($useCurl) {
-            $uploadResponse = curl -s -X POST -F "file=@$tempCsv" http://localhost:8000/api/upload
+            $uploadResponse = curl -s -X POST -F "file=@$tempCsv" http://localhost:18002/api/upload
         } else {
             # PowerShell 檔案上傳比較複雜，這裡簡化處理
             Write-Warning "使用 PowerShell 進行檔案上傳測試（簡化版本）"
@@ -271,7 +271,7 @@ lot_no,product_name,quantity,production_date
             Write-Info "測試錯誤報告下載..."
             try {
                 if ($useCurl) {
-                    curl -f "http://localhost:8000/api/errors.csv?file_id=$fileId" -o errors.csv -s
+                    curl -f "http://localhost:18002/api/errors.csv?file_id=$fileId" -o errors.csv -s
                     if ($LASTEXITCODE -eq 0) {
                         Write-Success "錯誤報告下載成功"
                         Write-Host "錯誤報告內容："
@@ -287,7 +287,7 @@ lot_no,product_name,quantity,production_date
             Write-Info "測試資料匯入..."
             try {
                 if ($useCurl) {
-                    $importResponse = curl -s -X POST -H "Content-Type: application/json" -d "{`"file_id`":`"$fileId`"}" http://localhost:8000/api/import
+                    $importResponse = curl -s -X POST -H "Content-Type: application/json" -d "{`"file_id`":`"$fileId`"}" http://localhost:18002/api/import
                     Write-Host "匯入回應: $importResponse"
                     Write-Success "資料匯入測試完成"
                 }
@@ -311,9 +311,9 @@ Write-ColorOutput Blue @"
  前端訪問資訊
 ================
 "@
-Write-Success "前端應用已啟動: http://localhost:5173"
-Write-Success "後端 API 文件: http://localhost:8000/docs"
-Write-Success "後端 API Redoc: http://localhost:8000/redoc"
+Write-Success "前端應用已啟動: http://localhost:18003"
+Write-Success "後端 API 文件: http://localhost:18002/docs"
+Write-Success "後端 API Redoc: http://localhost:18002/redoc"
 
 Write-Host ""
 Write-ColorOutput Blue @"
@@ -351,5 +351,5 @@ Write-Host ""
 # 自動打開瀏覽器（可選）
 $openBrowser = Read-Host "是否自動打開前端頁面？(y/N)"
 if ($openBrowser -eq 'y' -or $openBrowser -eq 'Y') {
-    Start-Process "http://localhost:5173"
+    Start-Process "http://localhost:18003"
 }

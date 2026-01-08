@@ -36,10 +36,19 @@ uploads/
 !test-data/**/*.xlsx
 !test-data/**/*.xls
 
-# 保留根目錄測試檔案（以 P 開頭的測試檔）
+# 保留根目錄測試檔案（以 P 開頭的測試檔），但排除 Dedup 暫存檔
 !P1_*.csv
 !P2_*.csv
 !P3_*.csv
+P1_Dedup_*.csv
+P2_Dedup_*.csv
+P3_Dedup_*.csv
+
+# 忽略 JSON dump 檔案
+*_dump_*.json
+
+# 忽略測試暫存檔
+test_dummy.txt
 
 # 忽略日誌檔案
 *.log

@@ -104,7 +104,7 @@ if lot_no and len(lot_no) >= 2:
 
 4. **P3 Product ID 顯示與搜尋** 
    - 已實現 product_id 欄位
-   - 高級搜尋支援 product_id 模糊查詢
+   - 進階搜尋支援 product_id 模糊查詢
 
 5. **卷收機編號提取** 
    - 從 lot_no 提取最後兩碼
@@ -127,13 +127,13 @@ if lot_no and len(lot_no) >= 2:
 - 生產日期（production_date）
 - 資料類型（data_type）
 
-### 高級搜尋（父表 + 子表）
+### 進階搜尋（父表 + 子表）
 可選擇查詢來源：
 - **父表查詢**：快速取得整體資訊
 - **子表查詢**（未來）：精確查詢每一列的 product_id、machine_no、mold_no 等
 
 ### 建議的未來優化
-1. 創建專門的 P3 高級搜尋端點，直接查詢 p3_items 表
+1. 創建專門的 P3 進階搜尋端點，直接查詢 p3_items 表
 2. 添加聚合查詢功能（按 machine_no 統計等）
 3. 實現跨表關聯查詢（P3 → P2 → P1 的追溯）
 

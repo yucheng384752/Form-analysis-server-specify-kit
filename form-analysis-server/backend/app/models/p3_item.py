@@ -9,8 +9,8 @@ import uuid
 from datetime import date, datetime
 from typing import Optional, Dict, Any
 
-from sqlalchemy import String, Integer, Date, DateTime, ForeignKey, Index, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import String, Integer, Date, DateTime, ForeignKey, Index, UniqueConstraint, func, JSON
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -128,9 +128,9 @@ class P3Item(Base):
         comment="下膠編號/Bottom Tape LOT"
     )
     
-    # 該列的完整原始資料（JSONB）
+    # 該列的完整原始資料 (JSONB)
     row_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         comment="該列的完整原始資料（JSON 格式）"
     )
@@ -176,12 +176,6 @@ Index(
     "ix_p3_items_lot_no_row_no",
     P3Item.lot_no,
     P3Item.row_no,
-    postgresql_using="btree"
-)
-
-Index(
-    "ix_p3_items_production_date",
-    P3Item.production_date,
     postgresql_using="btree"
 )
 

@@ -3,6 +3,7 @@ import React, { useState, useRef } from "react";
 import { Modal } from "../components/common/Modal";
 import { AdvancedSearch, AdvancedSearchParams } from "../components/AdvancedSearch";
 import { TraceabilityFlow } from "../components/TraceabilityFlow";
+import { EditRecordModal } from "../components/EditRecordModal";
 import "../styles/query-page.css";
 
 // 資料類型枚舉
@@ -65,7 +66,7 @@ export function QueryPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionLoading, setSuggestionLoading] = useState(false);
   
-  // 高級搜尋相關狀態
+  // 進階搜尋相關狀態
   const [advancedSearchExpanded, setAdvancedSearchExpanded] = useState(false);
   const [advancedSearchParams, setAdvancedSearchParams] = useState<AdvancedSearchParams | null>(null);
   
@@ -74,6 +75,17 @@ export function QueryPage() {
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<{ [key: string]: boolean }>({});
   const [detailRecord, setDetailRecord] = useState<QueryRecord | null>(null);
+  const [editRecord, setEditRecord] = useState<QueryRecord | null>(null);
+  const [tenantId, setTenantId] = useState<string>("");
+
+  React.useEffect(() => {
+    fetch('/api/tenants')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.length > 0) setTenantId(data[0].id);
+      })
+      .catch(err => console.error("Failed to fetch tenants", err));
+  }, []);
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -212,7 +224,7 @@ export function QueryPage() {
     return value || '-';
   };
 
-  // 搜尋記錄 (支援基本搜尋和高級搜尋)
+  // 搜尋記錄 (支援基本搜尋和進階搜尋)
   const searchRecords = async (search: string, page: number = 1, advancedParams?: AdvancedSearchParams) => {
     setLoading(true);
     try {
@@ -222,7 +234,7 @@ export function QueryPage() {
         page_size: pageSize.toString()
       });
       
-      // 優先使用高級搜尋參數
+      // 優先使用進階搜尋參數
       if (advancedParams) {
         apiUrl = '/api/query/records/advanced';
         if (advancedParams.lot_no) params.append('lot_no', advancedParams.lot_no);
@@ -256,6 +268,11 @@ export function QueryPage() {
 
   // 輔助函數：產生 P3 Row 的 Product ID
   const generateRowProductId = (record: QueryRecord, row: any): string => {
+    // 如果後端已經提供了 product_id，直接使用
+    if (row['product_id']) {
+      return row['product_id'];
+    }
+
     // 1. 取得日期 (YYYYMMDD)
     let dateStr = '';
     if (record.production_date) {
@@ -494,20 +511,20 @@ export function QueryPage() {
   // 處理基本搜尋
   const handleSearch = async () => {
     if (searchKeyword.trim()) {
-      setAdvancedSearchParams(null); // 清除高級搜尋參數
+      setAdvancedSearchParams(null); // 清除進階搜尋參數
       await searchRecords(searchKeyword.trim());
       setShowSuggestions(false);
     }
   };
   
-  // 處理高級搜尋
+  // 處理進階搜尋
   const handleAdvancedSearch = async (params: AdvancedSearchParams) => {
     setAdvancedSearchParams(params);
     setSearchKeyword(''); // 清除基本搜尋關鍵字
     await searchRecords('', 1, params);
   };
   
-  // 重置高級搜尋
+  // 重置進階搜尋
   const handleAdvancedReset = () => {
     setAdvancedSearchParams(null);
     setRecords([]);
@@ -826,7 +843,7 @@ export function QueryPage() {
                       <tr>
                         <th className="action-column">關聯查詢</th>
                         <th>Product ID</th>
-                        {Object.keys(rows[0]).map(header => (
+                        {Object.keys(rows[0]).filter(h => h !== 'product_id').map(header => (
                           <th key={header}>{header}</th>
                         ))}
                       </tr>
@@ -848,7 +865,7 @@ export function QueryPage() {
                             <td className="product-id-cell" title={rowProductId}>
                               {rowProductId}
                             </td>
-                            {Object.keys(rows[0]).map(header => (
+                            {Object.keys(rows[0]).filter(h => h !== 'product_id').map(header => (
                               <td key={header}>
                                 {formatFieldValue(header, row[header])}
                               </td>
@@ -1000,6 +1017,18 @@ export function QueryPage() {
         ))}
         
         {renderAdditionalData(record.additional_data)}
+        
+        <div className="detail-actions" style={{marginTop: '1rem', textAlign: 'right'}}>
+          <button 
+            className="search-btn" 
+            onClick={() => {
+              setDetailRecord(null);
+              setEditRecord(record);
+            }}
+          >
+            編輯資料
+          </button>
+        </div>
       </div>
     );
   };
@@ -1179,8 +1208,8 @@ export function QueryPage() {
       if (type === 'P3' && recordWithType.product_id) {
         // P3: 根據 Product ID 過濾
         filteredRows = recordWithType.additional_data.rows.filter((row: any) => {
-          // 嘗試多種可能的欄位名稱
-          const rowProductId = row['Product ID'] || row['product_id'] || row['ID'];
+          // 嘗試多種可能的欄位名稱，並使用 generateRowProductId 作為後備
+          const rowProductId = row['Product ID'] || row['product_id'] || row['ID'] || generateRowProductId(recordWithType, row);
           return rowProductId === recordWithType.product_id;
         });
       } else if (type === 'P2' && recordWithType.winder_number) {
@@ -1243,7 +1272,7 @@ export function QueryPage() {
           
           <div className="query-description">
             <p><strong>批號查詢：</strong>輸入批號進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料</p>
-            <p><strong>高級搜尋：</strong>可依日期範圍、機台號碼、下膠編號、產品編號、P3規格等條件進行多條件組合搜尋</p>
+            <p><strong>進階搜尋：</strong>可依日期範圍、機台號碼、下膠編號、產品編號、P3規格等條件進行多條件組合搜尋</p>
           </div>
 
           <div className="query-search-input-wrapper autocomplete-wrapper">
@@ -1305,7 +1334,7 @@ export function QueryPage() {
             )}
           </div>
           
-          {/* 高級搜尋面板 */}
+          {/* 進階搜尋面板 */}
           <AdvancedSearch
             onSearch={handleAdvancedSearch}
             onReset={handleAdvancedReset}
@@ -1436,6 +1465,18 @@ export function QueryPage() {
           </div>
         )}
       </Modal>
+
+      <EditRecordModal
+        open={editRecord !== null}
+        record={editRecord}
+        type={editRecord?.data_type as any}
+        tenantId={tenantId}
+        onClose={() => setEditRecord(null)}
+        onSave={(updated) => {
+          console.log("Record updated:", updated);
+          // Refresh search if needed
+        }}
+      />
     </div>
   );
 }

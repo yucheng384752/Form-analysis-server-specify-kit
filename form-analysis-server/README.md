@@ -17,7 +17,7 @@
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Frontend      │    │   Backend       │    │   Database      │
 │   (React+Vite)  │◄──►│   (FastAPI)     │◄──►│   (PostgreSQL)  │
-│   Port: 5173    │    │   Port: 8000    │    │   Port: 5432    │
+│   Port: 18003   │    │   Port: 18002   │    │   Port: 18001   │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
@@ -27,7 +27,7 @@
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop) 已安裝並運行
 - [curl](https://curl.se/download.html) 已安裝（用於 API 測試）
-- 可用埠口：5173（前端）、8000（後端）、5432（資料庫）
+- 可用埠口：18003（前端）、18002（後端）、18001（資料庫）
 
 ### 一鍵啟動
 
@@ -61,10 +61,10 @@ chmod +x quick-start.sh
 2. **驗證健康檢查**
    ```bash
    # 基本健康檢查
-   curl -f http://localhost:8000/healthz
+   curl -f http://localhost:18002/healthz
    
    # 詳細健康檢查（包含資料庫連接）
-   curl -f http://localhost:8000/healthz/detailed
+   curl -f http://localhost:18002/healthz/detailed
    ```
 
 3. **模擬上傳與驗證流程**
@@ -85,7 +85,7 @@ chmod +x quick-start.sh
    ```bash
    # 上傳檔案
    curl -X POST -F "file=@test_upload.csv" \
-        http://localhost:8000/api/upload
+        http://localhost:18002/api/upload
    
    # 範例回應:
    # {
@@ -96,17 +96,17 @@ chmod +x quick-start.sh
    # }
    
    # 如果有錯誤，下載錯誤報告（使用上傳回應中的 file_id）
-   curl "http://localhost:8000/api/errors.csv?file_id=abc123def456"
+   curl "http://localhost:18002/api/errors.csv?file_id=abc123def456"
    
    # 確認匯入資料（使用上傳回應中的 file_id）
    curl -X POST -H "Content-Type: application/json" \
         -d '{"file_id":"abc123def456"}' \
-        http://localhost:8000/api/import
+        http://localhost:18002/api/import
    ```
 
 4. **訪問前端應用**
    
-   開啟瀏覽器訪問：http://localhost:5173
+   開啟瀏覽器訪問：http://localhost:18003
 
 ##  環境配置
 
@@ -116,11 +116,11 @@ chmod +x quick-start.sh
 
 ```env
 # 前端配置
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:18002
 VITE_MAX_FILE_SIZE=10485760  # 10MB in bytes
 
 # 後端 CORS 設定
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+CORS_ORIGINS=http://localhost:18003,http://localhost:3000
 ```
 
 ### 資料庫驅動選擇
@@ -146,7 +146,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: process.env.VITE_API_URL || 'http://localhost:8000',
+        target: process.env.VITE_API_URL || 'http://localhost:18002',
         changeOrigin: true,
         secure: false,
       }
@@ -158,7 +158,7 @@ export default defineConfig({
 ### CORS 配置確認
 
 後端已配置 CORS 中間件，支援以下來源：
-- http://localhost:5173 （Vite 開發伺服器 - 主要前端埠）
+- http://localhost:18003 （Vite 開發伺服器 - 主要前端埠）
 - http://localhost:3000 （備用前端埠，兼容性保留）
 
 如需添加其他來源，請修改 `.env` 檔案中的 `CORS_ORIGINS`。
@@ -167,9 +167,9 @@ export default defineConfig({
 
 啟動服務後，可訪問以下 API 文件：
 
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **OpenAPI JSON**: http://localhost:8000/openapi.json
+- **Swagger UI**: http://localhost:18002/docs
+- **ReDoc**: http://localhost:18002/redoc
+- **OpenAPI JSON**: http://localhost:18002/openapi.json
 
 ### 主要 API 端點
 
@@ -221,7 +221,7 @@ A: 檢查以下配置：
 
 **Q: API 請求 404 錯誤**
 A: 確認：
-- 後端服務正常運行（http://localhost:8000/docs）
+- 後端服務正常運行（http://localhost:18002/docs）
 - API Base URL 配置正確
 - 網路連線正常
 
@@ -271,10 +271,10 @@ docker compose logs -f db
 docker compose ps
 
 # 檢查服務健康狀態
-curl http://localhost:8000/healthz
+curl http://localhost:18002/healthz
 
 # 檢查前端可訪問性
-curl http://localhost:5173
+curl http://localhost:18003
 ```
 
 ### 重新啟動服務

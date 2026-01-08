@@ -34,20 +34,33 @@ async def init_db() -> None:
     
     settings = get_settings()
     
-    # Validate that we're using PostgreSQL
-    if not settings.database_url.startswith('postgresql'):
+    # Validate that we're using PostgreSQL or SQLite
+    if not settings.database_url.startswith('postgresql') and not settings.database_url.startswith('sqlite'):
         raise ValueError(
-            f"只支援PostgreSQL資料庫。當前配置: {settings.database_url[:20]}..."
+            f"只支援PostgreSQL或SQLite資料庫。當前配置: {settings.database_url[:20]}..."
         )
     
     # Create async engine with connection pooling
-    engine = create_async_engine(
-        settings.database_url,
-        echo=settings.database_echo,  # Enable SQL logging in development
-        pool_size=settings.database_pool_size,
-        pool_recycle=settings.database_pool_recycle,
-        pool_pre_ping=True,  # Validate connections before use
-    )
+    connect_args = {}
+    if settings.database_url.startswith('sqlite'):
+        connect_args = {"check_same_thread": False}
+        
+    engine_args = {
+        "url": settings.database_url,
+        "echo": settings.database_echo,
+        "pool_pre_ping": True,
+    }
+    
+    if settings.database_url.startswith('postgresql'):
+        engine_args.update({
+            "pool_size": settings.database_pool_size,
+            "pool_recycle": settings.database_pool_recycle,
+        })
+    else:
+        # SQLite specific
+        engine_args["connect_args"] = connect_args
+
+    engine = create_async_engine(**engine_args)
     
     # Create session factory
     async_session_factory = async_sessionmaker(

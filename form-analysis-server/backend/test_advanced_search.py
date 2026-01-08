@@ -1,5 +1,5 @@
 """
-測試高級搜尋 API
+測試進階搜尋 API
 
 驗證新增的 /api/query/records/advanced 端點功能
 """
@@ -12,11 +12,11 @@ from app.models.record import Record, DataType
 
 
 async def test_advanced_search():
-    """測試高級搜尋功能"""
+    """測試進階搜尋功能"""
     
     async with async_session_maker() as session:
         print("\n" + "=" * 60)
-        print("高級搜尋 API 測試")
+        print("進階搜尋 API 測試")
         print("=" * 60)
         
         # 測試 1: 按日期範圍搜尋

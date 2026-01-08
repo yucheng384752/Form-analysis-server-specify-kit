@@ -362,7 +362,7 @@ curl http://localhost:18002/api/records/search?lot_no=2411012_04
 
 - [ ] **表格欄位格式化**
   - [ ] 查詢結果表格
-  - [ ] 高級搜尋結果表格
+  - [ ] 進階搜尋結果表格
 
 - [ ] **CSV 匯出**
   - [ ] 確保匯出的日期格式為 YYYYMMDD

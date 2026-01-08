@@ -1,4 +1,7 @@
 """
+[DEPRECATED] This model is being replaced by P1Record, P2Record, and P3Record.
+Please do not use this model for new features.
+
 記錄模型
 
 代表經過驗證並成功匯入的資料記錄。
@@ -10,8 +13,8 @@ from datetime import datetime, date
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from enum import Enum
 
-from sqlalchemy import String, Integer, Date, DateTime, func, Index, Text, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import String, Integer, Date, DateTime, func, Index, Text, Enum as SQLEnum, JSON
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -106,72 +109,6 @@ class Record(Base):
         comment="備註 (P1/P3使用)"
     )
     
-    # P3 專用欄位
-    p3_no: Mapped[Optional[str]] = mapped_column(
-        String(50),
-        nullable=True,
-        comment="P3追蹤編號 (P3使用)"
-    )
-    
-    # P2 專用欄位
-    sheet_width: Mapped[Optional[float]] = mapped_column(
-        nullable=True,
-        comment="片材寬度(mm) (P2使用)"
-    )
-    
-    thickness1: Mapped[Optional[float]] = mapped_column(
-        nullable=True,
-        comment="厚度1(μm) (P2使用)"
-    )
-    
-    thickness2: Mapped[Optional[float]] = mapped_column(
-        nullable=True,
-        comment="厚度2(μm) (P2使用)"
-    )
-    
-    thickness3: Mapped[Optional[float]] = mapped_column(
-        nullable=True,
-        comment="厚度3(μm) (P2使用)"
-    )
-    
-    thickness4: Mapped[Optional[float]] = mapped_column(
-        nullable=True,
-        comment="厚度4(μm) (P2使用)"
-    )
-    
-    thickness5: Mapped[Optional[float]] = mapped_column(
-        nullable=True,
-        comment="厚度5(μm) (P2使用)"
-    )
-    
-    thickness6: Mapped[Optional[float]] = mapped_column(
-        nullable=True,
-        comment="厚度6(μm) (P2使用)"
-    )
-    
-    thickness7: Mapped[Optional[float]] = mapped_column(
-        nullable=True,
-        comment="厚度7(μm) (P2使用)"
-    )
-    
-    appearance: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        comment="外觀 (P2使用，0或1)"
-    )
-    
-    rough_edge: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        comment="粗糙邊緣 (P2使用，0或1)"
-    )
-    
-    slitting_result: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        comment="切割結果 (P2使用，0或1)"
-    )
-    
     # ==================== 材料與機台欄位（新增） ====================
     
     # 材料代碼 (P1, P2 使用)
@@ -182,83 +119,9 @@ class Record(Base):
         comment="材料代碼 (P1/P2使用)：H2, H5, H8 等"
     )
     
-    # 分條機編號 (P2 使用)
-    slitting_machine_number: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        index=True,
-        comment="分條機編號 (P2使用)：1, 2 等"
-    )
-    
-    # 分條編號 (P2 使用)
-    winder_number: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        index=True,
-        comment="分條編號/Winder number (P2使用)：1-20"
-    )
-    
-    # ==================== P3 Product_ID 相關欄位 ====================
-    
-    # 生產機台編號 (P3 使用)
-    machine_no: Mapped[Optional[str]] = mapped_column(
-        String(20),
-        nullable=True,
-        index=True,
-        comment="生產機台編號 (P3使用)：P24, P21 等"
-    )
-    
-    # 模具編號 (P3 使用)
-    mold_no: Mapped[Optional[str]] = mapped_column(
-        String(20),
-        nullable=True,
-        index=True,
-        comment="模具編號 (P3使用)：238-2, 123-1 等"
-    )
-
-    # 規格 (P3 使用，原存於 additional_data)
-    specification: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        index=True,
-        comment="規格 (P3使用)"
-    )
-
-    # 下膠編號 (P3 使用，原存於 additional_data)
-    bottom_tape_lot: Mapped[Optional[str]] = mapped_column(
-        String(50),
-        nullable=True,
-        index=True,
-        comment="下膠編號/Bottom Tape (P3使用)"
-    )
-    
-    # 生產序號 (P3 使用)
-    production_lot: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        comment="生產序號 (P3使用，來自 lot 欄位)：301, 302, 303..."
-    )
-    
-    # 來源分條編號 (P3 使用，用於追溯)
-    source_winder: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        index=True,
-        comment="來源分條編號 (P3使用，從 lot_no 提取)：2507173_02_17 → 17"
-    )
-    
-    # Product ID (P3 使用，唯一識別碼)
-    product_id: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        unique=True,
-        index=True,
-        comment="產品唯一識別碼 (P3使用)：YYYY-MM-DD_machine_mold_lot，如：2025-09-02_P24_238-2_301"
-    )
-    
     # 額外資料存儲 (JSONB格式，用於存儲CSV中的所有其他欄位)
     additional_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         comment="額外資料，JSONB格式，用於存儲CSV檔案中的所有其他欄位（如溫度資料、自定義欄位等）"
     )
@@ -299,7 +162,7 @@ class Record(Base):
         elif self.data_type == DataType.P2:
             return f"檢測資料 ({self.lot_no})"
         elif self.data_type == DataType.P3:
-            return f"P3-{self.p3_no}" if self.p3_no else f"P3追蹤 ({self.lot_no})"
+            return f"P3追蹤 ({self.lot_no})"
         return f"{self.data_type} ({self.lot_no})"
 
 

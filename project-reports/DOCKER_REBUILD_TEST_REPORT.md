@@ -13,7 +13,7 @@
 | Docker 映像重建 |  成功 | 162 秒完成，無錯誤 |
 | 服務啟動 |  成功 | 所有容器 Healthy (28 秒) |
 | 後端 API |  成功 | HTTP 200 OK |
-| 高級搜尋 API |  成功 | 正常回應 (空資料) |
+| 進階搜尋 API |  成功 | 正常回應 (空資料) |
 | production_date 整合 |  成功 | 模組已正確引入 |
 | **前端連線** |  **失敗** | **HTTP 404 Not Found** |
 
@@ -107,7 +107,7 @@ Process Time: 0.009 seconds
 
 ---
 
-### 4. 高級搜尋 API 測試
+### 4. 進階搜尋 API 測試
 **測試 URL**: `http://localhost:18002/api/query/records/advanced?data_type=P1&page=1&page_size=5`
 
 **結果**:
@@ -300,7 +300,7 @@ StatusCode        : 200
 StatusDescription : OK
 ```
 
-### 測試 4: 高級搜尋
+### 測試 4: 進階搜尋
 ```powershell
 PS> Invoke-RestMethod -Uri "http://localhost:18002/api/query/records/advanced?data_type=P1&page=1&page_size=5"
 
@@ -497,7 +497,7 @@ frontend:
 - [ ] 產品編號顯示
 - [ ] 下膠編號顯示
 
-**4. 高級搜尋測試**
+**4. 進階搜尋測試**
 - [ ] 批號搜尋 (模糊)
 - [ ] 生產日期範圍搜尋
 - [ ] 機台號碼搜尋 (P24, P21)
@@ -696,7 +696,7 @@ VITE_API_URL=http://localhost:18002
 1.  Docker 映像成功重建，包含所有新程式碼
 2.  所有容器健康運行，無啟動錯誤
 3.  後端 API 正常運作，可存取文檔
-4.  高級搜尋 API 正常回應
+4.  進階搜尋 API 正常回應
 5.  production_date_extractor 成功整合到後端
 
 ### 關鍵問題

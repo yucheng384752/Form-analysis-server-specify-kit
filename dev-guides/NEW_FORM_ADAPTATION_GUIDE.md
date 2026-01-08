@@ -17,7 +17,7 @@
 - [ ] 7. 後端：查詢路由 - `routes_query.py`
 - [ ] 8. 後端：常數配置 - `constants.py`
 - [ ] 9. 前端：類型定義 - `QueryPage.tsx`
-- [ ] 10. 前端：高級搜尋 - `AdvancedSearch.tsx`
+- [ ] 10. 前端：進階搜尋 - `AdvancedSearch.tsx`
 - [ ] 11. 前端：UI 顯示邏輯 - `QueryPage.tsx`
 - [ ] 12. 資料庫：遷移腳本（新增專屬欄位）
 
@@ -314,7 +314,7 @@ async def import_data(request: ImportRequest, db: AsyncSession = Depends(get_db)
 
 **需要修改**：
 1. `QueryRecord` 回傳模型（如有專屬欄位）
-2. 高級搜尋邏輯（如需要按 P4 欄位搜尋）
+2. 進階搜尋邏輯（如需要按 P4 欄位搜尋）
 3. 回傳資料組裝
 
 ```python
@@ -432,7 +432,7 @@ const renderRecordDetails = (record: QueryRecord) => {
 
 ---
 
-### 10. 前端：高級搜尋 (`frontend/src/components/AdvancedSearch.tsx`)
+### 10. 前端：進階搜尋 (`frontend/src/components/AdvancedSearch.tsx`)
 
 **位置**：`form-analysis-server/frontend/src/components/AdvancedSearch.tsx`
 
@@ -616,13 +616,13 @@ interface QueryRecord {
 - [ ] API 文件正常顯示新欄位（訪問 `/docs`）
 - [ ] 上傳新類型 CSV 檔案成功
 - [ ] 資料正確寫入資料庫（含新欄位）
-- [ ] 高級搜尋可使用新欄位篩選
+- [ ] 進階搜尋可使用新欄位篩選
 - [ ] 查詢 API 正確回傳新欄位
 
 ### 前端測試
 - [ ] 資料類型下拉選單顯示新類型
 - [ ] 查詢結果正確顯示新欄位
-- [ ] 高級搜尋表單包含新欄位輸入
+- [ ] 進階搜尋表單包含新欄位輸入
 - [ ] 搜尋結果正確篩選
 - [ ] UI 佈局正常，無錯位
 

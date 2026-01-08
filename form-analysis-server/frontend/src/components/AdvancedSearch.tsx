@@ -156,7 +156,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
         type="button"
       >
         <span className={`toggle-icon ${isExpanded ? 'expanded' : ''}`}>▶</span>
-        高級搜尋
+        進階搜尋
       </button>
 
       {isExpanded && (

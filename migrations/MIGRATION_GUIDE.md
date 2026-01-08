@@ -288,7 +288,7 @@ psql -h $env:PGHOST -p $env:PGPORT -U $env:PGUSER -d $env:PGDATABASE -f migratio
 
 1.  重啟應用服務
 2.  測試 P3 檔案匯入功能
-3.  檢查高級搜尋功能
+3.  檢查進階搜尋功能
 4.  監控系統日誌
 5.  更新部署文件
 

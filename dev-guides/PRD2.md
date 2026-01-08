@@ -69,7 +69,7 @@
   - 已實作 P3Item 子表模型，獨立欄位包含 product_id
   - product_id 自動生成邏輯已整合到 routes_import.py
   - 格式：P3-YYMMDD-機台-模具號碼-批號
-  - 支援高級搜尋功能
+  - 支援進階搜尋功能
 - [X] 生產日期欄位統一：P1→"Production Date"、P2→"分條時間"、P3→"year-month-day"
   - 所有日期統一轉換為 YYYY-MM-DD 格式
   - 民國年自動轉西元年
@@ -83,7 +83,7 @@
   - production_date 已從各類型正確來源提取並儲存
   - 覆蓋率：P1(8/8), P2(6/6), P3(5/5) = 100%
   - 前端顯示時使用 production_date 欄位即可
-- [X] 高級搜尋內，模具編號改成使用下膠編號(Bottom Tape)搜尋對應資料
+- [X] 進階搜尋內，模具編號改成使用下膠編號(Bottom Tape)搜尋對應資料
 - [ ] 撰寫 breakdown 架構圖
 - [ ] 撰寫功能表
 - [X] P3 "lot_no" 欄位最後兩碼是卷收機編號 (lot_no_XX <- XX 為卷收機號碼)
@@ -166,9 +166,9 @@ production_date = production_date_extractor.extract_production_date(
 - 格式: YYYY-MM-DD_機台_模具號碼_LOT
 - 範例: 2025-09-02_P24_238-2_301
 -  後端產生器已實作
--  高級搜尋已支援
+-  進階搜尋已支援
 - 前端顯示位置需確認
 
-### 高級搜尋策略
+### 進階搜尋策略
 - 建議：除批號外，其他搜尋以P3為主
 - 實作：P3 → lot_no/winder → P2 → P1 追溯鏈

@@ -19,6 +19,7 @@ from app.core.database import get_db
 from app.core.logging import get_logger
 from app.models.record import Record, DataType
 from app.models.p2_item import P2Item
+from app.models.p3_item import P3Item
 
 # 獲取日誌記錄器
 logger = get_logger(__name__)
@@ -42,31 +43,6 @@ class QueryRecord(BaseModel):
     product_name: Optional[str] = None
     quantity: Optional[int] = None
     notes: Optional[str] = None
-    
-    # P2專用欄位
-    sheet_width: Optional[float] = None
-    thickness1: Optional[float] = None
-    thickness2: Optional[float] = None
-    thickness3: Optional[float] = None
-    thickness4: Optional[float] = None
-    thickness5: Optional[float] = None
-    thickness6: Optional[float] = None
-    thickness7: Optional[float] = None
-    appearance: Optional[int] = None
-    rough_edge: Optional[int] = None
-    slitting_result: Optional[int] = None
-    
-    # P3專用欄位
-    p3_no: Optional[str] = None
-
-    # P3 追溯/檢索欄位
-    product_id: Optional[str] = None
-    machine_no: Optional[str] = None
-    mold_no: Optional[str] = None
-    production_lot: Optional[int] = None
-    source_winder: Optional[int] = None
-    specification: Optional[str] = None
-    bottom_tape_lot: Optional[str] = None
     
     # 額外資料欄位 (來自CSV的其他欄位，包含溫度資料等)
     additional_data: Optional[Dict[str, Any]] = None
@@ -222,9 +198,9 @@ async def query_lot_groups(
 @router.get(
     "/records/advanced",
     response_model=QueryResponse,
-    summary="高級搜尋資料記錄",
+    summary="進階搜尋資料記錄",
     description="""
-    使用多個條件進行高級搜尋
+    使用多個條件進行進階搜尋
     
     **查詢參數（所有參數均為選填，支援模糊搜尋）：**
     - lot_no: 批號（模糊搜尋）
@@ -259,9 +235,9 @@ async def advanced_search_records(
     page_size: int = Query(10, ge=1, le=100, description="每頁記錄數"),
     db: AsyncSession = Depends(get_db)
 ) -> QueryResponse:
-    """高級搜尋資料記錄 - 支援多條件模糊搜尋"""
+    """進階搜尋資料記錄 - 支援多條件模糊搜尋"""
     try:
-        logger.info("開始高級搜尋", 
+        logger.info("開始進階搜尋", 
                    lot_no=lot_no,
                    production_date_from=production_date_from,
                    production_date_to=production_date_to,
@@ -294,19 +270,19 @@ async def advanced_search_records(
         
         # 機台號碼模糊搜尋（P3專用）
         if machine_no and machine_no.strip():
-            conditions.append(Record.machine_no.ilike(f"%{machine_no.strip()}%"))
+            conditions.append(P3Item.machine_no.ilike(f"%{machine_no.strip()}%"))
         
         # 下膠編號模糊搜尋（P3專用，使用獨立欄位搜尋）
         if mold_no and mold_no.strip():
-            conditions.append(Record.bottom_tape_lot.ilike(f"%{mold_no.strip()}%"))
+            conditions.append(P3Item.bottom_tape_lot.ilike(f"%{mold_no.strip()}%"))
         
         # 產品編號模糊搜尋
         if product_id and product_id.strip():
-            conditions.append(Record.product_id.ilike(f"%{product_id.strip()}%"))
+            conditions.append(P3Item.product_id.ilike(f"%{product_id.strip()}%"))
         
         # P3 規格搜尋（使用獨立欄位搜尋）
         if p3_specification and p3_specification.strip():
-            conditions.append(Record.specification.ilike(f"%{p3_specification.strip()}%"))
+            conditions.append(P3Item.specification.ilike(f"%{p3_specification.strip()}%"))
         
         # 資料類型過濾
         if data_type:
@@ -314,7 +290,7 @@ async def advanced_search_records(
         
         # 如果沒有任何條件，返回空結果
         if not conditions:
-            logger.warning("高級搜尋沒有提供任何搜尋條件")
+            logger.warning("進階搜尋沒有提供任何搜尋條件")
             return QueryResponse(
                 total_count=0,
                 page=page,
@@ -323,7 +299,18 @@ async def advanced_search_records(
             )
         
         # 組合查詢
-        query_stmt = select(Record)
+        query_stmt = select(Record).distinct()
+        
+        # 檢查是否需要 join P3Item
+        need_p3_join = (
+            (machine_no and machine_no.strip()) or
+            (mold_no and mold_no.strip()) or
+            (product_id and product_id.strip()) or
+            (p3_specification and p3_specification.strip())
+        )
+        
+        if need_p3_join:
+            query_stmt = query_stmt.join(Record.p3_items)
         
         # 如果有 winder_number 條件，需要 join P2Item
         if winder_number is not None:
@@ -332,7 +319,9 @@ async def advanced_search_records(
         query_stmt = query_stmt.where(and_(*conditions))
         
         # 計算總數
-        count_query = select(func.count(Record.id))
+        count_query = select(func.count(func.distinct(Record.id))).select_from(Record)
+        if need_p3_join:
+            count_query = count_query.join(Record.p3_items)
         if winder_number is not None:
             count_query = count_query.join(Record.p2_items)
         count_query = count_query.where(and_(*conditions))
@@ -342,8 +331,11 @@ async def advanced_search_records(
         
         # 分頁查詢
         offset = (page - 1) * page_size
-        # 預加載 p2_items
-        query_stmt = query_stmt.options(selectinload(Record.p2_items))
+        # 預加載 p2_items 和 p3_items
+        query_stmt = query_stmt.options(
+            selectinload(Record.p2_items),
+            selectinload(Record.p3_items)
+        )
         query_stmt = query_stmt.order_by(Record.created_at.desc()).offset(offset).limit(page_size)
         
         result = await db.execute(query_stmt)
@@ -368,9 +360,10 @@ async def advanced_search_records(
                 query_record.quantity = record.quantity
                 query_record.notes = record.notes
             elif record.data_type == DataType.P2:
+                # [FIX] 強制使用 p2_items 表格資料，不使用 JSONB 中的 rows
                 # P2 改為從 p2_items 獲取資料並放入 additional_data['rows']
+                rows = []
                 if record.p2_items:
-                    rows = []
                     # 排序 p2_items (按 winder_number)
                     sorted_items = sorted(record.p2_items, key=lambda x: x.winder_number)
                     for item in sorted_items:
@@ -380,31 +373,35 @@ async def advanced_search_records(
                             
                         if item.row_data:
                             rows.append(item.row_data)
-                    
-                    if not query_record.additional_data:
-                        query_record.additional_data = {}
-                    query_record.additional_data['rows'] = rows
                 
-                # 為了兼容舊前端顯示（如果有的話），也可以保留一些摘要資訊
-                # 但主要依賴 additional_data['rows']
+                if not query_record.additional_data:
+                    query_record.additional_data = {}
+                query_record.additional_data['rows'] = rows
                 
             elif record.data_type == DataType.P3:
-                query_record.p3_no = record.p3_no
                 query_record.product_name = record.product_name
                 query_record.quantity = record.quantity
                 query_record.notes = record.notes
-
-                query_record.product_id = record.product_id
-                query_record.machine_no = record.machine_no
-                query_record.mold_no = record.mold_no
-                query_record.production_lot = record.production_lot
-                query_record.source_winder = record.source_winder
-                query_record.specification = record.specification
-                query_record.bottom_tape_lot = record.bottom_tape_lot
+                
+                # [FIX] 強制使用 p3_items 表格資料，不使用 JSONB 中的 rows
+                # P3: 從 p3_items 獲取資料並放入 additional_data['rows']
+                rows = []
+                if record.p3_items:
+                    # 排序 p3_items (按 row_no)
+                    sorted_items = sorted(record.p3_items, key=lambda x: x.row_no)
+                    for item in sorted_items:
+                        row = item.row_data.copy() if item.row_data else {}
+                        # 注入 product_id 到 row data 中，供前端顯示
+                        row['product_id'] = item.product_id
+                        rows.append(row)
+                
+                if not query_record.additional_data:
+                    query_record.additional_data = {}
+                query_record.additional_data['rows'] = rows
             
             query_records.append(query_record)
         
-        logger.info("高級搜尋完成", 
+        logger.info("進階搜尋完成", 
                    total_count=total_count,
                    returned_count=len(query_records),
                    conditions_count=len(conditions))
@@ -417,10 +414,10 @@ async def advanced_search_records(
         )
         
     except Exception as e:
-        logger.error("高級搜尋失敗", error=str(e))
+        logger.error("進階搜尋失敗", error=str(e))
         raise HTTPException(
             status_code=500,
-            detail=f"高級搜尋時發生錯誤：{str(e)}"
+            detail=f"進階搜尋時發生錯誤：{str(e)}"
         )
 
 
@@ -463,14 +460,17 @@ async def query_records(
         query_stmt = select(Record).where(and_(*conditions))
         
         # 計算總數
-        count_query = select(func.count(Record.id)).where(and_(*conditions))
+        count_query = select(func.count(Record.id)).select_from(Record).where(and_(*conditions))
         result = await db.execute(count_query)
         total_count = result.scalar() or 0
         
         # 分頁查詢
         offset = (page - 1) * page_size
-        # 預加載 p2_items
-        query_stmt = query_stmt.options(selectinload(Record.p2_items))
+        # 預加載 p2_items 和 p3_items
+        query_stmt = query_stmt.options(
+            selectinload(Record.p2_items),
+            selectinload(Record.p3_items)
+        )
         query_stmt = query_stmt.order_by(Record.created_at.desc()).offset(offset).limit(page_size)
         
         result = await db.execute(query_stmt)
@@ -479,6 +479,9 @@ async def query_records(
         # 轉換為回應格式
         query_records = []
         for record in records:
+            # 確保 additional_data 是字典
+            additional_data = record.additional_data if isinstance(record.additional_data, dict) else {}
+            
             query_record = QueryRecord(
                 id=str(record.id),
                 lot_no=record.lot_no,
@@ -486,7 +489,7 @@ async def query_records(
                 production_date=record.production_date.isoformat() if record.production_date else None,
                 created_at=record.created_at.isoformat(),
                 display_name=record.display_name,
-                additional_data=record.additional_data  # 包含所有額外欄位
+                additional_data=additional_data  # 包含所有額外欄位
             )
             
             # 根據資料類型設置對應欄位
@@ -495,31 +498,39 @@ async def query_records(
                 query_record.quantity = record.quantity
                 query_record.notes = record.notes
             elif record.data_type == DataType.P2:
+                # [FIX] 強制使用 p2_items 表格資料，不使用 JSONB 中的 rows
                 # P2 改為從 p2_items 獲取資料並放入 additional_data['rows']
+                rows = []
                 if record.p2_items:
-                    rows = []
                     # 排序 p2_items (按 winder_number)
                     sorted_items = sorted(record.p2_items, key=lambda x: x.winder_number)
                     for item in sorted_items:
                         if item.row_data:
                             rows.append(item.row_data)
-                    
-                    if not query_record.additional_data:
-                        query_record.additional_data = {}
-                    query_record.additional_data['rows'] = rows
+                
+                if not query_record.additional_data:
+                    query_record.additional_data = {}
+                query_record.additional_data['rows'] = rows
             elif record.data_type == DataType.P3:
-                query_record.p3_no = record.p3_no
                 query_record.product_name = record.product_name
                 query_record.quantity = record.quantity
                 query_record.notes = record.notes
-
-                query_record.product_id = record.product_id
-                query_record.machine_no = record.machine_no
-                query_record.mold_no = record.mold_no
-                query_record.production_lot = record.production_lot
-                query_record.source_winder = record.source_winder
-                query_record.specification = record.specification
-                query_record.bottom_tape_lot = record.bottom_tape_lot
+                
+                # [FIX] 強制使用 p3_items 表格資料，不使用 JSONB 中的 rows
+                # P3: 從 p3_items 獲取資料並放入 additional_data['rows']
+                rows = []
+                if record.p3_items:
+                    # 排序 p3_items (按 row_no)
+                    sorted_items = sorted(record.p3_items, key=lambda x: x.row_no)
+                    for item in sorted_items:
+                        row = item.row_data.copy() if item.row_data else {}
+                        # 注入 product_id 到 row data 中，供前端顯示
+                        row['product_id'] = item.product_id
+                        rows.append(row)
+                
+                if not query_record.additional_data:
+                    query_record.additional_data = {}
+                query_record.additional_data['rows'] = rows
             
             query_records.append(query_record)
         
@@ -607,13 +618,13 @@ async def get_field_options(
     try:
         # 映射前端欄位名稱到資料庫模型欄位
         field_map = {
-            "specification": Record.specification,
-            "p3_specification": Record.specification,
-            "machine_no": Record.machine_no,
-            "bottom_tape_lot": Record.bottom_tape_lot,
-            "mold_no": Record.bottom_tape_lot, # 前端 mold_no 對應 DB bottom_tape_lot
+            "specification": P3Item.specification,
+            "p3_specification": P3Item.specification,
+            "machine_no": P3Item.machine_no,
+            "bottom_tape_lot": P3Item.bottom_tape_lot,
+            "mold_no": P3Item.bottom_tape_lot, # 前端 mold_no 對應 DB bottom_tape_lot
             "material_code": Record.material_code,
-            "product_id": Record.product_id
+            "product_id": P3Item.product_id
         }
         
         if field_name not in field_map:
@@ -705,7 +716,6 @@ async def get_record(
                     query_record.additional_data = {}
                 query_record.additional_data['rows'] = rows
         elif record.data_type == DataType.P3:
-            query_record.p3_no = record.p3_no
             query_record.product_name = record.product_name
             query_record.quantity = record.quantity
             query_record.notes = record.notes
@@ -855,7 +865,6 @@ async def create_test_data(
             Record(
                 lot_no="2503033_01",
                 data_type=DataType.P3,
-                p3_no="2503033012345",
                 product_name="產品A",
                 quantity=100,
                 production_date=date(2024, 1, 15),

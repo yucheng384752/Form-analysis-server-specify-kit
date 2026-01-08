@@ -2,7 +2,7 @@
 # 使用 curl 進行完整的 API 測試流程
 
 param(
-    [string]$ApiBase = "http://localhost:8000"
+    [string]$ApiBase = "http://localhost:18002"
 )
 
 # 函數定義
