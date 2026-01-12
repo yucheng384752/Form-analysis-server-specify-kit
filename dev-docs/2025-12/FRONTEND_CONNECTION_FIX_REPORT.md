@@ -90,7 +90,7 @@ GET http://localhost:8000/api/logs/stats → 200 OK
 2. **文檔更新**: 更新 `.env.example` 文件中的註釋
 3. **驗證腳本**: 使用診斷腳本定期檢查配置
 
-### 🛡️ 最佳實踐
+### 最佳實踐
 ```bash
 # 開發環境 (瀏覽器訪問)
 VITE_API_URL=http://localhost:8000

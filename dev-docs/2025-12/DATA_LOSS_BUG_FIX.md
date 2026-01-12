@@ -70,7 +70,7 @@ docker-compose -f "%SERVER_PATH%\docker-compose.yml" down --remove-orphans
 -  **清理**孤立容器
 -  **釋放**被佔用的端口
 
-## 🛡️ 資料安全機制
+## 資料安全機制
 
 ### Docker Volume 生命週期
 

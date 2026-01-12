@@ -35,65 +35,7 @@
 - 區塊二
   1. 根據**自定義**的表格顯示規則分成數個區塊(根據客戶需要)(區塊2.1, 2.2, 2.3 ...)
 
-
-
-
-## Warning & To-do
-- [X] 修改搜尋邏輯: 可以套用"符合特定輸入"的模式
-- [X] 修改"生產日期"建立邏輯，p2, p3有對應欄位(民國年->西元年)，p1(YYYY-MM-DD)
-- [X] 加入支援PDF檔案上傳 <- 需要確認input&output 的格式
-- [X] 欄位調整
-- [X] 加入 product_id 欄位在資料庫
-   - [X] 需要確認是否有對應多張p1, p2表
-   - [X] 需要頻繁查詢的欄位定義個別欄位，其餘使用JSONB格式儲存
-- [X] 資料庫內容需要可以輸出成 Dataframe 格式(後續)
-- [X] 需要確認p2, p3的關聯性(2507173_02_17 -> 17 為對應的P2 lot_no 中的 winder number)
-- [X] p1, p3 specification是否有關
-- [X] "Qaulity inspecrion"、"Qaulity control"是否需要從表?
-- [X] 下拉選單內需要有"日期(指定西元年)""P3規格""機台號碼""下膠編號" => 需要都套用模糊搜尋
-- [X] P3_No. 欄位已不再使用，移除必要驗證（保留在 additional_data 中以兼容舊資料）
-- [X] 移除"資料查詢頁面" - "高級查詢" - 產品名稱搜尋列 -> 改成"產品編號查詢"
-- [X] "高級查詢" 生產日期起訖日需要做對齊
-- [X] "高級查尋" 加入 "使用P3的規格進行搜尋"的功能
-- [X] adjustment record 是否有對應 A, B, C 的選項?
-- [X] 10Po 前端boolean轉換(V/X)
-- [X] P2 "分條時間" 顯示時需要 "民國年轉西元年"
-- [X] P3 shift、iron、mold、rubber wheel、finish 欄位需前端boolean轉換
-- [X] P2 appearance、rough edge、striped results 欄位需要前端boolean轉換
-- [X] slitting machine 沒有對應到從表(轉換表)，需要修正
-- [X] P1 的 product date 需要使用"日期"格式，並且轉換成西元年(YYYYMMDD)
-  - production_date 欄位已存在並正確儲存（DATE 格式）
-  - 前端顯示時格式化為 YYYYMMDD（例：20240115）
-  - 建議前端處理：date.replace(/-/g, '')
-- [X] P3 需顯示組合後的 product_id，並且要可以用在搜尋(替代前端"基本資料"p3_no欄位)
-  - 已實作 P3Item 子表模型，獨立欄位包含 product_id
-  - product_id 自動生成邏輯已整合到 routes_import.py
-  - 格式：P3-YYMMDD-機台-模具號碼-批號
-  - 支援進階搜尋功能
-- [X] 生產日期欄位統一：P1→"Production Date"、P2→"分條時間"、P3→"year-month-day"
-  - 所有日期統一轉換為 YYYY-MM-DD 格式
-  - 民國年自動轉西元年
-  - 儲存到 production_date 欄位
-  - 已整合到匯入流程 (routes_import.py)
-- [X] updated_at 邏輯不變，created_at 要套用下列邏輯:
-  - P1: Production Date → data_date
-  - P2: Semi-finished productsLOT NO → data_date
-  - P3: year-month-day → data_date
-  - **實作方案**：直接使用現有的 production_date 欄位作為 data_date
-  - production_date 已從各類型正確來源提取並儲存
-  - 覆蓋率：P1(8/8), P2(6/6), P3(5/5) = 100%
-  - 前端顯示時使用 production_date 欄位即可
-- [X] 進階搜尋內，模具編號改成使用下膠編號(Bottom Tape)搜尋對應資料
-- [ ] 撰寫 breakdown 架構圖
-- [ ] 撰寫功能表
-- [X] P3 "lot_no" 欄位最後兩碼是卷收機編號 (lot_no_XX <- XX 為卷收機號碼)
-  - 已實作 source_winder 欄位自動提取邏輯
-  - 從 lot_no 最後兩碼提取並儲存到 p3_items.source_winder
-  - 支援索引查詢
-- [ ] adjustment record 是否要/有 建立從表?(現在是顯示0, 1 <- 需要詢問是否對應紙本上的A, B, C)
-- [ ] 修改查詢邏輯: 使用高級查詢時，顯示單筆資料即可，有多筆符合，條列之
-
-## 實作方案
+# 實作方案
 
 ### 生產日期提取邏輯 已完成
 已建立 production_date_extractor.py 服務並整合到 routes_import.py：

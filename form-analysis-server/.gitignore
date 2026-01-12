@@ -63,6 +63,12 @@ dist/
 dist-ssr/
 *.local
 
+# Frontend caches
+.vite/
+.turbo/
+.parcel-cache/
+.eslintcache
+
 # Coverage reports
 htmlcov/
 .tox/
@@ -89,8 +95,8 @@ temp/
 .env.local
 .env.production
 
-# Alembic
-alembic/versions/
+# Alembic（migration 應納入版控，不忽略）
+# alembic/versions/
 
 # mypy
 .mypy_cache/

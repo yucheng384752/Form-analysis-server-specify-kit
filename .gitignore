@@ -3,6 +3,13 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.pnpm-debug.log*
+
+# 前端/工具快取
+.vite/
+.turbo/
+.parcel-cache/
+.eslintcache
 
 # 忽略 Python 相關
 __pycache__/
@@ -76,7 +83,18 @@ dist/
 build/
 *.egg-info/
 
+# 前端產物（子專案也適用）
+dist-ssr/
+.next/
+out/
+
 # 忽略環境配置
 .env.local
 .env.production
 .env.development
+.env.*.local
+
+# 其他暫存/備份
+*.bak
+*.tmp
+*.orig

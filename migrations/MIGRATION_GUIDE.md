@@ -1,6 +1,6 @@
 # 資料庫遷移執行指南
 
-## 📋 遷移檔案清單
+## 遷移檔案清單
 
 ```
 migrations/
@@ -11,7 +11,7 @@ migrations/
 
 ---
 
-## 🚀 執行方式
+## 執行方式
 
 ### 方式 1: 使用 PowerShell（推薦）
 
@@ -230,7 +230,7 @@ psql -h $env:PGHOST -p $env:PGPORT -U $env:PGUSER -d $env:PGDATABASE -f migratio
 
 ---
 
-## 📊 執行前檢查清單
+## 執行前檢查清單
 
 在執行遷移前，確認以下事項：
 
@@ -282,7 +282,7 @@ psql -h $env:PGHOST -p $env:PGPORT -U $env:PGUSER -d $env:PGDATABASE -f migratio
 
 ---
 
-## 🚀 下一步
+## 下一步
 
 遷移完成後：
 

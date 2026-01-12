@@ -6,7 +6,7 @@
 
 ---
 
-## 📋 背景說明
+## 背景說明
 
 ### 資料庫現狀
 
@@ -304,7 +304,7 @@ console.log(processedRecord.data_date);  // "2024-11-01"
 
 ---
 
-## 📊 實際資料驗證
+## 實際資料驗證
 
 ### 資料庫查詢
 
@@ -398,7 +398,7 @@ curl http://localhost:18002/api/records/search?lot_no=2411012_04
 - 資料庫儲存標準格式
 - API 傳輸標準格式
 
-**❌ 不推薦**:
+**不推薦**:
 - 在後端添加多種日期格式欄位
 - 資料庫儲存字串格式日期
 
@@ -429,7 +429,7 @@ const dateFormatters = {
 const DISPLAY_FORMAT = 'YYYYMMDD';
 const formatProductionDate = (date) => date.replace(/-/g, '');
 
-// ❌ 避免硬編碼
+// 避免硬編碼
 const displayDate = record.production_date.replace(/-/g, '');
 ```
 
@@ -452,7 +452,7 @@ function formatDateToYYYYMMDD(dateStr) {
 
 ---
 
-## 🔧 故障排查
+## 故障排查
 
 ### 問題 1: 日期顯示為 undefined
 
@@ -547,10 +547,10 @@ const searchParams = {
 | 方面 | 優勢 |
 |------|------|
 | 🗄️ **資料庫** | 標準 DATE 格式，支援日期運算 |
-| 🔧 **後端** | 統一格式，易於維護 |
+| **後端** | 統一格式，易於維護 |
 | 🎨 **前端** | 靈活格式化，適應不同場景 |
 | **查詢** | 原生日期查詢，效能最佳 |
-| 📊 **匯出** | 支援多種格式輸出 |
+| **匯出** | 支援多種格式輸出 |
 
 ### 無需額外開發
 
