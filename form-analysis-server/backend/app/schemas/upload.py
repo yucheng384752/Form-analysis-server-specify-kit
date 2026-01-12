@@ -74,3 +74,9 @@ class ValidationSummary(BaseModel):
         json_encoders = {
             datetime: lambda v: v.isoformat(),
         }
+
+
+class UpdateUploadContentRequest(BaseModel):
+    """更新上傳工作內容請求模型（前端表格修正用）"""
+
+    csv_text: str = Field(..., description="修改後的 CSV 純文字內容（含表頭）")

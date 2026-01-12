@@ -403,12 +403,18 @@ class ImportService:
                     p3_info = self._extract_p3_info(file_record.filename, row_data)
                     
                     # Generate product_id
-                    # Format: YYYYMMDD-Machine-Mold-Lot
+                    # Format: YYYYMMDD_Machine_Mold_Lot
                     # production_date_yyyymmdd is e.g. 20250717
                     date_str = str(p3_info.get("production_date_yyyymmdd") or 0)
-                    # prefer lot from p3_info if provided (from 'lot' column), else use normalized filename lot
-                    lot_part = p3_info.get('lot') if p3_info.get('lot') else lot_no_norm
-                    product_id = f"{date_str}-{p3_info.get('machine_no')}-{p3_info.get('mold_no')}-{lot_part}"
+                    # Prefer production lot from p3_info (from 'lot' column). Product ID last segment is expected to be an integer.
+                    lot_part_raw = p3_info.get('lot')
+                    lot_part: int
+                    try:
+                        lot_part = int(lot_part_raw) if lot_part_raw is not None else 0
+                    except (ValueError, TypeError):
+                        lot_part = 0
+
+                    product_id = f"{date_str}_{p3_info.get('machine_no')}_{p3_info.get('mold_no')}_{lot_part}"
 
                     # Check existence
                     existing_stmt = select(P3Record).where(
@@ -561,13 +567,13 @@ class ImportService:
             # Machine
             for field in CSVFieldMapper.MACHINE_NO_FIELD_NAMES:
                 if field in first_row and first_row[field]:
-                    info["Machine NO"] = str(first_row[field])
+                    info["machine_no"] = str(first_row[field]).strip()
                     break
 
             # Mold
             for field in CSVFieldMapper.MOLD_NO_FIELD_NAMES:
                 if field in first_row and first_row[field]:
-                    info["Mold NO"] = str(first_row[field])
+                    info["mold_no"] = str(first_row[field]).strip()
                     break
 
             # Lot / production_lot

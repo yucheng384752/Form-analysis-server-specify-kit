@@ -13,7 +13,7 @@ from datetime import datetime, date
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from enum import Enum
 
-from sqlalchemy import String, Integer, Date, DateTime, func, Index, Text, Enum as SQLEnum, JSON
+from sqlalchemy import String, Integer, Date, DateTime, func, Index, Text, Enum as SQLEnum, JSON, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -118,7 +118,32 @@ class Record(Base):
         index=True,
         comment="材料代碼 (P1/P2使用)：H2, H5, H8 等"
     )
+
+    # Added for migration compatibility - columns exist in DB
+    winder_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    slitting_machine_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     
+    sheet_width: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    thickness1: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    thickness2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    thickness3: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    thickness4: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    thickness5: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    thickness6: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    thickness7: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    appearance: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    rough_edge: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    slitting_result: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    machine_no: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    mold_no: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    production_lot: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_winder: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    product_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    
+    p3_no: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
     # 額外資料存儲 (JSONB格式，用於存儲CSV中的所有其他欄位)
     additional_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(
         JSON,

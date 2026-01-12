@@ -97,18 +97,25 @@ class FileValidationService:
         try:
             if filename.lower().endswith('.csv'):
                 # 讀取 CSV 檔案，自動偵測編碼
-                return pd.read_csv(
+                df = pd.read_csv(
                     pd.io.common.BytesIO(file_content),
                     encoding='utf-8-sig'  # 處理 BOM
                 )
             elif filename.lower().endswith(('.xlsx', '.xls')):
                 # 讀取 Excel 檔案
-                return pd.read_excel(
+                df = pd.read_excel(
                     pd.io.common.BytesIO(file_content),
                     engine='openpyxl' if filename.lower().endswith('.xlsx') else 'xlrd'
                 )
             else:
                 raise ValidationError("不支援的檔案格式，僅支援 CSV 和 Excel 檔案")
+
+            # 常見情況：檔案尾端有「整行空白」或全是空白字元的列
+            # 這些列不應影響驗證結果，直接排除。
+            df = df.replace(r'^\s*$', pd.NA, regex=True)
+            df = df.dropna(how='all')
+
+            return df
                 
         except Exception as e:
             if isinstance(e, ValidationError):
@@ -523,7 +530,7 @@ class FileValidationService:
                 # 驗證批號
                 if not lot_no_value or pd.isna(lot_no_value):
                     self.add_error(row_index, source_field or 'lot_no', 'REQUIRED_FIELD', 
-                                 'P3檔案需要批號欄位（"lot no" 或 "P3_No."）')
+                                 'P3檔案需要批號欄位（"lot no"）')
                     row_has_error.add(row_index)
                 else:
                     # 正規化批號（支援 7+2+2 格式）

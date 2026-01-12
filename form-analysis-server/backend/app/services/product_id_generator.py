@@ -155,15 +155,16 @@ class ProductIDGenerator:
             raise ValueError(f"product_id 必須是非空字串: {product_id}")
         
         # 分割 Product ID
+        # 允許尾端附加額外片段（例如去重後的 suffix），但解析時只取前 4 段作為主格式。
         parts = product_id.split('_')
-        
-        if len(parts) != 4:
+
+        if len(parts) < 4:
             raise ValueError(
-                f"Product ID 格式錯誤，應為 'YYYYMMDD_machine_mold_lot'，"
+                f"Product ID 格式錯誤，至少應為 'YYYYMMDD_machine_mold_lot'，"
                 f"但收到: {product_id}"
             )
-        
-        date_str, machine_no, mold_no, lot_str = parts
+
+        date_str, machine_no, mold_no, lot_str = parts[:4]
         
         # 解析日期
         try:
