@@ -414,7 +414,7 @@ class ImportService:
                     except (ValueError, TypeError):
                         lot_part = 0
 
-                    product_id = f"{date_str}_{p3_info.get('machine_no')}_{p3_info.get('mold_no')}_{lot_part}"
+                    product_id = f"{date_str}-{p3_info.get('machine_no')}-{p3_info.get('mold_no')}-{lot_part}"
 
                     # Check existence
                     existing_stmt = select(P3Record).where(

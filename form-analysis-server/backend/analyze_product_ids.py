@@ -80,7 +80,7 @@ async def analyze_product_ids():
                     lot = "UNKNOWN"
                 
                 # 2. Construct Expected ID
-                expected_id = f"{date_str}_{machine}_{mold}_{lot}"
+                expected_id = f"{date_str}-{machine}-{mold}-{lot}"
                 
                 # 3. Analyze
                 actual_id = p3_item.product_id

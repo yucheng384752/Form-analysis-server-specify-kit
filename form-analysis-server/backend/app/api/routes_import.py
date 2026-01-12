@@ -835,7 +835,7 @@ async def import_data(
                                     target_mold_no = item_mold_no or mold_no_val
                                     
                                     if date_str and target_mold_no:
-                                        item_product_id = f"{date_str}_{machine_from_p3}_{target_mold_no}_{lot_from_p3}"
+                                        item_product_id = f"{date_str}-{machine_from_p3}-{target_mold_no}-{lot_from_p3}"
 
                             # 以 row_data 為優先推導此 item 的生產日期；若無法推導則 fallback 到 record.production_date
                             item_date = None
@@ -862,7 +862,7 @@ async def import_data(
                                     machine_str = str(item_machine_no).strip()
                                     mold_str = str(item_mold_no).strip()
                                     lot_str = str(int(item_production_lot)).strip()
-                                    item_product_id = f"{date_str}_{machine_str}_{mold_str}_{lot_str}"
+                                    item_product_id = f"{date_str}-{machine_str}-{mold_str}-{lot_str}"
                             
                             # 檢查是否已存在 (透過 product_id)
                             if item_product_id and item_product_id in existing_items_map:
@@ -1043,7 +1043,7 @@ async def import_data(
                                 machine_str = str(item_machine_no).strip()
                                 mold_str = str(item_mold_no).strip()
                                 lot_str = str(int(item_production_lot)).strip()
-                                item_product_id = f"{date_str}_{machine_str}_{mold_str}_{lot_str}"
+                                item_product_id = f"{date_str}-{machine_str}-{mold_str}-{lot_str}"
 
                             if item_product_id:
                                 candidate = item_product_id

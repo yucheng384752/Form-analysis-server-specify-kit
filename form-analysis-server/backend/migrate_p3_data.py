@@ -82,7 +82,7 @@ async def migrate_data():
                 
                 # Construct Product ID
                 # Format: YYYYMMDD_Machine_Mold_Lot
-                base_product_id = f"{date_str}_{machine}_{mold}_{lot}"
+                base_product_id = f"{date_str}-{machine}-{mold}-{lot}"
                 new_product_id = base_product_id
                 
                 # Check for duplicates in the current batch of updates

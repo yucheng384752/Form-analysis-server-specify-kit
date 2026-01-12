@@ -95,7 +95,7 @@ async def migrate_record(session: AsyncSession, legacy_record):
     # 從 lot_no 取得最後的 lot 編號（例如 2507243_01 → 01）
     lot_parts = lot_no_raw.split('_')
     lot_number = lot_parts[-1] if len(lot_parts) > 1 else lot_no_raw
-    product_id = f"{production_date.strftime('%Y-%m-%d')}_{machine_no}_{mold_no}_{lot_number}"
+    product_id = f"{production_date.strftime('%Y%m%d')}-{machine_no}-{mold_no}-{lot_number}"
     
     # 建立新的 P3Record
     new_record = P3Record(

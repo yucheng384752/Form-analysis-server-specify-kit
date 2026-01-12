@@ -61,7 +61,7 @@ async def cleanup_p3_items():
                 mold = str(mold).strip()
                 lot = str(lot).strip()
                 
-                expected_id = f"{date_str}_{machine}_{mold}_{lot}"
+                expected_id = f"{date_str}-{machine}-{mold}-{lot}"
                 
                 # Check if current ID matches expected
                 if p3_item.product_id != expected_id:

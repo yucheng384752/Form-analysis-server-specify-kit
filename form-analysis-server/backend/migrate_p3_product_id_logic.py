@@ -153,7 +153,7 @@ async def migrate_logic():
                 lot = str(lot).strip()
                 
                 # Construct ID
-                base_id = f"{date_str}_{machine}_{mold}_{lot}"
+                base_id = f"{date_str}-{machine}-{mold}-{lot}"
                 new_id = base_id
                 
                 # Handle duplicates
