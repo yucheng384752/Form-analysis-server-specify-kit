@@ -17,7 +17,7 @@ def test_full_flow():
         response = requests.post("http://localhost:18002/api/upload", files=files, timeout=30)
     
     if response.status_code != 200:
-        print(f"❌ 上傳失敗: {response.text}")
+        print(f"上傳失敗: {response.text}")
         return
     
     upload_result = response.json()
@@ -39,7 +39,7 @@ def test_full_flow():
     )
     
     if response.status_code != 200:
-        print(f"❌ 匯入失敗: {response.text}")
+        print(f"匯入失敗: {response.text}")
         return
     
     import_result = response.json()

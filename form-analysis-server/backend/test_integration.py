@@ -292,7 +292,7 @@ try:
         print("  資料驗證功能正常")
         print("  資料庫儲存與查詢正常")
     else:
-        print("\n❌ 部分測試失敗")
+        print("\n部分測試失敗")
         sys.exit(1)
 
 finally:

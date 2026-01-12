@@ -78,7 +78,7 @@ testCases.forEach((test, index) => {
     console.log(` 測試 ${index + 1}: ${test.description}`);
   } else {
     failed++;
-    console.log(`❌ 測試 ${index + 1}: ${test.description}`);
+    console.log(`測試 ${index + 1}: ${test.description}`);
     console.log(`   輸入: ${JSON.stringify(test.input)}`);
     console.log(`   預期: ${test.expected}`);
     console.log(`   實際: ${result}`);
@@ -126,7 +126,7 @@ lotNoTests.forEach((test, index) => {
   if (success) {
     console.log(` 測試 ${index + 1}: ${test.input}`);
   } else {
-    console.log(`❌ 測試 ${index + 1}: ${test.input}`);
+    console.log(`測試 ${index + 1}: ${test.input}`);
     console.log(`   預期基礎批號: ${test.expectedBase}, 實際: ${result.baseLotNo}`);
     console.log(`   預期收卷機: ${test.expectedWinder}, 實際: ${result.sourceWinder}`);
   }

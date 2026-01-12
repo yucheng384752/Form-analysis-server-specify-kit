@@ -29,7 +29,14 @@ def upgrade() -> None:
     
     # 1. 創建 job_status_enum 列舉型別
     job_status_enum = postgresql.ENUM('PENDING', 'VALIDATED', 'IMPORTED', name='job_status_enum')
-    job_status_enum.create(op.get_bind())
+    
+    # 檢查是否已存在
+    bind = op.get_bind()
+    try:
+        job_status_enum.create(bind)
+    except Exception:
+        # 如果已經存在，則忽略
+        pass
     
     # 2. 創建 upload_jobs 表格
     op.create_table(
@@ -37,7 +44,7 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, comment='工作ID'),
         sa.Column('filename', sa.String(255), nullable=False, comment='上傳的檔案名稱'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='建立時間'),
-        sa.Column('status', job_status_enum, nullable=False, server_default='PENDING', comment='處理狀態'),
+        sa.Column('status', postgresql.ENUM('PENDING', 'VALIDATED', 'IMPORTED', name='job_status_enum', create_type=False), nullable=False, server_default='PENDING', comment='處理狀態'),
         sa.Column('total_rows', sa.Integer(), nullable=True, comment='總行數'),
         sa.Column('valid_rows', sa.Integer(), nullable=True, comment='有效行數'),  
         sa.Column('invalid_rows', sa.Integer(), nullable=True, comment='無效行數'),

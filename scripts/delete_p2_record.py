@@ -34,7 +34,7 @@ async def delete_record(lot_no):
         records = result.scalars().all()
         
         if not records:
-            print(f"❌ No P2 record found for lot_no: {lot_no}")
+            print(f"No P2 record found for lot_no: {lot_no}")
             return
 
         print(f"Found {len(records)} records.")

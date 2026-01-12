@@ -125,7 +125,7 @@ try:
         assert data['trace_complete'] is True
         print("\nProduct_ID 追溯測試通過！")
     else:
-        print(f"❌ 錯誤: {response.json()}")
+        print(f"錯誤: {response.json()}")
         sys.exit(1)
     
     # 測試 2: 根據 Lot_No 追溯
@@ -152,7 +152,7 @@ try:
         assert data['summary']['total_p3'] >= 1
         print("\nLot_No 追溯測試通過！")
     else:
-        print(f"❌ 錯誤: {response.json()}")
+        print(f"錯誤: {response.json()}")
         sys.exit(1)
     
     # 測試 3: 根據 Winder 追溯
@@ -178,7 +178,7 @@ try:
         assert data['p1'] is not None
         print("\nWinder 追溯測試通過！")
     else:
-        print(f"❌ 錯誤: {response.json()}")
+        print(f"錯誤: {response.json()}")
         sys.exit(1)
     
     # 測試 4: 錯誤處理 - 不存在的 Product_ID

@@ -234,12 +234,12 @@ def main():
         return 0
         
     except AssertionError as e:
-        print(f"\n❌ 測試失敗: {e}\n")
+        print(f"\n測試失敗: {e}\n")
         import traceback
         traceback.print_exc()
         return 1
     except Exception as e:
-        print(f"\n❌ 執行錯誤: {e}\n")
+        print(f"\n執行錯誤: {e}\n")
         import traceback
         traceback.print_exc()
         return 1

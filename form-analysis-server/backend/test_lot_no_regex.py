@@ -62,6 +62,6 @@ for test_lot in test_cases:
     if standard_match:
         print("通過驗證")
     else:
-        print("❌ 驗證失敗")
+        print("驗證失敗")
 
 print("\n" + "=" * 80)

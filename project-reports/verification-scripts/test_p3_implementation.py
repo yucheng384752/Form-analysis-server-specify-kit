@@ -22,21 +22,21 @@ def test_imports():
         from app.models.p3_item import P3Item
         print(" P3Item 模型導入成功")
     except Exception as e:
-        errors.append(f"❌ P3Item 導入失敗: {e}")
+        errors.append(f"P3Item 導入失敗: {e}")
         print(errors[-1])
     
     try:
         from app.models.record import Record
         print(" Record 模型導入成功")
     except Exception as e:
-        errors.append(f"❌ Record 導入失敗: {e}")
+        errors.append(f"Record 導入失敗: {e}")
         print(errors[-1])
     
     try:
         from app.api.routes_import import router
         print(" routes_import 導入成功")
     except Exception as e:
-        errors.append(f"❌ routes_import 導入失敗: {e}")
+        errors.append(f"routes_import 導入失敗: {e}")
         print(errors[-1])
     
     return errors
@@ -68,7 +68,7 @@ def test_p3item_model():
             if field in columns:
                 print(f" 欄位 '{field}' 存在")
             else:
-                errors.append(f"❌ 欄位 '{field}' 不存在")
+                errors.append(f"欄位 '{field}' 不存在")
                 print(errors[-1])
         
         # 檢查索引
@@ -79,11 +79,11 @@ def test_p3item_model():
             for idx in indexes:
                 print(f"   - {idx.name}")
         else:
-            errors.append("❌ 無法訪問 __table__ 屬性")
+            errors.append("無法訪問 __table__ 屬性")
             print(errors[-1])
         
     except Exception as e:
-        errors.append(f"❌ P3Item 模型驗證失敗: {e}")
+        errors.append(f"P3Item 模型驗證失敗: {e}")
         print(errors[-1])
     
     return errors
@@ -114,7 +114,7 @@ def test_record_relationship():
             print(f"   - Back populates: {rel.back_populates}")
             print(f"   - Cascade: {rel.cascade}")
         else:
-            errors.append("❌ Record 模型缺少 'p3_items' relationship")
+            errors.append("Record 模型缺少 'p3_items' relationship")
             print(errors[-1])
         
         # 檢查 P3Item 的 record relationship
@@ -129,11 +129,11 @@ def test_record_relationship():
             print(f"   - Target: {rel.mapper.class_.__name__}")
             print(f"   - Back populates: {rel.back_populates}")
         else:
-            errors.append("❌ P3Item 模型缺少 'record' relationship")
+            errors.append("P3Item 模型缺少 'record' relationship")
             print(errors[-1])
         
     except Exception as e:
-        errors.append(f"❌ Relationship 驗證失敗: {e}")
+        errors.append(f"Relationship 驗證失敗: {e}")
         print(errors[-1])
     
     return errors
@@ -170,18 +170,18 @@ def test_import_logic():
             if check_str in content:
                 print(f" {check_name} 存在")
             else:
-                errors.append(f"❌ {check_name} 不存在")
+                errors.append(f"{check_name} 不存在")
                 print(errors[-1])
         
         # 檢查是否有基本的邏輯結構
         if 'for row_no, row_data in enumerate(all_rows, start=1):' in content:
             print(" 逐列處理邏輯存在")
         else:
-            errors.append("❌ 逐列處理邏輯不存在")
+            errors.append("逐列處理邏輯不存在")
             print(errors[-1])
         
     except Exception as e:
-        errors.append(f"❌ 匯入邏輯檢查失敗: {e}")
+        errors.append(f"匯入邏輯檢查失敗: {e}")
         print(errors[-1])
     
     return errors
@@ -221,11 +221,11 @@ def test_database_migration_sql():
                     errors.append(f" SQL 可能缺少 {check_name}")
                     print(errors[-1])
         else:
-            errors.append("❌ P3_ITEMS_IMPLEMENTATION_SUMMARY.md 不存在")
+            errors.append("P3_ITEMS_IMPLEMENTATION_SUMMARY.md 不存在")
             print(errors[-1])
         
     except Exception as e:
-        errors.append(f"❌ SQL 驗證失敗: {e}")
+        errors.append(f"SQL 驗證失敗: {e}")
         print(errors[-1])
     
     return errors
@@ -254,7 +254,7 @@ def main():
         print(" 所有測試通過！")
         return 0
     else:
-        print(f"❌ 發現 {len(all_errors)} 個問題:")
+        print(f"發現 {len(all_errors)} 個問題:")
         for i, error in enumerate(all_errors, 1):
             print(f"{i}. {error}")
         return 1
