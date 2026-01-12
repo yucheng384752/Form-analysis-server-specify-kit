@@ -20,7 +20,9 @@ sys.path.insert(0, str(current_dir))
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import ProgrammingError
 
 from app.core.config import get_settings
 from app.core.database import init_db, Base
@@ -29,6 +31,7 @@ from app.core.middleware import RequestLoggingMiddleware, add_process_time_heade
 from app.api import routes_health, routes_upload, routes_validate, routes_import, routes_export, routes_query, routes_logs, routes_import_v2, routes_tenants, routes_query_v2, routes_edit
 from app.api import constants as routes_constants
 from app.api import traceability as routes_traceability
+from app.api import routes_analytics, routes_ut
 
 # Import all models to ensure they're registered with Base
 from app.models import UploadJob, UploadError, Record
@@ -62,8 +65,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     
     # Create all tables
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        print(" Database tables created/verified")
+        try:
+            await conn.run_sync(Base.metadata.create_all)
+            print(" Database tables created/verified")
+        except ProgrammingError as e:
+            # 忽略 "type ... already exists" 錯誤
+            # 這是因為 Alembic 可能已經創建了該類型，而 SQLAlchemy create_all 又嘗試創建
+            if "already exists" in str(e):
+                print(f" Note: Database objects already exist (safe to ignore): {str(e).splitlines()[0]}")
+            else:
+                raise e
     
     print(f" Form Analysis API starting on {settings.api_host}:{settings.api_port}")
     print(f" Database: PostgreSQL - {settings.database_url.split('@')[-1]}")  # Hide credentials
@@ -120,6 +131,10 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Process-Time", "X-Request-ID"],
 )
+
+# Gzip compression middleware (支援多 server 並發呼叫)
+# 自動壓縮 ≥1KB 的回應，對於大資料量查詢（200+ 筆）壓縮率可達 70-80%
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Custom middleware for request logging and timing
 app.add_middleware(RequestLoggingMiddleware)
@@ -214,6 +229,12 @@ app.include_router(
     tags=["生產追溯"]
 )
 
+# 分析用追溯資料扁平化路由（支援多 server 並發呼叫）
+app.include_router(
+    routes_analytics.router,
+    tags=["Analytics"]
+)
+
 
 app.include_router(
     routes_query_v2.router,
@@ -225,6 +246,12 @@ app.include_router(
     routes_edit.router,
     prefix="/api/edit",
     tags=["Inline Edit"]
+)
+
+# UT API (侑特資料查詢)
+app.include_router(
+    routes_ut.router,
+    tags=["UT Data"]
 )
 
 @app.get("/", tags=["Root"])

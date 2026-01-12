@@ -12,12 +12,13 @@ from typing import List
 from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete
 
 from app.core.database import get_db
 from app.core.logging import get_logger
 from app.models.upload_job import UploadJob, JobStatus
 from app.models.upload_error import UploadError
-from app.schemas.upload import FileUploadResponse, UploadErrorResponse
+from app.schemas.upload import FileUploadResponse, UploadErrorResponse, UpdateUploadContentRequest
 from app.services.validation import file_validation_service, ValidationError
 
 # 獲取日誌記錄器
@@ -28,6 +29,130 @@ logger = get_logger(__name__)
 router = APIRouter(
     tags=["檔案上傳"]
 )
+
+
+@router.put(
+    "/upload/{process_id}/content",
+    response_model=FileUploadResponse,
+    status_code=status.HTTP_200_OK,
+    summary="儲存前端修正後的檔案內容並重新驗證",
+    description="""
+    前端表格修正後，將修改過的 CSV 內容寫回指定 process_id 的上傳工作，並重新執行驗證。
+
+    - 會更新 upload_jobs.file_content
+    - 會清除並重建 upload_errors
+    - 會回傳最新的驗證統計與 sample_errors
+    """,
+)
+async def update_upload_content(
+    process_id: uuid.UUID,
+    request: UpdateUploadContentRequest,
+    db: AsyncSession = Depends(get_db),
+) -> FileUploadResponse:
+    start_time = time.time()
+
+    try:
+        result = await db.execute(select(UploadJob).where(UploadJob.process_id == process_id))
+        upload_job = result.scalar_one_or_none()
+
+        if not upload_job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="找不到指定的上傳工作",
+            )
+
+        csv_text = (request.csv_text or "").strip("\ufeff")
+        if not csv_text.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="檔案內容為空",
+            )
+
+        file_content = csv_text.encode("utf-8-sig")
+        upload_job.file_content = file_content
+
+        # 清除舊的錯誤紀錄
+        await db.execute(delete(UploadError).where(UploadError.job_id == upload_job.id))
+
+        # 重新驗證
+        validation_result = file_validation_service.validate_file(
+            file_content,
+            upload_job.filename,
+        )
+
+        upload_job.status = JobStatus.VALIDATED
+        upload_job.total_rows = validation_result["total_rows"]
+        upload_job.valid_rows = validation_result["valid_rows"]
+        upload_job.invalid_rows = validation_result["invalid_rows"]
+
+        upload_errors = []
+        for error in validation_result["errors"]:
+            upload_errors.append(
+                UploadError(
+                    job_id=upload_job.id,
+                    row_index=error["row_index"],
+                    field=error["field"],
+                    error_code=error["error_code"],
+                    message=error["message"],
+                )
+            )
+
+        if upload_errors:
+            db.add_all(upload_errors)
+
+        await db.commit()
+        await db.refresh(upload_job)
+
+        sample_errors = [
+            UploadErrorResponse(
+                row_index=error["row_index"],
+                field=error["field"],
+                error_code=error["error_code"],
+                message=error["message"],
+            )
+            for error in validation_result["sample_errors"]
+        ]
+
+        logger.info(
+            "上傳工作內容已更新並重新驗證",
+            process_id=str(upload_job.process_id),
+            filename=upload_job.filename,
+            total_rows=upload_job.total_rows,
+            valid_rows=upload_job.valid_rows,
+            invalid_rows=upload_job.invalid_rows,
+            processing_time=time.time() - start_time,
+        )
+
+        return FileUploadResponse(
+            process_id=upload_job.process_id,
+            total_rows=upload_job.total_rows or 0,
+            valid_rows=upload_job.valid_rows or 0,
+            invalid_rows=upload_job.invalid_rows or 0,
+            sample_errors=sample_errors,
+        )
+
+    except ValidationError as ve:
+        # 驗證流程本身失敗（結構性問題）
+        result = await db.execute(select(UploadJob).where(UploadJob.process_id == process_id))
+        upload_job = result.scalar_one_or_none()
+        if upload_job:
+            upload_job.status = JobStatus.PENDING
+            await db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=ve.message,
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"儲存修改內容時發生錯誤：{str(e)}",
+        )
 
 
 @router.post(
@@ -44,12 +169,13 @@ router = APIRouter(
     
     **lot_no 擷取規則：**
     - P1/P2檔案：從檔案名稱中擷取 (格式：P1_1234567_01.csv 或 P2_1234567_01.csv)
-    - P3檔案：從 "P3_No." 欄位中取前9碼作為 lot_no
+        - P3檔案：優先從資料列的 "lot no" 欄位取得；若無則從 "P3_No." 取得
+            - 支援彈性格式（例如：2507173_02_10 會正規化為 2507173_02）
     
     **驗證規則：**
-    - 批號必須符合正規表示式 ^\\d{7}_\\d{2}$
-    - P3檔案必須包含 "P3_No." 欄位
-    - 其他欄位不進行強制驗證
+    - 批號必須為 7位數字_2位數字（或 7位數字_2位數字_其他，會自動截取前 7+2 作為批號）
+    - 檔案尾端若存在「整行空白」列會被忽略，不影響驗證結果
+    - 其他欄位不進行強制驗證（不再強制要求特定欄位）
     
     **回傳內容：**
     - process_id: 處理流程識別碼

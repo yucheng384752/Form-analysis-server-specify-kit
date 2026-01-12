@@ -213,6 +213,10 @@ async def import_data(
                 io.BytesIO(job.file_content), 
                 encoding='utf-8-sig'  # 處理 BOM
             )
+
+            # 排除整行空白/全空白字元的列（常見於尾端填充）
+            df = df.replace(r'^\s*$', pd.NA, regex=True)
+            df = df.dropna(how='all')
             
             if df.empty:
                 raise HTTPException(
@@ -728,6 +732,9 @@ async def import_data(
                             for item in existing_record.p3_items:
                                 if item.product_id:
                                     existing_items_map[item.product_id] = item
+
+                        # 避免 product_id 重複造成 UNIQUE constraint 失敗
+                        reserved_product_ids = set(existing_items_map.keys())
                         
                         # 計算目前的 row_no 起始點 (如果是追加)
                         current_max_row = 0
@@ -736,8 +743,15 @@ async def import_data(
                         
                         # 為每一行創建或更新 P3Item
                         for row_no, row_data in enumerate(all_rows, start=1):
+                            date_str = None
                             # 提取欄位
-                            item_lot_no = row_data.get('lot') or row_data.get('LOT') or row_data.get('Lot')
+                            # row_data['lot'] 是生產序號 (production_lot)，批號應使用父表 lot_no
+                            item_lot_no = lot_no
+                            item_production_lot = row_data.get('lot') or row_data.get('LOT') or row_data.get('Lot')
+                            try:
+                                item_production_lot = int(float(item_production_lot)) if item_production_lot is not None else None
+                            except (ValueError, TypeError):
+                                item_production_lot = None
                             item_machine_no = (
                                 row_data.get('Machine NO')
                                 or row_data.get('Machine No')
@@ -795,8 +809,6 @@ async def import_data(
                                     
                                     # 組成完整的 product_id
                                     # 優先使用 row_data 中的日期 (year-month-day)，如果沒有則使用 record 的 production_date
-                                    date_str = None
-                                    
                                     # 嘗試從 row_data 提取日期
                                     row_date_str = row_data.get('year-month-day')
                                     if row_date_str:
@@ -824,12 +836,41 @@ async def import_data(
                                     
                                     if date_str and target_mold_no:
                                         item_product_id = f"{date_str}_{machine_from_p3}_{target_mold_no}_{lot_from_p3}"
+
+                            # 以 row_data 為優先推導此 item 的生產日期；若無法推導則 fallback 到 record.production_date
+                            item_date = None
+                            if date_str:
+                                try:
+                                    item_date = datetime.strptime(date_str, "%Y%m%d").date()
+                                except Exception:
+                                    item_date = None
+                            if not item_date:
+                                try:
+                                    item_date = production_date_extractor.extract_production_date(
+                                        {'additional_data': row_data},
+                                        DataType.P3.value
+                                    )
+                                except Exception:
+                                    item_date = None
+                            if not item_date:
+                                item_date = existing_record.production_date
+
+                            # 若沒有 P3_No.，則從 row_data 動態產生（YYYYMMDD_Machine_Mold_Lot）
+                            if not item_product_id:
+                                if item_date and item_machine_no and item_mold_no and item_production_lot is not None:
+                                    date_str = item_date.strftime('%Y%m%d')
+                                    machine_str = str(item_machine_no).strip()
+                                    mold_str = str(item_mold_no).strip()
+                                    lot_str = str(int(item_production_lot)).strip()
+                                    item_product_id = f"{date_str}_{machine_str}_{mold_str}_{lot_str}"
                             
                             # 檢查是否已存在 (透過 product_id)
                             if item_product_id and item_product_id in existing_items_map:
                                 # 更新現有 item
                                 item = existing_items_map[item_product_id]
                                 item.lot_no = str(item_lot_no).strip() if item_lot_no else None
+                                item.production_lot = item_production_lot
+                                item.production_date = item_date
                                 item.machine_no = str(item_machine_no).strip() if item_machine_no else None
                                 item.mold_no = str(item_mold_no).strip() if item_mold_no else None
                                 item.specification = str(item_specification).strip() if item_specification else None
@@ -840,11 +881,20 @@ async def import_data(
                                 # 新增 item
                                 # row_no 接續在現有最大值之後
                                 new_row_no = current_max_row + row_no
+
+                                if item_product_id:
+                                    candidate = item_product_id
+                                    if candidate in reserved_product_ids:
+                                        candidate = f"{candidate}_dup{new_row_no}"
+                                    item_product_id = candidate
+                                    reserved_product_ids.add(item_product_id)
                                 
                                 p3_item = P3Item(
                                     record_id=existing_record.id,
                                     product_id=item_product_id,
                                     lot_no=str(item_lot_no).strip() if item_lot_no else None,
+                                    production_lot=item_production_lot,
+                                    production_date=item_date,
                                     machine_no=str(item_machine_no).strip() if item_machine_no else None,
                                     mold_no=str(item_mold_no).strip() if item_mold_no else None,
                                     specification=str(item_specification).strip() if item_specification else None,
@@ -917,9 +967,16 @@ async def import_data(
                     
                     # P3：寫入明細項目子表
                     if data_type == DataType.P3:
+                        reserved_product_ids = set()
                         for row_no, row_data in enumerate(all_rows, start=1):
                             # 提取其他欄位
-                            item_lot_no = row_data.get('lot') or row_data.get('LOT') or row_data.get('Lot')
+                            # row_data['lot'] 是生產序號 (production_lot)，批號應使用父表 lot_no
+                            item_lot_no = lot_no
+                            item_production_lot = row_data.get('lot') or row_data.get('LOT') or row_data.get('Lot')
+                            try:
+                                item_production_lot = int(float(item_production_lot)) if item_production_lot is not None else None
+                            except (ValueError, TypeError):
+                                item_production_lot = None
                             item_machine_no = (
                                 row_data.get('Machine NO')
                                 or row_data.get('Machine No')
@@ -980,18 +1037,27 @@ async def import_data(
                                 item_date 
                                 and item_machine_no 
                                 and item_mold_no 
-                                and item_lot_no
+                                and item_production_lot is not None
                             ):
                                 date_str = item_date.strftime('%Y%m%d')
                                 machine_str = str(item_machine_no).strip()
                                 mold_str = str(item_mold_no).strip()
-                                lot_str = str(item_lot_no).strip()
+                                lot_str = str(int(item_production_lot)).strip()
                                 item_product_id = f"{date_str}_{machine_str}_{mold_str}_{lot_str}"
+
+                            if item_product_id:
+                                candidate = item_product_id
+                                if candidate in reserved_product_ids:
+                                    candidate = f"{candidate}_dup{row_no}"
+                                item_product_id = candidate
+                                reserved_product_ids.add(item_product_id)
                             
                             p3_item = P3Item(
                                 record_id=record.id,
                                 product_id=item_product_id,
                                 lot_no=str(item_lot_no).strip() if item_lot_no else None,
+                                production_lot=item_production_lot,
+                                production_date=item_date,
                                 machine_no=str(item_machine_no).strip() if item_machine_no else None,
                                 mold_no=str(item_mold_no).strip() if item_mold_no else None,
                                 specification=str(item_specification).strip() if item_specification else None,
