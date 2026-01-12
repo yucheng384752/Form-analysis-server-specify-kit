@@ -8,7 +8,8 @@ export interface AdvancedSearchParams {
   machine_no?: string;
   mold_no?: string;
   product_id?: string;
-  p3_specification?: string;
+  specification?: string;  // 統一規格搜尋 (P1/P2/P3)
+  winder_number?: string;  // Winder Number
   data_type?: string;
 }
 
@@ -40,13 +41,15 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   const [machineNo, setMachineNo] = useState('');
   const [moldNo, setMoldNo] = useState('');
   const [productId, setProductId] = useState('');
-  const [p3Specification, setP3Specification] = useState('');
+  const [specification, setSpecification] = useState('');  // 統一規格
+  const [winderNumber, setWinderNumber] = useState('');   // Winder Number
   const [dataType, setDataType] = useState('');
 
   // 選項狀態
   const [machineOptions, setMachineOptions] = useState<string[]>([]);
   const [moldOptions, setMoldOptions] = useState<string[]>([]);
   const [specOptions, setSpecOptions] = useState<string[]>([]);
+  const [winderOptions, setWinderOptions] = useState<string[]>([]);
 
   // 載入選項
   useEffect(() => {
@@ -54,15 +57,17 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
       const fetchOptions = async () => {
         try {
           // 平行請求所有選項
-          const [machineRes, moldRes, specRes] = await Promise.all([
+          const [machineRes, moldRes, specRes, winderRes] = await Promise.all([
             fetch('/api/v2/query/options/machine_no'),
             fetch('/api/v2/query/options/mold_no'),
-            fetch('/api/v2/query/options/p3_specification')
+            fetch('/api/v2/query/options/specification'),
+            fetch('/api/v2/query/options/winder_number')
           ]);
 
           if (machineRes.ok) setMachineOptions(await machineRes.json());
           if (moldRes.ok) setMoldOptions(await moldRes.json());
           if (specRes.ok) setSpecOptions(await specRes.json());
+          if (winderRes.ok) setWinderOptions(await winderRes.json());
         } catch (error) {
           console.error('Failed to fetch search options:', error);
         }
@@ -81,7 +86,8 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
       machineNo.trim() ||
       moldNo.trim() ||
       productId.trim() ||
-      p3Specification.trim() ||
+      specification.trim() ||
+      winderNumber.trim() ||
       dataType
     );
   };
@@ -115,17 +121,30 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
       params.lot_no = normalizedLot;
     }
     
+    // 日期邏輯優化：若只填寫一個日期，另一個自動使用同一天
     const dateFrom = buildDateString(dateFromYear, dateFromMonth, dateFromDay);
-    if (dateFrom) params.production_date_from = dateFrom;
-    
     const dateTo = buildDateString(dateToYear, dateToMonth, dateToDay);
-    if (dateTo) params.production_date_to = dateTo;
+    
+    if (dateFrom && !dateTo) {
+      // 只填寫起始日期，結束日期使用同一天
+      params.production_date_from = dateFrom;
+      params.production_date_to = dateFrom;
+    } else if (!dateFrom && dateTo) {
+      // 只填寫結束日期，起始日期使用同一天
+      params.production_date_from = dateTo;
+      params.production_date_to = dateTo;
+    } else if (dateFrom && dateTo) {
+      // 兩個都填寫
+      params.production_date_from = dateFrom;
+      params.production_date_to = dateTo;
+    }
     
     // 其他欄位僅去除前後空白，後端已支援不分大小寫搜尋 (ilike)
     if (machineNo.trim()) params.machine_no = machineNo.trim();
     if (moldNo.trim()) params.mold_no = moldNo.trim();
     if (productId.trim()) params.product_id = productId.trim();
-    if (p3Specification.trim()) params.p3_specification = p3Specification.trim();
+    if (specification.trim()) params.specification = specification.trim();
+    if (winderNumber.trim()) params.winder_number = winderNumber.trim();
     if (dataType) params.data_type = dataType;
 
     onSearch(params);
@@ -143,22 +162,14 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     setMachineNo('');
     setMoldNo('');
     setProductId('');
-    setP3Specification('');
+    setSpecification('');
+    setWinderNumber('');
     setDataType('');
     onReset();
   };
 
   return (
     <div className="advanced-search">
-      <button 
-        className="advanced-search-toggle"
-        onClick={onToggle}
-        type="button"
-      >
-        <span className={`toggle-icon ${isExpanded ? 'expanded' : ''}`}>▶</span>
-        進階搜尋
-      </button>
-
       {isExpanded && (
         <div className="advanced-search-panel">
           <div className="search-grid">
@@ -294,19 +305,37 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
               />
             </div>
 
-            {/* P3 規格 */}
+            {/* 統一規格 (P1/P2/P3) */}
             <div className="search-field">
-              <label htmlFor="adv-p3-specification">P3 規格</label>
+              <label htmlFor="adv-specification">規格</label>
               <input
-                id="adv-p3-specification"
+                id="adv-specification"
                 type="text"
-                value={p3Specification}
-                onChange={(e) => setP3Specification(e.target.value)}
-                placeholder="輸入 P3 規格 (模糊搜尋)"
+                value={specification}
+                onChange={(e) => setSpecification(e.target.value)}
+                placeholder="輸入規格 (P1/P2/P3 統一搜尋)"
                 list="spec-options"
               />
               <datalist id="spec-options">
                 {specOptions.map((opt, idx) => (
+                  <option key={idx} value={opt} />
+                ))}
+              </datalist>
+            </div>
+
+            {/* Winder Number */}
+            <div className="search-field">
+              <label htmlFor="adv-winder-number">Winder Number</label>
+              <input
+                id="adv-winder-number"
+                type="text"
+                value={winderNumber}
+                onChange={(e) => setWinderNumber(e.target.value)}
+                placeholder="輸入 Winder Number"
+                list="winder-options"
+              />
+              <datalist id="winder-options">
+                {winderOptions.map((opt, idx) => (
                   <option key={idx} value={opt} />
                 ))}
               </datalist>

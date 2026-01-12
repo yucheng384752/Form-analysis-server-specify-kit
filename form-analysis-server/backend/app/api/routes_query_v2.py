@@ -381,7 +381,7 @@ async def get_field_options_v2(
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
     field = field_name.strip().lower()
-    if field not in {"machine_no", "mold_no", "p3_specification"}:
+    if field not in {"machine_no", "mold_no", "specification", "winder_number"}:
         raise HTTPException(status_code=400, detail=f"Unsupported field: {field_name}")
 
     if field == "machine_no":
@@ -408,24 +408,98 @@ async def get_field_options_v2(
         result = await db.execute(stmt)
         return [str(v[0]).strip() for v in result.fetchall() if v[0] and str(v[0]).strip()]
 
-    # p3_specification: derive from extras rows[0] in python (simpler, avoids complex JSONB SQL)
-    stmt = (
-        select(P3Record.extras)
-        .where(P3Record.tenant_id == current_tenant.id)
-        .order_by(P3Record.created_at.desc())
-        .limit(limit)
-    )
-    result = await db.execute(stmt)
-    specs: List[str] = []
-    seen = set()
-    for (extras,) in result.fetchall():
-        row0 = _first_row(extras)
-        spec = _extract_spec_from_row(row0)
-        if spec and spec not in seen:
-            seen.add(spec)
-            specs.append(spec)
-    specs.sort()
-    return specs
+    # specification: 統一規格選項，從 P1/P2/P3 的 extras 中提取
+    if field == "specification":
+        specs: List[str] = []
+        seen = set()
+        
+        # P1: extras.Specification
+        p1_stmt = (
+            select(P1Record.extras)
+            .where(P1Record.tenant_id == current_tenant.id)
+            .limit(limit)
+        )
+        p1_result = await db.execute(p1_stmt)
+        for (extras,) in p1_result.fetchall():
+            if isinstance(extras, dict):
+                spec = extras.get('Specification') or extras.get('specification') or extras.get('規格')
+                if spec and str(spec).strip() and str(spec).strip() not in seen:
+                    seen.add(str(spec).strip())
+                    specs.append(str(spec).strip())
+        
+        # P2: extras.format
+        p2_stmt = (
+            select(P2Record.extras)
+            .where(P2Record.tenant_id == current_tenant.id)
+            .limit(limit)
+        )
+        p2_result = await db.execute(p2_stmt)
+        for (extras,) in p2_result.fetchall():
+            if isinstance(extras, dict):
+                spec = extras.get('format') or extras.get('Format') or extras.get('規格')
+                if spec and str(spec).strip() and str(spec).strip() not in seen:
+                    seen.add(str(spec).strip())
+                    specs.append(str(spec).strip())
+        
+        # P3: extras.rows[0].Specification
+        p3_stmt = (
+            select(P3Record.extras)
+            .where(P3Record.tenant_id == current_tenant.id)
+            .limit(limit)
+        )
+        p3_result = await db.execute(p3_stmt)
+        for (extras,) in p3_result.fetchall():
+            row0 = _first_row(extras)
+            spec = _extract_spec_from_row(row0)
+            if spec and spec not in seen:
+                seen.add(spec)
+                specs.append(spec)
+        
+        specs.sort()
+        return specs[:limit]
+    
+    # winder_number: 從 P2/P3 的 extras 中提取
+    if field == "winder_number":
+        winders: List[str] = []
+        seen = set()
+        
+        # P2: extras.rows[].winder_number
+        p2_stmt = (
+            select(P2Record.extras)
+            .where(P2Record.tenant_id == current_tenant.id)
+            .limit(limit)
+        )
+        p2_result = await db.execute(p2_stmt)
+        for (extras,) in p2_result.fetchall():
+            if isinstance(extras, dict) and 'rows' in extras:
+                rows = extras.get('rows', [])
+                if isinstance(rows, list):
+                    for row in rows:
+                        if isinstance(row, dict):
+                            winder = row.get('winder_number') or row.get('Winder Number') or row.get('winder')
+                            if winder and str(winder).strip() and str(winder).strip() not in seen:
+                                seen.add(str(winder).strip())
+                                winders.append(str(winder).strip())
+        
+        # P3: extras.rows[0].source_winder (如果有的話)
+        p3_stmt = (
+            select(P3Record.extras)
+            .where(P3Record.tenant_id == current_tenant.id)
+            .limit(limit)
+        )
+        p3_result = await db.execute(p3_stmt)
+        for (extras,) in p3_result.fetchall():
+            row0 = _first_row(extras)
+            if row0:
+                winder = row0.get('source_winder') or row0.get('Source Winder') or row0.get('winder')
+                if winder and str(winder).strip() and str(winder).strip() not in seen:
+                    seen.add(str(winder).strip())
+                    winders.append(str(winder).strip())
+        
+        winders.sort(key=lambda x: (x.isdigit() and int(x) or 999999, x))
+        return winders[:limit]
+    
+    return []
 
 
 @router.get("/records", response_model=QueryResponseV2Compat)
@@ -462,7 +536,8 @@ async def query_records_advanced_v2(
     machine_no: Optional[str] = Query(None),
     mold_no: Optional[str] = Query(None),
     product_id: Optional[str] = Query(None),
-    p3_specification: Optional[str] = Query(None),
+    specification: Optional[str] = Query(None, description="統一規格搜尋 (P1.Specification, P2.format, P3.Specification)"),
+    winder_number: Optional[str] = Query(None, description="Winder Number (P2/P3)"),
     data_type: Optional[str] = Query(None, description="P1|P2|P3"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -502,6 +577,18 @@ async def query_records_advanced_v2(
             p1_stmt = p1_stmt.where(P1Record.lot_no_norm == lot_no_norm)
         elif lot_no_raw:
             p1_stmt = p1_stmt.where(P1Record.lot_no_raw.ilike(f"%{lot_no_raw}%"))
+        
+        # 統一規格搜尋: P1 查 extras.Specification
+        if specification and specification.strip():
+            spec = specification.strip()
+            p1_stmt = p1_stmt.where(
+                or_(
+                    func.jsonb_extract_path_text(cast(P1Record.extras, JSONB), 'Specification').ilike(f"%{spec}%"),
+                    func.jsonb_extract_path_text(cast(P1Record.extras, JSONB), 'specification').ilike(f"%{spec}%"),
+                    func.jsonb_extract_path_text(cast(P1Record.extras, JSONB), '規格').ilike(f"%{spec}%"),
+                )
+            )
+        
         p1_stmt = p1_stmt.order_by(P1Record.created_at.desc()).limit(page * page_size)
         p1_result = await db.execute(p1_stmt)
         records.extend([_p1_to_query_record(r) for r in p1_result.scalars().all()])
@@ -513,6 +600,29 @@ async def query_records_advanced_v2(
             p2_stmt = p2_stmt.where(P2Record.lot_no_norm == lot_no_norm)
         elif lot_no_raw:
             p2_stmt = p2_stmt.where(P2Record.lot_no_raw.ilike(f"%{lot_no_raw}%"))
+        
+        # 統一規格搜尋: P2 查 extras.format
+        if specification and specification.strip():
+            spec = specification.strip()
+            p2_stmt = p2_stmt.where(
+                or_(
+                    func.jsonb_extract_path_text(cast(P2Record.extras, JSONB), 'format').ilike(f"%{spec}%"),
+                    func.jsonb_extract_path_text(cast(P2Record.extras, JSONB), 'Format').ilike(f"%{spec}%"),
+                    func.jsonb_extract_path_text(cast(P2Record.extras, JSONB), '規格').ilike(f"%{spec}%"),
+                )
+            )
+        
+        # Winder Number 篩選: P2 查 extras.rows 中的 winder_number
+        if winder_number and winder_number.strip():
+            winder_val = winder_number.strip()
+            # 在 P2Record 中，extras.rows 是陣列，每個 row 有 winder_number
+            p2_stmt = p2_stmt.where(
+                func.jsonb_path_exists(
+                    cast(P2Record.extras, JSONB),
+                    f'$.rows[*] ? (@.winder_number == "{winder_val}" || @."Winder Number" == "{winder_val}")'
+                )
+            )
+        
         p2_stmt = p2_stmt.order_by(P2Record.created_at.desc()).limit(page * page_size)
         p2_result = await db.execute(p2_stmt)
         records.extend([_p2_to_query_record(r) for r in p2_result.scalars().all()])
@@ -535,15 +645,27 @@ async def query_records_advanced_v2(
         if product_id and product_id.strip():
             p3_stmt = p3_stmt.where(P3Record.product_id.ilike(f"%{product_id.strip()}%"))
 
-        # Spec filter (best-effort): check first row's 'specification' field from JSONB
-        if p3_specification and p3_specification.strip():
-            spec = p3_specification.strip()
-            # jsonb_extract_path_text(extras, 'rows', '0', 'Specification')
+        # 統一規格搜尋: P3 查 extras.rows[0].Specification
+        if specification and specification.strip():
+            spec = specification.strip()
             p3_stmt = p3_stmt.where(
                 or_(
                     func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', 'Specification').ilike(f"%{spec}%"),
                     func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', 'specification').ilike(f"%{spec}%"),
                     func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', '規格').ilike(f"%{spec}%"),
+                )
+            )
+        
+        # Winder Number 篩選: P3 查 source_winder (在 p3_items 表中)
+        # 注意：p3_records 沒有直接的 winder 欄位，可能需要從 extras 提取
+        if winder_number and winder_number.strip():
+            winder_val = winder_number.strip()
+            # 嘗試從 extras.rows[0] 中查找 source_winder 或類似欄位
+            p3_stmt = p3_stmt.where(
+                or_(
+                    func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', 'source_winder').ilike(f"%{winder_val}%"),
+                    func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', 'Source Winder').ilike(f"%{winder_val}%"),
+                    func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', 'winder').ilike(f"%{winder_val}%"),
                 )
             )
 

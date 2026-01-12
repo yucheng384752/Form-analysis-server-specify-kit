@@ -76,6 +76,9 @@ export function QueryPage() {
   const [detailRecord, setDetailRecord] = useState<QueryRecord | null>(null);
   const [editRecord, setEditRecord] = useState<QueryRecord | null>(null);
   const [tenantId, setTenantId] = useState<string>("");
+  
+  // 表格排序狀態: { 'recordId-tableType': { column: 'columnName', direction: 'asc'|'desc' } }
+  const [tableSortState, setTableSortState] = useState<{ [key: string]: { column: string; direction: 'asc' | 'desc' } }>({});
 
   React.useEffect(() => {
     fetch('/api/tenants')
@@ -312,7 +315,8 @@ export function QueryPage() {
         if (advancedParams.machine_no) params.append('machine_no', advancedParams.machine_no);
         if (advancedParams.mold_no) params.append('mold_no', advancedParams.mold_no);
         if (advancedParams.product_id) params.append('product_id', advancedParams.product_id);
-        if (advancedParams.p3_specification) params.append('p3_specification', advancedParams.p3_specification);
+        if (advancedParams.specification) params.append('specification', advancedParams.specification);
+        if (advancedParams.winder_number) params.append('winder_number', advancedParams.winder_number);
         if (advancedParams.data_type) params.append('data_type', advancedParams.data_type);
       } else if (search) {
         params.append('lot_no', search);
@@ -687,6 +691,55 @@ export function QueryPage() {
     const key = `${recordId}-${sectionKey}`;
     return collapsedSections[key] || false;
   };
+  
+  // 表格排序處理
+  const handleTableSort = (recordId: string, tableType: 'p2' | 'p3', column: string) => {
+    const key = `${recordId}-${tableType}`;
+    const currentSort = tableSortState[key];
+    
+    let newDirection: 'asc' | 'desc' = 'asc';
+    if (currentSort && currentSort.column === column) {
+      // 切換排序方向
+      newDirection = currentSort.direction === 'asc' ? 'desc' : 'asc';
+    }
+    
+    setTableSortState({
+      ...tableSortState,
+      [key]: { column, direction: newDirection }
+    });
+  };
+  
+  // 排序表格資料
+  const sortTableData = (rows: any[], recordId: string, tableType: 'p2' | 'p3'): any[] => {
+    const key = `${recordId}-${tableType}`;
+    const sortState = tableSortState[key];
+    
+    if (!sortState || !rows || rows.length === 0) {
+      return rows;
+    }
+    
+    const { column, direction } = sortState;
+    const multiplier = direction === 'asc' ? 1 : -1;
+    
+    return [...rows].sort((a, b) => {
+      const aVal = a[column];
+      const bVal = b[column];
+      
+      // 處理 null/undefined
+      if (aVal === null || aVal === undefined) return 1;
+      if (bVal === null || bVal === undefined) return -1;
+      
+      // 數字比較
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return (aVal - bVal) * multiplier;
+      }
+      
+      // 字串比較
+      const aStr = String(aVal).toLowerCase();
+      const bStr = String(bVal).toLowerCase();
+      return aStr.localeCompare(bStr) * multiplier;
+    });
+  };
 
   // 分組資料的輔助函數
   const groupDataByPrefix = (data: { [key: string]: any }) => {
@@ -786,13 +839,6 @@ export function QueryPage() {
 
     // 分組其他資料
     const grouped = groupDataByPrefix(record.additional_data);
-    
-    // 基本資料
-    const basicData = {
-      lot_no: record.lot_no,
-      updated_at: new Date(record.created_at).toLocaleString('zh-TW'),
-      created_at: new Date(record.created_at).toLocaleString('zh-TW')
-    };
 
     // 合併 actual_temp 和 set_temp 作為押出機生產條件
     const extrusionConditions = {
@@ -802,7 +848,7 @@ export function QueryPage() {
 
     return (
       <div className="grouped-data-container">
-        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, '')}
+        {/* 基本資料區塊已移除 */}
         
         {Object.keys(extrusionConditions).length > 0 && 
           renderGroupedSection(record.id, '押出機生產條件', 'extrusion', extrusionConditions, '', true)}
@@ -819,21 +865,19 @@ export function QueryPage() {
       return <p className="no-data">此記錄沒有額外的CSV資料</p>;
     }
 
-    // 基本資料
-    const basicData = {
-      lot_no: record.lot_no,
-      updated_at: new Date(record.created_at).toLocaleString('zh-TW'),
-      created_at: new Date(record.created_at).toLocaleString('zh-TW')
-    };
-
     // 檢查是否為 rows 陣列結構
     const rows = record.additional_data.rows || [];
     const sortedRows = sortRowsNgFirst(rows, ['striped results', 'Striped results', '分條結果']);
+    // 應用使用者排序
+    const displayRows = sortTableData(sortedRows, record.id, 'p2');
     const hasRows = Array.isArray(rows) && rows.length > 0;
+    
+    // 取得排序狀態
+    const sortState = tableSortState[`${record.id}-p2`];
 
     return (
       <div className="grouped-data-container">
-        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, )}
+        {/* 基本資料區塊已移除 */}
         
         {hasRows && (
           <div className="data-section">
@@ -857,12 +901,24 @@ export function QueryPage() {
                     <tr>
                       <th>#</th>
                       {Object.keys(rows[0]).map(key => (
-                        <th key={key}>{key}</th>
+                        <th 
+                          key={key} 
+                          onClick={() => handleTableSort(record.id, 'p2', key)}
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                          title="點擊排序"
+                        >
+                          {key}
+                          {sortState && sortState.column === key && (
+                            <span style={{ marginLeft: '4px' }}>
+                              {sortState.direction === 'asc' ? '▲' : '▼'}
+                            </span>
+                          )}
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedRows.map((row: any, idx: number) => (
+                    {displayRows.map((row: any, idx: number) => (
                       <tr key={idx}>
                         <td>{idx + 1}</td>
                         {Object.keys(rows[0]).map((header: string, vidx: number) => {
@@ -926,7 +982,12 @@ export function QueryPage() {
     // 檢查是否有 rows 陣列
     const rows = record.additional_data.rows || [];
     const sortedRows = sortRowsNgFirst(rows, ['Finish', 'finish']);
+    // 應用使用者排序
+    const displayRows = sortTableData(sortedRows, record.id, 'p3');
     const rowCount = Array.isArray(rows) ? rows.length : 0;
+    
+    // 取得排序狀態
+    const sortState = tableSortState[`${record.id}-p3`];
 
     return (
       <div className="grouped-data-container">
@@ -947,7 +1008,7 @@ export function QueryPage() {
           </div>
         </div>
 
-        {renderGroupedSection(record.id, '基本資料', 'basic', basicData, '')}
+        {/* 基本資料區塊已移除 */}
         
         {/* 渲染檢查項目表格 */}
         {Array.isArray(rows) && rows.length > 0 && (
@@ -972,14 +1033,37 @@ export function QueryPage() {
                     <thead>
                       <tr>
                         <th className="action-column">關聯查詢</th>
-                        <th>Product ID</th>
+                        <th 
+                          onClick={() => handleTableSort(record.id, 'p3', 'product_id')}
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                          title="點擊排序"
+                        >
+                          Product ID
+                          {sortState && sortState.column === 'product_id' && (
+                            <span style={{ marginLeft: '4px' }}>
+                              {sortState.direction === 'asc' ? '▲' : '▼'}
+                            </span>
+                          )}
+                        </th>
                         {Object.keys(rows[0]).filter(h => h !== 'product_id').map(header => (
-                          <th key={header}>{header}</th>
+                          <th 
+                            key={header}
+                            onClick={() => handleTableSort(record.id, 'p3', header)}
+                            style={{ cursor: 'pointer', userSelect: 'none' }}
+                            title="點擊排序"
+                          >
+                            {header}
+                            {sortState && sortState.column === header && (
+                              <span style={{ marginLeft: '4px' }}>
+                                {sortState.direction === 'asc' ? '▲' : '▼'}
+                              </span>
+                            )}
+                          </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedRows.map((row: any, idx: number) => {
+                      {displayRows.map((row: any, idx: number) => {
                         const rowProductId = generateRowProductId(record, row);
                         return (
                           <tr key={idx}>
@@ -1382,6 +1466,17 @@ export function QueryPage() {
                 清除
               </button>
             )}
+            
+            {/* 進階搜尋按鈕 */}
+            <button 
+              className="advanced-search-toggle"
+              onClick={() => setAdvancedSearchExpanded(!advancedSearchExpanded)}
+              type="button"
+              title="進階搜尋"
+            >
+              <span className={`toggle-icon ${advancedSearchExpanded ? 'expanded' : ''}`}>▶</span>
+              進階搜尋
+            </button>
           </div>
           
           {/* 進階搜尋面板 */}
