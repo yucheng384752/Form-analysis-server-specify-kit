@@ -5,7 +5,7 @@
 
 from typing import List, Dict, Optional
 from datetime import date, datetime
-from sqlalchemy import select, and_, extract
+from sqlalchemy import select, and_, extract, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -69,17 +69,18 @@ class UTFlattener:
     
     async def _flatten_p1(self, year: int, month: int) -> List[Dict]:
         """查詢並扁平化 P1 資料"""
-        # 計算日期範圍（YYYYMMDD）
-        start_yyyymmdd = year * 10000 + month * 100 + 1
+        # 構建日期範圍
+        start_date = date(year, month, 1)
         if month == 12:
-            end_yyyymmdd = (year + 1) * 10000 + 1 * 100 + 1
+            end_date = date(year + 1, 1, 1)
         else:
-            end_yyyymmdd = year * 10000 + (month + 1) * 100 + 1
+            end_date = date(year, month + 1, 1)
         
-        # 查詢 P1 記錄（根據 created_at 或其他時間欄位）
-        # 注意：P1Record 可能使用 created_at，需要轉換為 YYYYMMDD 比較
+        # 查詢 P1 記錄（根據 created_at）
+        # 使用 func.date() 將 timestamp 轉為 date 進行比較
         query = select(P1Record).where(
-            P1Record.created_at >= f"{year}-{month:02d}-01"
+            func.date(P1Record.created_at) >= start_date,
+            func.date(P1Record.created_at) < end_date
         ).order_by(P1Record.created_at.desc())
         
         result = await self.session.execute(query)
@@ -257,20 +258,32 @@ class UTFlattener:
         
         flattened = []
         for p3_item in p3_items:
-            # 從 P3 追溯到 P2（透過 lot_no 或 source_winder）
+            # 從 P3 追溯到 P2（透過 lot_no）
+            # 注意：P2Item 沒有 lot_no，需要透過 P2Record
+            p2_record = None
             p2_item = None
             if p3_item.lot_no:
-                p2_query = select(P2Item).where(
-                    P2Item.lot_no == p3_item.lot_no
+                # 先找 P2Record
+                p2_record_query = select(P2Record).where(
+                    P2Record.lot_no_raw == p3_item.lot_no
                 ).limit(1)
-                p2_result = await self.session.execute(p2_query)
-                p2_item = p2_result.scalar_one_or_none()
+                p2_record_result = await self.session.execute(p2_record_query)
+                p2_record = p2_record_result.scalar_one_or_none()
+                
+                # 如果找到 P2Record，再找對應的 P2Item（使用 source_winder）
+                if p2_record and p3_item.source_winder:
+                    p2_item_query = select(P2Item).where(
+                        P2Item.record_id == p2_record.id,
+                        P2Item.winder_number == p3_item.source_winder
+                    ).limit(1)
+                    p2_item_result = await self.session.execute(p2_item_query)
+                    p2_item = p2_item_result.scalar_one_or_none()
             
-            # 從 P2 追溯到 P1（透過 lot_no）
+            # 從 P2 追溯到 P1（透過 lot_no_norm）
             p1_record = None
-            if p2_item and p2_item.lot_no:
+            if p2_record and p2_record.lot_no_norm:
                 p1_query = select(P1Record).where(
-                    P1Record.lot_no_norm == p2_item.lot_no
+                    P1Record.lot_no_norm == p2_record.lot_no_norm
                 ).limit(1)
                 p1_result = await self.session.execute(p1_query)
                 p1_record = p1_result.scalar_one_or_none()
