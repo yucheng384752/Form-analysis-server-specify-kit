@@ -41,5 +41,5 @@
   },
   "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }],
-  "exclude": ["node_modules", "dist", "build"]
+  "exclude": ["node_modules", "dist", "build", "src/pages/QueryPage_backup.tsx"]
 }

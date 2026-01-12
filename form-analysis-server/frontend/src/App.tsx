@@ -36,6 +36,12 @@ function App() {
           >
             系統日誌
           </button> */}
+          {/* <button
+            className={`app-main-tab ${tab === "analysis" ? "is-active" : ""}`}
+            onClick={() => setTab("analysis")}
+          >
+            系統日誌
+          </button> */}
         </div>
       </header>
 

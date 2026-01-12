@@ -55,9 +55,9 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
         try {
           // 平行請求所有選項
           const [machineRes, moldRes, specRes] = await Promise.all([
-            fetch('/api/query/options/machine_no'),
-            fetch('/api/query/options/mold_no'),
-            fetch('/api/query/options/p3_specification')
+            fetch('/api/v2/query/options/machine_no'),
+            fetch('/api/v2/query/options/mold_no'),
+            fetch('/api/v2/query/options/p3_specification')
           ]);
 
           if (machineRes.ok) setMachineOptions(await machineRes.json());

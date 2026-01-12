@@ -135,7 +135,7 @@ export function UploadPage() {
       
       // 檢查是否重複上傳
       if (files.some(f => f.name === file.name) || newFiles.some(f => f.name === file.name)) {
-        showToast("warning", `檔案 ${file.name} 已存在列表中，略過上傳`);
+        showToast("info", `檔案 ${file.name} 已存在列表中，略過上傳`);
         return;
       }
 
@@ -174,9 +174,34 @@ export function UploadPage() {
     }
   };
 
+  const buildCsvText = (csv: CsvData): string => {
+    const escapeCell = (cell: string) => {
+      const value = cell ?? "";
+      if (/[\r\n,"]/.test(value)) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    };
+
+    const lines: string[] = [];
+    lines.push(csv.headers.map((c) => escapeCell(c ?? "")).join(","));
+    csv.rows.forEach((row) => {
+      lines.push(row.map((c) => escapeCell(c ?? "")).join(","));
+    });
+    return lines.join("\n");
+  };
+
   const handleValidate = async (fileId: string) => {
     const target = files.find((f) => f.id === fileId);
     if (!target) return;
+
+    // 若使用者已在表格中修正內容，應以「目前編輯後的 CSV」重新驗證。
+    // 否則直接重新上傳原始檔案會讓使用者誤以為「表格修正無效」。
+    if (target.processId && target.csvData && target.hasUnsavedChanges) {
+      showToast("info", "偵測到未儲存的修改，將先儲存修改並重新驗證");
+      await handleSaveChanges(fileId);
+      return;
+    }
     
     // 允許重複驗證，特別是有錯誤的檔案
     // 不再阻止重複驗證，讓用戶可以修改後重新驗證
@@ -273,7 +298,7 @@ export function UploadPage() {
           const fileType = target.name.match(/^P[123]/) ? target.name.match(/^P[123]/)?.[0] : '檔案';
           
           showToast("error", 
-            `${fileType} 驗證錯誤詳情：\n${errorSummary}${moreErrors}\n請展開檔案查看完整錯誤列表並修正後重新驗證`
+            `${fileType} 驗證錯誤詳情：\n${errorSummary}${moreErrors}\n請展開檔案查看完整錯誤列表並修正後按「儲存修改」（會重新驗證）`
           );
         }
       } else {
@@ -324,20 +349,56 @@ export function UploadPage() {
     const target = files.find((f) => f.id === fileId);
     if (!target || !target.csvData || !target.hasUnsavedChanges) return;
 
+    if (!target.processId) {
+      showToast("error", "缺少 process_id，請先驗證檔案後再儲存修改");
+      return;
+    }
+
     try {
-      // TODO: 實作將修改後的資料發送到後端的邏輯
-      // 這裡可以發送修改後的 csvData 到後端進行暫存
-      // 目前先在前端標記為已儲存
+      const csv_text = buildCsvText(target.csvData);
+
+      const res = await fetch(`/api/upload/${target.processId}/content`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ csv_text }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: '儲存失敗' }));
+        const errorMessage = typeof errorData.detail === 'string'
+          ? errorData.detail
+          : errorData.detail?.detail || '儲存失敗';
+        throw new Error(errorMessage);
+      }
+
+      const result = await res.json();
       
       setFiles((prev) =>
         prev.map((f) =>
-          f.id === fileId ? { ...f, hasUnsavedChanges: false } : f
+          f.id === fileId
+            ? {
+                ...f,
+                hasUnsavedChanges: false,
+                isValidated: true,
+                status: "validated",
+                // 後端只回 sample_errors（前10筆），但足夠用來決定是否可匯入
+                validationErrors: result.sample_errors || [],
+              }
+            : f
         )
       );
-      showToast("success", "修改已儲存");
+
+      if (result.invalid_rows && result.invalid_rows > 0) {
+        showToast("info", `修改已儲存，但仍有 ${result.invalid_rows} 行無效，請繼續修正`);
+      } else {
+        showToast("success", "修改已儲存，且驗證通過");
+      }
     } catch (err) {
       console.error('儲存錯誤:', err);
-      showToast("error", "儲存修改時發生錯誤");
+      const errorMessage = err instanceof Error ? err.message : '儲存修改時發生錯誤';
+      showToast("error", errorMessage);
     }
   };
 
@@ -1176,7 +1237,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
         </p>
         {file.validationErrors && file.validationErrors.length > 0 ? (
           <p style={{ margin: '0', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>
-             紅色高亮的單元格表示有驗證錯誤，將滑鼠懸停查看詳情。修正錯誤後請重新驗證檔案。
+             紅色高亮的單元格表示有驗證錯誤，將滑鼠懸停查看詳情。修正錯誤後請按「儲存修改」（會自動重新驗證）。
           </p>
         ) : (
           <p style={{ margin: '0', fontSize: '0.75rem', color: '#059669', fontWeight: 'bold' }}>

@@ -2,7 +2,6 @@
 import React, { useState, useRef } from "react";
 import { Modal } from "../components/common/Modal";
 import { AdvancedSearch, AdvancedSearchParams } from "../components/AdvancedSearch";
-import { TraceabilityFlow } from "../components/TraceabilityFlow";
 import { EditRecordModal } from "../components/EditRecordModal";
 import "../styles/query-page.css";
 
@@ -89,13 +88,83 @@ export function QueryPage() {
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [traceabilityModalOpen, setTraceabilityModalOpen] = useState(false);
   const [traceabilityData, setTraceabilityData] = useState<any>(null);
-  const [traceabilityRecordId, setTraceabilityRecordId] = useState<string | null>(null);
+  const [traceActiveTab, setTraceActiveTab] = useState<DataType>('P3');
   
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const traceSectionRef = useRef<HTMLDivElement>(null);
   const pageSize = 50;
+
+  const isLikelyProductId = (value: string): boolean => {
+    const v = value.trim();
+    // Product ID format: YYYYMMDD_MachineNo_MoldNo_lot (allow flexible segments after date)
+    return /^\d{8}_.+_.+_.+/.test(v);
+  };
+
+  const getRowFieldValue = (row: any, keys: string[]): any => {
+    for (const key of keys) {
+      if (row && Object.prototype.hasOwnProperty.call(row, key)) {
+        const val = row[key];
+        if (val !== undefined && val !== null && val !== '') return val;
+      }
+    }
+    return undefined;
+  };
+
+  const isNgLike = (formatted: string): boolean => {
+    const v = (formatted || '').toString().trim().toUpperCase();
+    return v === 'X' || v.includes('NG');
+  };
+
+  const sortRowsNgFirst = (rows: any[], fieldKeys: string[]): any[] => {
+    if (!Array.isArray(rows) || rows.length <= 1) return rows;
+
+    // stable sort
+    return rows
+      .map((row, idx) => ({ row, idx }))
+      .sort((a, b) => {
+        const aKey = fieldKeys.find(k => a.row && Object.prototype.hasOwnProperty.call(a.row, k)) || fieldKeys[0];
+        const bKey = fieldKeys.find(k => b.row && Object.prototype.hasOwnProperty.call(b.row, k)) || fieldKeys[0];
+
+        const aRaw = getRowFieldValue(a.row, fieldKeys);
+        const bRaw = getRowFieldValue(b.row, fieldKeys);
+
+        const aFmt = formatFieldValue(aKey, aRaw);
+        const bFmt = formatFieldValue(bKey, bRaw);
+
+        const aNg = isNgLike(aFmt);
+        const bNg = isNgLike(bFmt);
+
+        if (aNg !== bNg) return aNg ? -1 : 1;
+        return a.idx - b.idx;
+      })
+      .map(x => x.row);
+  };
+
+  const normalizeTraceRecord = (type: DataType, record: any): QueryRecord | null => {
+    if (!record) return null;
+
+    const createdAt = record.created_at || record.createdAt || record.updated_at || record.updatedAt;
+    const lotNo = record.lot_no || record.lotNo || record.production_lot || record.productionLot || '';
+    const stableId = String(record.id || `${type}-${record.product_id || record.productId || lotNo || 'unknown'}`);
+
+    return {
+      ...(record as any),
+      id: stableId,
+      lot_no: String(lotNo),
+      data_type: type,
+      created_at: createdAt ? String(createdAt) : new Date().toISOString(),
+      display_name: record.display_name || record.displayName || '',
+      additional_data: record.additional_data || record.additionalData || record.extras || record.data || record.additional || {},
+    };
+  };
+
+  const scrollToTrace = () => {
+    setTimeout(() => {
+      traceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  };
 
   // 輔助函數：格式化欄位值（處理多種 boolean 轉換和日期轉換）
   const formatFieldValue = (header: string, value: any): string => {
@@ -228,7 +297,7 @@ export function QueryPage() {
   const searchRecords = async (search: string, page: number = 1, advancedParams?: AdvancedSearchParams) => {
     setLoading(true);
     try {
-      let apiUrl = '/api/query/records';
+      let apiUrl = '/api/v2/query/records';
       const params = new URLSearchParams({
         page: page.toString(),
         page_size: pageSize.toString()
@@ -236,7 +305,7 @@ export function QueryPage() {
       
       // 優先使用進階搜尋參數
       if (advancedParams) {
-        apiUrl = '/api/query/records/advanced';
+        apiUrl = '/api/v2/query/records/advanced';
         if (advancedParams.lot_no) params.append('lot_no', advancedParams.lot_no);
         if (advancedParams.production_date_from) params.append('production_date_from', advancedParams.production_date_from);
         if (advancedParams.production_date_to) params.append('production_date_to', advancedParams.production_date_to);
@@ -454,7 +523,8 @@ export function QueryPage() {
       if (!traceData.p1) flowData.missing_links.push('P1');
       
       setTraceabilityData(flowData);
-      setTraceabilityModalOpen(true);
+      setTraceActiveTab('P3');
+      scrollToTrace();
       
       setLoading(false);
       
@@ -485,11 +555,11 @@ export function QueryPage() {
     setSuggestionLoading(true);
     try {
       const params = new URLSearchParams({
-        query: query.trim(),
+        term: query.trim(),
         limit: '10'
       });
       
-      const response = await fetch(`/api/query/lots/suggestions?${params}`);
+      const response = await fetch(`/api/v2/query/lots/suggestions?${params}`);
       if (response.ok) {
         const data: string[] = await response.json();
         setSuggestions(data);
@@ -510,11 +580,47 @@ export function QueryPage() {
 
   // 處理基本搜尋
   const handleSearch = async () => {
-    if (searchKeyword.trim()) {
-      setAdvancedSearchParams(null); // 清除進階搜尋參數
-      await searchRecords(searchKeyword.trim());
-      setShowSuggestions(false);
+    const keyword = searchKeyword.trim();
+    if (!keyword) return;
+
+    setShowSuggestions(false);
+
+    // 若看起來像 Product ID，直接走追溯查詢（不改動既有 lot_no 查詢流程）
+    if (isLikelyProductId(keyword)) {
+      try {
+        setLoading(true);
+        setAdvancedSearchParams(null);
+        setRecords([]);
+        setTotalCount(0);
+        setSearchPerformed(false);
+
+        const res = await fetch(`/api/traceability/product/${encodeURIComponent(keyword)}`);
+        if (!res.ok) {
+          if (res.status === 404) {
+            alert('查無此產品');
+            return;
+          }
+          const text = await res.text().catch(() => '');
+          throw new Error(text || res.statusText);
+        }
+        const data = await res.json();
+        setTraceabilityData(data);
+        setTraceActiveTab('P3');
+        scrollToTrace();
+      } catch (e: any) {
+        console.error('Product ID 追溯查詢失敗:', e);
+        alert(`查詢失敗: ${e?.message || '未知錯誤'}`);
+      } finally {
+        setLoading(false);
+      }
+      return;
     }
+
+    // 既有：批號(Lot No)查詢
+    setTraceabilityData(null);
+    setTraceActiveTab('P3');
+    setAdvancedSearchParams(null); // 清除進階搜尋參數
+    await searchRecords(keyword);
   };
   
   // 處理進階搜尋
@@ -722,6 +828,7 @@ export function QueryPage() {
 
     // 檢查是否為 rows 陣列結構
     const rows = record.additional_data.rows || [];
+    const sortedRows = sortRowsNgFirst(rows, ['striped results', 'Striped results', '分條結果']);
     const hasRows = Array.isArray(rows) && rows.length > 0;
 
     return (
@@ -755,14 +862,36 @@ export function QueryPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row: any, idx: number) => (
+                    {sortedRows.map((row: any, idx: number) => (
                       <tr key={idx}>
                         <td>{idx + 1}</td>
-                        {Object.values(row).map((value: any, vidx: number) => (
-                          <td key={vidx}>
-                            {typeof value === 'number' ? value.toLocaleString() : String(value)}
-                          </td>
-                        ))}
+                        {Object.keys(rows[0]).map((header: string, vidx: number) => {
+                          const rawValue = row?.[header];
+
+                          // P2 分條時間：若只有時間（HH:MM 或 HH:MM:SS），補上本筆 record 的 production_date。
+                          if (
+                            (header === '分條時間' || header === 'slitting time') &&
+                            record.production_date &&
+                            typeof rawValue === 'string'
+                          ) {
+                            const v = rawValue.trim();
+                            const timeOnly = /^\d{1,2}:\d{2}(:\d{2})?$/.test(v);
+                            const hasLeadingDate = /^\d{3}[\/-]\d{1,2}[\/-]\d{1,2}/.test(v) || /^\d{4}-\d{2}-\d{2}/.test(v);
+                            if (timeOnly && !hasLeadingDate) {
+                              return (
+                                <td key={vidx}>
+                                  {`${formatFieldValue('production_date', record.production_date)} ${v}`}
+                                </td>
+                              );
+                            }
+                          }
+
+                          return (
+                            <td key={vidx}>
+                              {formatFieldValue(header, rawValue)}
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>
@@ -796,6 +925,7 @@ export function QueryPage() {
 
     // 檢查是否有 rows 陣列
     const rows = record.additional_data.rows || [];
+    const sortedRows = sortRowsNgFirst(rows, ['Finish', 'finish']);
     const rowCount = Array.isArray(rows) ? rows.length : 0;
 
     return (
@@ -849,7 +979,7 @@ export function QueryPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((row: any, idx: number) => {
+                      {sortedRows.map((row: any, idx: number) => {
                         const rowProductId = generateRowProductId(record, row);
                         return (
                           <tr key={idx}>
@@ -909,6 +1039,8 @@ export function QueryPage() {
     setCollapsedSections({});
     setShowSuggestions(false);
     setSuggestions([]);
+    setTraceabilityData(null);
+    setTraceActiveTab('P3');
   };
 
   // 渲染額外資料欄位
@@ -1018,17 +1150,7 @@ export function QueryPage() {
         
         {renderAdditionalData(record.additional_data)}
         
-        <div className="detail-actions" style={{marginTop: '1rem', textAlign: 'right'}}>
-          <button 
-            className="search-btn" 
-            onClick={() => {
-              setDetailRecord(null);
-              setEditRecord(record);
-            }}
-          >
-            編輯資料
-          </button>
-        </div>
+        {/* P0: 暫時移除 P1 詳情的編輯入口（避免 422） */}
       </div>
     );
   };
@@ -1190,79 +1312,6 @@ export function QueryPage() {
     );
   };
 
-  // 處理追溯流程中的卡片點擊
-  const handleTraceabilityRecordClick = (record: any, type: 'P1' | 'P2' | 'P3') => {
-    console.log(`[Traceability Debug] Card clicked: ${type}`, record);
-    
-    // 確保 record 有 data_type
-    let recordWithType = { ...record, data_type: type };
-
-    // 優化顯示：如果有點擊特定紀錄，且該紀錄包含多筆 rows (例如 P2/P3)，
-    // 則嘗試過濾出對應的那一筆 row，避免顯示整張表的資料
-    if (recordWithType.additional_data && 
-        Array.isArray(recordWithType.additional_data.rows) && 
-        recordWithType.additional_data.rows.length > 1) {
-      
-      let filteredRows = recordWithType.additional_data.rows;
-
-      if (type === 'P3' && recordWithType.product_id) {
-        // P3: 根據 Product ID 過濾
-        filteredRows = recordWithType.additional_data.rows.filter((row: any) => {
-          // 嘗試多種可能的欄位名稱，並使用 generateRowProductId 作為後備
-          const rowProductId = row['Product ID'] || row['product_id'] || row['ID'] || generateRowProductId(recordWithType, row);
-          return rowProductId === recordWithType.product_id;
-        });
-      } else if (type === 'P2' && recordWithType.winder_number) {
-        console.log('[Traceability Debug] Filtering P2 rows for Winder:', recordWithType.winder_number);
-        console.log('[Traceability Debug] Available rows:', recordWithType.additional_data.rows);
-
-        // P2: 根據 捲收機號碼 過濾
-        filteredRows = recordWithType.additional_data.rows.filter((row: any) => {
-          // 嘗試多種可能的欄位名稱 (對應 csv_field_mapper.py 中的 WINDER_NUMBER_FIELD_NAMES)
-          const rowWinder = row['捲收機號碼'] || 
-                            row['winder_number'] || 
-                            row['Winder Number'] || 
-                            row['Winder number'] || 
-                            row['Winder'] || 
-                            row['winder'] || 
-                            row['收卷機'] || 
-                            row['收卷機編號'];
-          
-          const targetWinder = String(recordWithType.winder_number).trim();
-          const currentWinder = rowWinder !== undefined && rowWinder !== null ? String(rowWinder).trim() : '';
-          
-          const isMatch = currentWinder === targetWinder;
-          
-          // 記錄除錯資訊 (只顯示不匹配的，避免洗版，或者只顯示匹配的)
-          // console.log(`[Traceability Debug] Row check: "${currentWinder}" vs "${targetWinder}" => ${isMatch}`);
-          
-          return isMatch;
-        });
-
-        console.log('[Traceability Debug] Filtered result count:', filteredRows.length);
-        if (filteredRows.length === 0) {
-            console.warn('[Traceability Debug] No matching P2 row found! Check column names in CSV.');
-            if (recordWithType.additional_data.rows.length > 0) {
-                console.log('[Traceability Debug] Keys in first row:', Object.keys(recordWithType.additional_data.rows[0]));
-            }
-        }
-      }
-
-      // 如果成功過濾出唯一一筆，則更新 rows
-      if (filteredRows.length === 1) {
-        recordWithType = {
-          ...recordWithType,
-          additional_data: {
-            ...recordWithType.additional_data,
-            rows: filteredRows
-          }
-        };
-      }
-    }
-
-    setDetailRecord(recordWithType);
-  };
-
   return (
     <div className="query-page">
       {/* 搜尋區域 */}
@@ -1272,6 +1321,7 @@ export function QueryPage() {
           
           <div className="query-description">
             <p><strong>批號查詢：</strong>輸入批號進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料</p>
+            <p><strong>產品編號查詢：</strong>直接輸入 Product ID 會顯示該筆的 P1/P2/P3 追溯結果</p>
             <p><strong>進階搜尋：</strong>可依日期範圍、機台號碼、下膠編號、產品編號、P3規格等條件進行多條件組合搜尋</p>
           </div>
 
@@ -1280,7 +1330,7 @@ export function QueryPage() {
               ref={inputRef}
               type="text"
               className="query-search-input"
-              placeholder="輸入 Lot No 查詢 (例: 2503033)"
+              placeholder="輸入 Lot No(批號) 或 Product ID 查詢"
               value={searchKeyword}
               onChange={handleInputChange}
               onFocus={handleInputFocus}
@@ -1343,6 +1393,62 @@ export function QueryPage() {
           />
         </label>
       </section>
+
+      {/* 追溯結果（同頁三站 Tabs，預設站3） */}
+      {traceabilityData && (
+        <section className="query-result-section" ref={traceSectionRef}>
+          <div className="records-container">
+            <div className="records-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3>{traceabilityData.product_id ? `追溯結果 - ${traceabilityData.product_id}` : '追溯結果'}</h3>
+              <button className="btn-secondary" onClick={() => setTraceabilityData(null)}>
+                清除追溯結果
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <button
+                className={traceActiveTab === 'P3' ? 'btn-primary' : 'btn-secondary'}
+                onClick={() => setTraceActiveTab('P3')}
+              >
+                P3
+              </button>
+              <button
+                className={traceActiveTab === 'P2' ? 'btn-primary' : 'btn-secondary'}
+                onClick={() => setTraceActiveTab('P2')}
+              >
+                P2
+              </button>
+              <button
+                className={traceActiveTab === 'P1' ? 'btn-primary' : 'btn-secondary'}
+                onClick={() => setTraceActiveTab('P1')}
+              >
+                P1
+              </button>
+            </div>
+
+            <div className="record-detail">
+              {traceActiveTab === 'P3' && (
+                (() => {
+                  const rec = normalizeTraceRecord('P3', traceabilityData.p3);
+                  return rec ? renderP3Details(rec) : <p className="section-empty">查無資料</p>;
+                })()
+              )}
+              {traceActiveTab === 'P2' && (
+                (() => {
+                  const rec = normalizeTraceRecord('P2', traceabilityData.p2);
+                  return rec ? renderP2Details(rec) : <p className="section-empty">查無資料</p>;
+                })()
+              )}
+              {traceActiveTab === 'P1' && (
+                (() => {
+                  const rec = normalizeTraceRecord('P1', traceabilityData.p1);
+                  return rec ? renderP1Details(rec) : <p className="section-empty">查無資料</p>;
+                })()
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* 結果區域 */}
       {searchPerformed && (
@@ -1434,22 +1540,6 @@ export function QueryPage() {
           )}
         </section>
       )}
-
-      {/* 追溯流程模態框 (放在詳細資料模態框之前，確保詳細資料顯示在最上層) */}
-      <Modal
-        open={traceabilityModalOpen}
-        title="生產追溯流程"
-        onClose={() => setTraceabilityModalOpen(false)}
-        maxWidth="1000px"
-      >
-        {traceabilityData && (
-          <TraceabilityFlow 
-            preloadedData={traceabilityData}
-            onClose={() => setTraceabilityModalOpen(false)} 
-            onRecordClick={handleTraceabilityRecordClick}
-          />
-        )}
-      </Modal>
 
       {/* 詳細資料模態框 */}
       <Modal
