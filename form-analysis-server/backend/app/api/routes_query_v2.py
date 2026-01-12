@@ -152,7 +152,7 @@ def _p1_to_query_record(r: P1Record) -> QueryRecordV2Compat:
         production_date=_extract_production_date_from_row(row0),
         created_at=r.created_at.isoformat(),
         display_name=display,
-        additional_data=(row0 or {}),
+        additional_data=(r.extras if isinstance(r.extras, dict) else {}),  # 修復: 返回完整 extras 而非只有 row0
     )
 
 
@@ -169,6 +169,58 @@ def _p2_to_query_record(r: P2Record) -> QueryRecordV2Compat:
         winder_number=r.winder_number,
         additional_data=(r.extras if isinstance(r.extras, dict) else None),
     )
+
+
+def _merge_p2_records(records: list[P2Record]) -> list[QueryRecordV2Compat]:
+    """將相同 lot_no 的 P2 Records (20個winders) 合併成單一筆查詢記錄"""
+    from collections import defaultdict
+    
+    # 按 lot_no_norm 分組
+    grouped = defaultdict(list)
+    for r in records:
+        grouped[r.lot_no_norm].append(r)
+    
+    merged_results = []
+    for lot_no_norm, lot_records in grouped.items():
+        # 排序確保 winder 順序一致
+        lot_records.sort(key=lambda x: x.winder_number)
+        
+        # 使用第一個 record 的基本資訊
+        first = lot_records[0]
+        row0 = _first_row(first.extras)
+        
+        # 合併所有 winder 的 extras 到一個結構中
+        merged_extras = {
+            'lot_no': first.lot_no_raw,
+            'winders': []
+        }
+        
+        # 收集所有 winder 的資料
+        for rec in lot_records:
+            winder_data = {
+                'winder_number': rec.winder_number,
+                'data': rec.extras
+            }
+            merged_extras['winders'].append(winder_data)
+        
+        # 從第一個 winder 的 extras 提取共同資訊
+        if isinstance(first.extras, dict):
+            for key in ['format', 'Format', '規格', 'production_date', 'Production Date', '生產日期']:
+                if key in first.extras:
+                    merged_extras[key] = first.extras[key]
+        
+        merged_results.append(QueryRecordV2Compat(
+            id=str(first.id),  # 使用第一個 winder 的 ID
+            lot_no=first.lot_no_raw,
+            data_type='P2',
+            production_date=_extract_production_date_from_row(row0),
+            created_at=first.created_at.isoformat(),
+            display_name=first.lot_no_raw,  # 不再顯示 winder number
+            winder_number=None,  # 合併後不顯示單一 winder
+            additional_data=merged_extras,
+        ))
+    
+    return merged_results
 
 
 def _p3_to_query_record(r: P3Record) -> QueryRecordV2Compat:
@@ -623,9 +675,17 @@ async def query_records_advanced_v2(
                 )
             )
         
-        p2_stmt = p2_stmt.order_by(P2Record.created_at.desc()).limit(page * page_size)
+        # 移除 limit，因為我們需要取得所有 winder 才能合併
+        p2_stmt = p2_stmt.order_by(P2Record.created_at.desc())
         p2_result = await db.execute(p2_stmt)
-        records.extend([_p2_to_query_record(r) for r in p2_result.scalars().all()])
+        p2_records = p2_result.scalars().all()
+        
+        # 合併相同批號的 records（20個 winders → 1筆）
+        merged_p2 = _merge_p2_records(p2_records)
+        
+        # 套用分頁到合併後的結果
+        merged_p2 = merged_p2[:page * page_size]
+        records.extend(merged_p2)
 
     # P3
     if dt in (None, "P3"):
