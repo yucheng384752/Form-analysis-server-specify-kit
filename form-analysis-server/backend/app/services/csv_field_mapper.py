@@ -137,6 +137,49 @@ class CSVFieldMapper:
         'Spec'
     ]
 
+    # P3 可能的產品編號欄位名稱
+    PRODUCT_ID_FIELD_NAMES = [
+        'Product ID',
+        'Product Id',
+        'product_id',
+        'product id',
+        'P3_No.',
+        'P3 No.',
+        'P3_No',
+        '產品編號',
+        '品號'
+    ]
+
+    # P3 可能的來源收卷機欄位名稱
+    SOURCE_WINDER_FIELD_NAMES = [
+        'Source Winder',
+        'Source winder',
+        'source_winder',
+        'source winder',
+        'Source Winder No',
+        'Source Winder No.',
+        'source_winder_number',
+        '來源收卷機',
+        '來源收卷機編號'
+    ]
+
+    # Lot number 欄位可能的名稱（用於 lot_no；避免跟生產 lot 序號/lot 欄位混用）
+    # - P1: "LOT NO."
+    # - P2: "Semi-finished productsLOT NO"
+    # - P3: "lot no"
+    LOT_NO_FIELD_NAMES = [
+        'LOT NO.',
+        'LOT NO',
+        'Lot No',
+        'Lot NO',
+        'lot no',
+        'lot_no',
+        'Semi-finished productsLOT NO',
+        'Semi-finished products LOT NO',
+        'Semi-finished productsLOT NO.',
+        'Semi-finished products LOT NO.',
+    ]
+
     # P3 可能的下膠編號欄位名稱
     BOTTOM_TAPE_FIELD_NAMES = [
         'Bottom Tape',
@@ -144,6 +187,17 @@ class CSVFieldMapper:
         'Bottom Tape LOT',
         '下膠編號',
         '下膠'
+    ]
+
+    # P3 可能的下膠批號/LOT 欄位名稱（兼容 import_v2 使用 BOTTOM_TAPE_LOT_FIELD_NAMES）
+    BOTTOM_TAPE_LOT_FIELD_NAMES = [
+        *BOTTOM_TAPE_FIELD_NAMES,
+        'bottom_tape_lot',
+        'Bottom Tape Lot',
+        'Bottom Tape LOT No',
+        'Bottom Tape Lot No',
+        '下膠批號',
+        '下膠LOT'
     ]
     
     def __init__(self):
@@ -332,8 +386,22 @@ class CSVFieldMapper:
             return None
         # 移除空白
         s = date_str.strip()
-        # 用非數字字符分隔
+
         import re
+
+        # P3 常見格式：114年09月02日（民國年中文格式）
+        chinese_match = re.match(r"^(\d{3})年(\d{1,2})月(\d{1,2})日$", s)
+        if chinese_match:
+            try:
+                roc_year = int(chinese_match.group(1))
+                month = int(chinese_match.group(2))
+                day = int(chinese_match.group(3))
+                ad_year = roc_year + 1911
+                return ad_year * 10000 + month * 100 + day
+            except ValueError:
+                return None
+
+        # 用非數字字符分隔
         digits = re.findall(r"\d+", s)
         if not digits:
             return None
@@ -354,6 +422,9 @@ class CSVFieldMapper:
                 # 處理兩位年（如 25 -> 2025）
                 if len(y) == 2:
                     y = '20' + y
+                # 處理民國年（如 114/09/02 -> 2025/09/02）
+                elif len(y) == 3 and y.isdigit():
+                    y = str(int(y) + 1911)
                 try:
                     y_i = int(y)
                     m_i = int(m)
@@ -367,6 +438,17 @@ class CSVFieldMapper:
         if len(all_digits) == 8:
             try:
                 return int(all_digits)
+            except ValueError:
+                return None
+        if len(all_digits) == 7:
+            # YYYMMDD (民國年) -> YYYYMMDD
+            # 例如：1140902 -> 20250902
+            try:
+                roc_year = int(all_digits[:3])
+                month = int(all_digits[3:5])
+                day = int(all_digits[5:7])
+                ad_year = roc_year + 1911
+                return ad_year * 10000 + month * 100 + day
             except ValueError:
                 return None
         if len(all_digits) == 6:

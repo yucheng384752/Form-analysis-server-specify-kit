@@ -209,13 +209,15 @@ class FileValidationService:
             return ""
         
         lot_no_str = str(lot_no_value).strip()
-        
-        # 檢查是否符合彈性格式（7+2 或 7+2+x）
-        match = self.LOT_NO_FLEXIBLE_PATTERN.match(lot_no_str)
-        if match:
-            # 提取前 9 碼（7位數字_2位數字）
-            return match.group(1)
-        
+
+        # 支援格式：7位數字_(1~2位數字)(_*...)
+        # 例：2507173_02_17 / 2507173_2_17 / 2507173_02
+        m = re.match(r"^(\d{7})_(\d{1,2})(?:_.+)?$", lot_no_str)
+        if m:
+            head = m.group(1)
+            tail = m.group(2).zfill(2)
+            return f"{head}-{tail}"
+
         # 如果不符合任何格式，返回原值（讓後續驗證處理）
         return lot_no_str
 

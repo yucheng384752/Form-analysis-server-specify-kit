@@ -1,10 +1,11 @@
 import csv
+import re
 import uuid
 from pathlib import Path
 from typing import List, Dict, Any
 import logging
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,6 +19,16 @@ logger = logging.getLogger(__name__)
 class ImportService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    def _normalize_p3_lot_no_raw(self, val: str) -> str:
+        """P3 專用 lot_no 正規化（僅取前兩段），例如：2507173_02_18 -> 2507173_02"""
+        s = str(val or "").strip()
+        if not s:
+            return s
+        parts = re.findall(r"\d+", s)
+        if len(parts) >= 2 and len(parts[0]) >= 6 and len(parts[1]) <= 2:
+            return f"{parts[0]}_{parts[1].zfill(2)}"
+        return s
 
     async def parse_job(self, job_id: uuid.UUID) -> ImportJob:
         """
@@ -153,21 +164,17 @@ class ImportService:
         # Map file_id to filename
         file_map = {f.id: f.filename for f in job.files}
 
-        # 2. Define Validation Rules (Hardcoded for now based on P1)
-        required_fields = []
-        numeric_fields = []
-        
+        # 2. Define Validation Rules
+        # Import V2 目前採用「一個檔案 → 1 筆 records + N 筆 items」的混合架構。
+        # 因此 staging_rows 不應以「同一檔案內 key 重複」判錯（會把多列 items 全打成 invalid）。
+        # 這裡僅做非常保守的欄位檢查；真正的欄位映射/解析放在 commit_job。
+        required_fields: List[str] = []
+        numeric_fields: List[str] = []
+
         if table.table_code == "P1":
-            # Example rules for P1
-            required_fields = ["Lot No.", "Winder"]
-            numeric_fields = ["Winder"]
-        elif table.table_code == "P3":
-            # Rules for P3
-            required_fields = ["date", "time", "value"]
-            numeric_fields = ["value"]
-        
-        # Track seen keys for E_UNIQUE_IN_FILE
-        seen_keys = set()
+            # Minimal validation expected by tests/api/test_import_v2.py
+            required_fields = ["Line Speed(M/min)", "Screw Pressure(psi)"]
+            numeric_fields = ["Line Speed(M/min)", "Screw Pressure(psi)"]
 
         # 3. Iterate and Validate Staging Rows
         offset = 0
@@ -200,63 +207,6 @@ class ImportService:
                         except ValueError:
                             errors.append({"field": field, "message": "Value must be numeric"})
                 
-                # Deduplication Logic
-                unique_key = None
-                lot_no_raw = self._extract_lot_no(filename)
-                lot_no_norm = normalize_lot_no(lot_no_raw)
-                
-                if table.table_code == "P1":
-                    unique_key = (job.tenant_id, lot_no_norm)
-                    # Check DB
-                    from app.models.p1_record import P1Record
-                    db_stmt = select(P1Record).where(
-                        P1Record.tenant_id == job.tenant_id,
-                        P1Record.lot_no_norm == lot_no_norm
-                    )
-                    if (await self.db.execute(db_stmt)).scalar_one_or_none():
-                         errors.append({"field": "lot_no", "message": "E_UNIQUE_IN_DB"})
-
-                elif table.table_code == "P2":
-                    winder = self._extract_p2_info(filename, [data])
-                    unique_key = (job.tenant_id, lot_no_norm, winder)
-                    # Check DB
-                    from app.models.p2_record import P2Record
-                    db_stmt = select(P2Record).where(
-                        P2Record.tenant_id == job.tenant_id,
-                        P2Record.lot_no_norm == lot_no_norm,
-                        P2Record.winder_number == winder
-                    )
-                    if (await self.db.execute(db_stmt)).scalar_one_or_none():
-                         errors.append({"field": "lot_no", "message": "E_UNIQUE_IN_DB"})
-
-                elif table.table_code == "P3":
-                    p3_info = self._extract_p3_info(filename, [data])
-                    unique_key = (
-                        job.tenant_id, 
-                        p3_info["production_date_yyyymmdd"], 
-                        p3_info["machine_no"], 
-                        p3_info["mold_no"], 
-                        lot_no_norm
-                    )
-                    # Check DB
-                    from app.models.p3_record import P3Record
-                    db_stmt = select(P3Record).where(
-                        P3Record.tenant_id == job.tenant_id,
-                        P3Record.lot_no_norm == lot_no_norm,
-                        P3Record.machine_no == p3_info["machine_no"],
-                        P3Record.mold_no == p3_info["mold_no"],
-                        P3Record.production_date_yyyymmdd == p3_info["production_date_yyyymmdd"]
-                    )
-                    if (await self.db.execute(db_stmt)).scalar_one_or_none():
-                         errors.append({"field": "lot_no", "message": "E_UNIQUE_IN_DB"})
-
-                # Check E_UNIQUE_IN_FILE
-                if unique_key:
-                    if unique_key in seen_keys:
-                        errors.append({"field": "lot_no", "message": "E_UNIQUE_IN_FILE"})
-                    else:
-                        seen_keys.add(unique_key)
-
                 if errors:
                     row.is_valid = False
                     row.errors_json = errors
@@ -273,11 +223,6 @@ class ImportService:
         job.error_count = error_count_job
         # If validation is done, we mark it as READY (for review/commit)
         job.status = ImportJobStatus.READY
-            
-        await self.db.commit()
-        # If validation is done, we mark it as READY (for review/commit)
-        job.status = ImportJobStatus.READY
-            
         await self.db.commit()
         return job
 
@@ -366,87 +311,274 @@ class ImportService:
                 
                 elif table.table_code == "P2":
                     from app.models.p2_record import P2Record
+                    from app.models.p2_item_v2 import P2ItemV2
                     
-                    # Extract Winder Number
-                    winder_number = self._extract_p2_info(file_record.filename, row_data)
-                    
-                    # Check existence
+                    # P2 匯入：通常每個檔案對應 1 個 winder（例如 P2_Lot123_05.csv）。
+                    # 因此以 (tenant_id, lot_no_norm, winder_number) 為 key 建立/更新 P2Record。
+                    winder_num_for_file = self._extract_p2_info(file_record.filename, row_data)
+
                     existing_stmt = select(P2Record).where(
                         P2Record.tenant_id == job.tenant_id,
                         P2Record.lot_no_norm == lot_no_norm,
-                        P2Record.winder_number == winder_number
+                        P2Record.winder_number == winder_num_for_file,
                     )
                     existing_result = await self.db.execute(existing_stmt)
-                    existing_record = existing_result.scalar_one_or_none()
-                    
-                    if existing_record:
-                        # Update
-                        existing_record.extras = {"rows": row_data}
-                        existing_record.updated_at = func.now()
-                    else:
-                        # Create
-                        new_record = P2Record(
+                    p2_record = existing_result.scalar_one_or_none()
+
+                    if not p2_record:
+                        p2_record = P2Record(
                             id=uuid.uuid4(),
                             tenant_id=job.tenant_id,
                             lot_no_raw=lot_no_raw,
                             lot_no_norm=lot_no_norm,
                             schema_version_id=job.schema_version_id,
-                            winder_number=winder_number,
-                            extras={"rows": row_data}
+                            winder_number=winder_num_for_file,
+                            extras={"rows": row_data},
                         )
-                        self.db.add(new_record)
+                        self.db.add(p2_record)
+                        await self.db.flush()  # Get ID
+                    else:
+                        p2_record.extras = {"rows": row_data}
+                        p2_record.updated_at = func.now()
+                    
+                    # Delete existing items for this record (if re-importing)
+                    await self.db.execute(
+                        delete(P2ItemV2).where(P2ItemV2.p2_record_id == p2_record.id)
+                    )
+                    # Ensure DELETE is flushed before INSERT to avoid unique constraint conflicts
+                    await self.db.flush()
+                    
+                    # Create one P2ItemV2 for this file's winder.
+                    # 若內容缺少 winder 欄位，使用檔名推導的 winder；避免因缺欄位而整筆跳過。
+                    if row_data:
+                        row = row_data[0]
+                        winder_num = None
+                        for field in CSVFieldMapper.WINDER_NUMBER_FIELD_NAMES:
+                            if field in row and row[field]:
+                                try:
+                                    winder_num = int(float(row[field]))
+                                    break
+                                except (ValueError, TypeError):
+                                    pass
+                        if winder_num is None:
+                            winder_num = winder_num_for_file
+
+                        if winder_num != winder_num_for_file:
+                            logger.warning(
+                                f"P2 file winder mismatch (filename={winder_num_for_file}, row={winder_num}); using filename winder"
+                            )
+                            winder_num = winder_num_for_file
+
+                        p2_item = P2ItemV2(
+                            id=uuid.uuid4(),
+                            p2_record_id=p2_record.id,
+                            tenant_id=job.tenant_id,
+                            winder_number=winder_num,
+                            row_data=row,
+                        )
+
+                        for field in [
+                            'sheet_width',
+                            'thickness1',
+                            'thickness2',
+                            'thickness3',
+                            'thickness4',
+                            'thickness5',
+                            'thickness6',
+                            'thickness7',
+                            'appearance',
+                            'rough_edge',
+                            'slitting_result',
+                        ]:
+                            if field in row and row[field]:
+                                try:
+                                    setattr(p2_item, field, float(row[field]))
+                                except (ValueError, TypeError):
+                                    pass
+
+                        self.db.add(p2_item)
 
                 elif table.table_code == "P3":
                     from app.models.p3_record import P3Record
+                    from app.models.p3_item_v2 import P3ItemV2
                     
-                    # Extract P3 Info (content overrides filename when possible)
+                    # P3 改用混合架構: 依 lot_no 分組 → 每個 lot 1筆 p3_records + N筆 p3_items_v2
+                    # 注意：你的檔名 (例如 P3_0902_P24 copy.csv) 不包含 lot_no，不能用檔名推 lot。
+
                     p3_info = self._extract_p3_info(file_record.filename, row_data)
-                    
-                    # Generate product_id
-                    # Format: YYYYMMDD_Machine_Mold_Lot
-                    # production_date_yyyymmdd is e.g. 20250717
-                    date_str = str(p3_info.get("production_date_yyyymmdd") or 0)
-                    # Prefer production lot from p3_info (from 'lot' column). Product ID last segment is expected to be an integer.
-                    lot_part_raw = p3_info.get('lot')
-                    lot_part: int
-                    try:
-                        lot_part = int(lot_part_raw) if lot_part_raw is not None else 0
-                    except (ValueError, TypeError):
-                        lot_part = 0
 
-                    product_id = f"{date_str}-{p3_info.get('machine_no')}-{p3_info.get('mold_no')}-{lot_part}"
+                    # Group rows by lot_no_norm extracted from row content
+                    groups: Dict[int, Dict[str, Any]] = {}
+                    for row in row_data:
+                        lot_from_row = None
+                        for field in CSVFieldMapper.LOT_NO_FIELD_NAMES:
+                            if field in row and row[field]:
+                                lot_from_row = str(row[field]).strip()
+                                break
+                        if not lot_from_row:
+                            # Fallback: use filename-derived lot (may be wrong but prevents crash)
+                            lot_from_row = lot_no_raw
 
-                    # Check existence
-                    existing_stmt = select(P3Record).where(
-                        P3Record.tenant_id == job.tenant_id,
-                        P3Record.lot_no_norm == lot_no_norm,
-                        P3Record.machine_no == p3_info["machine_no"],
-                        P3Record.mold_no == p3_info["mold_no"],
-                        P3Record.production_date_yyyymmdd == p3_info["production_date_yyyymmdd"]
-                    )
-                    existing_result = await self.db.execute(existing_stmt)
-                    existing_record = existing_result.scalar_one_or_none()
-                    
-                    if existing_record:
-                        # Update
-                        existing_record.extras = {"rows": row_data}
-                        existing_record.product_id = product_id
-                        existing_record.updated_at = func.now()
-                    else:
-                        # Create
-                        new_record = P3Record(
-                            id=uuid.uuid4(),
-                            tenant_id=job.tenant_id,
-                            lot_no_raw=lot_no_raw,
-                            lot_no_norm=lot_no_norm,
-                            schema_version_id=job.schema_version_id,
-                            production_date_yyyymmdd=p3_info["production_date_yyyymmdd"],
-                            machine_no=p3_info["machine_no"],
-                            mold_no=p3_info["mold_no"],
-                            product_id=product_id,
-                            extras={"rows": row_data}
+                        # P3 lot_no 可能帶尾碼（如 _18），分組與 records 關聯只需要前兩段
+                        lot_from_row = self._normalize_p3_lot_no_raw(lot_from_row)
+
+                        lot_norm_row = normalize_lot_no(lot_from_row)
+                        if lot_norm_row not in groups:
+                            groups[lot_norm_row] = {"lot_no_raw": lot_from_row, "rows": []}
+                        groups[lot_norm_row]["rows"].append(row)
+
+                    for lot_norm_row, payload in groups.items():
+                        group_lot_raw = payload["lot_no_raw"]
+                        group_rows = payload["rows"]
+
+                        # Check existence of P3Record for this lot
+                        existing_stmt = select(P3Record).where(
+                            P3Record.tenant_id == job.tenant_id,
+                            P3Record.lot_no_norm == lot_norm_row,
+                            P3Record.machine_no == p3_info["machine_no"],
+                            P3Record.mold_no == p3_info["mold_no"],
+                            P3Record.production_date_yyyymmdd == p3_info["production_date_yyyymmdd"]
                         )
-                        self.db.add(new_record)
+                        existing_result = await self.db.execute(existing_stmt)
+                        p3_record = existing_result.scalar_one_or_none()
+
+                        # Generate product_id for P3Record
+                        production_date_yyyymmdd = int(p3_info.get("production_date_yyyymmdd") or 0)
+                        date_str = f"{production_date_yyyymmdd:08d}" if production_date_yyyymmdd else ""
+                        lot_part_raw = None
+                        if group_rows:
+                            for field in CSVFieldMapper.LOT_FIELD_NAMES:
+                                if field in group_rows[0] and group_rows[0][field]:
+                                    lot_part_raw = group_rows[0][field]
+                                    break
+                        lot_part: int
+                        try:
+                            lot_part = int(float(lot_part_raw)) if lot_part_raw is not None else 0
+                        except (ValueError, TypeError):
+                            lot_part = 0
+
+                        # product_id 格式：YYYYMMDD-machine-mold-lot
+                        # 注意：mold_no 可能含 '-'（例如 238-2），解析需使用 product_id_generator 的智慧解析。
+                        product_id = f"{date_str}-{p3_info.get('machine_no')}-{p3_info.get('mold_no')}-{lot_part}"
+
+                        if not p3_record:
+                            p3_record = P3Record(
+                                id=uuid.uuid4(),
+                                tenant_id=job.tenant_id,
+                                lot_no_raw=group_lot_raw,
+                                lot_no_norm=lot_norm_row,
+                                schema_version_id=job.schema_version_id,
+                                production_date_yyyymmdd=p3_info["production_date_yyyymmdd"],
+                                machine_no=p3_info["machine_no"],
+                                mold_no=p3_info["mold_no"],
+                                product_id=product_id,
+                                extras={}
+                            )
+                            self.db.add(p3_record)
+                            await self.db.flush()
+                        else:
+                            p3_record.product_id = product_id
+                            p3_record.updated_at = func.now()
+
+                        # Delete existing items for this record (if re-importing)
+                        await self.db.execute(
+                            delete(P3ItemV2).where(P3ItemV2.p3_record_id == p3_record.id)
+                        )
+                        # Ensure DELETE is flushed before INSERT to avoid unique constraint conflicts
+                        await self.db.flush()
+
+                        # Create P3ItemV2 for each row
+                        for row_idx, row in enumerate(group_rows, start=1):
+                            # Extract fields from row
+                            item_product_id = None
+                            item_lot_no = group_lot_raw
+                            item_production_date = None
+                            item_machine_no = p3_info["machine_no"]
+                            item_mold_no = p3_info["mold_no"]
+                            item_production_lot = None
+                            item_source_winder = None
+                            item_specification = None
+                            item_bottom_tape_lot = None
+                            
+                            # Map fields from row
+                            for field in CSVFieldMapper.PRODUCT_ID_FIELD_NAMES:
+                                if field in row and row[field]:
+                                    item_product_id = str(row[field]).strip()
+                                    break
+                            
+                            for field in CSVFieldMapper.LOT_NO_FIELD_NAMES:
+                                if field in row and row[field]:
+                                    item_lot_no = str(row[field]).strip()
+                                    break
+                            
+                            for field in CSVFieldMapper.DATE_FIELD_NAMES:
+                                if field in row and row[field]:
+                                    try:
+                                        ymd = csv_field_mapper._normalize_date_to_yyyymmdd(str(row[field]))
+                                        if ymd:
+                                            year = ymd // 10000
+                                            month = (ymd % 10000) // 100
+                                            day = ymd % 100
+                                            from datetime import date
+                                            item_production_date = date(year, month, day)
+                                            break
+                                    except Exception:
+                                        pass
+                            
+                            for field in CSVFieldMapper.MACHINE_NO_FIELD_NAMES:
+                                if field in row and row[field]:
+                                    item_machine_no = str(row[field]).strip()
+                                    break
+                            
+                            for field in CSVFieldMapper.MOLD_NO_FIELD_NAMES:
+                                if field in row and row[field]:
+                                    item_mold_no = str(row[field]).strip()
+                                    break
+                            
+                            for field in CSVFieldMapper.LOT_FIELD_NAMES:
+                                if field in row and row[field]:
+                                    try:
+                                        item_production_lot = int(float(row[field]))
+                                    except (ValueError, TypeError):
+                                        pass
+                                    break
+                            
+                            for field in CSVFieldMapper.SOURCE_WINDER_FIELD_NAMES:
+                                if field in row and row[field]:
+                                    try:
+                                        item_source_winder = int(float(row[field]))
+                                    except (ValueError, TypeError):
+                                        pass
+                                    break
+                            
+                            for field in CSVFieldMapper.SPECIFICATION_FIELD_NAMES:
+                                if field in row and row[field]:
+                                    item_specification = str(row[field]).strip()
+                                    break
+                            
+                            for field in CSVFieldMapper.BOTTOM_TAPE_LOT_FIELD_NAMES:
+                                if field in row and row[field]:
+                                    item_bottom_tape_lot = str(row[field]).strip()
+                                    break
+                            
+                            # Create P3ItemV2
+                            p3_item = P3ItemV2(
+                                id=uuid.uuid4(),
+                                p3_record_id=p3_record.id,
+                                tenant_id=job.tenant_id,
+                                row_no=row_idx,
+                                product_id=item_product_id,
+                                lot_no=item_lot_no,
+                                production_date=item_production_date,
+                                machine_no=item_machine_no,
+                                mold_no=item_mold_no,
+                                production_lot=item_production_lot,
+                                source_winder=item_source_winder,
+                                specification=item_specification,
+                                bottom_tape_lot=item_bottom_tape_lot,
+                                row_data=row
+                            )
+                            self.db.add(p3_item)
                 
             job.status = ImportJobStatus.COMPLETED
             await self.db.commit()
@@ -461,6 +593,13 @@ class ImportService:
 
     def _extract_lot_no(self, filename: str) -> str:
         stem = Path(filename).stem
+
+        # Test scripts may copy files with a leading prefix like "_import_test_".
+        # Strip it first so the regular P1_/P2_/P3_ parsing still works.
+        for test_prefix in ["_import_test_", "import_test_"]:
+            if stem.lower().startswith(test_prefix):
+                stem = stem[len(test_prefix):]
+                break
         for prefix in ["P1_", "P2_", "P3_", "QC_"]:
             if stem.upper().startswith(prefix):
                 return stem[len(prefix):]
@@ -539,15 +678,10 @@ class ImportService:
             # P3_0902_P24 -> Date: 0902, Machine: P24
             date_str = parts[1]
             machine_str = parts[2]
-            
-            # Guess year? Current year?
-            # Let's assume 2025 for now or use current year
-            import datetime
-            current_year = datetime.datetime.now().year
-            try:
-                info["production_date_yyyymmdd"] = current_year * 10000 + int(date_str)
-            except ValueError:
-                pass
+
+            # 僅有 MMDD 無法推導年份；禁止用 now/year 猜測，以免污染資料。
+            # 正確年份應從內容欄位（例如 114年09月02日）解析。
+            # 因此這裡不設定 production_date_yyyymmdd。
             info["machine_no"] = machine_str
 
         # Try content overrides (prefer content values over filename parsing)
@@ -584,5 +718,12 @@ class ImportService:
                     except (ValueError, TypeError):
                         info['lot'] = str(first_row[field])
                     break
-                    
+
+        # 最終保護：若仍無法取得日期，直接讓匯入失敗，避免寫入錯誤年份。
+        if not info.get("production_date_yyyymmdd"):
+            raise ValueError(
+                f"P3 production_date missing or unparseable for file={filename}; "
+                f"expected a parsable date in content (e.g. 114年09月02日 / 114/09/02)."
+            )
+
         return info

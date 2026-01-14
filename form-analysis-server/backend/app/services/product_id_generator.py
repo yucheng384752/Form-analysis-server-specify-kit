@@ -154,17 +154,48 @@ class ProductIDGenerator:
         if not product_id or not isinstance(product_id, str):
             raise ValueError(f"product_id 必須是非空字串: {product_id}")
         
-        # 分割 Product ID (使用破折號分隔)
-        # 允許尾端附加額外片段（例如去重後的 suffix），但解析時只取前 4 段作為主格式。
-        parts = product_id.split('-')
+        # 分割 Product ID (支援破折號或底線分隔)
+        # 優先使用底線分隔（舊資料格式），如果沒有底線則使用破折號
+        # 允許尾端附加額外片段（例如去重後的 suffix）
+        if '_' in product_id:
+            parts = product_id.split('_')
+            separator = '_'
+        else:
+            parts = product_id.split('-')
+            separator = '-'
 
         if len(parts) < 4:
             raise ValueError(
-                f"Product ID 格式錯誤，應為 'YYYYMMDD-machine-mold-lot'，"
+                f"Product ID 格式錯誤，應為 'YYYYMMDD-machine-mold-lot' 或 'YYYYMMDD_machine_mold_lot'，"
                 f"但收到: {product_id}"
             )
 
-        date_str, machine_no, mold_no, lot_str = parts[:4]
+        # 解析：date (1) - machine (1) - mold (1+) - lot (1) [- suffix (optional)]
+        # 前兩個固定是日期和機台，最後一個是批號（可能後面還有 dup 等後綴），中間的都是模具號碼
+        date_str = parts[0]
+        machine_no = parts[1]
+        
+        # 找到批號位置（排除 dup 等後綴）
+        # 從倒數找第一個可以轉換成整數的部分
+        lot_idx = -1
+        for i in range(len(parts) - 1, 1, -1):  # 從後往前，但不包括前2個（日期和機台）
+            try:
+                int(parts[i])
+                lot_idx = i
+                break
+            except ValueError:
+                continue  # 這部分不是數字，可能是 dup9 之類的後綴
+        
+        if lot_idx == -1:
+            raise ValueError(f"無法找到有效的批號（整數）: {product_id}")
+        
+        lot_str = parts[lot_idx]
+        
+        # 中間的部分組成模具號碼（可能包含分隔符，例如 238-2）
+        if lot_idx > 2:
+            mold_no = separator.join(parts[2:lot_idx])
+        else:
+            mold_no = parts[2]
         
         # 解析日期
         try:

@@ -110,8 +110,8 @@ async def test_import_p3_job(client, db_session):
     await db_session.commit()
     
     # Prepare CSV content
-    # Include Mold NO in content as it's required and not in filename
-    csv_content = "Mold NO,col2\nMold123,val2"
+    # Include Mold NO and lot no in content to exercise P3 lot_no normalization and product_id generation
+    csv_content = "Mold NO,lot no,lot\nMold123,2507173_02_18,301"
     filename = "P3_2507173_02_17.csv"
     
     files = [('files', (filename, csv_content.encode('utf-8'), 'text/csv'))]
@@ -147,12 +147,9 @@ async def test_import_p3_job(client, db_session):
     assert record.mold_no == "Mold123"
     
     # Verify product_id
-    # P3_2507173_02_17.csv -> digits: 25071730217
-    # Date: 20250717
-    # Machine: 02
-    # Mold: Mold123
-    # Lot: 25071730217
-    expected_product_id = "20250717-02-Mold123-25071730217"
+    # Date comes from filename (2507173 -> 20250717)
+    # Lot comes from content (lot=301)
+    expected_product_id = "20250717-02-Mold123-301"
     assert record.product_id == expected_product_id
     
     # Cleanup

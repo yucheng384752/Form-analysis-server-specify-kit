@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from app.models.import_job import ImportJobStatus
 
 class ImportFileBase(BaseModel):
@@ -14,8 +14,7 @@ class ImportFileRead(ImportFileBase):
     row_count: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ImportJobCreate(BaseModel):
     table_code: str = Field(..., description="Target table code (e.g., 'P1', 'P2')")
@@ -33,10 +32,9 @@ class ImportJobRead(BaseModel):
     error_summary: Dict[str, Any]
     created_at: datetime
     updated_at: datetime
-    files: List[ImportFileRead] = []
+    files: List[ImportFileRead] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ImportJobSummary(BaseModel):
     id: UUID
@@ -44,9 +42,8 @@ class ImportJobSummary(BaseModel):
     status: ImportJobStatus
     created_at: datetime
     total_files: int
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ImportJobErrorRow(BaseModel):
     row_index: int
@@ -54,6 +51,4 @@ class ImportJobErrorRow(BaseModel):
     errors: List[Dict[str, Any]] = Field(validation_alias="errors_json")
     data: Dict[str, Any] = Field(validation_alias="parsed_json")
 
-    class Config:
-        from_attributes = True
-        populate_by_name = True
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)

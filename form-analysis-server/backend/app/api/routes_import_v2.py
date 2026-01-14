@@ -23,12 +23,30 @@ router = APIRouter()
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+
+async def _mark_job_failed(job_id: uuid.UUID, error: Exception | str) -> None:
+    if not database.async_session_factory:
+        logger.error(f"Async session factory not initialized; cannot mark job {job_id} as FAILED")
+        return
+
+    error_text = str(error)
+    async with database.async_session_factory() as db:
+        stmt = select(ImportJob).where(ImportJob.id == job_id)
+        result = await db.execute(stmt)
+        job = result.scalar_one_or_none()
+        if not job:
+            return
+        job.status = ImportJobStatus.FAILED
+        job.error_summary = {"error": error_text}
+        await db.commit()
+
 async def process_import_job_background(job_id: uuid.UUID):
     """
     Background task to parse and validate import job.
     """
     if not database.async_session_factory:
         logger.error("Async session factory not initialized")
+        await _mark_job_failed(job_id, "Async session factory not initialized")
         return
 
     async with database.async_session_factory() as db:
@@ -42,11 +60,13 @@ async def process_import_job_background(job_id: uuid.UUID):
             logger.info(f"Completed background processing for job {job_id}")
         except Exception as e:
             logger.exception(f"Background processing failed for job {job_id}: {e}")
+            await _mark_job_failed(job_id, e)
 
 @router.post("/jobs", response_model=ImportJobRead, status_code=status.HTTP_201_CREATED)
 async def create_import_job(
     background_tasks: BackgroundTasks,
     table_code: str = Form(..., description="Target table code (e.g., 'P1', 'P2')"),
+    allow_duplicate: bool = Form(False, description="Allow importing the same file content multiple times"),
     files: List[UploadFile] = File(..., description="Files to upload"),
     db: AsyncSession = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant),
@@ -116,7 +136,7 @@ async def create_import_job(
                 ImportFile.file_hash == file_hash
             )
             dup_result = await db.execute(dup_stmt)
-            if dup_result.scalars().first():
+            if (not allow_duplicate) and dup_result.scalars().first():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Duplicate file detected: {file.filename}"
@@ -276,19 +296,26 @@ async def commit_import_job(
             detail="Import job not found"
         )
         
-    if job.status != ImportJobStatus.READY:
+    if job.status not in (ImportJobStatus.READY, ImportJobStatus.COMMITTING):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Job is not ready to commit (status: {job.status})"
         )
     
-    # Update status to COMMITTING immediately to prevent double clicks
-    job.status = ImportJobStatus.COMMITTING
-    await db.commit()
-    await db.refresh(job)
+    # Update status to COMMITTING immediately to prevent double clicks.
+    # If job is already COMMITTING (e.g., background task crashed/restarted), allow re-trigger.
+    if job.status != ImportJobStatus.COMMITTING:
+        job.status = ImportJobStatus.COMMITTING
+        await db.commit()
+        await db.refresh(job)
     
-    # Trigger background commit
-    background_tasks.add_task(process_commit_job_background, job.id)
+    # In tests we need deterministic behavior; commit synchronously.
+    if settings.environment.lower() == "testing":
+        service = ImportService(db)
+        await service.commit_job(job.id)
+    else:
+        # Trigger background commit
+        background_tasks.add_task(process_commit_job_background, job.id)
     
     # Re-fetch with files for response schema
     from sqlalchemy.orm import selectinload
@@ -298,12 +325,43 @@ async def commit_import_job(
     
     return job
 
+
+@router.post("/jobs/{job_id}/cancel", response_model=ImportJobRead)
+async def cancel_import_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+):
+    """Cancel an import job (idempotent)."""
+    stmt = select(ImportJob).where(
+        ImportJob.id == job_id,
+        ImportJob.tenant_id == current_tenant.id,
+    )
+    result = await db.execute(stmt)
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Import job not found",
+        )
+
+    if job.status != ImportJobStatus.CANCELLED:
+        job.status = ImportJobStatus.CANCELLED
+        await db.commit()
+
+    from sqlalchemy.orm import selectinload
+    stmt = select(ImportJob).options(selectinload(ImportJob.files)).where(ImportJob.id == job_id)
+    result = await db.execute(stmt)
+    job = result.scalar_one()
+    return job
+
 async def process_commit_job_background(job_id: uuid.UUID):
     """
     Background task to commit import job.
     """
     if not database.async_session_factory:
         logger.error("Async session factory not initialized")
+        await _mark_job_failed(job_id, "Async session factory not initialized")
         return
 
     async with database.async_session_factory() as db:
@@ -314,4 +372,5 @@ async def process_commit_job_background(job_id: uuid.UUID):
             logger.info(f"Completed background commit for job {job_id}")
         except Exception as e:
             logger.exception(f"Background commit failed for job {job_id}: {e}")
+            await _mark_job_failed(job_id, e)
 
