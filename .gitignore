@@ -98,3 +98,8 @@ out/
 *.bak
 *.tmp
 *.orig
+
+# Backend scratch files (local-only)
+form-analysis-server/backend/file
+form-analysis-server/backend/test_0113_fixes.py
+form-analysis-server/backend/test_product_id_simple.py
