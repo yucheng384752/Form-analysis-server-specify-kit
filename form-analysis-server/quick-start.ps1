@@ -1,4 +1,4 @@
-# Form Analysis - Docker 一鍵啟動與驗證腳本 (PowerShell)
+﻿# Form Analysis - Docker 一鍵啟動與驗證腳本 (PowerShell)
 # 
 # 此腳本將：
 # 1. 啟動所有服務
@@ -56,8 +56,10 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-if (-not (Get-Command curl -ErrorAction SilentlyContinue)) {
-    Write-Warning "curl 未安裝，嘗試使用 Invoke-WebRequest 替代"
+# 注意：Windows PowerShell 5.1 中 `curl` 常是 Invoke-WebRequest 的別名。
+# 這裡明確檢查/使用 curl.exe，避免 alias 行為差異。
+if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
+    Write-Warning "找不到 curl.exe，嘗試使用 Invoke-WebRequest 替代"
     $useCurl = $false
 } else {
     $useCurl = $true
@@ -120,7 +122,7 @@ $retryCount = 0
 while ($retryCount -lt $maxRetries) {
     try {
         if ($useCurl) {
-            curl -f http://localhost:18002/healthz -o $null -s 2>$null
+            curl.exe -f http://localhost:18002/healthz -o $null -s 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "後端 API 已就緒"
                 break
@@ -152,7 +154,7 @@ $retryCount = 0
 while ($retryCount -lt $maxRetries) {
     try {
         if ($useCurl) {
-            curl -f http://localhost:18003 -o $null -s 2>$null
+            curl.exe -f http://localhost:18003 -o $null -s 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "前端已就緒"
                 break
@@ -191,7 +193,7 @@ if (-not $SkipTests) {
     Write-Info "測試基本健康檢查..."
     try {
         if ($useCurl) {
-            $response = curl -f http://localhost:18002/healthz -s
+            $response = curl.exe -f http://localhost:18002/healthz -s
             Write-Host $response
             Write-Success "基本健康檢查通過"
         } else {
@@ -208,7 +210,7 @@ if (-not $SkipTests) {
     Write-Info "測試詳細健康檢查..."
     try {
         if ($useCurl) {
-            $response = curl -f http://localhost:18002/healthz/detailed -s 2>$null
+            $response = curl.exe -f http://localhost:18002/healthz/detailed -s 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Write-Host $response
                 Write-Success "詳細健康檢查通過"
@@ -236,8 +238,14 @@ if (-not $SkipTests) {
 =======================
 "@
 
-    # 創建測試 CSV 文件
-    $testCsvContent = @"
+    # 優先使用 repo 內既有測試檔（檔名符合 P1/P2 批號擷取規則）
+    $testCsvPath = $null
+    $repoTestCsv = Join-Path $PSScriptRoot "..\\test-data\\root-test-files\\P1_2503033_98.csv"
+    if (Test-Path $repoTestCsv) {
+        $testCsvPath = (Resolve-Path $repoTestCsv).Path
+    } else {
+        # fallback：建立一個檔名符合規則的暫存檔
+        $testCsvContent = @"
 lot_no,product_name,quantity,production_date
 1234567_01,測試產品A,100,2024-01-15
 2345678_02,測試產品B,50,2024-01-16
@@ -246,14 +254,38 @@ lot_no,product_name,quantity,production_date
 5678901_05,測試產品E,125,2024-01-19
 "@
 
-    $tempCsv = [System.IO.Path]::GetTempFileName() + ".csv"
-    $testCsvContent | Out-File -FilePath $tempCsv -Encoding UTF8
+        $testCsvPath = Join-Path ([System.IO.Path]::GetTempPath()) "P1_2503033_01.csv"
+        $testCsvContent | Out-File -FilePath $testCsvPath -Encoding UTF8
+    }
 
-    Write-Info "測試檔案上傳（5 列測試資料）..."
+    Write-Info "測試檔案上傳: $testCsvPath"
+
+    # 取得 tenant（多租戶模式下 /api/* 需要 X-Tenant-Id）
+    $tenantId = $null
+    try {
+        if ($useCurl) {
+            $tenantsJson = curl.exe -s http://localhost:18002/api/tenants
+            $tenants = $tenantsJson | ConvertFrom-Json
+        } else {
+            $tenants = Invoke-RestMethod -Uri "http://localhost:18002/api/tenants" -ErrorAction Stop
+        }
+
+        if ($tenants -and $tenants.Count -gt 0 -and $tenants[0].id) {
+            $tenantId = $tenants[0].id
+            Write-Info "使用 Tenant ID: $tenantId"
+        }
+    } catch {
+        Write-Warning "無法取得 tenant 清單：$($_.Exception.Message)"
+    }
+
+    if (-not $tenantId) {
+        Write-Error "無法取得 Tenant ID，無法進行上傳/匯入 smoke test"
+        exit 1
+    }
 
     try {
         if ($useCurl) {
-            $uploadResponse = curl -s -X POST -F "file=@$tempCsv" http://localhost:18002/api/upload
+            $uploadResponse = curl.exe -s -X POST -H "X-Tenant-Id: $tenantId" -F "file=@$testCsvPath" http://localhost:18002/api/upload
         } else {
             # PowerShell 檔案上傳比較複雜，這裡簡化處理
             Write-Warning "使用 PowerShell 進行檔案上傳測試（簡化版本）"
@@ -262,16 +294,16 @@ lot_no,product_name,quantity,production_date
 
         Write-Host "上傳回應: $uploadResponse"
         
-        # 嘗試解析 file_id
-        if ($uploadResponse -match '"file_id":"([^"]*)"') {
-            $fileId = $Matches[1]
-            Write-Success "檔案上傳成功，file_id: $fileId"
+        # 嘗試解析 process_id
+        if ($uploadResponse -match '"process_id":"([^"]*)"') {
+            $processId = $Matches[1]
+            Write-Success "檔案上傳成功，process_id: $processId"
             
             # 測試錯誤報告下載
             Write-Info "測試錯誤報告下載..."
             try {
                 if ($useCurl) {
-                    curl -f "http://localhost:18002/api/errors.csv?file_id=$fileId" -o errors.csv -s
+                    curl.exe -f "http://localhost:18002/api/errors.csv?process_id=$processId" -H "X-Tenant-Id: $tenantId" -o errors.csv -s
                     if ($LASTEXITCODE -eq 0) {
                         Write-Success "錯誤報告下載成功"
                         Write-Host "錯誤報告內容："
@@ -287,7 +319,8 @@ lot_no,product_name,quantity,production_date
             Write-Info "測試資料匯入..."
             try {
                 if ($useCurl) {
-                    $importResponse = curl -s -X POST -H "Content-Type: application/json" -d "{`"file_id`":`"$fileId`"}" http://localhost:18002/api/import
+                    $importBody = @{ process_id = $processId } | ConvertTo-Json -Compress
+                    $importResponse = $importBody | curl.exe -s -X POST -H "X-Tenant-Id: $tenantId" -H "Content-Type: application/json" --data-binary "@-" http://localhost:18002/api/import
                     Write-Host "匯入回應: $importResponse"
                     Write-Success "資料匯入測試完成"
                 }
@@ -295,15 +328,19 @@ lot_no,product_name,quantity,production_date
                 Write-Warning "資料匯入測試失敗"
             }
         } else {
-            Write-Warning "無法解析 file_id，跳過後續測試"
+            Write-Warning "無法解析 process_id，跳過後續測試"
         }
         
     } catch {
         Write-Error "檔案上傳測試失敗: $_"
     }
 
-    # 清理臨時文件
-    Remove-Item $tempCsv -ErrorAction SilentlyContinue
+    # 清理臨時文件（若是 fallback 產生的 temp 檔）
+    try {
+        if ($testCsvPath -and $testCsvPath -like "*\\Temp\\P1_2503033_01.csv") {
+            Remove-Item $testCsvPath -ErrorAction SilentlyContinue
+        }
+    } catch {}
 }
 
 Write-Host ""

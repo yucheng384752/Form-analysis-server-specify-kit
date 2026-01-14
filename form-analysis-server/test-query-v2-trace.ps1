@@ -1,14 +1,47 @@
 # test-query-v2-trace.ps1
 # 測試 L3-2 Traceability Search (Advanced Search + Trace Detail)
 
-$baseUrl = "http://localhost:18002/api/v2/query"
+$ApiBase = "http://localhost:18002"
+$baseUrl = "$ApiBase/api/v2/query"
+
+# 0. Get Tenant
+Write-Host "0. Getting Tenant..."
+try {
+    $tenants = Invoke-RestMethod -Uri "$ApiBase/api/tenants" -Method Get
+    $tenants = @($tenants)
+    if (-not $tenants -or $tenants.Count -eq 0) {
+        Write-Host "Error: No tenants found" -ForegroundColor Red
+        exit 1
+    }
+    $tenantId = $tenants[0].id
+    Write-Host "Using Tenant ID: $tenantId"
+} catch {
+    Write-Host "Error: Failed to get tenants" -ForegroundColor Red
+    Write-Host $_
+    exit 1
+}
 
 # 1. 測試 Advanced Search (找最近的 P1)
-Write-Host "1. Testing Advanced Search (Recent P1)..."
-# Escape quotes for PowerShell string passing to executable
-$searchBody = '{\"page\": 1, \"page_size\": 5}'
+Write-Host "1. Testing Advanced Search (by Lot No)..."
 
-$response1Json = curl.exe -s -X POST "$baseUrl/advanced" -H "Content-Type: application/json" -d $searchBody
+# 1a. 先抓一個現成 lot_no（避免 default recent-P1 在沒有 P1 資料時回空）
+$lotNo = $null
+try {
+    $recordsJson = curl.exe -s -X GET "$baseUrl/records?page=1&page_size=1" -H "X-Tenant-Id: $tenantId"
+    $records = $recordsJson | ConvertFrom-Json
+    if ($records.records -and $records.records.Count -gt 0) {
+        $lotNo = $records.records[0].lot_no
+    }
+} catch {
+    # ignore
+}
+
+if (-not $lotNo) {
+    $lotNo = "2507173_02"
+}
+
+$searchBody = @{ lot_no = $lotNo; page = 1; page_size = 5 } | ConvertTo-Json -Compress
+$response1Json = $searchBody | curl.exe -s -X POST "$baseUrl/advanced" -H "Content-Type: application/json" -H "X-Tenant-Id: $tenantId" --data-binary "@-"
 Write-Host "Raw Response 1: $response1Json"
 
 try {
@@ -22,7 +55,7 @@ try {
         
         # 2. 測試 Trace Detail
         Write-Host "`n2. Testing Trace Detail for Key: $firstTraceKey..."
-        $response2Json = curl.exe -s -X GET "$baseUrl/trace/$firstTraceKey"
+        $response2Json = curl.exe -s -X GET "$baseUrl/trace/$firstTraceKey" -H "X-Tenant-Id: $tenantId"
         Write-Host "Raw Response 2: $response2Json"
         
         $response2 = $response2Json | ConvertFrom-Json
