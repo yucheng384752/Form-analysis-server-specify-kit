@@ -17,9 +17,9 @@ from sqlalchemy import select
 settings = get_settings()
 
 @pytest.fixture
-async def client(db_session):
+async def client(db_session_clean):
     async def override_get_db():
-        yield db_session
+        yield db_session_clean
     
     app.dependency_overrides[get_db] = override_get_db
     
@@ -29,24 +29,24 @@ async def client(db_session):
     app.dependency_overrides.clear()
 
 @pytest.mark.asyncio
-async def test_import_p2_job(client, db_session):
+async def test_import_p2_job(client, db_session_clean):
     # Setup Tenant
     stmt = select(Tenant).where(Tenant.code == "test_tenant_p2")
-    result = await db_session.execute(stmt)
+    result = await db_session_clean.execute(stmt)
     tenant = result.scalar_one_or_none()
     if not tenant:
         tenant = Tenant(name="Test Tenant P2", code="test_tenant_p2", is_default=True)
-        db_session.add(tenant)
+        db_session_clean.add(tenant)
     
     # Setup TableRegistry
     stmt = select(TableRegistry).where(TableRegistry.table_code == "P2")
-    result = await db_session.execute(stmt)
+    result = await db_session_clean.execute(stmt)
     table = result.scalar_one_or_none()
     if not table:
         table = TableRegistry(table_code="P2", display_name="P2 Records")
-        db_session.add(table)
+        db_session_clean.add(table)
     
-    await db_session.commit()
+    await db_session_clean.commit()
     
     # Prepare CSV content
     csv_content = "col1,col2\nval1,val2"
@@ -58,11 +58,11 @@ async def test_import_p2_job(client, db_session):
     
     # 1. Create Job
     response = await client.post("/api/v2/import/jobs", files=files, data=data, headers=headers)
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     job_id = response.json()["id"]
     
     # 2. Parse Job
-    service = ImportService(db_session)
+    service = ImportService(db_session_clean)
     job = await service.parse_job(uuid.UUID(job_id))
     assert job.status == ImportJobStatus.VALIDATING
     
@@ -77,7 +77,7 @@ async def test_import_p2_job(client, db_session):
     # 5. Verify P2Record
     # Lot123_05 -> 12305
     stmt = select(P2Record).where(P2Record.lot_no_norm == 12305)
-    result = await db_session.execute(stmt)
+    result = await db_session_clean.execute(stmt)
     record = result.scalar_one_or_none()
     
     assert record is not None
@@ -90,24 +90,24 @@ async def test_import_p2_job(client, db_session):
         shutil.rmtree(upload_dir)
 
 @pytest.mark.asyncio
-async def test_import_p3_job(client, db_session):
+async def test_import_p3_job(client, db_session_clean):
     # Setup Tenant
     stmt = select(Tenant).where(Tenant.code == "test_tenant_p3")
-    result = await db_session.execute(stmt)
+    result = await db_session_clean.execute(stmt)
     tenant = result.scalar_one_or_none()
     if not tenant:
         tenant = Tenant(name="Test Tenant P3", code="test_tenant_p3", is_default=True)
-        db_session.add(tenant)
+        db_session_clean.add(tenant)
     
     # Setup TableRegistry
     stmt = select(TableRegistry).where(TableRegistry.table_code == "P3")
-    result = await db_session.execute(stmt)
+    result = await db_session_clean.execute(stmt)
     table = result.scalar_one_or_none()
     if not table:
         table = TableRegistry(table_code="P3", display_name="P3 Records")
-        db_session.add(table)
+        db_session_clean.add(table)
     
-    await db_session.commit()
+    await db_session_clean.commit()
     
     # Prepare CSV content
     # Include Mold NO and lot no in content to exercise P3 lot_no normalization and product_id generation
@@ -120,11 +120,11 @@ async def test_import_p3_job(client, db_session):
     
     # 1. Create Job
     response = await client.post("/api/v2/import/jobs", files=files, data=data, headers=headers)
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     job_id = response.json()["id"]
     
     # 2. Parse Job
-    service = ImportService(db_session)
+    service = ImportService(db_session_clean)
     job = await service.parse_job(uuid.UUID(job_id))
     assert job.status == ImportJobStatus.VALIDATING
     
@@ -139,7 +139,7 @@ async def test_import_p3_job(client, db_session):
     # 5. Verify P3Record
     # 2507173 -> 2025-07-17
     stmt = select(P3Record).where(P3Record.production_date_yyyymmdd == 20250717)
-    result = await db_session.execute(stmt)
+    result = await db_session_clean.execute(stmt)
     record = result.scalar_one_or_none()
     
     assert record is not None

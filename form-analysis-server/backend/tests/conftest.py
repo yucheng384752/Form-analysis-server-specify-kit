@@ -4,21 +4,42 @@
 import pytest
 import asyncio
 import os
+import logging
 from pathlib import Path
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 
 # 設置測試環境變數
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+# NOTE: plain ':memory:' creates a separate DB per connection; use a named shared
+# in-memory database URI so the schema is visible across connections.
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///file:memdb1?mode=memory&cache=shared"
 os.environ["ENVIRONMENT"] = "testing"
 os.environ["DEBUG"] = "true"
 
 from app.core.database import Base, init_db, close_db
-from app.models import UploadJob, Record, UploadError
 
-# 測試資料庫引擎 (使用記憶體 SQLite)
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+# Import models early so they are registered on Base.metadata before create_all.
+from app.models import UploadJob, Record, UploadError
+from app.models.core.tenant import Tenant  # noqa: F401
+from app.models.core.schema_registry import TableRegistry, SchemaVersion  # noqa: F401
+
+# 測試資料庫引擎 (使用 shared-cache 記憶體 SQLite)
+TEST_DATABASE_URL = "sqlite+aiosqlite:///file:memdb1?mode=memory&cache=shared"
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Tune log verbosity for the test suite.
+
+    Keep production logging behavior unchanged; only reduce common noisy loggers
+    (SQLAlchemy engine echo, httpx request logs, request middleware).
+    """
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine.Engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("app.core.middleware").setLevel(logging.WARNING)
+    logging.getLogger("app.services.import_v2").setLevel(logging.WARNING)
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -30,12 +51,14 @@ def event_loop():
 @pytest.fixture(scope="session")
 async def test_engine():
     """創建測試資料庫引擎"""
+    echo_sql = os.getenv("TEST_DATABASE_ECHO", "false").strip().lower() in {"1", "true", "yes", "y"}
     engine = create_async_engine(
         TEST_DATABASE_URL,
-        echo=True,  # 顯示 SQL 語句
+        echo=echo_sql,
         poolclass=StaticPool,
         connect_args={
             "check_same_thread": False,
+            "uri": True,
         },
     )
     
@@ -66,6 +89,27 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
             await session.rollback()
             await session.close()
 
+
+@pytest.fixture(scope="function")
+async def db_session_clean(clean_db, test_engine) -> AsyncGenerator[AsyncSession, None]:
+    """A db session that is guaranteed to run on a clean schema.
+
+    Use this for tests that must be runnable in isolation and should not
+    be affected by data left behind in the shared in-memory SQLite DB.
+    """
+    async_session_factory = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with async_session_factory() as session:
+        try:
+            yield session
+        finally:
+            await session.rollback()
+            await session.close()
+
 @pytest.fixture(scope="function")
 async def clean_db(test_engine):
     """在每個測試前後清理資料庫"""
@@ -75,10 +119,8 @@ async def clean_db(test_engine):
         await conn.run_sync(Base.metadata.create_all)
     
     yield
-    
-    # 測試後清理（可選，因為每個測試都會重新創建）
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+
+    # 測試後不 drop schema：避免影響未使用 clean_db 的後續測試。
 
 # 匯入模型枚舉和日期類型
 from app.models.upload_job import JobStatus

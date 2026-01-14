@@ -30,14 +30,19 @@ async def client(db_session):
 @pytest.mark.asyncio
 async def test_create_import_job(client, db_session):
     # Setup Tenant
-    tenant = Tenant(name="Test Tenant", code="test_tenant", is_default=True)
+    tenant = Tenant(name=f"Test Tenant {uuid.uuid4()}", code=f"test_tenant_{uuid.uuid4()}", is_default=True)
     db_session.add(tenant)
     
     # Setup TableRegistry
-    table = TableRegistry(table_code="P1", display_name="P1 Records")
-    db_session.add(table)
+    stmt = select(TableRegistry).where(TableRegistry.table_code == "P1")
+    result = await db_session.execute(stmt)
+    table = result.scalar_one_or_none()
+    if not table:
+        table = TableRegistry(table_code="P1", display_name="P1 Records")
+        db_session.add(table)
     
     await db_session.commit()
+    await db_session.refresh(tenant)
     
     # Prepare file
     files = [
@@ -45,10 +50,12 @@ async def test_create_import_job(client, db_session):
         ('files', ('test2.csv', b'content2', 'text/csv'))
     ]
     data = {'table_code': 'P1'}
+
+    headers = {'X-Tenant-Id': str(tenant.id)}
     
-    response = await client.post("/api/v2/import/jobs", files=files, data=data)
+    response = await client.post("/api/v2/import/jobs", files=files, data=data, headers=headers)
     
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     json_resp = response.json()
     assert json_resp["batch_id"] is not None
     assert json_resp["total_files"] == 2
@@ -64,16 +71,19 @@ async def test_create_import_job(client, db_session):
 @pytest.mark.asyncio
 async def test_create_import_job_invalid_table(client, db_session):
     # Setup Tenant
-    tenant = Tenant(name="Test Tenant 2", code="test_tenant_2", is_default=False)
+    tenant = Tenant(name=f"Test Tenant 2 {uuid.uuid4()}", code=f"test_tenant_2_{uuid.uuid4()}", is_default=False)
     db_session.add(tenant)
     await db_session.commit()
+    await db_session.refresh(tenant)
     
     files = [('files', ('test.csv', b'content', 'text/csv'))]
     data = {'table_code': 'INVALID'}
+
+    headers = {'X-Tenant-Id': str(tenant.id)}
     
-    response = await client.post("/api/v2/import/jobs", files=files, data=data)
+    response = await client.post("/api/v2/import/jobs", files=files, data=data, headers=headers)
     
-    assert response.status_code == 400
+    assert response.status_code == 400, response.text
 
 from app.services.import_v2 import ImportService
 from app.models.import_job import ImportJobStatus, StagingRow
