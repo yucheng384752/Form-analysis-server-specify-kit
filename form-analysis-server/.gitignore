@@ -91,6 +91,9 @@ uploads/
 temp/
 *.tmp
 
+# Accidental files (e.g. from wrong curl usage)
+-s
+
 # Environment variables
 .env.local
 .env.production
