@@ -18,11 +18,12 @@ current_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(current_dir))
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import ProgrammingError
+from sqlalchemy import select, func
 
 from app.core.config import get_settings
 from app.core.database import init_db, Base
@@ -32,6 +33,7 @@ from app.api import routes_health, routes_upload, routes_validate, routes_import
 from app.api import constants as routes_constants
 from app.api import traceability as routes_traceability
 from app.api import routes_analytics, routes_ut
+from app.api.deps import get_current_tenant
 
 # Import all models to ensure they're registered with Base
 from app.models import UploadJob, UploadError, Record
@@ -75,6 +77,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 print(f" Note: Database objects already exist (safe to ignore): {str(e).splitlines()[0]}")
             else:
                 raise e
+
+    # Seed minimal registry data (required by Import V2) + ensure at least one tenant exists
+    try:
+        from app.core.database import async_session_factory
+        from app.models.core.schema_registry import TableRegistry
+        from app.models.core.tenant import Tenant
+
+        if async_session_factory:
+            async with async_session_factory() as db:
+                existing = set((await db.execute(select(TableRegistry.table_code))).scalars().all())
+                for code in ("P1", "P2", "P3"):
+                    if code not in existing:
+                        db.add(TableRegistry(table_code=code, display_name=code))
+
+                tenant_count = (await db.execute(select(func.count(Tenant.id)))).scalar() or 0
+                if tenant_count == 0:
+                    db.add(Tenant(name="Default", code="default", is_default=True, is_active=True))
+
+                await db.commit()
+    except Exception as e:
+        # Do not block startup if seeding fails; import routes will still surface the error.
+        print(f" Warning: failed to seed table_registry: {e}")
     
     print(f" Form Analysis API starting on {settings.api_host}:{settings.api_port}")
     print(f" Database: PostgreSQL - {settings.database_url.split('@')[-1]}")  # Hide credentials
@@ -156,6 +180,8 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 
 # Include API routers
+tenant_deps = [Depends(get_current_tenant)]
+
 app.include_router(
     routes_health.router,
     prefix="/healthz",
@@ -166,49 +192,56 @@ app.include_router(
 app.include_router(
     routes_upload.router,
     prefix="/api",
-    tags=["檔案上傳"]
+    tags=["檔案上傳"],
+    dependencies=tenant_deps,
 )
 
 # 驗證結果查詢路由
 app.include_router(
     routes_validate.router,
     prefix="/api",
-    tags=["驗證結果查詢"]
+    tags=["驗證結果查詢"],
+    dependencies=tenant_deps,
 )
 
 # 資料匯入路由
 app.include_router(
     routes_import.router,
     prefix="/api",
-    tags=["資料匯入"]
+    tags=["資料匯入"],
+    dependencies=tenant_deps,
 )
 
 # V2 Import Routes
 app.include_router(
     routes_import_v2.router,
     prefix="/api/v2/import",
-    tags=["Import V2"]
+    tags=["Import V2"],
+    dependencies=tenant_deps,
 )
 
 # 資料匯出路由
 app.include_router(
     routes_export.router,
     prefix="/api",
-    tags=["資料匯出"]
+    tags=["資料匯出"],
+    dependencies=tenant_deps,
 )
 
 # 資料查詢路由
 app.include_router(
     routes_query.router,
     prefix="/api/query",
-    tags=["資料查詢"]
+    tags=["資料查詢"],
+    dependencies=tenant_deps,
 )
 
 # 日誌管理路由
 app.include_router(
     routes_logs.router,
     prefix="/api/logs",
-    tags=["日誌管理"]
+    tags=["日誌管理"],
+    dependencies=tenant_deps,
 )
 
 # Tenant Routes
@@ -220,38 +253,44 @@ app.include_router(
 # 系統常數查詢路由
 app.include_router(
     routes_constants.router,
-    tags=["系統常數"]
+    tags=["系統常數"],
+    dependencies=tenant_deps,
 )
 
 # 生產追溯查詢路由
 app.include_router(
     routes_traceability.router,
-    tags=["生產追溯"]
+    tags=["生產追溯"],
+    dependencies=tenant_deps,
 )
 
 # 分析用追溯資料扁平化路由（支援多 server 並發呼叫）
 app.include_router(
     routes_analytics.router,
-    tags=["Analytics"]
+    tags=["Analytics"],
+    dependencies=tenant_deps,
 )
 
 
 app.include_router(
     routes_query_v2.router,
     prefix="/api/v2/query",
-    tags=["Query V2"]
+    tags=["Query V2"],
+    dependencies=tenant_deps,
 )
 
 app.include_router(
     routes_edit.router,
     prefix="/api/edit",
-    tags=["Inline Edit"]
+    tags=["Inline Edit"],
+    dependencies=tenant_deps,
 )
 
 # UT API (侑特資料查詢)
 app.include_router(
     routes_ut.router,
-    tags=["UT Data"]
+    tags=["UT Data"],
+    dependencies=tenant_deps,
 )
 
 @app.get("/", tags=["Root"])
