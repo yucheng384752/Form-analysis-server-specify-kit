@@ -8,6 +8,8 @@ from .p2_record import P2Record
 from .p3_record import P3Record
 from .p2_item import P2Item
 from .p3_item import P3Item
+from .p2_item_v2 import P2ItemV2
+from .p3_item_v2 import P3ItemV2
 from .core.tenant import Tenant
 from .audit import EditReason, RowEdit
 
@@ -20,6 +22,8 @@ __all__ = [
     "P3Record",
     "P2Item",
     "P3Item",
+    "P2ItemV2",
+    "P3ItemV2",
     "Tenant",
     "EditReason",
     "RowEdit"

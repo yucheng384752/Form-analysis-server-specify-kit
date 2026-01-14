@@ -1,8 +1,10 @@
 from typing import Optional
 from sqlalchemy import String, Integer, UniqueConstraint, Index
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.core.database import Base
 from app.models.base_record import BaseRecordMixin
+from app.models.p3_item_v2 import P3ItemV2
 
 class P3Record(BaseRecordMixin, Base):
     __tablename__ = "p3_records"
@@ -31,6 +33,9 @@ class P3Record(BaseRecordMixin, Base):
         index=True,
         comment="Derived Product ID (YYYY-MM-DD_machine_mold_lot)"
     )
+    
+    # Relationships
+    items_v2 = relationship(P3ItemV2, back_populates="p3_record", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint('tenant_id', 'production_date_yyyymmdd', 'machine_no', 'mold_no', 'lot_no_norm', name='uq_p3_composite_key'),
