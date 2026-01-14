@@ -64,7 +64,7 @@ async def update_upload_content(
         csv_text = (request.csv_text or "").strip("\ufeff")
         if not csv_text.strip():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="檔案內容為空",
             )
 
@@ -140,7 +140,7 @@ async def update_upload_content(
             await db.commit()
 
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=ve.message,
         )
 
@@ -279,7 +279,7 @@ async def upload_file(
         if not file or not file.filename:
             logger.warning("上傳失敗：未選擇檔案或檔案名稱為空")
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="未選擇檔案或檔案名稱為空"
             )
         
@@ -290,7 +290,7 @@ async def upload_file(
         if file_size == 0:
             logger.warning("上傳失敗：檔案內容為空", filename=file.filename)
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="檔案內容為空"
             )
         
@@ -392,7 +392,7 @@ async def upload_file(
                         error_message=ve.message)
             
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=ve.message
             )
         

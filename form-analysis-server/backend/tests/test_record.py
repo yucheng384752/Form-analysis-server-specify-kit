@@ -3,7 +3,7 @@
 """
 import pytest
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -43,7 +43,12 @@ class TestRecordModel:
         assert isinstance(record.created_at, datetime)
         
         # 驗證時間是最近創建的（5秒內）
-        time_diff = datetime.utcnow() - record.created_at
+        now = (
+            datetime.now(record.created_at.tzinfo)
+            if record.created_at.tzinfo
+            else datetime.now(timezone.utc).replace(tzinfo=None)
+        )
+        time_diff = now - record.created_at
         assert time_diff.total_seconds() < 5
     
     @pytest.mark.asyncio

@@ -7,7 +7,7 @@ from datetime import datetime, date
 from sqlalchemy import select, func
 
 from app.models.upload_job import UploadJob, JobStatus
-from app.models.record import Record
+from app.models.record import Record, DataType
 from app.models.upload_error import UploadError
 from tests.conftest import TestDataFactory
 
@@ -281,6 +281,7 @@ class TestModelsIntegration:
         # 嘗試創建相同批號的記錄（應該被允許，因為沒有唯一約束）
         record2_data = TestDataFactory.record_data(
             lot_no="1234567_01",  # 相同批號
+            data_type=DataType.P2,
             product_name="產品2",
             quantity=200,
             production_date=date(2024, 1, 2)

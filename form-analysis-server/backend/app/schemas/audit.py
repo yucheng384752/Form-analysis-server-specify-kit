@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 class EditReasonResponse(BaseModel):
     id: UUID
@@ -9,8 +9,7 @@ class EditReasonResponse(BaseModel):
     description: str
     display_order: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class RecordUpdateRequest(BaseModel):
     updates: Dict[str, Any] = Field(..., description="Fields to update")
@@ -27,5 +26,4 @@ class RowEditResponse(BaseModel):
     created_at: datetime
     created_by: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

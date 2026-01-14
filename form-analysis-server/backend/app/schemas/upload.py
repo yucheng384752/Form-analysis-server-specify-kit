@@ -7,7 +7,7 @@
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UploadErrorResponse(BaseModel):
@@ -30,22 +30,15 @@ class FileUploadResponse(BaseModel):
         default=[], 
         description="錯誤樣本（前10筆）"
     )
-    
-    class Config:
-        """Pydantic 配置"""
-        json_encoders = {
-            uuid.UUID: str,  # UUID 轉為字串
-        }
 
 
 class FileUploadRequest(BaseModel):
     """檔案上傳請求模型（用於文件）"""
     
     file: bytes = Field(..., description="上傳的檔案內容（form-data）")
-    
-    class Config:
-        """Pydantic 配置"""
-        schema_extra = {
+
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "description": "使用 multipart/form-data 上傳 CSV 或 Excel 檔案",
                 "content_type": "multipart/form-data",
@@ -56,6 +49,7 @@ class FileUploadRequest(BaseModel):
                 "required_columns": ["lot_no", "product_name", "quantity", "production_date"]
             }
         }
+    )
 
 
 class ValidationSummary(BaseModel):
@@ -68,12 +62,6 @@ class ValidationSummary(BaseModel):
     invalid_rows: int = Field(..., description="無效行數")
     validation_time: float = Field(..., description="驗證耗時（秒）")
     created_at: datetime = Field(..., description="建立時間")
-    
-    class Config:
-        """Pydantic 配置"""
-        json_encoders = {
-            datetime: lambda v: v.isoformat(),
-        }
 
 
 class UpdateUploadContentRequest(BaseModel):

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.core.tenant import Tenant
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 router = APIRouter(tags=["Tenants"])
 
@@ -16,8 +16,7 @@ class TenantResponse(BaseModel):
     code: str
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 @router.get("/api/tenants", response_model=List[TenantResponse])
 async def get_tenants(db: AsyncSession = Depends(get_db)):

@@ -50,7 +50,7 @@ async def flatten_ut_data(
     location: str = Query(
         default="P1+P2+P3",
         description="資料來源（P1=原料, P2=分條, P3=生產, P1+P2+P3=完整追溯）",
-        regex="^(P1|P2|P3|P1\\+P2\\+P3)$"
+        pattern="^(P1|P2|P3|P1\\+P2\\+P3)$"
     ),
     type: str = Query(default="ut", description="資料類型（ut=侑特）"),
     request: Request = None,

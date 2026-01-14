@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 
 from app.core.database import get_db
@@ -246,7 +246,7 @@ async def health_check():
     """
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "config": {
             "max_records_per_request": AnalyticsConfig.SINGLE_RESPONSE_MAX,
             "rate_limit_per_minute": AnalyticsConfig.RATE_LIMIT_REQUESTS_PER_MINUTE,

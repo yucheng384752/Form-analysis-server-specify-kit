@@ -84,6 +84,7 @@ async def clean_db(test_engine):
 from app.models.upload_job import JobStatus
 import uuid
 from datetime import date
+from app.models.record import DataType
 
 # 測試資料工廠
 class TestDataFactory:
@@ -107,6 +108,7 @@ class TestDataFactory:
         """創建 Record 測試資料"""
         default_data = {
             "lot_no": lot_no,
+            "data_type": DataType.P1,
             "product_name": "測試產品",
             "quantity": 100,
             "production_date": date(2024, 1, 15)
