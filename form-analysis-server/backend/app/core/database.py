@@ -11,6 +11,11 @@ from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
+# SQLite 測試相容：專案模型大量使用 PostgreSQL JSONB。
+# 在 SQLite（測試用）時將 JSONB 編譯成 JSON，避免 create_all 失敗。
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
+
 from app.core.config import get_settings
 
 # Database engine and session factory (initialized during startup)
@@ -21,6 +26,11 @@ async_session_factory = None
 class Base(DeclarativeBase):
     """Base class for all database models."""
     pass
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(type_, compiler, **kw):
+    return "JSON"
 
 
 async def init_db() -> None:
