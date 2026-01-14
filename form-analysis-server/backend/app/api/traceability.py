@@ -20,6 +20,7 @@ from app.models.p2_item import P2Item
 from app.models.p1_record import P1Record
 from app.models.p2_record import P2Record
 from app.models.p3_record import P3Record
+from app.models.p3_item_v2 import P3ItemV2
 from app.services.product_id_generator import parse_product_id, validate_product_id
 from app.utils.normalization import normalize_lot_no
 
@@ -55,214 +56,208 @@ async def trace_by_product_id(
             detail=f"Product_ID 格式錯誤: {error_msg}"
         )
     
-    # 步驟 1: 查詢 P3 資料 (優先查詢舊的 P3Item)
-    p3_query = select(P3Item).options(selectinload(P3Item.record)).where(
-        P3Item.product_id == product_id
+    # 步驟 1: 查詢 P3（V2 優先 → legacy → v2 record fallback）
+    p3_data: Optional[Dict[str, Any]] = None
+    lot_no: Optional[str] = None
+    source_winder: Optional[int] = None
+
+    p3_item_v2_stmt = select(P3ItemV2).options(selectinload(P3ItemV2.p3_record)).where(
+        P3ItemV2.tenant_id == current_tenant.id,
+        P3ItemV2.product_id == product_id,
     )
-    p3_result = await db.execute(p3_query)
-    p3_item = p3_result.scalar_one_or_none()
-    
-    p3_data = None
-    lot_no = None  # base lot for P1/P2 lookup
-    source_winder = None
-    
-    if p3_item:
-        p3_data = _p3_item_to_dict(p3_item)
-        # Prefer DB columns; if missing, derive from row payload
-        lot_no = p3_item.lot_no
-        source_winder = p3_item.source_winder
+    p3_item_v2_result = await db.execute(p3_item_v2_stmt)
+    p3_item_v2 = p3_item_v2_result.scalar_one_or_none()
 
-        payload = _get_first_row_payload(p3_data)
-        base_lot, parsed_winder = _extract_base_lot_and_winder_from_p3_payload(payload)
-        if base_lot:
-            lot_no = base_lot
-            # also reflect base lot in returned p3 payload for frontend
-            p3_data['lot_no'] = base_lot
-        if source_winder is None and parsed_winder is not None:
-            source_winder = parsed_winder
-            p3_data['source_winder'] = parsed_winder
-    else:
-        # Fallback (V2): 從 p3_records 取出對應資料
-        p3_v2 = None
-
-        # 1) Exact match by product_id
-        p3_v2_stmt = select(P3Record).where(
-            P3Record.tenant_id == current_tenant.id,
-            P3Record.product_id == product_id,
+    if p3_item_v2:
+        p3_data = _p3_item_v2_to_dict(p3_item_v2)
+        lot_no = (p3_data.get('lot_no') if isinstance(p3_data, dict) else None) or p3_item_v2.lot_no
+        source_winder = (
+            (p3_data.get('source_winder') if isinstance(p3_data, dict) else None)
+            if p3_item_v2.source_winder is None
+            else p3_item_v2.source_winder
         )
-        p3_v2_result = await db.execute(p3_v2_stmt)
-        p3_v2 = p3_v2_result.scalar_one_or_none()
+    else:
+        p3_legacy_stmt = (
+            select(P3Item)
+            .join(Record)
+            .options(selectinload(P3Item.record))
+            .where(
+                Record.tenant_id == current_tenant.id,
+                P3Item.product_id == product_id,
+            )
+        )
+        p3_legacy_result = await db.execute(p3_legacy_stmt)
+        p3_item = p3_legacy_result.scalar_one_or_none()
 
-        # 2) Prefix match by base product_id (handles suffix like _1)
-        if not p3_v2:
-            parts = product_id.split('_')
-            if len(parts) >= 4:
-                base_product_id = '_'.join(parts[:4])
-                p3_v2_prefix_stmt = select(P3Record).where(
-                    P3Record.tenant_id == current_tenant.id,
-                    P3Record.product_id.ilike(f"{base_product_id}%"),
-                )
-                p3_v2_prefix_result = await db.execute(p3_v2_prefix_stmt)
-                p3_v2 = p3_v2_prefix_result.scalar_one_or_none()
+        if p3_item:
+            p3_data = _p3_item_to_dict(p3_item)
+            lot_no = p3_item.lot_no
+            source_winder = p3_item.source_winder
 
-        # 3) Component match by parsed product_id (works even if stored product_id used a different separator previously)
-        if not p3_v2:
-            try:
-                parsed = parse_product_id(product_id)
-                prod_yyyymmdd = int(parsed['production_date'].strftime('%Y%m%d'))
-                machine_no = str(parsed['machine_no']).strip() if parsed.get('machine_no') else None
-                mold_no = str(parsed['mold_no']).strip() if parsed.get('mold_no') else None
-                if machine_no and mold_no:
-                    p3_v2_comp_stmt = select(P3Record).where(
+            payload = _get_first_row_payload(p3_data)
+            base_lot, parsed_winder = _extract_base_lot_and_winder_from_p3_payload(payload)
+            if base_lot:
+                lot_no = base_lot
+                p3_data['lot_no'] = base_lot
+            if source_winder is None and parsed_winder is not None:
+                source_winder = parsed_winder
+                p3_data['source_winder'] = parsed_winder
+        else:
+            p3_v2: Optional[P3Record] = None
+
+            # 1) Exact match by product_id
+            p3_v2_stmt = select(P3Record).where(
+                P3Record.tenant_id == current_tenant.id,
+                P3Record.product_id == product_id,
+            )
+            p3_v2_result = await db.execute(p3_v2_stmt)
+            p3_v2 = p3_v2_result.scalar_one_or_none()
+
+            # 2) Prefix match by base product_id (handles suffix like _1)
+            if not p3_v2:
+                parts = product_id.split('_')
+                if len(parts) >= 4:
+                    base_product_id = '_'.join(parts[:4])
+                    p3_v2_prefix_stmt = select(P3Record).where(
                         P3Record.tenant_id == current_tenant.id,
-                        P3Record.production_date_yyyymmdd == prod_yyyymmdd,
-                        P3Record.machine_no == machine_no,
-                        P3Record.mold_no == mold_no,
+                        P3Record.product_id.ilike(f"{base_product_id}%"),
                     )
-                    p3_v2_comp_result = await db.execute(p3_v2_comp_stmt)
-                    p3_v2 = p3_v2_comp_result.scalar_one_or_none()
-            except Exception:
-                p3_v2 = None
+                    p3_v2_prefix_result = await db.execute(p3_v2_prefix_stmt)
+                    p3_v2 = p3_v2_prefix_result.scalar_one_or_none()
 
-        if not p3_v2:
-            raise HTTPException(
-                status_code=404,
-                detail=f"查無 Product_ID: {product_id}"
-            )
+            # 3) Component match by parsed product_id
+            if not p3_v2:
+                try:
+                    parsed = parse_product_id(product_id)
+                    prod_yyyymmdd = int(parsed['production_date'].strftime('%Y%m%d'))
+                    machine_no = str(parsed['machine_no']).strip() if parsed.get('machine_no') else None
+                    mold_no = str(parsed['mold_no']).strip() if parsed.get('mold_no') else None
+                    if machine_no and mold_no:
+                        p3_v2_comp_stmt = select(P3Record).where(
+                            P3Record.tenant_id == current_tenant.id,
+                            P3Record.production_date_yyyymmdd == prod_yyyymmdd,
+                            P3Record.machine_no == machine_no,
+                            P3Record.mold_no == mold_no,
+                        )
+                        p3_v2_comp_result = await db.execute(p3_v2_comp_stmt)
+                        p3_v2 = p3_v2_comp_result.scalar_one_or_none()
+                except Exception:
+                    p3_v2 = None
 
-        p3_data = _p3_record_to_dict(p3_v2)
-        lot_no = p3_v2.lot_no_raw
-        source_winder = _extract_source_winder_from_v2_extras(p3_v2.extras)
+            if not p3_v2:
+                raise HTTPException(status_code=404, detail=f"查無 Product_ID: {product_id}")
 
-        payload = _get_first_row_payload(p3_data)
-        base_lot, parsed_winder = _extract_base_lot_and_winder_from_p3_payload(payload)
-        if base_lot:
-            lot_no = base_lot
-            p3_data['lot_no'] = base_lot
-        if source_winder is None and parsed_winder is not None:
-            source_winder = parsed_winder
-            p3_data['source_winder'] = parsed_winder
-    
-    # 步驟 2: 使用 P3.lot_no 和 P3.source_winder 查詢對應的 P2
-    p2_data = None
-    
+            p3_data = _p3_record_to_dict(p3_v2)
+            lot_no = p3_v2.lot_no_raw
+            source_winder = _extract_source_winder_from_v2_extras(p3_v2.extras)
+
+            payload = _get_first_row_payload(p3_data)
+            base_lot, parsed_winder = _extract_base_lot_and_winder_from_p3_payload(payload)
+            if base_lot:
+                lot_no = base_lot
+                p3_data['lot_no'] = base_lot
+            if source_winder is None and parsed_winder is not None:
+                source_winder = parsed_winder
+            p3_data['source_winder'] = source_winder
+
+    # 步驟 2: 查詢 P2（V2 優先 → legacy → legacy record row match）
+    p2_data: Optional[Dict[str, Any]] = None
+    lot_no_norm: Optional[str] = None
     if lot_no:
-        # 優先查詢 P2Item
-        if source_winder is not None:
-            p2_query = select(P2Item).join(Record).where(
-                Record.data_type == DataType.P2,
-                Record.lot_no == lot_no,
-                P2Item.winder_number == source_winder
-            ).options(selectinload(P2Item.record))
-            
-            p2_result = await db.execute(p2_query)
-            p2_item = p2_result.scalar_one_or_none()
-            
-            if p2_item:
-                p2_data = _p2_item_to_dict(p2_item)
-        
-        # 如果找不到 P2Item (可能是舊資料或 winder 不匹配)，嘗試查詢 Record (P2)
-        if not p2_data:
-            p2_record_query = select(Record).where(
-                Record.data_type == DataType.P2,
-                Record.lot_no == lot_no
-            )
-            p2_record_result = await db.execute(p2_record_query)
-            p2_records = p2_record_result.scalars().all()
-            
-            if p2_records:
-                # 嘗試從 JSON 中尋找匹配的 winder
-                for rec in p2_records:
-                    if rec.additional_data and 'rows' in rec.additional_data:
-                        for row in rec.additional_data['rows']:
-                            # 簡單比對 winder
-                            w_val = _extract_winder_from_json(row)
-                            if w_val is not None and w_val == source_winder:
-                                # 找到匹配的 row，構造一個臨時的 dict
-                                p2_data = _record_row_to_dict(rec, row, w_val)
-                                break
-                    if p2_data: break
-                
-                # 如果還是找不到，但有 P2 記錄，回傳第一筆的摘要 (標記為不精確)
-                if not p2_data and p2_records:
-                    p2_data = _record_to_dict(p2_records[0])
-                    p2_data['warning'] = "Exact winder match not found"
-
-    # V2 fallback: 舊路徑有 P3 但 P2 沒找到時，嘗試從 p2_records 查
-    if not p2_data and lot_no:
         try:
             lot_no_norm = normalize_lot_no(lot_no)
         except Exception:
             lot_no_norm = None
 
-        if lot_no_norm is not None:
-            p2_v2_stmt = select(P2Record).where(
-                P2Record.tenant_id == current_tenant.id,
-                P2Record.lot_no_norm == lot_no_norm,
-            )
-            if source_winder is not None:
-                p2_v2_stmt = p2_v2_stmt.where(P2Record.winder_number == source_winder)
-            else:
-                p2_v2_stmt = p2_v2_stmt.order_by(P2Record.winder_number)
-
-            p2_v2_result = await db.execute(p2_v2_stmt)
-            p2_v2 = p2_v2_result.scalar_one_or_none()
-            if not p2_v2 and source_winder is not None:
-                # 如果指定 winder 找不到，退而求其次拿第一筆
-                p2_any_stmt = select(P2Record).where(
-                    P2Record.tenant_id == current_tenant.id,
-                    P2Record.lot_no_norm == lot_no_norm,
-                ).order_by(P2Record.winder_number)
-                p2_any_result = await db.execute(p2_any_stmt)
-                p2_v2 = p2_any_result.scalar_one_or_none()
-                if p2_v2:
-                    p2_data = _p2_record_to_dict(p2_v2)
-                    p2_data['warning'] = 'Exact winder match not found (V2 fallback, using first)'
-            elif p2_v2:
-                p2_data = _p2_record_to_dict(p2_v2)
-
-    # 步驟 3: 使用 P2.lot_no (或 P3.lot_no) 查詢 P1
-    p1_data = None
-    
-    if lot_no:
-        p1_query = select(Record).where(
-            Record.data_type == DataType.P1,
-            Record.lot_no == lot_no
+    if lot_no_norm is not None:
+        p2_v2_stmt = select(P2Record).options(selectinload(P2Record.items_v2)).where(
+            P2Record.tenant_id == current_tenant.id,
+            P2Record.lot_no_norm == lot_no_norm,
         )
-        p1_result = await db.execute(p1_query)
+        if source_winder is not None:
+            p2_v2_stmt = p2_v2_stmt.where(P2Record.winder_number == source_winder)
+        else:
+            p2_v2_stmt = p2_v2_stmt.order_by(P2Record.winder_number)
+
+        p2_v2_result = await db.execute(p2_v2_stmt)
+        p2_v2 = p2_v2_result.scalar_one_or_none()
+        if p2_v2:
+            p2_data = _p2_record_to_dict(p2_v2)
+
+    if not p2_data and lot_no:
+        p2_item_stmt = (
+            select(P2Item)
+            .join(Record)
+            .options(selectinload(P2Item.record))
+            .where(
+                Record.tenant_id == current_tenant.id,
+                Record.data_type == DataType.P2,
+                Record.lot_no == lot_no,
+            )
+        )
+        if source_winder is not None:
+            p2_item_stmt = p2_item_stmt.where(P2Item.winder_number == source_winder)
+
+        p2_item_result = await db.execute(p2_item_stmt)
+        p2_item = p2_item_result.scalar_one_or_none()
+        if p2_item:
+            p2_data = _p2_item_to_dict(p2_item)
+
+    if not p2_data and lot_no:
+        p2_records_stmt = select(Record).where(
+            Record.tenant_id == current_tenant.id,
+            Record.data_type == DataType.P2,
+            Record.lot_no == lot_no,
+        )
+        p2_record_result = await db.execute(p2_records_stmt)
+        p2_records = p2_record_result.scalars().all()
+        if p2_records:
+            for rec in p2_records:
+                if rec.additional_data and 'rows' in rec.additional_data and source_winder is not None:
+                    for row in rec.additional_data['rows']:
+                        w_val = _extract_winder_from_json(row)
+                        if w_val is not None and w_val == source_winder:
+                            p2_data = _record_row_to_dict(rec, row, w_val)
+                            break
+                if p2_data:
+                    break
+
+            if not p2_data:
+                p2_data = _record_to_dict(p2_records[0])
+                p2_data['warning'] = "Exact winder match not found"
+
+    # 步驟 3: 查詢 P1（V2 優先 → legacy）
+    p1_data: Optional[Dict[str, Any]] = None
+
+    if lot_no_norm is not None:
+        p1_v2_stmt = select(P1Record).where(
+            P1Record.tenant_id == current_tenant.id,
+            P1Record.lot_no_norm == lot_no_norm,
+        )
+        p1_v2_result = await db.execute(p1_v2_stmt)
+        p1_v2 = p1_v2_result.scalar_one_or_none()
+        if p1_v2:
+            p1_data = _p1_record_to_dict(p1_v2)
+
+    if not p1_data and lot_no:
+        p1_legacy_stmt = select(Record).where(
+            Record.tenant_id == current_tenant.id,
+            Record.data_type == DataType.P1,
+            Record.lot_no == lot_no,
+        )
+        p1_result = await db.execute(p1_legacy_stmt)
         p1_record = p1_result.scalar_one_or_none()
-        
         if p1_record:
             p1_data = _record_to_dict(p1_record)
 
-    # V2 fallback: 舊路徑 P1 找不到時，嘗試從 p1_records 查
-    if not p1_data and lot_no:
-        try:
-            lot_no_norm = normalize_lot_no(lot_no)
-        except Exception:
-            lot_no_norm = None
-
-        if lot_no_norm is not None:
-            p1_v2_stmt = select(P1Record).where(
-                P1Record.tenant_id == current_tenant.id,
-                P1Record.lot_no_norm == lot_no_norm,
-            )
-            p1_v2_result = await db.execute(p1_v2_stmt)
-            p1_v2 = p1_v2_result.scalar_one_or_none()
-            if p1_v2:
-                p1_data = _p1_record_to_dict(p1_v2)
-
-    # 組合回應
-    response = {
+    return {
         "product_id": product_id,
         "p3": p3_data,
         "p2": p2_data,
         "p1": p1_data,
         "trace_complete": all([p3_data, p2_data, p1_data]),
-        "missing_links": _get_missing_links_dict(p3_data, p2_data, p1_data)
+        "missing_links": _get_missing_links_dict(p3_data, p2_data, p1_data),
     }
-    
-    return response
 
 
 @router.get("/lot/{lot_no}", response_model=Dict[str, Any])
@@ -374,27 +369,52 @@ async def trace_by_winder(
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
     """根據 Lot_No 和 Winder 編號查詢追溯鏈"""
-    # 查詢 P2
-    p2_item_query = select(P2Item).join(Record).where(
-        Record.lot_no == lot_no,
-        Record.data_type == DataType.P2,
-        P2Item.winder_number == winder_number
-    ).options(selectinload(P2Item.record))
-    
-    p2_item_result = await db.execute(p2_item_query)
-    p2_item = p2_item_result.scalar_one_or_none()
-    
+    # 查詢 P2（優先 V2）
     p2_data = None
-    if p2_item:
-        p2_data = _p2_item_to_dict(p2_item)
-    else:
-        # Fallback
-        p2_query = select(Record).where(
-            Record.data_type == DataType.P2,
-            Record.lot_no == lot_no
+    try:
+        lot_no_norm = normalize_lot_no(lot_no)
+    except Exception:
+        lot_no_norm = None
+
+    if lot_no_norm is not None:
+        p2_v2_stmt = select(P2Record).options(selectinload(P2Record.items_v2)).where(
+            P2Record.tenant_id == current_tenant.id,
+            P2Record.lot_no_norm == lot_no_norm,
+            P2Record.winder_number == winder_number,
         )
-        p2_result = await db.execute(p2_query)
-        p2_records = p2_result.scalars().all()
+        p2_v2_result = await db.execute(p2_v2_stmt)
+        p2_v2 = p2_v2_result.scalar_one_or_none()
+        if p2_v2:
+            p2_data = _p2_record_to_dict(p2_v2)
+
+    if not p2_data:
+        # Legacy
+        p2_item_query = (
+            select(P2Item)
+            .join(Record)
+            .where(
+                Record.tenant_id == current_tenant.id,
+                Record.lot_no == lot_no,
+                Record.data_type == DataType.P2,
+                P2Item.winder_number == winder_number,
+            )
+            .options(selectinload(P2Item.record))
+        )
+
+        p2_item_result = await db.execute(p2_item_query)
+        p2_item = p2_item_result.scalar_one_or_none()
+
+        if p2_item:
+            p2_data = _p2_item_to_dict(p2_item)
+        else:
+        # Fallback
+            p2_query = select(Record).where(
+                Record.tenant_id == current_tenant.id,
+                Record.data_type == DataType.P2,
+                Record.lot_no == lot_no
+            )
+            p2_result = await db.execute(p2_query)
+            p2_records = p2_result.scalars().all()
         
         for rec in p2_records:
             if rec.additional_data and 'rows' in rec.additional_data:
@@ -405,80 +425,78 @@ async def trace_by_winder(
                         break
             if p2_data: break
 
-    # V2 fallback for P2
-    if not p2_data:
-        try:
-            lot_no_norm = normalize_lot_no(lot_no)
-        except Exception:
-            lot_no_norm = None
-
-        if lot_no_norm is not None:
-            p2_v2_stmt = select(P2Record).where(
-                P2Record.tenant_id == current_tenant.id,
-                P2Record.lot_no_norm == lot_no_norm,
-                P2Record.winder_number == winder_number,
-            )
-            p2_v2_result = await db.execute(p2_v2_stmt)
-            p2_v2 = p2_v2_result.scalar_one_or_none()
-            if p2_v2:
-                p2_data = _p2_record_to_dict(p2_v2)
+    # 查詢 P1（優先 V2）
 
     if not p2_data:
         raise HTTPException(status_code=404, detail="P2 record not found")
 
-    # 查詢 P1
-    p1_query = select(Record).where(
-        Record.data_type == DataType.P1,
-        Record.lot_no == lot_no
-    )
-    p1_result = await db.execute(p1_query)
-    p1_record = p1_result.scalar_one_or_none()
-    p1_data = _record_to_dict(p1_record) if p1_record else None
+    p1_data = None
+    if lot_no_norm is not None:
+        p1_v2_stmt = select(P1Record).where(
+            P1Record.tenant_id == current_tenant.id,
+            P1Record.lot_no_norm == lot_no_norm,
+        )
+        p1_v2_result = await db.execute(p1_v2_stmt)
+        p1_v2 = p1_v2_result.scalar_one_or_none()
+        if p1_v2:
+            p1_data = _p1_record_to_dict(p1_v2)
 
-    # V2 fallback for P1
     if not p1_data:
-        try:
-            lot_no_norm = normalize_lot_no(lot_no)
-        except Exception:
-            lot_no_norm = None
-
-        if lot_no_norm is not None:
-            p1_v2_stmt = select(P1Record).where(
-                P1Record.tenant_id == current_tenant.id,
-                P1Record.lot_no_norm == lot_no_norm,
-            )
-            p1_v2_result = await db.execute(p1_v2_stmt)
-            p1_v2 = p1_v2_result.scalar_one_or_none()
-            if p1_v2:
-                p1_data = _p1_record_to_dict(p1_v2)
-
-    # 查詢 P3
-    p3_items_query = select(P3Item).join(Record).where(
-        Record.lot_no == lot_no,
-        Record.data_type == DataType.P3,
-        P3Item.source_winder == winder_number
-    ).options(selectinload(P3Item.record))
-    
-    p3_items_result = await db.execute(p3_items_query)
-    p3_items = p3_items_result.scalars().all()
-    
-    p3_data_list = []
-    if p3_items:
-        p3_data_list = [_p3_item_to_dict(item) for item in p3_items]
-    else:
-        # Fallback P3
-        p3_query = select(Record).where(
-            Record.data_type == DataType.P3,
+        p1_query = select(Record).where(
+            Record.tenant_id == current_tenant.id,
+            Record.data_type == DataType.P1,
             Record.lot_no == lot_no
         )
-        p3_result = await db.execute(p3_query)
-        p3_records = p3_result.scalars().all()
-        
-        # 在記憶體中過濾 source_winder
-        for r in p3_records:
-            extracted_winder = _extract_winder_from_p3(r)
-            if extracted_winder == winder_number:
-                p3_data_list.append(_record_to_dict(r))
+        p1_result = await db.execute(p1_query)
+        p1_record = p1_result.scalar_one_or_none()
+        p1_data = _record_to_dict(p1_record) if p1_record else None
+
+    # 查詢 P3（優先 V2）
+    p3_data_list: list[Dict[str, Any]] = []
+
+    p3_items_v2_stmt = select(P3ItemV2).where(
+        P3ItemV2.tenant_id == current_tenant.id,
+        P3ItemV2.lot_no == lot_no,
+        P3ItemV2.source_winder == winder_number,
+    )
+    p3_items_v2_result = await db.execute(p3_items_v2_stmt)
+    p3_items_v2 = p3_items_v2_result.scalars().all()
+    if p3_items_v2:
+        p3_data_list = [_p3_item_v2_to_dict(item) for item in p3_items_v2]
+    else:
+        # Legacy
+        p3_items_query = (
+            select(P3Item)
+            .join(Record)
+            .where(
+                Record.tenant_id == current_tenant.id,
+                Record.lot_no == lot_no,
+                Record.data_type == DataType.P3,
+                P3Item.source_winder == winder_number,
+            )
+            .options(selectinload(P3Item.record))
+        )
+
+        p3_items_result = await db.execute(p3_items_query)
+        p3_items = p3_items_result.scalars().all()
+
+        if p3_items:
+            p3_data_list = [_p3_item_to_dict(item) for item in p3_items]
+        else:
+            # Fallback P3
+            p3_query = select(Record).where(
+                Record.tenant_id == current_tenant.id,
+                Record.data_type == DataType.P3,
+                Record.lot_no == lot_no
+            )
+            p3_result = await db.execute(p3_query)
+            p3_records = p3_result.scalars().all()
+
+            # 在記憶體中過濾 source_winder
+            for r in p3_records:
+                extracted_winder = _extract_winder_from_p3(r)
+                if extracted_winder == winder_number:
+                    p3_data_list.append(_record_to_dict(r))
 
     return {
         "lot_no": lot_no,
@@ -521,6 +539,33 @@ def _p3_item_to_dict(item: P3Item) -> Dict[str, Any]:
         "notes": item.record.notes if item.record else None,
         "additional_data": {"rows": [row_data]} if row_data else {},
         "created_at": item.created_at.isoformat() if item.created_at else None
+    }
+
+
+def _p3_item_v2_to_dict(item: P3ItemV2) -> Dict[str, Any]:
+    """將 P3ItemV2 轉換為字典（前端 traceability / QueryPage 相容格式）"""
+    row_data = item.row_data.copy() if item.row_data else {}
+    if item.product_id:
+        row_data['product_id'] = item.product_id
+
+    base_lot, parsed_winder = _extract_base_lot_and_winder_from_p3_payload(row_data)
+
+    return {
+        "id": str(item.id),
+        "record_id": str(item.p3_record_id),
+        "data_type": DataType.P3.value,
+        "display_name": f"P3追蹤 ({item.lot_no})",
+        "lot_no": base_lot or item.lot_no,
+        "product_id": item.product_id,
+        "machine_no": item.machine_no,
+        "mold_no": item.mold_no,
+        "production_lot": item.production_lot,
+        "source_winder": item.source_winder if item.source_winder is not None else parsed_winder,
+        "production_date": item.production_date.isoformat() if item.production_date else None,
+        "specification": item.specification,
+        "bottom_tape_lot": item.bottom_tape_lot,
+        "additional_data": {"rows": [row_data]} if row_data else {},
+        "created_at": item.created_at.isoformat() if item.created_at else None,
     }
 
 
@@ -668,13 +713,27 @@ def _p3_record_to_dict(rec: P3Record) -> Dict[str, Any]:
 
 
 def _p2_record_to_dict(rec: P2Record) -> Dict[str, Any]:
+    rows: list[Dict[str, Any]] = []
+    try:
+        items = list(getattr(rec, 'items_v2', None) or [])
+        for it in items:
+            if getattr(it, 'row_data', None):
+                if isinstance(it.row_data, dict):
+                    rows.append(it.row_data)
+                else:
+                    rows.append({"value": it.row_data})
+    except Exception:
+        rows = []
+
+    additional_data = {"rows": rows} if rows else _extras_to_additional_data(rec.extras)
+
     return {
         "id": str(rec.id),
         "data_type": DataType.P2.value,
         "display_name": f"P2 ({rec.lot_no_raw})",
         "lot_no": rec.lot_no_raw,
         "winder_number": rec.winder_number,
-        "additional_data": _extras_to_additional_data(rec.extras),
+        "additional_data": additional_data,
         "created_at": rec.created_at.isoformat() if rec.created_at else None,
     }
 

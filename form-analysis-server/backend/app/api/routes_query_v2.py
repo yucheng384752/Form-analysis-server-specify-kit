@@ -156,7 +156,51 @@ def _p1_to_query_record(r: P1Record) -> QueryRecordV2Compat:
     )
 
 
+def _p2_to_query_record_with_items(p2_record: P2Record, items: list) -> QueryRecordV2Compat:
+    """
+    組合 P2Record + P2ItemsV2 為查詢結果
+    items: List[P2ItemV2]
+    """
+    # 將 items 轉為 rows 格式（前端期望）
+    rows = []
+    for item in items:
+        row = item.row_data if isinstance(item.row_data, dict) else {}
+        row['winder_number'] = item.winder_number
+        # 加入結構化欄位
+        for field in ['sheet_width', 'thickness1', 'thickness2', 'thickness3',
+                     'thickness4', 'thickness5', 'thickness6', 'thickness7',
+                     'appearance', 'rough_edge', 'slitting_result']:
+            val = getattr(item, field, None)
+            if val is not None:
+                row[field] = val
+        rows.append(row)
+    
+    # 按 winder_number 排序
+    rows.sort(key=lambda x: x.get('winder_number', 0))
+    
+    # 從第一個 item 提取生產日期
+    first_item = items[0] if items else None
+    production_date = None
+    if first_item and isinstance(first_item.row_data, dict):
+        for key in ['Production Date', 'production_date', '生產日期', 'date']:
+            if key in first_item.row_data:
+                production_date = first_item.row_data[key]
+                break
+    
+    return QueryRecordV2Compat(
+        id=str(p2_record.id),
+        lot_no=p2_record.lot_no_raw,
+        data_type='P2',
+        production_date=production_date,
+        created_at=p2_record.created_at.isoformat(),
+        display_name=p2_record.lot_no_raw,
+        winder_number=None,  # 合併模式
+        additional_data={'rows': rows},
+    )
+
+
 def _p2_to_query_record(r: P2Record) -> QueryRecordV2Compat:
+    """Legacy fallback - 當沒有 items 時使用"""
     display = f"{r.lot_no_raw} (W{r.winder_number})"
     row0 = _first_row(r.extras)
     return QueryRecordV2Compat(
@@ -172,7 +216,10 @@ def _p2_to_query_record(r: P2Record) -> QueryRecordV2Compat:
 
 
 def _merge_p2_records(records: list[P2Record]) -> list[QueryRecordV2Compat]:
-    """將相同 lot_no 的 P2 Records (20個winders) 合併成單一筆查詢記錄"""
+    """將相同 lot_no 的 P2 Records (20個winders) 合併成單一筆查詢記錄
+    
+    前端期望的資料結構是 additional_data.rows 陣列，每個 row 是扁平的 dict。
+    """
     from collections import defaultdict
     
     # 按 lot_no_norm 分組
@@ -189,21 +236,24 @@ def _merge_p2_records(records: list[P2Record]) -> list[QueryRecordV2Compat]:
         first = lot_records[0]
         row0 = _first_row(first.extras)
         
-        # 合併所有 winder 的 extras 到一個結構中
+        # 將所有 winder 的 extras 展開為 rows 陣列（前端期望的格式）
+        rows = []
+        for rec in lot_records:
+            # P2Record.extras 是扁平的 dict，包含所有欄位
+            # 直接使用 extras 作為 row，這樣前端可以正確渲染表格
+            if isinstance(rec.extras, dict):
+                row = rec.extras.copy()
+                # 確保 winder_number 包含在 row 中（前端可能需要）
+                row['winder_number'] = rec.winder_number
+                rows.append(row)
+        
+        # 組裝 additional_data (包含 rows 陣列)
         merged_extras = {
             'lot_no': first.lot_no_raw,
-            'winders': []
+            'rows': rows  # 前端期望此欄位名稱
         }
         
-        # 收集所有 winder 的資料
-        for rec in lot_records:
-            winder_data = {
-                'winder_number': rec.winder_number,
-                'data': rec.extras
-            }
-            merged_extras['winders'].append(winder_data)
-        
-        # 從第一個 winder 的 extras 提取共同資訊
+        # 從第一個 winder 的 extras 提取共同資訊（保留共同欄位）
         if isinstance(first.extras, dict):
             for key in ['format', 'Format', '規格', 'production_date', 'Production Date', '生產日期']:
                 if key in first.extras:
@@ -223,7 +273,41 @@ def _merge_p2_records(records: list[P2Record]) -> list[QueryRecordV2Compat]:
     return merged_results
 
 
+def _p3_to_query_record_with_items(p3_record: P3Record, items: list) -> QueryRecordV2Compat:
+    """
+    組合 P3Record + P3ItemsV2 為查詢結果
+    items: List[P3ItemV2]
+    """
+    # 將 items 轉為 rows 格式
+    rows = []
+    for item in items:
+        row = item.row_data if isinstance(item.row_data, dict) else {}
+        row['row_no'] = item.row_no
+        row['product_id'] = item.product_id
+        row['source_winder'] = item.source_winder
+        row['specification'] = item.specification
+        rows.append(row)
+    
+    # 按 row_no 排序
+    rows.sort(key=lambda x: x.get('row_no', 0))
+    
+    return QueryRecordV2Compat(
+        id=str(p3_record.id),
+        lot_no=p3_record.lot_no_raw,
+        data_type='P3',
+        production_date=_yyyymmdd_to_yyyy_mm_dd(p3_record.production_date_yyyymmdd),
+        created_at=p3_record.created_at.isoformat(),
+        display_name=p3_record.product_id or p3_record.lot_no_raw,
+        product_id=p3_record.product_id,
+        machine_no=p3_record.machine_no,
+        mold_no=p3_record.mold_no,
+        specification=items[0].specification if items else None,
+        additional_data={'rows': rows},
+    )
+
+
 def _p3_to_query_record(r: P3Record) -> QueryRecordV2Compat:
+    """Legacy fallback - 當沒有 items 時使用"""
     machine, mold = _derive_machine_mold(r.machine_no, r.mold_no, r.extras)
     display = r.product_id or r.lot_no_raw
     row0 = _first_row(r.extras)
@@ -571,7 +655,8 @@ async def query_records_v2(
         machine_no=None,
         mold_no=None,
         product_id=None,
-        p3_specification=None,
+        specification=None,
+        winder_number=None,
         data_type=data_type,
         page=page,
         page_size=page_size,
@@ -647,49 +732,76 @@ async def query_records_advanced_v2(
 
     # P2
     if dt in (None, "P2"):
-        p2_stmt = select(P2Record).where(P2Record.tenant_id == current_tenant.id)
+        from app.models.p2_item_v2 import P2ItemV2
+        from sqlalchemy.orm import selectinload
+        
+        # 查詢 P2Record，預先加載 items_v2
+        p2_stmt = select(P2Record).options(selectinload(P2Record.items_v2)).where(
+            P2Record.tenant_id == current_tenant.id
+        )
         if lot_no_norm is not None:
             p2_stmt = p2_stmt.where(P2Record.lot_no_norm == lot_no_norm)
         elif lot_no_raw:
             p2_stmt = p2_stmt.where(P2Record.lot_no_raw.ilike(f"%{lot_no_raw}%"))
         
-        # 統一規格搜尋: P2 查 extras.format
+        # Winder Number 篩選（在 items 層級）
+        winder_filter_applied = False
+        winder_val = None
+        if winder_number and winder_number.strip():
+            try:
+                winder_val = int(winder_number.strip())
+                winder_filter_applied = True
+            except ValueError:
+                pass
+        
+        # 統一規格搜尋: 在 items 的 row_data 中搜尋
         if specification and specification.strip():
             spec = specification.strip()
+            # 需要 JOIN p2_items_v2 來篩選
+            p2_stmt = p2_stmt.join(P2ItemV2, P2Record.id == P2ItemV2.p2_record_id)
             p2_stmt = p2_stmt.where(
                 or_(
-                    func.jsonb_extract_path_text(cast(P2Record.extras, JSONB), 'format').ilike(f"%{spec}%"),
-                    func.jsonb_extract_path_text(cast(P2Record.extras, JSONB), 'Format').ilike(f"%{spec}%"),
-                    func.jsonb_extract_path_text(cast(P2Record.extras, JSONB), '規格').ilike(f"%{spec}%"),
+                    func.jsonb_extract_path_text(cast(P2ItemV2.row_data, JSONB), 'format').ilike(f"%{spec}%"),
+                    func.jsonb_extract_path_text(cast(P2ItemV2.row_data, JSONB), 'Format').ilike(f"%{spec}%"),
+                    func.jsonb_extract_path_text(cast(P2ItemV2.row_data, JSONB), '規格').ilike(f"%{spec}%"),
                 )
-            )
+            ).distinct()
         
-        # Winder Number 篩選: P2 查 extras.rows 中的 winder_number
-        if winder_number and winder_number.strip():
-            winder_val = winder_number.strip()
-            # 在 P2Record 中，extras.rows 是陣列，每個 row 有 winder_number
-            p2_stmt = p2_stmt.where(
-                func.jsonb_path_exists(
-                    cast(P2Record.extras, JSONB),
-                    f'$.rows[*] ? (@.winder_number == "{winder_val}" || @."Winder Number" == "{winder_val}")'
-                )
-            )
-        
-        # 移除 limit，因為我們需要取得所有 winder 才能合併
         p2_stmt = p2_stmt.order_by(P2Record.created_at.desc())
         p2_result = await db.execute(p2_stmt)
-        p2_records = p2_result.scalars().all()
-        
-        # 合併相同批號的 records（20個 winders → 1筆）
-        merged_p2 = _merge_p2_records(p2_records)
-        
-        # 套用分頁到合併後的結果
-        merged_p2 = merged_p2[:page * page_size]
-        records.extend(merged_p2)
+        p2_records = p2_result.scalars().unique().all()
+
+        legacy_records: list[P2Record] = []
+
+        # 處理每個 P2Record + 其 items_v2；若沒有 items_v2，走 legacy merge/fallback
+        for p2_record in p2_records:
+            items = list(p2_record.items_v2 or [])
+
+            # 套用 winder 篩選（items 層級）
+            if winder_filter_applied and winder_val is not None:
+                items = [item for item in items if item.winder_number == winder_val]
+
+            if items:
+                records.append(_p2_to_query_record_with_items(p2_record, items))
+            else:
+                # Legacy: 沒有 items_v2 的 P2Record 可能仍以 extras 方式保存
+                if winder_filter_applied and winder_val is not None:
+                    if p2_record.winder_number != winder_val:
+                        continue
+                legacy_records.append(p2_record)
+
+        if legacy_records:
+            records.extend(_merge_p2_records(legacy_records))
 
     # P3
     if dt in (None, "P3"):
-        p3_stmt = select(P3Record).where(P3Record.tenant_id == current_tenant.id)
+        from app.models.p3_item_v2 import P3ItemV2
+        from sqlalchemy.orm import selectinload
+        
+        # 查詢 P3Record，預先加載 items_v2
+        p3_stmt = select(P3Record).options(selectinload(P3Record.items_v2)).where(
+            P3Record.tenant_id == current_tenant.id
+        )
         if lot_no_norm is not None:
             p3_stmt = p3_stmt.where(P3Record.lot_no_norm == lot_no_norm)
         elif lot_no_raw:
@@ -705,33 +817,31 @@ async def query_records_advanced_v2(
         if product_id and product_id.strip():
             p3_stmt = p3_stmt.where(P3Record.product_id.ilike(f"%{product_id.strip()}%"))
 
-        # 統一規格搜尋: P3 查 extras.rows[0].Specification
+        # 統一規格搜尋: 在 items 的 specification 欄位中搜尋
         if specification and specification.strip():
             spec = specification.strip()
-            p3_stmt = p3_stmt.where(
-                or_(
-                    func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', 'Specification').ilike(f"%{spec}%"),
-                    func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', 'specification').ilike(f"%{spec}%"),
-                    func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', '規格').ilike(f"%{spec}%"),
-                )
-            )
+            p3_stmt = p3_stmt.join(P3ItemV2, P3Record.id == P3ItemV2.p3_record_id)
+            p3_stmt = p3_stmt.where(P3ItemV2.specification.ilike(f"%{spec}%")).distinct()
         
-        # Winder Number 篩選: P3 查 source_winder (在 p3_items 表中)
-        # 注意：p3_records 沒有直接的 winder 欄位，可能需要從 extras 提取
+        # Winder Number 篩選: 搜尋 items 的 source_winder
         if winder_number and winder_number.strip():
-            winder_val = winder_number.strip()
-            # 嘗試從 extras.rows[0] 中查找 source_winder 或類似欄位
-            p3_stmt = p3_stmt.where(
-                or_(
-                    func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', 'source_winder').ilike(f"%{winder_val}%"),
-                    func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', 'Source Winder').ilike(f"%{winder_val}%"),
-                    func.jsonb_extract_path_text(cast(P3Record.extras, JSONB), 'rows', '0', 'winder').ilike(f"%{winder_val}%"),
-                )
-            )
+            try:
+                winder_val = int(winder_number.strip())
+                if not specification:  # 避免重複 JOIN
+                    p3_stmt = p3_stmt.join(P3ItemV2, P3Record.id == P3ItemV2.p3_record_id)
+                p3_stmt = p3_stmt.where(P3ItemV2.source_winder == winder_val).distinct()
+            except ValueError:
+                pass
 
-        p3_stmt = p3_stmt.order_by(P3Record.created_at.desc()).limit(page * page_size)
+        p3_stmt = p3_stmt.order_by(P3Record.created_at.desc())
         p3_result = await db.execute(p3_stmt)
-        records.extend([_p3_to_query_record(r) for r in p3_result.scalars().all()])
+        p3_records = p3_result.scalars().unique().all()
+        
+        # 處理每個 P3Record + 其 items
+        for p3_record in p3_records:
+            items = p3_record.items_v2
+            if items:  # 只有有 items 的才顯示
+                records.append(_p3_to_query_record_with_items(p3_record, items))
 
     # Sort and paginate in memory (simple, OK for current UI)
     records.sort(key=lambda r: r.created_at, reverse=True)
