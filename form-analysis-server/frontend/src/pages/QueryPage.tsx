@@ -8,6 +8,8 @@ import "../styles/query-page.css";
 // 資料類型枚舉
 type DataType = 'P1' | 'P2' | 'P3';
 
+const TENANT_STORAGE_KEY = "form_analysis_tenant_id";
+
 interface QueryRecord {
   id: string;
   lot_no: string;
@@ -81,13 +83,51 @@ export function QueryPage() {
   const [tableSortState, setTableSortState] = useState<{ [key: string]: { column: string; direction: 'asc' | 'desc' } }>({});
 
   React.useEffect(() => {
+    const storedTenantId = window.localStorage.getItem(TENANT_STORAGE_KEY);
+    if (storedTenantId) {
+      setTenantId(storedTenantId);
+      return;
+    }
+
     fetch('/api/tenants')
       .then(res => res.json())
       .then(data => {
-        if (data && data.length > 0) setTenantId(data[0].id);
+        if (data && data.length > 0) {
+          const id = data[0].id;
+          setTenantId(id);
+          try {
+            window.localStorage.setItem(TENANT_STORAGE_KEY, id);
+          } catch {
+            // ignore
+          }
+        }
       })
       .catch(err => console.error("Failed to fetch tenants", err));
   }, []);
+
+  const mergeTenantHeaders = (headers?: HeadersInit): HeadersInit => {
+    const tenantHeaders: Record<string, string> = tenantId ? { 'X-Tenant-Id': tenantId } : {};
+
+    if (!headers) return tenantHeaders;
+    if (headers instanceof Headers) {
+      const merged = new Headers(headers);
+      for (const [k, v] of Object.entries(tenantHeaders)) merged.set(k, v);
+      return merged;
+    }
+    if (Array.isArray(headers)) {
+      const mergedObj: Record<string, string> = { ...tenantHeaders };
+      for (const [k, v] of headers) mergedObj[String(k)] = String(v);
+      return mergedObj;
+    }
+    return { ...tenantHeaders, ...(headers as Record<string, string>) };
+  };
+
+  const fetchWithTenant = (input: RequestInfo | URL, init?: RequestInit) => {
+    return fetch(input, {
+      ...init,
+      headers: mergeTenantHeaders(init?.headers),
+    });
+  };
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -171,6 +211,43 @@ export function QueryPage() {
 
   // 輔助函數：格式化欄位值（處理多種 boolean 轉換和日期轉換）
   const formatFieldValue = (header: string, value: any): string => {
+    // 空值處理
+    if (value === null || value === undefined) return '-';
+
+    // 避免直接渲染物件導致 [object Object]
+    if (Array.isArray(value)) {
+      // 陣列內容可能是物件或原始值
+      const parts = value
+        .map((v) => {
+          if (v === null || v === undefined) return '';
+          if (typeof v === 'object') {
+            try {
+              return JSON.stringify(v);
+            } catch {
+              return String(v);
+            }
+          }
+          return String(v);
+        })
+        .filter((s) => s.trim().length > 0);
+      return parts.length ? parts.join(', ') : '-';
+    }
+
+    if (typeof value === 'object') {
+      // 常見包裝格式（避免直接顯示 [object Object]）
+      const obj: any = value;
+      for (const k of ['value', 'raw', 'text', 'display', 'name']) {
+        const v = obj?.[k];
+        if (v !== null && v !== undefined && typeof v !== 'object') {
+          return String(v);
+        }
+      }
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
     // 10Po 欄位的 boolean 轉換
     if (header === '10Po' || header === '10PO') {
       if (typeof value === 'boolean') {
@@ -292,8 +369,8 @@ export function QueryPage() {
       return value.toLocaleString();
     }
     
-    // 空值處理
-    return value || '-';
+    // 空字串處理
+    return value === '' ? '-' : String(value);
   };
 
   // 搜尋記錄 (支援基本搜尋和進階搜尋)
@@ -322,7 +399,7 @@ export function QueryPage() {
         params.append('lot_no', search);
       }
       
-      const response = await fetch(`${apiUrl}?${params}`);
+      const response = await fetchWithTenant(`${apiUrl}?${params}`);
       if (response.ok) {
         const data: QueryResponse = await response.json();
         setRecords(data.records);
@@ -466,7 +543,7 @@ export function QueryPage() {
       setLoading(true);
       
       // 使用新的追溯 API 獲取完整資料
-      const traceResponse = await fetch(
+      const traceResponse = await fetchWithTenant(
         `/api/traceability/winder/${encodeURIComponent(baseLotNo)}/${sourceWinder}`
       );
       
@@ -563,7 +640,7 @@ export function QueryPage() {
         limit: '10'
       });
       
-      const response = await fetch(`/api/v2/query/lots/suggestions?${params}`);
+      const response = await fetchWithTenant(`/api/v2/query/lots/suggestions?${params}`);
       if (response.ok) {
         const data: string[] = await response.json();
         setSuggestions(data);
@@ -598,7 +675,7 @@ export function QueryPage() {
         setTotalCount(0);
         setSearchPerformed(false);
 
-        const res = await fetch(`/api/traceability/product/${encodeURIComponent(keyword)}`);
+        const res = await fetchWithTenant(`/api/traceability/product/${encodeURIComponent(keyword)}`);
         if (!res.ok) {
           if (res.status === 404) {
             alert('查無此產品');
@@ -800,7 +877,7 @@ export function QueryPage() {
                   {Object.entries(data).map(([key, value]) => (
                     <tr key={key}>
                       <th>{key}</th>
-                      <td>{typeof value === 'number' ? value.toLocaleString() : String(value)}</td>
+                      <td>{formatFieldValue(key, value)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -816,10 +893,8 @@ export function QueryPage() {
                 </thead>
                 <tbody>
                   <tr>
-                    {Object.values(data).map((value, idx) => (
-                      <td key={idx}>
-                        {typeof value === 'number' ? value.toLocaleString() : String(value)}
-                      </td>
+                    {Object.keys(data).map((key) => (
+                      <td key={key}>{formatFieldValue(key, data[key])}</td>
                     ))}
                   </tr>
                 </tbody>
@@ -837,8 +912,26 @@ export function QueryPage() {
       return <p className="no-data">此記錄沒有額外的CSV資料</p>;
     }
 
+    // P1 的 additional_data 通常包含 rows（陣列）。
+    // 展開顯示時應以 rows[0] 的扁平欄位為主，避免把 rows 陣列直接渲染成 [object Object]。
+    let p1DisplayData: { [key: string]: any } = record.additional_data;
+    if (
+      p1DisplayData &&
+      (p1DisplayData as any).rows &&
+      Array.isArray((p1DisplayData as any).rows) &&
+      (p1DisplayData as any).rows.length > 0
+    ) {
+      const { rows, ...rest } = p1DisplayData as any;
+      const row0 = rows[0];
+      if (row0 && typeof row0 === 'object' && !Array.isArray(row0)) {
+        p1DisplayData = { ...rest, ...row0 };
+      } else {
+        p1DisplayData = { ...rest };
+      }
+    }
+
     // 分組其他資料
-    const grouped = groupDataByPrefix(record.additional_data);
+    const grouped = groupDataByPrefix(p1DisplayData);
 
     // 合併 actual_temp 和 set_temp 作為押出機生產條件
     const extrusionConditions = {
@@ -1485,6 +1578,7 @@ export function QueryPage() {
             onReset={handleAdvancedReset}
             isExpanded={advancedSearchExpanded}
             onToggle={() => setAdvancedSearchExpanded(!advancedSearchExpanded)}
+            tenantId={tenantId}
           />
         </label>
       </section>

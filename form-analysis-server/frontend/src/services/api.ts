@@ -16,6 +16,8 @@ interface ApiError extends Error {
 
 const API_BASE_URL = (import.meta.env?.VITE_API_URL as string) || 'http://localhost:8000';
 
+const TENANT_STORAGE_KEY = 'form_analysis_tenant_id';
+
 /**
  * 通用 API 請求函數
  */
@@ -158,6 +160,18 @@ export async function uploadFile<T = any>(
 
     const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
     xhr.open('POST', fullUrl);
+
+    // Keep tenant header consistent even for XHR uploads
+    try {
+      const u = new URL(fullUrl, window.location.href);
+      const tenantId = window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
+      if (tenantId && u.pathname.startsWith('/api') && !u.pathname.startsWith('/api/tenants')) {
+        xhr.setRequestHeader('X-Tenant-Id', tenantId);
+      }
+    } catch {
+      // ignore
+    }
+
     xhr.send(formData);
   });
 }

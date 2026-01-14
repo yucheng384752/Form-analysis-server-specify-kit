@@ -18,6 +18,7 @@ interface AdvancedSearchProps {
   onReset: () => void;
   isExpanded: boolean;
   onToggle: () => void;
+  tenantId?: string;
 }
 
 export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
@@ -25,6 +26,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   onReset,
   isExpanded,
   onToggle,
+  tenantId,
 }) => {
   // 批號
   const [lotNo, setLotNo] = useState('');
@@ -56,12 +58,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     if (isExpanded) {
       const fetchOptions = async () => {
         try {
+          const headers: HeadersInit = tenantId ? { 'X-Tenant-Id': tenantId } : {};
           // 平行請求所有選項
           const [machineRes, moldRes, specRes, winderRes] = await Promise.all([
-            fetch('/api/v2/query/options/machine_no'),
-            fetch('/api/v2/query/options/mold_no'),
-            fetch('/api/v2/query/options/specification'),
-            fetch('/api/v2/query/options/winder_number')
+            fetch('/api/v2/query/options/machine_no', { headers }),
+            fetch('/api/v2/query/options/mold_no', { headers }),
+            fetch('/api/v2/query/options/specification', { headers }),
+            fetch('/api/v2/query/options/winder_number', { headers })
           ]);
 
           if (machineRes.ok) setMachineOptions(await machineRes.json());

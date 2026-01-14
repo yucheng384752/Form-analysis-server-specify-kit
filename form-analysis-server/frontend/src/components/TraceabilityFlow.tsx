@@ -15,9 +15,10 @@ interface TraceabilityFlowProps {
   preloadedData?: TraceabilityData;
   onClose: () => void;
   onRecordClick?: (record: any, type: 'P1' | 'P2' | 'P3') => void;
+  tenantId?: string;
 }
 
-export const TraceabilityFlow: React.FC<TraceabilityFlowProps> = ({ productId, preloadedData, onClose, onRecordClick }) => {
+export const TraceabilityFlow: React.FC<TraceabilityFlowProps> = ({ productId, preloadedData, onClose, onRecordClick, tenantId }) => {
   const [data, setData] = useState<TraceabilityData | null>(preloadedData || null);
   const [loading, setLoading] = useState(!preloadedData);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +35,8 @@ export const TraceabilityFlow: React.FC<TraceabilityFlowProps> = ({ productId, p
       
       try {
         setLoading(true);
-        const response = await fetch(`/api/traceability/product/${productId}`);
+        const headers: HeadersInit = tenantId ? { 'X-Tenant-Id': tenantId } : {};
+        const response = await fetch(`/api/traceability/product/${productId}`, { headers });
         if (!response.ok) {
           throw new Error('無法獲取追溯資料');
         }
@@ -48,7 +50,7 @@ export const TraceabilityFlow: React.FC<TraceabilityFlowProps> = ({ productId, p
     };
 
     fetchData();
-  }, [productId, preloadedData]);
+  }, [productId, preloadedData, tenantId]);
 
   if (loading) return <div className="trace-loading">載入追溯資料中...</div>;
   if (error) return <div className="trace-error">錯誤: {error}</div>;
