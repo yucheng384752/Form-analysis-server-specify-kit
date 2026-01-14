@@ -134,7 +134,7 @@ async def main():
             missing_records = await check_missing_records(session)
             
             if not missing_records:
-                print("✅ 沒有需要遷移的記錄！")
+                print("沒有需要遷移的記錄！")
                 return
             
             print(f"📋 發現 {len(missing_records)} 筆需要遷移的記錄：")
@@ -164,7 +164,7 @@ async def main():
             for legacy_record in missing_records:
                 try:
                     new_record = await migrate_record(session, legacy_record)
-                    print(f"✅ 已遷移: {legacy_record.lot_no} -> p3_records.id={new_record.id}")
+                    print(f"已遷移: {legacy_record.lot_no} -> p3_records.id={new_record.id}")
                     migrated_count += 1
                 except Exception as e:
                     print(f"❌ 遷移失敗: {legacy_record.lot_no}, 錯誤: {e}")
@@ -173,7 +173,7 @@ async def main():
             if migrated_count > 0:
                 await session.commit()
                 print()
-                print(f"✅ 成功遷移 {migrated_count} 筆記錄")
+                print(f"成功遷移 {migrated_count} 筆記錄")
             else:
                 print()
                 print("❌ 沒有成功遷移任何記錄")
@@ -184,7 +184,7 @@ async def main():
             remaining = await check_missing_records(session)
             
             if not remaining:
-                print("✅ 驗證成功！所有 P3 records 已完整遷移")
+                print("驗證成功！所有 P3 records 已完整遷移")
             else:
                 print(f"⚠️  仍有 {len(remaining)} 筆記錄未遷移")
             
@@ -215,7 +215,7 @@ async def main():
             print()
             
             if legacy_count == v2_count:
-                print("✅ 資料完整性：所有 legacy P3 records 已同步到 p3_records")
+                print("資料完整性：所有 legacy P3 records 已同步到 p3_records")
             else:
                 print(f"⚠️  資料完整性：仍有 {legacy_count - v2_count} 筆記錄未同步")
             

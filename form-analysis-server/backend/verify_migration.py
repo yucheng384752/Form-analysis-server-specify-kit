@@ -20,7 +20,7 @@ async def main():
         result = await db.execute(select(func.count()).select_from(P3Record))
         count = result.scalar()
         
-        print(f"✅ p3_records 總數: {count} 筆")
+        print(f"p3_records 總數: {count} 筆")
         print()
         
         # 列出所有記錄
