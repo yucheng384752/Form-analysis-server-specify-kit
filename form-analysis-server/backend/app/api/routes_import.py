@@ -6,18 +6,21 @@
 
 import time
 from datetime import datetime
+import uuid
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.logging import get_logger
+from app.models.core.tenant import Tenant
 from app.models.upload_job import UploadJob, JobStatus
 from app.models.record import Record
 from app.models.p3_item import P3Item
+from app.models.p3_record import P3Record
 from app.schemas.import_data import (
     ImportRequest,
     ImportResponse,
@@ -25,12 +28,161 @@ from app.schemas.import_data import (
 )
 from app.services.validation import file_validation_service
 from app.services.production_date_extractor import production_date_extractor
+from app.utils.normalization import NormalizationError, normalize_lot_no
 
 # 獲取日誌記錄器
 logger = get_logger(__name__)
 
 # 建立路由器
 router = APIRouter()
+
+
+def _pick_first_non_empty(row: dict, keys: list[str]):
+    for k in keys:
+        if k in row and row[k] is not None and str(row[k]).strip() != "":
+            return row[k]
+    return None
+
+
+def _build_p3_extras_rows(all_rows: list[dict]) -> list[dict]:
+    rows: list[dict] = []
+    for r in all_rows:
+        rows.append(
+            {
+                "lot": _pick_first_non_empty(r, ["lot", "Lot", "LOT", "Production Lot", "production_lot"]),
+                "produce_no": _pick_first_non_empty(
+                    r,
+                    [
+                        "Produce_No.",
+                        "Produce No.",
+                        "Produce_No",
+                        "Produce No",
+                        "ProduceNo",
+                        "produce_no",
+                    ],
+                ),
+                "adjustment_record": _pick_first_non_empty(
+                    r,
+                    ["AdjustmentRecord", "Adjustment Record", "adjustment_record", "Adjustment"],
+                ),
+                "finish": _pick_first_non_empty(r, ["Finish", "finish"]),
+                "operator": _pick_first_non_empty(r, ["operator", "Operator", "OP"]),
+                "specification": _pick_first_non_empty(r, ["Specification", "specification", "Spec", "規格"]),
+                "source_winder": _pick_first_non_empty(
+                    r,
+                    [
+                        "source_winder",
+                        "Source Winder",
+                        "Source winder",
+                        "source winder",
+                        "Winder number",
+                        "winder number",
+                        "Winder",
+                        "winder",
+                        "收卷機",
+                        "收卷機編號",
+                        "捲收機號碼",
+                    ],
+                ),
+            }
+        )
+    return rows
+
+
+async def _resolve_tenant_for_analytics(db: AsyncSession, http_request: Request) -> Tenant | None:
+    from app.core.tenant_resolver import resolve_tenant_or_none
+
+    x_tenant_id = http_request.headers.get("X-Tenant-Id")
+    tenant = await resolve_tenant_or_none(db=db, x_tenant_id=x_tenant_id)
+
+    # Preserve legacy behavior: log only for invalid UUID format.
+    if x_tenant_id and tenant is None:
+        try:
+            UUID(x_tenant_id)
+        except ValueError:
+            logger.warning("Invalid X-Tenant-Id format; skip p3_records sync", x_tenant_id=x_tenant_id)
+
+    return tenant
+
+
+async def _upsert_p3_record_for_analytics(
+    db: AsyncSession,
+    tenant: Tenant,
+    lot_no_raw: str,
+    production_date,
+    first_row: dict,
+    all_rows: list[dict],
+):
+    try:
+        lot_no_norm = normalize_lot_no(lot_no_raw)
+    except NormalizationError:
+        lot_no_norm = 0
+
+    prod_date = production_date
+    if prod_date is None:
+        from datetime import date as _date
+
+        prod_date = _date.today()
+    production_date_yyyymmdd = prod_date.year * 10000 + prod_date.month * 100 + prod_date.day
+
+    machine_no = _pick_first_non_empty(first_row, ["Machine NO", "Machine No", "Machine", "machine_no", "machine"])
+    mold_no = _pick_first_non_empty(first_row, ["Mold NO", "Mold No", "Mold", "mold_no", "mold"])
+    machine_no_str = str(machine_no).strip() if machine_no is not None else "UNKNOWN"
+    mold_no_str = str(mold_no).strip() if mold_no is not None else "UNKNOWN"
+
+    lot_part_raw = _pick_first_non_empty(
+        first_row,
+        ["lot", "Lot", "LOT", "Production Lot", "production_lot", "Produce_No.", "Produce No.", "produce_no"],
+    )
+    try:
+        lot_part = int(float(lot_part_raw)) if lot_part_raw is not None else 0
+    except (ValueError, TypeError):
+        lot_part = 0
+    product_id = f"{production_date_yyyymmdd}-{machine_no_str}-{mold_no_str}-{lot_part}"
+
+    specification = _pick_first_non_empty(first_row, ["Specification", "specification", "規格", "Spec"])
+    bottom_tape = _pick_first_non_empty(
+        first_row,
+        ["Bottom Tape", "bottom tape", "Bottom Tape LOT", "BottomTape", "bottom_tape", "下膠編號", "下膠"],
+    )
+
+    extras_rows = _build_p3_extras_rows(all_rows)
+    new_extras = {
+        "machine_no": machine_no_str,
+        "mold_no": mold_no_str,
+        "specification": str(specification).strip() if specification is not None else None,
+        "bottom_tape": str(bottom_tape).strip() if bottom_tape is not None else None,
+        "rows": extras_rows,
+    }
+
+    existing_stmt = select(P3Record).where(
+        P3Record.tenant_id == tenant.id,
+        P3Record.lot_no_norm == lot_no_norm,
+        P3Record.production_date_yyyymmdd == production_date_yyyymmdd,
+        P3Record.machine_no == machine_no_str,
+        P3Record.mold_no == mold_no_str,
+    )
+    existing_result = await db.execute(existing_stmt)
+    p3_record = existing_result.scalar_one_or_none()
+
+    if not p3_record:
+        p3_record = P3Record(
+            id=uuid.uuid4(),
+            tenant_id=tenant.id,
+            lot_no_raw=str(lot_no_raw).strip(),
+            lot_no_norm=lot_no_norm,
+            schema_version_id=None,
+            production_date_yyyymmdd=production_date_yyyymmdd,
+            machine_no=machine_no_str,
+            mold_no=mold_no_str,
+            product_id=product_id,
+            extras=new_extras,
+        )
+        db.add(p3_record)
+    else:
+        p3_record.lot_no_raw = str(lot_no_raw).strip()
+        p3_record.product_id = product_id
+        p3_record.extras = {**(p3_record.extras or {}), **new_extras}
 
 
 @router.post(
@@ -120,6 +272,7 @@ router = APIRouter()
 )
 async def import_data(
     request: ImportRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db)
 ) -> ImportResponse:
     """
@@ -903,6 +1056,24 @@ async def import_data(
                                     row_data=row_data
                                 )
                                 db.add(p3_item)
+
+                    # 同步寫入新表：p3_records（供追溯/analytics 使用）
+                    tenant = await _resolve_tenant_for_analytics(db, http_request)
+                    if tenant:
+                        await _upsert_p3_record_for_analytics(
+                            db=db,
+                            tenant=tenant,
+                            lot_no_raw=lot_no,
+                            production_date=existing_record.production_date,
+                            first_row=first_row,
+                            all_rows=all_rows,
+                        )
+                    else:
+                        logger.warning(
+                            "Skip p3_records sync: cannot resolve tenant (set X-Tenant-Id or ensure single/default tenant)",
+                            process_id=str(request.process_id),
+                            lot_no=lot_no,
+                        )
                     
                     logger.info("更新現有P2/P3記錄",
                                lot_no=lot_no,
@@ -964,6 +1135,24 @@ async def import_data(
                     record = Record(**record_kwargs)
                     db.add(record)
                     await db.flush()  # 確保 record.id 可用
+
+                    # 同步寫入新表：p3_records（供追溯/analytics 使用）
+                    tenant = await _resolve_tenant_for_analytics(db, http_request)
+                    if tenant:
+                        await _upsert_p3_record_for_analytics(
+                            db=db,
+                            tenant=tenant,
+                            lot_no_raw=lot_no,
+                            production_date=production_date,
+                            first_row=first_row,
+                            all_rows=all_rows,
+                        )
+                    else:
+                        logger.warning(
+                            "Skip p3_records sync: cannot resolve tenant (set X-Tenant-Id or ensure single/default tenant)",
+                            process_id=str(request.process_id),
+                            lot_no=lot_no,
+                        )
                     
                     # P3：寫入明細項目子表
                     if data_type == DataType.P3:

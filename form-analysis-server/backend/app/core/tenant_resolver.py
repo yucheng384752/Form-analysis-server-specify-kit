@@ -59,3 +59,43 @@ async def resolve_tenant_or_raise(*, db: AsyncSession, x_tenant_id: Optional[str
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail="X-Tenant-Id header is required (Multiple tenants exist and no unique default)",
     )
+
+
+async def resolve_tenant_or_none(*, db: AsyncSession, x_tenant_id: Optional[str]) -> Tenant | None:
+    """Best-effort tenant resolution.
+
+    This is intentionally non-raising and is used for optional/background work
+    (e.g. analytics sync) where we prefer to "skip" rather than fail the request.
+
+    Rules:
+    - If `x_tenant_id` is provided but not a valid UUID -> None
+    - If `x_tenant_id` is provided but tenant not found -> None
+    - If not provided:
+      - returns the only tenant if exactly one exists
+      - returns the unique default tenant if multiple exist and exactly one has `is_default=True`
+      - otherwise None
+    """
+
+    if x_tenant_id:
+        try:
+            tenant_uuid = UUID(x_tenant_id)
+        except ValueError:
+            return None
+
+        result = await db.execute(select(Tenant).where(Tenant.id == tenant_uuid))
+        return result.scalar_one_or_none()
+
+    count_result = await db.execute(select(func.count(Tenant.id)))
+    total_count = count_result.scalar() or 0
+
+    if total_count == 1:
+        result = await db.execute(select(Tenant))
+        return result.scalar_one()
+
+    if total_count > 1:
+        result = await db.execute(select(Tenant).where(Tenant.is_default == True))
+        default_tenants = result.scalars().all()
+        if len(default_tenants) == 1:
+            return default_tenants[0]
+
+    return None
