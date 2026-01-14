@@ -16,6 +16,8 @@
 - [dev-guides/PRD.md](dev-guides/PRD.md)
 - [dev-guides/PRD2.md](dev-guides/PRD2.md)
 - [dev-guides/API_DESIGN_EXPLANATION.md](dev-guides/API_DESIGN_EXPLANATION.md)
+- [dev-guides/USER_UPLOAD_FLOW.md](dev-guides/USER_UPLOAD_FLOW.md)（使用者上傳流程：狀態機/UI 提示/驗證）
+- [dev-guides/USER_QUERY_FLOW.md](dev-guides/USER_QUERY_FLOW.md)（使用者查詢流程：UI 提示/驗證/追溯）
 - [dev-guides/NEW_FORM_ADAPTATION_GUIDE.md](dev-guides/NEW_FORM_ADAPTATION_GUIDE.md)
 - [dev-guides/LOGGING_GUIDE.md](dev-guides/LOGGING_GUIDE.md)
 - [dev-guides/FRONTEND_DATE_DISPLAY_GUIDE.md](dev-guides/FRONTEND_DATE_DISPLAY_GUIDE.md)
@@ -39,6 +41,9 @@
 ## P2：內部開發紀錄（可參考，但通常不是入口）
 
 - [dev-docs/README.md](dev-docs/README.md)
+
+### dev-docs/2025-01
+- [dev-docs/2025-01/0113-test-report.md](dev-docs/2025-01/0113-test-report.md)（Product_ID 解析與 P2 查詢優化測試報告）
 
 ### dev-docs/2025-11
 - [dev-docs/2025-11/LOG_AND_DATABASE_FIX_SUMMARY.md](dev-docs/2025-11/LOG_AND_DATABASE_FIX_SUMMARY.md)
