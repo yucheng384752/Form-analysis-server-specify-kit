@@ -496,7 +496,8 @@ async def query_records(
     data_type: Optional[DataType] = Query(None, description="資料類型 (P1/P2/P3)"),
     page: int = Query(1, ge=1, description="頁碼"),
     page_size: int = Query(10, ge=1, le=100, description="每頁記錄數"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
 ) -> QueryResponse:
     """查詢指定批號的資料記錄"""
     try:
@@ -585,7 +586,47 @@ async def query_records(
             query_records.append(query_record)
         
         logger.info("查詢完成", lot_no=lot_no, data_type=data_type, total_count=total_count, returned_count=len(query_records))
-        
+
+        # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 查詢並轉成 legacy schema
+        if total_count == 0 and x_tenant_id:
+            try:
+                from app.api.routes_query_v2 import query_records_v2
+                current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
+
+                v2_resp = await query_records_v2(
+                    lot_no=lot_no,
+                    data_type=data_type.value if data_type else None,
+                    page=page,
+                    page_size=page_size,
+                    db=db,
+                    current_tenant=current_tenant,
+                )
+
+                mapped_records: List[QueryRecord] = []
+                for r in v2_resp.records:
+                    mapped_records.append(
+                        QueryRecord(
+                            id=r.id,
+                            lot_no=r.lot_no,
+                            data_type=r.data_type,
+                            production_date=r.production_date,
+                            created_at=r.created_at,
+                            display_name=r.display_name,
+                            additional_data=r.additional_data,
+                        )
+                    )
+
+                return QueryResponse(
+                    total_count=v2_resp.total_count,
+                    page=v2_resp.page,
+                    page_size=v2_resp.page_size,
+                    records=mapped_records,
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("查詢資料記錄 legacy fallback to v2 失敗", error=str(e))
+
         return QueryResponse(
             total_count=total_count,
             page=page,
@@ -609,7 +650,8 @@ async def query_records(
 async def get_lot_suggestions(
     query: str = Query(..., min_length=1, description="搜尋關鍵字"),
     limit: int = Query(10, ge=1, le=50, description="建議數量限制"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
 ) -> List[str]:
     """
     取得批號搜尋建議
@@ -635,7 +677,18 @@ async def get_lot_suggestions(
         
         result = await db.execute(sql_query)
         suggestions = [row[0] for row in result.fetchall()]
-        
+
+        # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 suggestions
+        if not suggestions and x_tenant_id:
+            try:
+                from app.api.routes_query_v2 import suggest_lots
+                current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
+                return await suggest_lots(term=query, limit=limit, db=db, current_tenant=current_tenant)
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("批號建議 legacy fallback to v2 失敗", error=str(e))
+
         return suggestions
         
     except Exception as e:
@@ -653,7 +706,8 @@ async def get_lot_suggestions(
 )
 async def get_field_options(
     field_name: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
 ) -> List[str]:
     """
     取得指定欄位的所有不重複值
@@ -693,7 +747,30 @@ async def get_field_options(
         
         result = await db.execute(stmt)
         options = [str(row[0]) for row in result.fetchall() if row[0]]
-        
+
+        # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 options (limited fields)
+        if not options and x_tenant_id:
+            v2_field = None
+            if field_name in {"machine_no", "mold_no", "specification", "winder_number"}:
+                v2_field = field_name
+            elif field_name == "p3_specification":
+                v2_field = "specification"
+
+            if v2_field:
+                try:
+                    from app.api.routes_query_v2 import get_field_options_v2
+                    current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
+                    return await get_field_options_v2(
+                        field_name=v2_field,
+                        limit=200,
+                        db=db,
+                        current_tenant=current_tenant,
+                    )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning("欄位選項 legacy fallback to v2 失敗", field_name=field_name, error=str(e))
+
         return options
         
     except HTTPException:
