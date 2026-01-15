@@ -686,6 +686,13 @@ async def query_records_advanced_v2(
     if dt and dt not in allow:
         raise HTTPException(status_code=400, detail="Invalid data_type")
 
+    winder_requested: Optional[int] = None
+    if winder_number and winder_number.strip():
+        try:
+            winder_requested = int(winder_number.strip())
+        except ValueError:
+            winder_requested = None
+
     lot_no_raw = (lot_no or '').strip() or None
     lot_no_norm: Optional[int]
     try:
@@ -708,7 +715,7 @@ async def query_records_advanced_v2(
     records: List[QueryRecordV2Compat] = []
 
     # P1
-    if dt in (None, "P1"):
+    if dt == "P1" or (dt is None and winder_requested is None):
         p1_stmt = select(P1Record).where(P1Record.tenant_id == current_tenant.id)
         if lot_no_norm is not None:
             p1_stmt = p1_stmt.where(P1Record.lot_no_norm == lot_no_norm)
@@ -744,16 +751,6 @@ async def query_records_advanced_v2(
         elif lot_no_raw:
             p2_stmt = p2_stmt.where(P2Record.lot_no_raw.ilike(f"%{lot_no_raw}%"))
         
-        # Winder Number 篩選（在 items 層級）
-        winder_filter_applied = False
-        winder_val = None
-        if winder_number and winder_number.strip():
-            try:
-                winder_val = int(winder_number.strip())
-                winder_filter_applied = True
-            except ValueError:
-                pass
-        
         # 統一規格搜尋: 在 items 的 row_data 中搜尋
         if specification and specification.strip():
             spec = specification.strip()
@@ -778,15 +775,15 @@ async def query_records_advanced_v2(
             items = list(p2_record.items_v2 or [])
 
             # 套用 winder 篩選（items 層級）
-            if winder_filter_applied and winder_val is not None:
-                items = [item for item in items if item.winder_number == winder_val]
+            if winder_requested is not None:
+                items = [item for item in items if item.winder_number == winder_requested]
 
             if items:
                 records.append(_p2_to_query_record_with_items(p2_record, items))
             else:
                 # Legacy: 沒有 items_v2 的 P2Record 可能仍以 extras 方式保存
-                if winder_filter_applied and winder_val is not None:
-                    if p2_record.winder_number != winder_val:
+                if winder_requested is not None:
+                    if p2_record.winder_number != winder_requested:
                         continue
                 legacy_records.append(p2_record)
 
@@ -824,14 +821,10 @@ async def query_records_advanced_v2(
             p3_stmt = p3_stmt.where(P3ItemV2.specification.ilike(f"%{spec}%")).distinct()
         
         # Winder Number 篩選: 搜尋 items 的 source_winder
-        if winder_number and winder_number.strip():
-            try:
-                winder_val = int(winder_number.strip())
-                if not specification:  # 避免重複 JOIN
-                    p3_stmt = p3_stmt.join(P3ItemV2, P3Record.id == P3ItemV2.p3_record_id)
-                p3_stmt = p3_stmt.where(P3ItemV2.source_winder == winder_val).distinct()
-            except ValueError:
-                pass
+        if winder_requested is not None:
+            if not specification:  # 避免重複 JOIN
+                p3_stmt = p3_stmt.join(P3ItemV2, P3Record.id == P3ItemV2.p3_record_id)
+            p3_stmt = p3_stmt.where(P3ItemV2.source_winder == winder_requested).distinct()
 
         p3_stmt = p3_stmt.order_by(P3Record.created_at.desc())
         p3_result = await db.execute(p3_stmt)
