@@ -24,7 +24,7 @@ async def client(db_session):
     app.dependency_overrides.clear()
 
 
-async def _seed_tenant_with_p3(db_session) -> tuple[Tenant, str]:
+async def _seed_tenant_with_p3(db_session) -> tuple[Tenant, str, uuid.UUID]:
     tenant = Tenant(
         name=f"Test Tenant {uuid.uuid4()}",
         code=f"test_tenant_{uuid.uuid4()}",
@@ -62,12 +62,12 @@ async def _seed_tenant_with_p3(db_session) -> tuple[Tenant, str]:
     db_session.add(item)
     await db_session.commit()
 
-    return tenant, lot_no
+    return tenant, lot_no, p3.id
 
 
 @pytest.mark.asyncio
 async def test_legacy_records_falls_back_to_v2_when_no_legacy_records(client, db_session):
-    tenant, lot_no = await _seed_tenant_with_p3(db_session)
+    tenant, lot_no, _ = await _seed_tenant_with_p3(db_session)
 
     resp = await client.get(
         "/api/query/records",
@@ -83,7 +83,7 @@ async def test_legacy_records_falls_back_to_v2_when_no_legacy_records(client, db
 
 @pytest.mark.asyncio
 async def test_legacy_lot_suggestions_falls_back_to_v2_when_no_legacy_records(client, db_session):
-    tenant, lot_no = await _seed_tenant_with_p3(db_session)
+    tenant, lot_no, _ = await _seed_tenant_with_p3(db_session)
 
     resp = await client.get(
         "/api/query/lots/suggestions",
@@ -99,7 +99,7 @@ async def test_legacy_lot_suggestions_falls_back_to_v2_when_no_legacy_records(cl
 
 @pytest.mark.asyncio
 async def test_legacy_field_options_falls_back_to_v2_when_no_legacy_records(client, db_session):
-    tenant, _ = await _seed_tenant_with_p3(db_session)
+    tenant, _, _ = await _seed_tenant_with_p3(db_session)
 
     resp = await client.get(
         "/api/query/options/machine_no",
@@ -110,3 +110,34 @@ async def test_legacy_field_options_falls_back_to_v2_when_no_legacy_records(clie
     options = resp.json()
     assert isinstance(options, list)
     assert "P24" in options
+
+
+@pytest.mark.asyncio
+async def test_legacy_lot_groups_falls_back_to_v2_when_no_legacy_records(client, db_session):
+    tenant, lot_no, _ = await _seed_tenant_with_p3(db_session)
+
+    resp = await client.get(
+        "/api/query/lots",
+        params={"search": "2507", "page": 1, "page_size": 10},
+        headers={"X-Tenant-Id": str(tenant.id)},
+    )
+    assert resp.status_code == 200, resp.text
+
+    payload = resp.json()
+    assert payload["total_count"] >= 1
+    assert any(g["lot_no"] == lot_no for g in payload["groups"])
+
+
+@pytest.mark.asyncio
+async def test_legacy_get_record_falls_back_to_v2_when_record_missing_in_legacy(client, db_session):
+    tenant, _, p3_id = await _seed_tenant_with_p3(db_session)
+
+    resp = await client.get(
+        f"/api/query/records/{p3_id}",
+        headers={"X-Tenant-Id": str(tenant.id)},
+    )
+    assert resp.status_code == 200, resp.text
+
+    payload = resp.json()
+    assert payload["id"] == str(p3_id)
+    assert payload["data_type"] == "P3"

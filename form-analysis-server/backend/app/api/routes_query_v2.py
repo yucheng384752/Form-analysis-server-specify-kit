@@ -74,6 +74,23 @@ class QueryResponseV2Compat(BaseModel):
     records: List[QueryRecordV2Compat]
 
 
+class LotGroupV2Compat(BaseModel):
+    lot_no: str
+    p1_count: int
+    p2_count: int
+    p3_count: int
+    total_count: int
+    latest_production_date: Optional[str] = None
+    created_at: str
+
+
+class LotGroupListV2Compat(BaseModel):
+    total_count: int
+    page: int
+    page_size: int
+    groups: List[LotGroupV2Compat]
+
+
 def _yyyymmdd_to_yyyy_mm_dd(v: Optional[int]) -> Optional[str]:
     if not v:
         return None
@@ -81,6 +98,146 @@ def _yyyymmdd_to_yyyy_mm_dd(v: Optional[int]) -> Optional[str]:
     if len(s) != 8 or not s.isdigit():
         return None
     return f"{s[0:4]}-{s[4:6]}-{s[6:8]}"
+
+
+def _max_isoformat(values: Iterable[Optional[Any]]) -> Optional[str]:
+    best = None
+    for v in values:
+        if v is None:
+            continue
+        if best is None or v > best:
+            best = v
+    return best.isoformat() if best is not None else None
+
+
+@router.get("/lots", response_model=LotGroupListV2Compat)
+async def query_lot_groups_v2(
+    search: Optional[str] = Query(None, description="搜尋批號關鍵字"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+) -> LotGroupListV2Compat:
+    """V2 lot grouping (used by legacy fallback; lightweight approximation)."""
+    term = (search or "").strip()
+    like_term = f"%{term}%" if term else None
+
+    # Aggregate each table separately, then merge in Python.
+    p1_stmt = select(
+        P1Record.lot_no_norm,
+        func.max(P1Record.lot_no_raw).label("lot_no_raw"),
+        func.count().label("p1_count"),
+        func.max(P1Record.created_at).label("p1_created"),
+    ).where(P1Record.tenant_id == current_tenant.id)
+    if like_term:
+        p1_stmt = p1_stmt.where(P1Record.lot_no_raw.ilike(like_term))
+    p1_stmt = p1_stmt.group_by(P1Record.lot_no_norm)
+
+    p2_stmt = select(
+        P2Record.lot_no_norm,
+        func.max(P2Record.lot_no_raw).label("lot_no_raw"),
+        func.count().label("p2_count"),
+        func.max(P2Record.created_at).label("p2_created"),
+    ).where(P2Record.tenant_id == current_tenant.id)
+    if like_term:
+        p2_stmt = p2_stmt.where(P2Record.lot_no_raw.ilike(like_term))
+    p2_stmt = p2_stmt.group_by(P2Record.lot_no_norm)
+
+    p3_stmt = select(
+        P3Record.lot_no_norm,
+        func.max(P3Record.lot_no_raw).label("lot_no_raw"),
+        func.count().label("p3_count"),
+        func.max(P3Record.created_at).label("p3_created"),
+        func.max(P3Record.production_date_yyyymmdd).label("latest_prod"),
+    ).where(P3Record.tenant_id == current_tenant.id)
+    if like_term:
+        p3_stmt = p3_stmt.where(P3Record.lot_no_raw.ilike(like_term))
+    p3_stmt = p3_stmt.group_by(P3Record.lot_no_norm)
+
+    p1_rows = (await db.execute(p1_stmt)).all()
+    p2_rows = (await db.execute(p2_stmt)).all()
+    p3_rows = (await db.execute(p3_stmt)).all()
+
+    merged: dict[int, dict[str, Any]] = {}
+
+    def upsert(base: dict[str, Any]) -> None:
+        lot_no_norm = int(base["lot_no_norm"])
+        if lot_no_norm not in merged:
+            merged[lot_no_norm] = {
+                "lot_no_norm": lot_no_norm,
+                "lot_no": base.get("lot_no_raw") or str(lot_no_norm),
+                "p1_count": 0,
+                "p2_count": 0,
+                "p3_count": 0,
+                "latest_production_date": None,
+                "created_at": None,
+            }
+        row = merged[lot_no_norm]
+        if base.get("lot_no_raw"):
+            row["lot_no"] = base.get("lot_no_raw")
+        row["p1_count"] += int(base.get("p1_count") or 0)
+        row["p2_count"] += int(base.get("p2_count") or 0)
+        row["p3_count"] += int(base.get("p3_count") or 0)
+
+        latest_prod = base.get("latest_prod")
+        if latest_prod:
+            row["latest_production_date"] = _yyyymmdd_to_yyyy_mm_dd(int(latest_prod))
+
+        created_at = base.get("created_at")
+        if created_at is not None:
+            row["created_at"] = created_at if row["created_at"] is None else max(row["created_at"], created_at)
+
+    for lot_no_norm, lot_no_raw, p1_count, p1_created in p1_rows:
+        upsert({
+            "lot_no_norm": lot_no_norm,
+            "lot_no_raw": lot_no_raw,
+            "p1_count": p1_count,
+            "created_at": p1_created,
+        })
+    for lot_no_norm, lot_no_raw, p2_count, p2_created in p2_rows:
+        upsert({
+            "lot_no_norm": lot_no_norm,
+            "lot_no_raw": lot_no_raw,
+            "p2_count": p2_count,
+            "created_at": p2_created,
+        })
+    for lot_no_norm, lot_no_raw, p3_count, p3_created, latest_prod in p3_rows:
+        upsert({
+            "lot_no_norm": lot_no_norm,
+            "lot_no_raw": lot_no_raw,
+            "p3_count": p3_count,
+            "created_at": p3_created,
+            "latest_prod": latest_prod,
+        })
+
+    # Sort and paginate
+    groups_raw = list(merged.values())
+    groups_raw.sort(key=lambda r: (r.get("created_at") is None, r.get("created_at")), reverse=True)
+    total = len(groups_raw)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_groups = groups_raw[start:end]
+
+    groups: list[LotGroupV2Compat] = []
+    for g in page_groups:
+        p1c = int(g.get("p1_count") or 0)
+        p2c = int(g.get("p2_count") or 0)
+        p3c = int(g.get("p3_count") or 0)
+        total_c = p1c + p2c + p3c
+        created_iso = g.get("created_at").isoformat() if g.get("created_at") is not None else "1970-01-01T00:00:00"
+        groups.append(
+            LotGroupV2Compat(
+                lot_no=str(g.get("lot_no") or ""),
+                p1_count=p1c,
+                p2_count=p2c,
+                p3_count=p3c,
+                total_count=total_c,
+                latest_production_date=g.get("latest_production_date"),
+                created_at=created_iso,
+            )
+        )
+
+    return LotGroupListV2Compat(total_count=total, page=page, page_size=page_size, groups=groups)
 
 
 def _first_row(extras: Any) -> Optional[Dict[str, Any]]:
@@ -849,6 +1006,63 @@ async def query_records_advanced_v2(
         page_size=page_size,
         records=page_records,
     )
+
+
+# NOTE: This must be declared after `/records/advanced`.
+# Otherwise FastAPI can match `/records/{record_id}` first and reject
+# `/records/advanced` with a 422 UUID parsing error.
+@router.get("/records/{record_id}", response_model=QueryRecordV2Compat)
+async def get_record_v2(
+    record_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+) -> QueryRecordV2Compat:
+    """Lookup a single record by id across P1/P2/P3 tables (used by legacy fallback)."""
+    # P1
+    p1 = (
+        await db.execute(
+            select(P1Record).where(
+                P1Record.tenant_id == current_tenant.id,
+                P1Record.id == record_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if p1:
+        return _p1_to_query_record(p1)
+
+    from sqlalchemy.orm import selectinload
+
+    # P2
+    p2 = (
+        await db.execute(
+            select(P2Record)
+            .options(selectinload(P2Record.items_v2))
+            .where(
+                P2Record.tenant_id == current_tenant.id,
+                P2Record.id == record_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if p2:
+        items = list(p2.items_v2 or [])
+        return _p2_to_query_record_with_items(p2, items) if items else _p2_to_query_record(p2)
+
+    # P3
+    p3 = (
+        await db.execute(
+            select(P3Record)
+            .options(selectinload(P3Record.items_v2))
+            .where(
+                P3Record.tenant_id == current_tenant.id,
+                P3Record.id == record_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if p3:
+        items = list(p3.items_v2 or [])
+        return _p3_to_query_record_with_items(p3, items) if items else _p3_to_query_record(p3)
+
+    raise HTTPException(status_code=404, detail="Record not found")
 
 @router.get("/trace/{trace_key}", response_model=TraceDetailResponse)
 async def get_trace_detail(

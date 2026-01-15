@@ -111,7 +111,8 @@ async def query_lot_groups(
     search: Optional[str] = Query(None, description="搜尋批號關鍵字"),
     page: int = Query(1, ge=1, description="頁碼"),
     page_size: int = Query(10, ge=1, le=100, description="每頁記錄數"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
 ) -> LotGroupListResponse:
     """查詢批號分組"""
     try:
@@ -181,6 +182,43 @@ async def query_lot_groups(
             ))
         
         logger.info("批號分組查詢完成", search=search, total_count=total_count, returned_count=len(groups))
+
+        # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 lots 分組
+        if total_count == 0 and x_tenant_id:
+            try:
+                from app.api.routes_query_v2 import query_lot_groups_v2
+                current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
+                v2_resp = await query_lot_groups_v2(
+                    search=search,
+                    page=page,
+                    page_size=page_size,
+                    db=db,
+                    current_tenant=current_tenant,
+                )
+
+                mapped_groups = [
+                    LotGroupResponse(
+                        lot_no=g.lot_no,
+                        p1_count=g.p1_count,
+                        p2_count=g.p2_count,
+                        p3_count=g.p3_count,
+                        total_count=g.total_count,
+                        latest_production_date=g.latest_production_date,
+                        created_at=g.created_at,
+                    )
+                    for g in v2_resp.groups
+                ]
+
+                return LotGroupListResponse(
+                    total_count=v2_resp.total_count,
+                    page=v2_resp.page,
+                    page_size=v2_resp.page_size,
+                    groups=mapped_groups,
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("批號分組 legacy fallback to v2 失敗", error=str(e))
         
         return LotGroupListResponse(
             total_count=total_count,
@@ -791,7 +829,8 @@ async def get_field_options(
 )
 async def get_record(
     record_id: UUID,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
 ) -> QueryRecord:
     """
     取得單筆記錄
@@ -809,6 +848,26 @@ async def get_record(
         record = result.scalar_one_or_none()
         
         if not record:
+            # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 record lookup
+            if x_tenant_id:
+                try:
+                    from app.api.routes_query_v2 import get_record_v2
+                    current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
+                    v2_record = await get_record_v2(record_id=record_id, db=db, current_tenant=current_tenant)
+                    return QueryRecord(
+                        id=v2_record.id,
+                        lot_no=v2_record.lot_no,
+                        data_type=v2_record.data_type,
+                        production_date=v2_record.production_date,
+                        created_at=v2_record.created_at,
+                        display_name=v2_record.display_name,
+                        additional_data=v2_record.additional_data,
+                    )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning("單筆記錄 legacy fallback to v2 失敗", record_id=str(record_id), error=str(e))
+
             raise HTTPException(
                 status_code=404,
                 detail="找不到指定的記錄"
