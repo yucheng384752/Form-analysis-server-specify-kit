@@ -2,6 +2,8 @@
  * API 請求工具函數
  */
 
+import { ensureTenantId, TENANT_STORAGE_KEY } from './tenant';
+
 interface RequestOptions {
   url: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -15,8 +17,6 @@ interface ApiError extends Error {
 }
 
 const API_BASE_URL = (import.meta.env?.VITE_API_URL as string) || 'http://localhost:8000';
-
-const TENANT_STORAGE_KEY = 'form_analysis_tenant_id';
 
 /**
  * 通用 API 請求函數
@@ -122,6 +122,9 @@ export async function uploadFile<T = any>(
   formData: FormData,
   onProgress?: (progress: number) => void
 ): Promise<T> {
+  // Make sure tenant id exists (auto-select when only one tenant exists)
+  const resolvedTenantId = await ensureTenantId();
+
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     
@@ -164,7 +167,7 @@ export async function uploadFile<T = any>(
     // Keep tenant header consistent even for XHR uploads
     try {
       const u = new URL(fullUrl, window.location.href);
-      const tenantId = window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
+      const tenantId = resolvedTenantId || window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
       if (tenantId && u.pathname.startsWith('/api') && !u.pathname.startsWith('/api/tenants')) {
         xhr.setRequestHeader('X-Tenant-Id', tenantId);
       }

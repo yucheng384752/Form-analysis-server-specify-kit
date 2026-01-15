@@ -5,7 +5,7 @@ import { ToastProvider } from './components/common/ToastContext.tsx'
 import './index.css'
 import './styles/figma.css'
 
-const TENANT_STORAGE_KEY = 'form_analysis_tenant_id'
+import { ensureTenantId, TENANT_STORAGE_KEY } from './services/tenant'
 
 // Global fetch wrapper: auto-inject X-Tenant-Id for all /api* requests except /api/tenants.
 // This prevents accidental cross-tenant calls and removes per-call header boilerplate.
@@ -13,7 +13,7 @@ const originalFetch = window.fetch.bind(window)
 
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   try {
-    const tenantId = window.localStorage.getItem(TENANT_STORAGE_KEY) || ''
+    let tenantId = window.localStorage.getItem(TENANT_STORAGE_KEY) || ''
 
     // Determine request URL
     const urlString =
@@ -26,6 +26,12 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(urlString, window.location.href)
     const isApiPath = url.pathname.startsWith('/api')
     const isTenantListPath = url.pathname.startsWith('/api/tenants')
+
+    // If tenant is missing but we are calling tenant-scoped APIs, try to auto-select
+    // when exactly one tenant exists.
+    if (!tenantId && isApiPath && !isTenantListPath) {
+      tenantId = await ensureTenantId()
+    }
 
     if (!tenantId || !isApiPath || isTenantListPath) {
       return originalFetch(input as any, init)
