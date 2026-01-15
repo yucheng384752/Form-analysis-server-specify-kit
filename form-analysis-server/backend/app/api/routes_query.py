@@ -8,7 +8,7 @@
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from sqlalchemy import select, func, or_, and_, String
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,8 @@ from app.core.logging import get_logger
 from app.models.record import Record, DataType
 from app.models.p2_item import P2Item
 from app.models.p3_item import P3Item
+
+from app.api.deps import get_current_tenant
 
 # 獲取日誌記錄器
 logger = get_logger(__name__)
@@ -233,7 +235,8 @@ async def advanced_search_records(
     data_type: Optional[DataType] = Query(None, description="資料類型 (P1/P2/P3)"),
     page: int = Query(1, ge=1, description="頁碼"),
     page_size: int = Query(10, ge=1, le=100, description="每頁記錄數"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
 ) -> QueryResponse:
     """進階搜尋資料記錄 - 支援多條件模糊搜尋"""
     try:
@@ -405,6 +408,53 @@ async def advanced_search_records(
                    total_count=total_count,
                    returned_count=len(query_records),
                    conditions_count=len(conditions))
+
+        # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 查詢並轉成 legacy schema
+        if total_count == 0 and x_tenant_id:
+            try:
+                from app.api.routes_query_v2 import query_records_advanced_v2
+                current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
+
+                v2_resp = await query_records_advanced_v2(
+                    lot_no=lot_no,
+                    production_date_from=production_date_from.isoformat() if production_date_from else None,
+                    production_date_to=production_date_to.isoformat() if production_date_to else None,
+                    machine_no=machine_no,
+                    mold_no=mold_no,
+                    product_id=product_id,
+                    specification=p3_specification,
+                    winder_number=str(winder_number) if winder_number is not None else None,
+                    data_type=data_type.value if data_type else None,
+                    page=page,
+                    page_size=page_size,
+                    db=db,
+                    current_tenant=current_tenant,
+                )
+
+                mapped_records: List[QueryRecord] = []
+                for r in v2_resp.records:
+                    mapped_records.append(
+                        QueryRecord(
+                            id=r.id,
+                            lot_no=r.lot_no,
+                            data_type=r.data_type,
+                            production_date=r.production_date,
+                            created_at=r.created_at,
+                            display_name=r.display_name,
+                            additional_data=r.additional_data,
+                        )
+                    )
+
+                return QueryResponse(
+                    total_count=v2_resp.total_count,
+                    page=v2_resp.page,
+                    page_size=v2_resp.page_size,
+                    records=mapped_records,
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("進階搜尋 legacy fallback to v2 失敗", error=str(e))
         
         return QueryResponse(
             total_count=total_count,
