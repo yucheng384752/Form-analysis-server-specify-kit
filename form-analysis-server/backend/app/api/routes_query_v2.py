@@ -691,7 +691,7 @@ async def query_records_advanced_v2(
         try:
             winder_requested = int(winder_number.strip())
         except ValueError:
-            winder_requested = None
+            raise HTTPException(status_code=400, detail="Invalid winder_number")
 
     lot_no_raw = (lot_no or '').strip() or None
     lot_no_norm: Optional[int]

@@ -101,3 +101,23 @@ async def test_advanced_query_winder_does_not_include_p1(client, db_session):
     assert "P1" not in types
     assert "P2" in types
     assert "P3" in types
+
+
+@pytest.mark.asyncio
+async def test_advanced_query_invalid_winder_returns_400(client, db_session):
+    tenant = Tenant(
+        name=f"Test Tenant {uuid.uuid4()}",
+        code=f"test_tenant_{uuid.uuid4()}",
+        is_default=True,
+    )
+    db_session.add(tenant)
+    await db_session.commit()
+    await db_session.refresh(tenant)
+
+    headers = {"X-Tenant-Id": str(tenant.id)}
+    resp = await client.get(
+        "/api/v2/query/records/advanced",
+        params={"lot_no": "2507173_02", "winder_number": "abc"},
+        headers=headers,
+    )
+    assert resp.status_code == 400, resp.text
