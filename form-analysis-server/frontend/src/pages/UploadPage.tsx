@@ -3,13 +3,12 @@ import { useState, useRef, useEffect } from "react";
 import { useToast } from "../components/common/ToastContext";
 import { ProgressBar } from "../components/common/ProgressBar";
 import { Modal } from "../components/common/Modal";
+import { ensureTenantId } from "../services/tenant";
 import "./../styles/upload-page.css";
 
 const EDIT_ENABLED = false; // 第一版：不提供編輯（僅預覽 + 重傳）
 
-const TENANT_STORAGE_KEY = "form_analysis_tenant_id";
-
-type FileType = "P1" | "P2" | "P3";
+type FileType = "P1" | "P2" | "P3" | "PDF";
 
 export interface CsvData {
   headers: string[];
@@ -39,6 +38,7 @@ export interface UploadedFile {
 const MAX_SIZE_BYTES = 10 * 1024 * 1024;
 
 function detectFileType(name: string): FileType {
+  if (name.toLowerCase().endsWith(".pdf")) return "PDF";
   if (name.startsWith("P1_")) return "P1";
   if (name.startsWith("P2_")) return "P2";
   return "P3";
@@ -130,25 +130,9 @@ export function UploadPage() {
   }, [files]);
 
   useEffect(() => {
-    const storedTenantId = window.localStorage.getItem(TENANT_STORAGE_KEY);
-    if (storedTenantId) {
-      setTenantId(storedTenantId);
-      return;
-    }
-
-    // v2 import/query 需要 tenant header；這裡先用第一個 tenant 當預設（最少改動）。
-    fetch('/api/tenants')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.length > 0) {
-          const id = data[0].id;
-          setTenantId(id);
-          try {
-            window.localStorage.setItem(TENANT_STORAGE_KEY, id);
-          } catch {
-            // ignore
-          }
-        }
+    ensureTenantId()
+      .then((id) => {
+        if (id) setTenantId(id);
       })
       .catch(() => {
         // 不阻斷 UI；若後端無法自動解析 tenant，後續 v2 呼叫會回 422。
@@ -156,7 +140,8 @@ export function UploadPage() {
   }, []);
 
   const buildTenantHeaders = (): HeadersInit => {
-    return tenantId ? { 'X-Tenant-Id': tenantId } : {};
+    const id = tenantId || window.localStorage.getItem('form_analysis_tenant_id') || '';
+    return id ? { 'X-Tenant-Id': id } : {};
   };
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -208,8 +193,9 @@ export function UploadPage() {
 
     const newFiles: UploadedFile[] = [];
     Array.from(fileList).forEach((file) => {
-      if (!file.name.toLowerCase().endsWith(".csv")) {
-        showToast("error", "僅支援 csv 檔案類型");
+      const lowerName = file.name.toLowerCase();
+      if (!lowerName.endsWith(".csv") && !lowerName.endsWith(".pdf")) {
+        showToast("error", "僅支援 csv 或 pdf 檔案類型");
         return;
       }
       
@@ -239,7 +225,7 @@ export function UploadPage() {
         uploadProgress: 100, // 本地成功就視為100%
         validateProgress: 0,
         importProgress: 0,
-        expanded: true, // 默認上傳完畢直接展開
+        expanded: type === "PDF" ? false : true, // PDF 不展開（沒有 CSV 內容）
         csvData: undefined,
         hasUnsavedChanges: false,
         processId: undefined,
@@ -274,6 +260,58 @@ export function UploadPage() {
   const handleValidate = async (fileId: string) => {
     const target = files.find((f) => f.id === fileId);
     if (!target) return;
+
+    if (target.type === 'PDF') {
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === fileId ? { ...f, status: 'validating', validateProgress: 10 } : f
+        )
+      );
+
+      try {
+        const formData = new FormData();
+        formData.append('file', target.file, target.name);
+
+        const res = await fetch('/api/upload/pdf', {
+          method: 'POST',
+          headers: buildTenantHeaders(),
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({ detail: 'PDF 上傳失敗' }));
+          const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || 'PDF 上傳失敗');
+          throw new Error(message);
+        }
+
+        const data = await res.json();
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileId
+              ? {
+                  ...f,
+                  status: 'uploaded',
+                  validateProgress: 100,
+                  processId: data.process_id,
+                  isValidated: true,
+                  validationErrors: undefined,
+                  hasUnsavedChanges: false,
+                  expanded: false,
+                }
+              : f
+          )
+        );
+
+        showToast('success', 'PDF 已上傳（目前僅保存，尚未轉檔/匯入）');
+      } catch (e: any) {
+        setFiles((prev) =>
+          prev.map((f) => (f.id === fileId ? { ...f, status: 'uploaded', validateProgress: 0 } : f))
+        );
+        showToast('error', e?.message || 'PDF 上傳失敗');
+      }
+
+      return;
+    }
 
     if (!EDIT_ENABLED && target.hasUnsavedChanges) {
       showToast("info", "此版本不提供編輯，請修正 CSV 後重新上傳");
@@ -1049,11 +1087,11 @@ function FileDropArea({ onFiles }: FileDropAreaProps) {
         <div className="upload-drop-icon">⬆</div>
         <p className="upload-drop-main-text">拖曳上傳或是選擇檔案</p>
         <p className="upload-drop-sub-text">
-          僅支援 csv 檔案類型，檔案大小限制 10MB
+          支援 csv / pdf 檔案，檔案大小限制 10MB（PDF 目前僅保存，不轉檔/不匯入）
         </p>
         <label className="upload-drop-button">
           選擇檔案
-          <input type="file" accept=".csv" multiple onChange={handleChange} />
+          <input type="file" accept=".csv,.pdf" multiple onChange={handleChange} />
         </label>
       </div>
     </div>
@@ -1097,6 +1135,8 @@ function UploadedFileCard({
   // 儲存按鈕是否可用：必須有CSV資料且有未儲存變更
   const disabledSave =
     !EDIT_ENABLED || !file.csvData || !file.hasUnsavedChanges;
+
+  const isPdf = file.type === 'PDF';
 
   return (
     <div className="uploaded-card">
@@ -1162,7 +1202,7 @@ function UploadedFileCard({
 
       <div className="uploaded-card__body">
         <div className="uploaded-card__status">
-          {file.status === "uploaded" && <span>待驗證</span>}
+          {file.status === "uploaded" && <span>{isPdf && file.isValidated ? '已上傳（PDF）' : '待驗證'}</span>}
           {file.status === "validating" && (
             <span>驗證中...</span>
           )}
@@ -1192,6 +1232,8 @@ function UploadedFileCard({
                 ? "驗證中..." 
                 : file.status === "importing"
                 ? "匯入中..."
+                : isPdf
+                ? "上傳 PDF（僅保存，不轉檔/不匯入）"
                 : hasValidationErrors
                 ? "發現驗證錯誤，點擊重新驗證"
                 : file.isValidated && !hasValidationErrors
@@ -1201,6 +1243,8 @@ function UploadedFileCard({
           >
             {file.status === "validating" 
               ? "驗證中..." 
+              : isPdf
+              ? (file.isValidated ? '已上傳 ✓' : '上傳 PDF')
               : hasValidationErrors 
               ? "重新驗證" 
               : file.isValidated 
@@ -1209,27 +1253,29 @@ function UploadedFileCard({
             }
           </button>
 
-          <button
-            className={`btn-secondary ${
-              disabledSave ? "btn-secondary--disabled" : ""
-            }`}
-            onClick={onSaveChanges}
-            disabled={disabledSave}
-            title={
-              !EDIT_ENABLED
-                ? "此版本不提供編輯，請修正 CSV 後重新上傳"
-                : !file.csvData
-                ? "請先驗證檔案"
-                : !file.hasUnsavedChanges
-                ? "沒有未儲存的變更"
-                : "儲存修改"
-            }
-          >
-            儲存修改
-          </button>
+          {!isPdf && (
+            <button
+              className={`btn-secondary ${
+                disabledSave ? "btn-secondary--disabled" : ""
+              }`}
+              onClick={onSaveChanges}
+              disabled={disabledSave}
+              title={
+                !EDIT_ENABLED
+                  ? "此版本不提供編輯，請修正 CSV 後重新上傳"
+                  : !file.csvData
+                  ? "請先驗證檔案"
+                  : !file.hasUnsavedChanges
+                  ? "沒有未儲存的變更"
+                  : "儲存修改"
+              }
+            >
+              儲存修改
+            </button>
+          )}
 
           {/* 個別檔案匯入按鈕 */}
-          {file.status === "validated" && !hasValidationErrors && (
+          {!isPdf && file.status === "validated" && !hasValidationErrors && (
             <button
               className="btn-primary"
               onClick={() => onImport(file.id)}
@@ -1240,14 +1286,14 @@ function UploadedFileCard({
           )}
 
           {/* 已驗證檔案顯示準備好的狀態 */}
-          {file.status === "validated" && !hasValidationErrors && (
+          {!isPdf && file.status === "validated" && !hasValidationErrors && (
             <span className="status-badge status-badge--ready">
               ✓ 準備匯入
             </span>
           )}
           
           {/* 有驗證錯誤時顯示錯誤狀態 */}
-          {file.status === "validated" && hasValidationErrors && (
+          {!isPdf && file.status === "validated" && hasValidationErrors && (
             <span className="status-badge" style={{
               backgroundColor: '#fef2f2',
               color: '#dc2626',
@@ -1257,9 +1303,11 @@ function UploadedFileCard({
             </span>
           )}
 
-          <button className="btn-text" onClick={onToggleExpand}>
-            {file.expanded ? "收起" : "展開"} CSV 內容
-          </button>
+          {!isPdf && (
+            <button className="btn-text" onClick={onToggleExpand}>
+              {file.expanded ? "收起" : "展開"} CSV 內容
+            </button>
+          )}
         </div>
       </div>
 

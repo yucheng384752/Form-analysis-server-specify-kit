@@ -3,6 +3,7 @@
  */
 
 import { ensureTenantId, TENANT_STORAGE_KEY } from './tenant';
+import { getApiKeyHeaderName, getApiKeyValue } from './auth'
 
 interface RequestOptions {
   url: string;
@@ -170,6 +171,11 @@ export async function uploadFile<T = any>(
       const tenantId = resolvedTenantId || window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
       if (tenantId && u.pathname.startsWith('/api') && !u.pathname.startsWith('/api/tenants')) {
         xhr.setRequestHeader('X-Tenant-Id', tenantId);
+      }
+
+      const apiKey = getApiKeyValue()
+      if (apiKey && u.pathname.startsWith('/api')) {
+        xhr.setRequestHeader(getApiKeyHeaderName(), apiKey)
       }
     } catch {
       // ignore

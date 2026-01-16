@@ -1,8 +1,9 @@
 import csv
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import logging
 
 from sqlalchemy import select, func, delete
@@ -20,6 +21,21 @@ class ImportService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    def _touch_status(
+        self,
+        job: ImportJob,
+        status: str,
+        *,
+        actor_api_key_id: Optional[uuid.UUID] = None,
+        actor_label_snapshot: Optional[str] = None,
+        actor_kind: str = "system",
+    ) -> None:
+        job.status = status
+        job.last_status_changed_at = datetime.now(timezone.utc)
+        job.last_status_actor_kind = actor_kind
+        job.last_status_actor_api_key_id = actor_api_key_id
+        job.last_status_actor_label_snapshot = actor_label_snapshot
+
     def _normalize_p3_lot_no_raw(self, val: str) -> str:
         """P3 專用 lot_no 正規化（僅取前兩段），例如：2507173_02_18 -> 2507173_02"""
         s = str(val or "").strip()
@@ -30,7 +46,14 @@ class ImportService:
             return f"{parts[0]}_{parts[1].zfill(2)}"
         return s
 
-    async def parse_job(self, job_id: uuid.UUID) -> ImportJob:
+    async def parse_job(
+        self,
+        job_id: uuid.UUID,
+        *,
+        actor_api_key_id: Optional[uuid.UUID] = None,
+        actor_label_snapshot: Optional[str] = None,
+        actor_kind: str = "system",
+    ) -> ImportJob:
         """
         Parse all files in the import job and populate staging_rows.
         """
@@ -43,7 +66,13 @@ class ImportService:
             raise ValueError(f"Import job {job_id} not found")
 
         # 2. Update Status to PARSING
-        job.status = ImportJobStatus.PARSING
+        self._touch_status(
+            job,
+            ImportJobStatus.PARSING,
+            actor_api_key_id=actor_api_key_id,
+            actor_label_snapshot=actor_label_snapshot,
+            actor_kind=actor_kind,
+        )
         await self.db.commit()
 
         total_rows_job = 0
@@ -129,19 +158,38 @@ class ImportService:
             # 3. Update Job Status to VALIDATING (or READY if we skip validation for now)
             # The plan implies validation is next.
             job.total_rows = total_rows_job
-            job.status = ImportJobStatus.VALIDATING 
+            self._touch_status(
+                job,
+                ImportJobStatus.VALIDATING,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                actor_kind=actor_kind,
+            )
             
             await self.db.commit()
             return job
 
         except Exception as e:
             logger.exception(f"Error parsing job {job_id}: {e}")
-            job.status = ImportJobStatus.FAILED
+            self._touch_status(
+                job,
+                ImportJobStatus.FAILED,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                actor_kind=actor_kind,
+            )
             job.error_summary = {"error": str(e)}
             await self.db.commit()
             raise e
 
-    async def validate_job(self, job_id: uuid.UUID) -> ImportJob:
+    async def validate_job(
+        self,
+        job_id: uuid.UUID,
+        *,
+        actor_api_key_id: Optional[uuid.UUID] = None,
+        actor_label_snapshot: Optional[str] = None,
+        actor_kind: str = "system",
+    ) -> ImportJob:
         """
         Validate staging rows against schema.
         """
@@ -222,11 +270,24 @@ class ImportService:
         # 4. Update Job Status
         job.error_count = error_count_job
         # If validation is done, we mark it as READY (for review/commit)
-        job.status = ImportJobStatus.READY
+        self._touch_status(
+            job,
+            ImportJobStatus.READY,
+            actor_api_key_id=actor_api_key_id,
+            actor_label_snapshot=actor_label_snapshot,
+            actor_kind=actor_kind,
+        )
         await self.db.commit()
         return job
 
-    async def commit_job(self, job_id: uuid.UUID) -> ImportJob:
+    async def commit_job(
+        self,
+        job_id: uuid.UUID,
+        *,
+        actor_api_key_id: Optional[uuid.UUID] = None,
+        actor_label_snapshot: Optional[str] = None,
+        actor_kind: str = "system",
+    ) -> ImportJob:
         """
         Commit valid staging rows to target tables.
         """
@@ -244,9 +305,16 @@ class ImportService:
              logger.error(f"Job {job_id} is not ready to commit (status: {job.status})")
              raise ValueError(f"Job {job_id} is not ready to commit (status: {job.status})")
 
-        # Update status
-        job.status = ImportJobStatus.COMMITTING
-        await self.db.commit()
+        # Update status (only when transitioning from READY)
+        if job.status == ImportJobStatus.READY:
+            self._touch_status(
+                job,
+                ImportJobStatus.COMMITTING,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                actor_kind=actor_kind,
+            )
+            await self.db.commit()
 
         # Get Table Code
         table_stmt = select(TableRegistry).where(TableRegistry.id == job.table_id)
@@ -580,13 +648,25 @@ class ImportService:
                             )
                             self.db.add(p3_item)
                 
-            job.status = ImportJobStatus.COMPLETED
+            self._touch_status(
+                job,
+                ImportJobStatus.COMPLETED,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                actor_kind=actor_kind,
+            )
             await self.db.commit()
             return job
             
         except Exception as e:
             logger.exception(f"Error committing job {job_id}: {e}")
-            job.status = ImportJobStatus.FAILED
+            self._touch_status(
+                job,
+                ImportJobStatus.FAILED,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                actor_kind=actor_kind,
+            )
             job.error_summary = {"error": str(e)}
             await self.db.commit()
             raise e

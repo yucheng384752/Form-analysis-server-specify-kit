@@ -9,6 +9,7 @@ export interface AdvancedSearchParams {
   mold_no?: string;
   product_id?: string;
   specification?: string;  // 統一規格搜尋 (P1/P2/P3)
+  material?: string;       // 材料代號 (P1/P2)
   winder_number?: string;  // Winder Number
   data_type?: string;
 }
@@ -44,6 +45,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   const [moldNo, setMoldNo] = useState('');
   const [productId, setProductId] = useState('');
   const [specification, setSpecification] = useState('');  // 統一規格
+  const [material, setMaterial] = useState('');            // 材料代號
   const [winderNumber, setWinderNumber] = useState('');   // Winder Number
   const [dataType, setDataType] = useState('');
 
@@ -52,6 +54,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   const [moldOptions, setMoldOptions] = useState<string[]>([]);
   const [specOptions, setSpecOptions] = useState<string[]>([]);
   const [winderOptions, setWinderOptions] = useState<string[]>([]);
+  const [materialOptions, setMaterialOptions] = useState<string[]>([]);
 
   // 載入選項
   useEffect(() => {
@@ -60,17 +63,19 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
         try {
           const headers: HeadersInit = tenantId ? { 'X-Tenant-Id': tenantId } : {};
           // 平行請求所有選項
-          const [machineRes, moldRes, specRes, winderRes] = await Promise.all([
+          const [machineRes, moldRes, specRes, winderRes, materialRes] = await Promise.all([
             fetch('/api/v2/query/options/machine_no', { headers }),
             fetch('/api/v2/query/options/mold_no', { headers }),
             fetch('/api/v2/query/options/specification', { headers }),
-            fetch('/api/v2/query/options/winder_number', { headers })
+            fetch('/api/v2/query/options/winder_number', { headers }),
+            fetch('/api/v2/query/options/material', { headers })
           ]);
 
           if (machineRes.ok) setMachineOptions(await machineRes.json());
           if (moldRes.ok) setMoldOptions(await moldRes.json());
           if (specRes.ok) setSpecOptions(await specRes.json());
           if (winderRes.ok) setWinderOptions(await winderRes.json());
+          if (materialRes.ok) setMaterialOptions(await materialRes.json());
         } catch (error) {
           console.error('Failed to fetch search options:', error);
         }
@@ -90,6 +95,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
       moldNo.trim() ||
       productId.trim() ||
       specification.trim() ||
+      material.trim() ||
       winderNumber.trim() ||
       dataType
     );
@@ -147,6 +153,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     if (moldNo.trim()) params.mold_no = moldNo.trim();
     if (productId.trim()) params.product_id = productId.trim();
     if (specification.trim()) params.specification = specification.trim();
+    if (material.trim()) params.material = material.trim();
     if (winderNumber.trim()) params.winder_number = winderNumber.trim();
     if (dataType) params.data_type = dataType;
 
@@ -166,6 +173,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     setMoldNo('');
     setProductId('');
     setSpecification('');
+    setMaterial('');
     setWinderNumber('');
     setDataType('');
     onReset();
@@ -321,6 +329,24 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
               />
               <datalist id="spec-options">
                 {specOptions.map((opt, idx) => (
+                  <option key={idx} value={opt} />
+                ))}
+              </datalist>
+            </div>
+
+            {/* 材料代號 (P1/P2) */}
+            <div className="search-field">
+              <label htmlFor="adv-material">材料代號</label>
+              <input
+                id="adv-material"
+                type="text"
+                value={material}
+                onChange={(e) => setMaterial(e.target.value)}
+                placeholder="輸入材料代號 (P1/P2)"
+                list="material-options"
+              />
+              <datalist id="material-options">
+                {materialOptions.map((opt, idx) => (
                   <option key={idx} value={opt} />
                 ))}
               </datalist>

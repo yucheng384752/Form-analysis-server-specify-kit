@@ -32,6 +32,10 @@ class ImportJobRead(BaseModel):
     error_summary: Dict[str, Any]
     created_at: datetime
     updated_at: datetime
+    last_status_changed_at: Optional[datetime] = None
+    last_status_actor_kind: Optional[str] = None
+    last_status_actor_api_key_id: Optional[UUID] = None
+    last_status_actor_label_snapshot: Optional[str] = None
     files: List[ImportFileRead] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)

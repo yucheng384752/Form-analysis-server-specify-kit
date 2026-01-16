@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Header
-from sqlalchemy import select, func, or_, and_, String
+from sqlalchemy import select, func, or_, and_, String, exists
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -270,6 +270,7 @@ async def advanced_search_records(
     product_id: Optional[str] = Query(None, description="產品編號（模糊搜尋）"),
     p3_specification: Optional[str] = Query(None, description="P3規格（模糊搜尋）"),
     winder_number: Optional[int] = Query(None, description="卷收機號碼（精確搜尋，用於 P2）"),
+    material: Optional[str] = Query(None, description="材料代號（P1/P2）"),
     data_type: Optional[DataType] = Query(None, description="資料類型 (P1/P2/P3)"),
     page: int = Query(1, ge=1, description="頁碼"),
     page_size: int = Query(10, ge=1, le=100, description="每頁記錄數"),
@@ -287,6 +288,7 @@ async def advanced_search_records(
                    product_id=product_id,
                    p3_specification=p3_specification,
                    winder_number=winder_number,
+                   material=material,
                    data_type=data_type,
                    page=page,
                    page_size=page_size)
@@ -298,10 +300,46 @@ async def advanced_search_records(
         if lot_no and lot_no.strip():
             conditions.append(Record.lot_no.ilike(f"%{lot_no.strip()}%"))
         
-        # 卷收機號碼精確搜尋（P2專用）
-        # 注意：這需要 join P2Item 表
+        # 卷收機號碼精確搜尋（P2/P3）
+        # 使用 EXISTS 避免不必要 JOIN 造成 row 重複/意外匹配
         if winder_number is not None:
-            conditions.append(P2Item.winder_number == winder_number)
+            conditions.append(
+                or_(
+                    and_(
+                        Record.data_type == DataType.P2,
+                        exists(
+                            select(1)
+                            .select_from(P2Item)
+                            .where(
+                                P2Item.record_id == Record.id,
+                                P2Item.winder_number == winder_number,
+                            )
+                        ),
+                    ),
+                    and_(
+                        Record.data_type == DataType.P3,
+                        exists(
+                            select(1)
+                            .select_from(P3Item)
+                            .where(
+                                P3Item.record_id == Record.id,
+                                P3Item.source_winder == winder_number,
+                            )
+                        ),
+                    ),
+                )
+            )
+
+        # 材料代號搜尋（P1/P2）
+        if material and material.strip():
+            m = material.strip()
+            conditions.append(
+                and_(
+                    Record.data_type.in_([DataType.P1, DataType.P2]),
+                    Record.material_code.isnot(None),
+                    Record.material_code.ilike(f"%{m}%"),
+                )
+            )
         
         # 生產日期範圍搜尋
         if production_date_from:
@@ -353,18 +391,12 @@ async def advanced_search_records(
         if need_p3_join:
             query_stmt = query_stmt.join(Record.p3_items)
         
-        # 如果有 winder_number 條件，需要 join P2Item
-        if winder_number is not None:
-            query_stmt = query_stmt.join(Record.p2_items)
-            
         query_stmt = query_stmt.where(and_(*conditions))
         
         # 計算總數
         count_query = select(func.count(func.distinct(Record.id))).select_from(Record)
         if need_p3_join:
             count_query = count_query.join(Record.p3_items)
-        if winder_number is not None:
-            count_query = count_query.join(Record.p2_items)
         count_query = count_query.where(and_(*conditions))
         
         result = await db.execute(count_query)
@@ -431,6 +463,8 @@ async def advanced_search_records(
                     # 排序 p3_items (按 row_no)
                     sorted_items = sorted(record.p3_items, key=lambda x: x.row_no)
                     for item in sorted_items:
+                        if winder_number is not None and item.source_winder != winder_number:
+                            continue
                         row = item.row_data.copy() if item.row_data else {}
                         # 注入 product_id 到 row data 中，供前端顯示
                         row['product_id'] = item.product_id

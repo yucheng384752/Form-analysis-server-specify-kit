@@ -10,6 +10,10 @@ REM 5. 提供前端訪問資訊
 
 setlocal enabledelayedexpansion
 
+REM Optional arg: --reset-db will remove Docker volumes (DANGEROUS: clears DB data)
+set "RESET_DB=false"
+if /I "%~1"=="--reset-db" set "RESET_DB=true"
+
 echo  Form Analysis - Docker 一鍵啟動與驗證
 echo ========================================
 
@@ -30,8 +34,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [INFO] 停止並清理現有容器...
-docker compose down -v
+echo [INFO] 停止現有容器...
+if /I "!RESET_DB!"=="true" (
+    echo [WARNING] --reset-db：將移除 Docker volumes，資料庫資料會被清空
+    docker compose down -v --remove-orphans
+) else (
+    REM Default: keep volumes to preserve DB data
+    docker compose down --remove-orphans
+)
 
 echo [INFO] 啟動所有服務...
 docker compose up -d
@@ -112,6 +122,48 @@ echo.
 echo [SUCCESS] 所有服務已啟動完成！
 echo.
 
+REM 若 Docker 預設啟用 AUTH_MODE=api_key，/api/* 會要求 X-API-Key。
+REM 這裡用 /api/tenants 測試是否需要 key；若需要，bootstrap 一把測試用 key。
+set "API_KEY="
+for /f "usebackq delims=" %%H in (`curl -s -o NUL -w "%%{http_code}" http://localhost:18002/api/tenants`) do set "TENANTS_CODE=%%H"
+if /I "%TENANTS_CODE%"=="401" (
+    echo [INFO] 偵測到 API key auth 已啟用，bootstrap 測試用 API key...
+    set "BOOTSTRAP_OUT=%TEMP%\bootstrap_api_key_out.txt"
+    docker compose exec -T backend python scripts/bootstrap_tenant_api_key.py --tenant-code default --label docker-quick-start --force > "%BOOTSTRAP_OUT%"
+    if errorlevel 1 (
+        echo [ERROR] bootstrap API key 失敗
+        type "%BOOTSTRAP_OUT%"
+        pause
+        exit /b 1
+    )
+
+    set "FOUND_MARKER=0"
+    for /f "usebackq delims=" %%L in ("%BOOTSTRAP_OUT%") do (
+        if "!FOUND_MARKER!"=="2" if not defined API_KEY (
+            set "API_KEY=%%L"
+            set "FOUND_MARKER=0"
+        )
+        echo %%L | findstr /c:"SAVE THIS KEY NOW (shown once):" >nul
+        if not errorlevel 1 set "FOUND_MARKER=2"
+    )
+
+    REM If parsing failed, fallback to last non-empty line
+    if not defined API_KEY (
+        for /f "usebackq delims=" %%L in ("%BOOTSTRAP_OUT%") do (
+            if not "%%L"=="" set "API_KEY=%%L"
+        )
+    )
+
+    if defined API_KEY (
+        echo [SUCCESS] 已建立/取得測試用 API key（請在註冊頁貼上）：%API_KEY%
+    ) else (
+        echo [ERROR] bootstrap API key 失敗：無法解析輸出
+        type "%BOOTSTRAP_OUT%"
+        pause
+        exit /b 1
+    )
+)
+
 REM 驗證健康檢查
 echo 🩺 健康檢查驗證
 echo ==================
@@ -152,7 +204,11 @@ echo 5678901_05,測試產品E,125,2024-01-19 >> %TEMP_CSV%
 echo [INFO] 測試檔案上傳（5 列測試資料）...
 
 REM 使用 curl 上傳文件
-curl -s -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
+if defined API_KEY (
+    curl -s -H "X-API-Key: %API_KEY%" -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
+) else (
+    curl -s -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
+)
 
 echo 上傳回應:
 type %TEMP%\upload_response.json

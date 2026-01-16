@@ -42,6 +42,15 @@ services:
       - DEBUG=${DEBUG:-false}
       - RELOAD=${RELOAD:-true}
       - UPLOAD_TEMP_DIR=/app/uploads
+      # Deployment defaults: enable API key auth in Docker WITHOUT changing backend code defaults.
+      # Override by setting AUTH_MODE=off in your environment or .env.
+      - AUTH_MODE=${AUTH_MODE:-api_key}
+      - AUTH_API_KEY_HEADER=${AUTH_API_KEY_HEADER:-X-API-Key}
+      - AUTH_PROTECT_PREFIXES=${AUTH_PROTECT_PREFIXES:-/api}
+      - AUTH_EXEMPT_PATHS=${AUTH_EXEMPT_PATHS:-/healthz,/docs,/redoc,/openapi.json}
+      # Admin keys are optional; set ADMIN_API_KEYS to enable privileged ops like creating tenants.
+      - ADMIN_API_KEYS=${ADMIN_API_KEYS:-}
+      - ADMIN_API_KEY_HEADER=${ADMIN_API_KEY_HEADER:-X-Admin-API-Key}
     ports:
       - "${API_PORT:-18002}:8000"
     volumes:

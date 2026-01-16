@@ -9,6 +9,7 @@
 
 param(
     [switch]$SkipTests,
+    [switch]$ResetDb,
     [switch]$Help
 )
 
@@ -20,8 +21,12 @@ Form Analysis - Docker 一鍵啟動與驗證腳本
   .\quick-start.ps1           # 完整啟動和測試
   .\quick-start.ps1 -SkipTests # 只啟動服務，跳過測試
 
+    # (危險) 清空資料庫：會移除 docker volumes（PostgreSQL 資料會消失）
+    .\quick-start.ps1 -ResetDb
+
 選項:
   -SkipTests    跳過 API 測試，只啟動服務
+    -ResetDb      (危險) 移除 Docker volumes，等同清空資料庫
   -Help         顯示此幫助資訊
 "@
     exit 0
@@ -75,8 +80,14 @@ try {
 }
 
 # 停止現有容器
-Write-Info "停止並清理現有容器..."
-docker compose down -v 2>$null
+Write-Info "停止現有容器..."
+if ($ResetDb) {
+    Write-Warning "ResetDb=true：將移除 Docker volumes，資料庫資料會被清空"
+    docker compose down -v --remove-orphans 2>$null
+} else {
+    # Default: keep volumes to preserve DB data
+    docker compose down --remove-orphans 2>$null
+}
 
 # 啟動服務
 Write-Info "啟動所有服務..."
@@ -260,14 +271,60 @@ lot_no,product_name,quantity,production_date
 
     Write-Info "測試檔案上傳: $testCsvPath"
 
+    # Docker compose 預設可能已啟用 AUTH_MODE=api_key。
+    # 若 /api/tenants 回 401，代表需要先 bootstrap 一把 tenant API key。
+    $rawKey = $null
+    $authEnabled = $false
+    try {
+        if ($useCurl) {
+            $status = curl.exe -s -o $null -w "%{http_code}" http://localhost:18002/api/tenants
+            if ($status -eq "401") {
+                $authEnabled = $true
+            }
+        } else {
+            # Invoke-RestMethod 對 401 會 throw；用這個作為判斷。
+            Invoke-RestMethod -Uri "http://localhost:18002/api/tenants" -ErrorAction Stop | Out-Null
+        }
+    } catch {
+        $authEnabled = $true
+    }
+
+    if ($authEnabled) {
+        Write-Info "偵測到 API key auth 已啟用，bootstrap 測試用 API key..."
+        try {
+            $bootstrapOut = docker compose exec -T backend python scripts/bootstrap_tenant_api_key.py --tenant-code default --label docker-quick-start --force
+            $lines = ($bootstrapOut -split "`r?`n") | Where-Object { $_.Trim().Length -gt 0 }
+            $markerIndex = $lines.IndexOf("SAVE THIS KEY NOW (shown once):")
+            if ($markerIndex -ge 0 -and ($markerIndex + 1) -lt $lines.Count) {
+                $rawKey = $lines[$markerIndex + 1].Trim()
+            }
+            if (-not $rawKey) {
+                # Fallback: take last non-empty line
+                $rawKey = $lines[-1].Trim()
+            }
+            Write-Success "已建立/取得測試用 API key（請在註冊頁貼上）：$rawKey"
+        } catch {
+            Write-Error "bootstrap API key 失敗: $($_.Exception.Message)"
+            exit 1
+        }
+    }
+
     # 取得 tenant（多租戶模式下 /api/* 需要 X-Tenant-Id）
     $tenantId = $null
     try {
         if ($useCurl) {
-            $tenantsJson = curl.exe -s http://localhost:18002/api/tenants
+            if ($rawKey) {
+                $tenantsJson = curl.exe -s -H "X-API-Key: $rawKey" http://localhost:18002/api/tenants
+            } else {
+                $tenantsJson = curl.exe -s http://localhost:18002/api/tenants
+            }
             $tenants = $tenantsJson | ConvertFrom-Json
         } else {
-            $tenants = Invoke-RestMethod -Uri "http://localhost:18002/api/tenants" -ErrorAction Stop
+            if ($rawKey) {
+                $tenants = Invoke-RestMethod -Uri "http://localhost:18002/api/tenants" -Headers @{ "X-API-Key" = $rawKey } -ErrorAction Stop
+            } else {
+                $tenants = Invoke-RestMethod -Uri "http://localhost:18002/api/tenants" -ErrorAction Stop
+            }
         }
 
         if ($tenants -and $tenants.Count -gt 0 -and $tenants[0].id) {
@@ -285,7 +342,11 @@ lot_no,product_name,quantity,production_date
 
     try {
         if ($useCurl) {
-            $uploadResponse = curl.exe -s -X POST -H "X-Tenant-Id: $tenantId" -F "file=@$testCsvPath" http://localhost:18002/api/upload
+            $headers = @("-H", "X-Tenant-Id: $tenantId")
+            if ($rawKey) {
+                $headers += @("-H", "X-API-Key: $rawKey")
+            }
+            $uploadResponse = curl.exe -s -X POST @headers -F "file=@$testCsvPath" http://localhost:18002/api/upload
         } else {
             # PowerShell 檔案上傳比較複雜，這裡簡化處理
             Write-Warning "使用 PowerShell 進行檔案上傳測試（簡化版本）"
@@ -303,7 +364,11 @@ lot_no,product_name,quantity,production_date
             Write-Info "測試錯誤報告下載..."
             try {
                 if ($useCurl) {
-                    curl.exe -f "http://localhost:18002/api/errors.csv?process_id=$processId" -H "X-Tenant-Id: $tenantId" -o errors.csv -s
+                    $headers = @("-H", "X-Tenant-Id: $tenantId")
+                    if ($rawKey) {
+                        $headers += @("-H", "X-API-Key: $rawKey")
+                    }
+                    curl.exe -f "http://localhost:18002/api/errors.csv?process_id=$processId" @headers -o errors.csv -s
                     if ($LASTEXITCODE -eq 0) {
                         Write-Success "錯誤報告下載成功"
                         Write-Host "錯誤報告內容："
@@ -320,7 +385,11 @@ lot_no,product_name,quantity,production_date
             try {
                 if ($useCurl) {
                     $importBody = @{ process_id = $processId } | ConvertTo-Json -Compress
-                    $importResponse = $importBody | curl.exe -s -X POST -H "X-Tenant-Id: $tenantId" -H "Content-Type: application/json" --data-binary "@-" http://localhost:18002/api/import
+                    $headers = @("-H", "X-Tenant-Id: $tenantId", "-H", "Content-Type: application/json")
+                    if ($rawKey) {
+                        $headers += @("-H", "X-API-Key: $rawKey")
+                    }
+                    $importResponse = $importBody | curl.exe -s -X POST @headers --data-binary "@-" http://localhost:18002/api/import
                     Write-Host "匯入回應: $importResponse"
                     Write-Success "資料匯入測試完成"
                 }

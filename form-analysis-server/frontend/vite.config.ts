@@ -6,6 +6,14 @@ import { resolve } from 'path'
 export default defineConfig({
   plugins: [react()],
   base: '/',
+
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    globals: true,
+    clearMocks: true,
+    restoreMocks: true,
+  },
   
   // Development server configuration
   server: {

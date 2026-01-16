@@ -1,5 +1,8 @@
 # Form Analysis API - 一鍵啟動與驗證指令摘要
 
+> 重要：本專案的「註冊」= 建立/選擇 tenant（租戶）+（可選）啟用 API key。
+> 詳細流程請看：getting-started/REGISTRATION_FLOW.md
+
 ##  一鍵啟動命令
 
 ### Docker Compose 啟動
@@ -23,13 +26,28 @@ docker compose logs -f
 
 # 只啟動服務，跳過測試
 .\quick-start.ps1 -SkipTests
+
+# (可選，會清空 DB) 移除 Docker volumes
+.\quick-start.ps1 -ResetDb
 ```
 
 **Linux/macOS**
 ```bash
 chmod +x quick-start.sh
 ./quick-start.sh
+
+# (可選，會清空 DB) 移除 Docker volumes
+./quick-start.sh --reset-db
 ```
+
+##  保留資料庫資料（建議）
+
+如果你只是要重啟系統、並且希望保留 PostgreSQL 內的資料，請使用：
+
+- `scripts/start-system.ps1`
+- `scripts/start-system.bat`
+
+這兩個腳本會 `docker-compose down --remove-orphans`（不會移除 volumes），所以不會清空 DB。
 
 ## 🩺 健康檢查驗證
 
@@ -196,6 +214,24 @@ rm test_upload.csv
 - **後端 API**: http://localhost:18002
 - **API 文件**: http://localhost:18002/docs
 - **ReDoc 文件**: http://localhost:18002/redoc
+
+## 註冊 / 初始化（tenant + API key）
+
+第一次啟動後，建議依序做：
+
+1) 讓前端自動建立/選擇 tenant（或用 API 手動建立）
+2)（可選）建立 tenant-bound API key
+3)（可選）啟用 `AUTH_MODE=api_key` 並讓前端送 `X-API-Key`
+
+完整說明與常見問題：getting-started/REGISTRATION_FLOW.md
+
+### 註冊頁（UI）入口
+
+開啟前端 `http://localhost:18003`，點選「註冊 / 初始化（tenant + API key）」tab，即可：
+
+- 保存 / 清除 API key（localStorage）
+- 自動初始化 tenant（空資料庫會建立 UT/ut）
+- 刷新 tenants 列表並選擇 tenant
 
 ### 前端環境配置
 

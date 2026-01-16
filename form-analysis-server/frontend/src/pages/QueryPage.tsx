@@ -393,6 +393,7 @@ export function QueryPage() {
         if (advancedParams.mold_no) params.append('mold_no', advancedParams.mold_no);
         if (advancedParams.product_id) params.append('product_id', advancedParams.product_id);
         if (advancedParams.specification) params.append('specification', advancedParams.specification);
+        if (advancedParams.material) params.append('material', advancedParams.material);
         if (advancedParams.winder_number) params.append('winder_number', advancedParams.winder_number);
         if (advancedParams.data_type) params.append('data_type', advancedParams.data_type);
       } else if (search) {

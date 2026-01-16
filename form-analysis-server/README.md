@@ -31,6 +31,11 @@
 
 ### 一鍵啟動
 
+注意：目前 Docker Compose 的後端服務在「部署層」預設啟用 `AUTH_MODE=api_key`（用來阻擋公網掃描/濫用）。
+
+- 使用 `quick-start.ps1/.bat/.sh`：腳本會在需要時自動 bootstrap 一把測試用 API key，並在輸出中顯示（只顯示一次，請保存）。
+- 手動啟動 `docker compose up -d`：請參考後端文件建立第一把 key（[backend/README.md](backend/README.md) 的「建立第一把 key（bootstrap）」）。
+
 **Windows (PowerShell)**
 ```powershell
 # 完整啟動和測試
@@ -38,18 +43,36 @@
 
 # 只啟動服務，跳過測試
 .\quick-start.ps1 -SkipTests
+
+# (可選，會清空 DB) 移除 Docker volumes
+.\quick-start.ps1 -ResetDb
 ```
 
 **Windows (命令提示字元)**
 ```cmd
 quick-start.bat
+
+REM (可選，會清空 DB) 移除 Docker volumes
+quick-start.bat --reset-db
 ```
 
 **Linux/macOS**
 ```bash
 chmod +x quick-start.sh
 ./quick-start.sh
+
+# (可選，會清空 DB) 移除 Docker volumes
+./quick-start.sh --reset-db
 ```
+
+### 保留資料庫資料的啟動方式（建議）
+
+如果你希望重啟系統時保留 PostgreSQL 內的資料，請使用專案根目錄的啟動腳本：
+
+- `scripts/start-system.ps1`
+- `scripts/start-system.bat`
+
+它們會停止容器並重新啟動，但不會移除 volumes（因此不會清空 DB）。
 
 ### 手動啟動步驟
 
@@ -83,9 +106,12 @@ chmod +x quick-start.sh
    
    上傳檔案：
    ```bash
-   # 上傳檔案
-   curl -X POST -F "file=@test_upload.csv" \
-        http://localhost:18002/api/upload
+      # 上傳檔案
+      # 注意：若你使用 Docker Compose 預設設定（AUTH_MODE=api_key），所有 /api/* 請求都需要帶 API key。
+      curl -X POST \
+         -H "X-API-Key: <YOUR_API_KEY>" \
+         -F "file=@test_upload.csv" \
+         http://localhost:18002/api/upload
    
    # 範例回應:
    # {
@@ -96,10 +122,13 @@ chmod +x quick-start.sh
    # }
    
    # 如果有錯誤，下載錯誤報告（使用上傳回應中的 file_id）
-   curl "http://localhost:18002/api/errors.csv?file_id=abc123def456"
+      curl -H "X-API-Key: <YOUR_API_KEY>" \
+         "http://localhost:18002/api/errors.csv?file_id=abc123def456"
    
    # 確認匯入資料（使用上傳回應中的 file_id）
-   curl -X POST -H "Content-Type: application/json" \
+      curl -X POST \
+         -H "X-API-Key: <YOUR_API_KEY>" \
+         -H "Content-Type: application/json" \
         -d '{"file_id":"abc123def456"}' \
         http://localhost:18002/api/import
    ```

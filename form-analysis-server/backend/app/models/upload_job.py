@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
-from sqlalchemy import String, Integer, DateTime, func, LargeBinary
+from sqlalchemy import String, Integer, DateTime, func, LargeBinary, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, ENUM
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -59,6 +59,50 @@ class UploadJob(Base):
         server_default=func.now(),
         nullable=False,
         comment="建立時間"
+    )
+
+    # Traceability
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.id"),
+        nullable=True,
+        index=True,
+        comment="Tenant ID (for traceability)"
+    )
+    actor_api_key_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenant_api_keys.id"),
+        nullable=True,
+        index=True,
+        comment="API key ID (who initiated/last updated the job)"
+    )
+    actor_label_snapshot: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="API key label snapshot"
+    )
+
+    last_status_changed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When status was last changed"
+    )
+    last_status_actor_kind: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Who changed status last (e.g., user/system)"
+    )
+    last_status_actor_api_key_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenant_api_keys.id"),
+        nullable=True,
+        index=True,
+        comment="API key ID for last status change (if any)"
+    )
+    last_status_actor_label_snapshot: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="API key label snapshot for last status change"
     )
     
     # 處理狀態

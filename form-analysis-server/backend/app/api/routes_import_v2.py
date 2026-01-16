@@ -2,11 +2,11 @@ import hashlib
 import shutil
 import uuid
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, BackgroundTasks
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, BackgroundTasks, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +38,10 @@ async def _mark_job_failed(job_id: uuid.UUID, error: Exception | str) -> None:
             return
         job.status = ImportJobStatus.FAILED
         job.error_summary = {"error": error_text}
+        job.last_status_changed_at = datetime.now(timezone.utc)
+        job.last_status_actor_kind = "system"
+        job.last_status_actor_api_key_id = None
+        job.last_status_actor_label_snapshot = None
         await db.commit()
 
 async def process_import_job_background(job_id: uuid.UUID):
@@ -63,6 +67,7 @@ async def process_import_job_background(job_id: uuid.UUID):
 
 @router.post("/jobs", response_model=ImportJobRead, status_code=status.HTTP_201_CREATED)
 async def create_import_job(
+    request: Request,
     background_tasks: BackgroundTasks,
     table_code: str = Form(..., description="Target table code (e.g., 'P1', 'P2')"),
     allow_duplicate: bool = Form(False, description="Allow importing the same file content multiple times"),
@@ -105,6 +110,15 @@ async def create_import_job(
         status=ImportJobStatus.UPLOADED,
         total_files=len(files)
     )
+    actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+    actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+    if actor_api_key_id:
+        job.actor_api_key_id = actor_api_key_id
+        job.actor_label_snapshot = actor_api_key_label
+        job.last_status_actor_api_key_id = actor_api_key_id
+        job.last_status_actor_label_snapshot = actor_api_key_label
+    job.last_status_changed_at = datetime.now(timezone.utc)
+    job.last_status_actor_kind = "user"
     db.add(job)
     
     # 3. Process Files
@@ -254,6 +268,7 @@ async def get_import_job_errors(
 @router.post("/jobs/{job_id}/commit", response_model=ImportJobRead)
 async def commit_import_job(
     job_id: uuid.UUID,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant),
@@ -284,13 +299,29 @@ async def commit_import_job(
     # If job is already COMMITTING (e.g., background task crashed/restarted), allow re-trigger.
     if job.status != ImportJobStatus.COMMITTING:
         job.status = ImportJobStatus.COMMITTING
+        actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+        actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+        if actor_api_key_id:
+            job.actor_api_key_id = actor_api_key_id
+            job.actor_label_snapshot = actor_api_key_label
+            job.last_status_actor_api_key_id = actor_api_key_id
+            job.last_status_actor_label_snapshot = actor_api_key_label
+        job.last_status_changed_at = datetime.now(timezone.utc)
+        job.last_status_actor_kind = "user"
         await db.commit()
         await db.refresh(job)
     
     # In tests we need deterministic behavior; commit synchronously.
     if settings.environment.lower() == "testing":
         service = ImportService(db)
-        await service.commit_job(job.id)
+        actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+        actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+        await service.commit_job(
+            job.id,
+            actor_api_key_id=actor_api_key_id,
+            actor_label_snapshot=actor_api_key_label,
+            actor_kind="user",
+        )
     else:
         # Trigger background commit
         background_tasks.add_task(process_commit_job_background, job.id)
@@ -307,6 +338,7 @@ async def commit_import_job(
 @router.post("/jobs/{job_id}/cancel", response_model=ImportJobRead)
 async def cancel_import_job(
     job_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
@@ -325,6 +357,15 @@ async def cancel_import_job(
 
     if job.status != ImportJobStatus.CANCELLED:
         job.status = ImportJobStatus.CANCELLED
+        actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+        actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+        if actor_api_key_id:
+            job.actor_api_key_id = actor_api_key_id
+            job.actor_label_snapshot = actor_api_key_label
+            job.last_status_actor_api_key_id = actor_api_key_id
+            job.last_status_actor_label_snapshot = actor_api_key_label
+        job.last_status_changed_at = datetime.now(timezone.utc)
+        job.last_status_actor_kind = "user"
         await db.commit()
 
     from sqlalchemy.orm import selectinload

@@ -42,6 +42,25 @@ class ImportJob(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    # Traceability
+    actor_api_key_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenant_api_keys.id"),
+        nullable=True,
+        index=True,
+    )
+    actor_label_snapshot: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    last_status_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status_actor_kind: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    last_status_actor_api_key_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenant_api_keys.id"),
+        nullable=True,
+        index=True,
+    )
+    last_status_actor_label_snapshot: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
     # Relationships
     files: Mapped[List["ImportFile"]] = relationship("ImportFile", back_populates="job", cascade="all, delete-orphan")
     staging_rows: Mapped[List["StagingRow"]] = relationship("StagingRow", back_populates="job", cascade="all, delete-orphan")

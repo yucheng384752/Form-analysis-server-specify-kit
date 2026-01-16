@@ -34,9 +34,11 @@ from app.api import constants as routes_constants
 from app.api import traceability as routes_traceability
 from app.api import routes_analytics, routes_ut
 from app.api.deps import get_current_tenant
+from app.core.auth import hash_api_key
+from app.models.core.tenant_api_key import TenantApiKey
 
 # Import all models to ensure they're registered with Base
-from app.models import UploadJob, UploadError, Record
+from app.models import UploadJob, UploadError, Record, AuditEvent
 
 # Initialize application settings
 settings = get_settings()
@@ -78,27 +80,37 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             else:
                 raise e
 
-    # Seed minimal registry data (required by Import V2) + ensure at least one tenant exists
+    # Seed minimal registry data (required by Import V2) + ensure at least one tenant exists.
+    # Important: do NOT let failures in registry seeding prevent tenant creation.
     try:
         from app.core.database import async_session_factory
-        from app.models.core.schema_registry import TableRegistry
-        from app.models.core.tenant import Tenant
 
         if async_session_factory:
-            async with async_session_factory() as db:
-                existing = set((await db.execute(select(TableRegistry.table_code))).scalars().all())
-                for code in ("P1", "P2", "P3"):
-                    if code not in existing:
-                        db.add(TableRegistry(table_code=code, display_name=code))
+            # 1) Table registry
+            try:
+                from app.models.core.schema_registry import TableRegistry
+                async with async_session_factory() as db:
+                    existing = set((await db.execute(select(TableRegistry.table_code))).scalars().all())
+                    for code in ("P1", "P2", "P3"):
+                        if code not in existing:
+                            db.add(TableRegistry(table_code=code, display_name=code))
+                    await db.commit()
+            except Exception as e:
+                # Do not block startup if seeding fails; import routes will still surface the error.
+                print(f" Warning: failed to seed table_registry: {e}")
 
-                tenant_count = (await db.execute(select(func.count(Tenant.id)))).scalar() or 0
-                if tenant_count == 0:
-                    db.add(Tenant(name="Default", code="default", is_default=True, is_active=True))
-
-                await db.commit()
+            # 2) Default tenant
+            try:
+                from app.models.core.tenant import Tenant
+                async with async_session_factory() as db:
+                    tenant_count = (await db.execute(select(func.count(Tenant.id)))).scalar() or 0
+                    if tenant_count == 0:
+                        db.add(Tenant(name="Default", code="default", is_default=True, is_active=True))
+                        await db.commit()
+            except Exception as e:
+                print(f" Warning: failed to seed default tenant: {e}")
     except Exception as e:
-        # Do not block startup if seeding fails; import routes will still surface the error.
-        print(f" Warning: failed to seed table_registry: {e}")
+        print(f" Warning: failed to run startup seed: {e}")
     
     print(f" Form Analysis API starting on {settings.api_host}:{settings.api_port}")
     print(f" Database: PostgreSQL - {settings.database_url.split('@')[-1]}")  # Hide credentials
@@ -163,6 +175,161 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 # Custom middleware for request logging and timing
 app.add_middleware(RequestLoggingMiddleware)
 app.middleware("http")(add_process_time_header)
+
+
+@app.middleware("http")
+async def api_key_auth_middleware(request: Request, call_next):
+    """Optional lightweight API-key auth.
+
+    Enable with env: AUTH_MODE=api_key
+    Behavior:
+    - Protects prefixes from settings.auth_protect_prefixes (default: /api)
+    - Requires header settings.auth_api_key_header (default: X-API-Key)
+    - Resolves key -> tenant_id and binds it to request.state.auth_tenant_id
+    """
+    mode = (getattr(settings, "auth_mode", "off") or "off").strip().lower()
+    if mode != "api_key":
+        return await call_next(request)
+
+    path = request.url.path
+    prefixes = getattr(settings, "auth_protect_prefixes", ["/api"])
+    if not any(path.startswith(p) for p in prefixes):
+        return await call_next(request)
+
+    exempt_paths = getattr(settings, "auth_exempt_paths", ["/healthz", "/docs", "/redoc", "/openapi.json"])
+    if any(path.startswith(p) for p in exempt_paths):
+        return await call_next(request)
+
+    # Admin key (privileged operations like creating tenants).
+    # If valid, mark request as admin.
+    # - For bootstrap endpoints (e.g. POST /api/tenants), admin key can be used without a tenant API key.
+    # - If an X-API-Key is also provided, still validate it so audit/events keep actor info.
+    admin_header_name = getattr(settings, "admin_api_key_header", "X-Admin-API-Key")
+    admin_provided = request.headers.get(admin_header_name)
+    admin_keys = getattr(settings, "admin_api_keys", set())
+    is_admin = bool(
+        admin_provided
+        and isinstance(admin_keys, set)
+        and admin_provided.strip() in admin_keys
+    )
+    if is_admin:
+        request.state.is_admin = True
+        request.state.admin_key_label = "admin"
+
+    header_name = getattr(settings, "auth_api_key_header", "X-API-Key")
+    provided = request.headers.get(header_name)
+    if not provided:
+        # Allow admin-only bootstrap for tenant creation without a tenant API key.
+        if is_admin and path == "/api/tenants":
+            return await call_next(request)
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+    try:
+        key_hash = hash_api_key(raw_key=provided.strip(), secret_key=settings.secret_key)
+    except Exception:
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+    from app.core.database import async_session_factory
+    if async_session_factory is None:
+        return JSONResponse(status_code=500, content={"detail": "Database not initialized"})
+
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(TenantApiKey).where(
+                TenantApiKey.key_hash == key_hash,
+                TenantApiKey.is_active == True,
+            )
+        )
+        api_key = result.scalar_one_or_none()
+        if not api_key:
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+        request.state.auth_tenant_id = api_key.tenant_id
+        request.state.auth_api_key_id = api_key.id
+        request.state.auth_api_key_label = api_key.label
+
+        # Best-effort last_used update (do not block request).
+        try:
+            api_key.last_used_at = func.now()
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def audit_events_middleware(request: Request, call_next):
+    """Optional DB audit events.
+
+    Controlled by env:
+    - AUDIT_EVENTS_ENABLED=true
+
+    Notes:
+    - Best-effort, non-blocking: audit write failures do not fail the request.
+    - Never stores raw API keys or request bodies.
+    """
+    response = await call_next(request)
+
+    if not getattr(settings, "audit_events_enabled", False):
+        return response
+
+    method = (request.method or "").upper()
+    if method not in getattr(settings, "audit_events_methods", {"POST", "PUT", "PATCH", "DELETE"}):
+        return response
+
+    path = request.url.path
+
+    # Avoid auditing clearly non-business endpoints by default.
+    exempt_paths = getattr(settings, "auth_exempt_paths", ["/healthz", "/docs", "/redoc", "/openapi.json"])
+    if any(path.startswith(p) for p in exempt_paths):
+        return response
+
+    # If auth is configured to protect only some prefixes, keep audit aligned.
+    prefixes = getattr(settings, "auth_protect_prefixes", ["/api"])
+    if prefixes and not any(path.startswith(p) for p in prefixes):
+        return response
+
+    from app.core.database import async_session_factory
+    if async_session_factory is None:
+        return response
+
+    tenant_id = getattr(getattr(request, "state", None), "tenant_id", None) or getattr(
+        getattr(request, "state", None), "auth_tenant_id", None
+    )
+    actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+    actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+    request_id = getattr(getattr(request, "state", None), "request_id", None)
+
+    # Keep metadata small and non-sensitive.
+    query = dict(request.query_params) if request.query_params else {}
+    metadata = {
+        "query": query,
+    }
+
+    try:
+        async with async_session_factory() as db:
+            db.add(
+                AuditEvent(
+                    tenant_id=tenant_id,
+                    actor_api_key_id=actor_api_key_id,
+                    actor_label_snapshot=actor_api_key_label,
+                    request_id=str(request_id) if request_id else None,
+                    method=method,
+                    path=path,
+                    status_code=int(response.status_code),
+                    client_host=request.client.host if request.client else None,
+                    user_agent=request.headers.get("user-agent"),
+                    action="http.write",
+                    metadata_json=metadata,
+                )
+            )
+            await db.commit()
+    except Exception:
+        # Best-effort: never block user requests due to audit logging.
+        pass
+
+    return response
 
 
 # Global exception handler

@@ -40,6 +40,163 @@ python app/main.py
 http://localhost:8000/docs
 ```
 
+## 簡易身份驗證（API Key，tenant 綁定）
+
+在沒有 Nginx / Cloudflare / Front Door 的情況下，可用此模式建立最小可用的「阻擋掃描/濫用」門檻。
+
+### 啟用
+
+設定環境變數：
+
+- `AUTH_MODE=api_key`
+- `AUTH_API_KEY_HEADER=X-API-Key`（可選，預設就是 `X-API-Key`）
+- `AUTH_PROTECT_PREFIXES=/api`（可選，預設就是 `/api`）
+- `AUTH_EXEMPT_PATHS=/healthz,/docs,/redoc,/openapi.json`（可選；當 `AUTH_PROTECT_PREFIXES` 設為 `/` 這類「保護所有路徑」時特別重要）
+
+啟用後：
+
+- 只要路徑符合保護前綴（預設 `/api`），就會要求帶 API key。
+- `AUTH_EXEMPT_PATHS` 內的路徑前綴會放行（預設包含 `/healthz`、`/docs`、`/redoc`、`/openapi.json`，方便健康檢查與看文件）。
+- API key 會綁定 tenant：server 端會用 key 對應到 tenant，並忽略 client 送來的 `X-Tenant-Id`（避免繞過）。
+
+### 建議預設（profiles）
+
+#### Profile A（建議：只保護 API，文件放行）
+
+適用：內網/開發環境，或你只想保護業務 API，不介意 Swagger 文件能被看到。
+
+```env
+AUTH_MODE=api_key
+AUTH_API_KEY_HEADER=X-API-Key
+AUTH_PROTECT_PREFIXES=/api
+```
+
+> 註：此 profile 下 `/docs` 並不在 `/api` 前綴內，因此天然不會被保護。
+
+#### Profile B（上線建議：保護所有路徑，文件放行）
+
+適用：你把後端直接曝露到公網，但仍希望保留 `/docs` 方便操作。
+
+```env
+AUTH_MODE=api_key
+AUTH_API_KEY_HEADER=X-API-Key
+AUTH_PROTECT_PREFIXES=/
+AUTH_EXEMPT_PATHS=/healthz,/docs,/redoc,/openapi.json
+```
+
+#### Profile C（更嚴格：保護所有路徑，文件也要 key）
+
+適用：公網上線且不希望 Swagger/OpenAPI 被未授權的人看到。
+
+```env
+AUTH_MODE=api_key
+AUTH_API_KEY_HEADER=X-API-Key
+AUTH_PROTECT_PREFIXES=/
+AUTH_EXEMPT_PATHS=/healthz
+```
+
+### 建立第一把 key（bootstrap）
+
+PowerShell：
+
+```powershell
+..\scripts\bootstrap-api-key.ps1 -TenantCode ut -Label "local-dev"
+```
+
+或直接跑 Python：
+
+```bash
+python scripts/bootstrap_tenant_api_key.py --tenant-code ut --label local-dev
+```
+
+指令會輸出 raw key（只會顯示一次，請自行保存）。
+
+### 呼叫範例
+
+```bash
+curl -H "X-API-Key: <your-key>" http://localhost:8000/api/tenants
+```
+
+## 稽核事件落庫（audit_events，最小版）
+
+此功能用來把「重要操作」寫入 DB，方便日後用 SQL 回查：誰（哪把 API key）在什麼時間呼叫了哪個 API、回應狀態碼是什麼。
+
+特性：
+
+- Best-effort：寫入失敗不會影響 API 回應。
+- 不會儲存 request body、也不會記錄明文 API key。
+- 預設只記錄寫入類 HTTP 方法（可設定）。
+
+### 啟用
+
+設定環境變數：
+
+- `AUDIT_EVENTS_ENABLED=true`
+- `AUDIT_EVENTS_METHODS=POST,PUT,PATCH,DELETE`（可選；預設就是這組）
+
+啟用後會寫入資料表 `audit_events`，內容包含：
+
+- `tenant_id`、`actor_api_key_id`、`actor_label_snapshot`
+- `request_id`、`method`、`path`、`status_code`
+- `client_host`、`user_agent`
+- `created_at`、`metadata_json`（目前包含 query params）
+
+### 驗證（最小操作清單）
+
+目標：打一個「寫入類」API（POST/PUT/PATCH/DELETE），拿到回應的 `X-Request-ID`，再用 SQL 依 `request_id` 查到對應的 `audit_events`（含 tenant/actor）。
+
+1) 設定環境變數並重啟後端
+
+- `AUDIT_EVENTS_ENABLED=true`
+- （可選）`AUDIT_EVENTS_METHODS=POST,PUT,PATCH,DELETE`
+
+2)（建議）同時開啟 API key auth，讓 audit_events 具備 actor 欄位
+
+- `AUTH_MODE=api_key`
+- 先用本 README 上方的 bootstrap 指令建立一把 API key（會輸出 raw key，只顯示一次）
+
+3) 打一個最小寫入 API：`POST /api/tenants`
+
+備註：如果你已經有 tenant，這個 API 可能回 `409`；不影響驗證，audit 仍會記錄 method/path/status_code。
+
+PowerShell 範例（取出 request_id）：
+
+```powershell
+$rawKey = "<your-raw-key>"
+$resp = Invoke-WebRequest -Method Post -Uri "http://localhost:8000/api/tenants" -Headers @{ "X-API-Key" = $rawKey } -ContentType "application/json" -Body "{}"
+$requestId = $resp.Headers["X-Request-ID"]
+$requestId
+```
+
+4) 用 SQL 依 request_id 查 `audit_events`
+
+PostgreSQL：
+
+```sql
+SELECT
+  id,
+  created_at,
+  tenant_id,
+  actor_api_key_id,
+  actor_label_snapshot,
+  request_id,
+  method,
+  path,
+  status_code
+FROM audit_events
+WHERE request_id = '<X-Request-ID>'
+ORDER BY created_at DESC;
+```
+
+（快速看最近幾筆）
+
+```sql
+SELECT created_at, request_id, method, path, status_code, tenant_id, actor_api_key_id
+FROM audit_events
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
 ## API 端點
 
 ### 檔案上傳

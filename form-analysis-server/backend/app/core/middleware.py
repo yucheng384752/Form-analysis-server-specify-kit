@@ -41,6 +41,13 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Generate unique request ID
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
+
+        # Best-effort actor/tenant context (may be populated later in the request lifecycle)
+        tenant_id = getattr(getattr(request, "state", None), "tenant_id", None)
+        tenant_code = getattr(getattr(request, "state", None), "tenant_code", None)
+        auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+        auth_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+        auth_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
         
         # Start timing
         start_time = time.time()
@@ -54,6 +61,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             query_params=str(request.query_params),
             client_host=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
+            tenant_id=str(tenant_id) if tenant_id else None,
+            tenant_code=tenant_code,
+            auth_tenant_id=str(auth_tenant_id) if auth_tenant_id else None,
+            actor_api_key_id=str(auth_api_key_id) if auth_api_key_id else None,
+            actor_api_key_label=auth_api_key_label,
         )
         
         try:
@@ -68,11 +80,22 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             response.headers["X-Process-Time"] = str(process_time)
             
             # Log response
+            tenant_id = getattr(getattr(request, "state", None), "tenant_id", None)
+            tenant_code = getattr(getattr(request, "state", None), "tenant_code", None)
+            auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+            auth_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+            auth_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+
             logger.info(
                 "Request completed",
                 request_id=request_id,
                 status_code=response.status_code,
                 process_time=process_time,
+                tenant_id=str(tenant_id) if tenant_id else None,
+                tenant_code=tenant_code,
+                auth_tenant_id=str(auth_tenant_id) if auth_tenant_id else None,
+                actor_api_key_id=str(auth_api_key_id) if auth_api_key_id else None,
+                actor_api_key_label=auth_api_key_label,
             )
             
             return response
@@ -82,12 +105,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             process_time = time.time() - start_time
             
             # Log error
+            tenant_id = getattr(getattr(request, "state", None), "tenant_id", None)
+            tenant_code = getattr(getattr(request, "state", None), "tenant_code", None)
+            auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+            auth_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+            auth_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+
             logger.error(
                 "Request failed",
                 request_id=request_id,
                 error=str(exc),
                 process_time=process_time,
                 exc_info=True,
+                tenant_id=str(tenant_id) if tenant_id else None,
+                tenant_code=tenant_code,
+                auth_tenant_id=str(auth_tenant_id) if auth_tenant_id else None,
+                actor_api_key_id=str(auth_api_key_id) if auth_api_key_id else None,
+                actor_api_key_label=auth_api_key_label,
             )
             
             raise

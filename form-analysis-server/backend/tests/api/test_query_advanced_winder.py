@@ -121,3 +121,39 @@ async def test_advanced_query_invalid_winder_returns_400(client, db_session):
         headers=headers,
     )
     assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_advanced_query_winder_with_data_type_p1_returns_empty(client, db_session):
+    tenant = Tenant(
+        name=f"Test Tenant {uuid.uuid4()}",
+        code=f"test_tenant_{uuid.uuid4()}",
+        is_default=True,
+    )
+    db_session.add(tenant)
+    await db_session.commit()
+    await db_session.refresh(tenant)
+
+    lot_no = "2507173_02"
+    lot_no_norm = normalize_lot_no(lot_no)
+
+    # Provide a P1 record so we can prove it is NOT returned.
+    p1 = P1Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        extras={"rows": [{"Specification": "P1-SPEC"}]},
+    )
+    db_session.add(p1)
+    await db_session.commit()
+
+    headers = {"X-Tenant-Id": str(tenant.id)}
+    resp = await client.get(
+        "/api/v2/query/records/advanced",
+        params={"lot_no": lot_no, "winder_number": "5", "data_type": "P1"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["total_count"] == 0
+    assert payload["records"] == []

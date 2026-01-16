@@ -5,6 +5,7 @@ import {
   useState,
   ReactNode,
   useCallback,
+  useEffect,
 } from "react";
 
 export type ToastType = "info" | "error" | "success";
@@ -38,6 +39,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     },
     [removeToast]
   );
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail as { type?: ToastType; message?: string } | undefined
+      const message = typeof detail?.message === 'string' ? detail.message : ''
+      if (!message) return
+      const type: ToastType = detail?.type === 'success' || detail?.type === 'error' || detail?.type === 'info' ? detail.type : 'info'
+      showToast(type, message)
+    }
+
+    window.addEventListener('app:toast', handler as EventListener)
+    return () => window.removeEventListener('app:toast', handler as EventListener)
+  }, [showToast])
 
   return (
     <ToastContext.Provider value={{ toasts, showToast, removeToast }}>

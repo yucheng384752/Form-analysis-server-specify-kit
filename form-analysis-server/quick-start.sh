@@ -11,6 +11,12 @@
 
 set -e  # 遇到錯誤立即退出
 
+# Optional flag: --reset-db will remove Docker volumes (DANGEROUS: clears DB data)
+RESET_DB=false
+if [ "${1:-}" = "--reset-db" ]; then
+    RESET_DB=true
+fi
+
 echo " Form Analysis - Docker 一鍵啟動與驗證"
 echo "========================================"
 
@@ -50,8 +56,14 @@ if ! command -v curl &> /dev/null; then
     exit 1
 fi
 
-print_status "停止並清理現有容器..."
-docker compose down -v
+print_status "停止現有容器..."
+if [ "$RESET_DB" = "true" ]; then
+    print_warning "--reset-db：將移除 Docker volumes，資料庫資料會被清空"
+    docker compose down -v --remove-orphans
+else
+    # Default: keep volumes to preserve DB data
+    docker compose down --remove-orphans
+fi
 
 print_status "啟動所有服務..."
 docker compose up -d
@@ -124,6 +136,26 @@ echo ""
 print_success "所有服務已啟動完成！"
 echo ""
 
+# If Docker defaults to AUTH_MODE=api_key, bootstrap a tenant API key for smoke tests.
+API_KEY=""
+AUTH_HEADER=()
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18002/api/tenants || true)
+if [ "$HTTP_CODE" = "401" ]; then
+    print_status "偵測到 API key auth 已啟用，bootstrap 測試用 API key..."
+    BOOTSTRAP_OUT=$(docker compose exec -T backend python scripts/bootstrap_tenant_api_key.py --tenant-code default --label docker-quick-start --force)
+    API_KEY=$(echo "$BOOTSTRAP_OUT" | awk '/SAVE THIS KEY NOW/{getline; print; exit}' | tr -d '\r' | xargs)
+    if [ -z "$API_KEY" ]; then
+        # fallback: last non-empty line
+        API_KEY=$(echo "$BOOTSTRAP_OUT" | awk 'NF{line=$0} END{print line}' | tr -d '\r' | xargs)
+    fi
+    if [ -z "$API_KEY" ]; then
+        print_error "bootstrap API key 失敗：無法解析輸出"
+        exit 1
+    fi
+    print_success "已建立/取得測試用 API key（請在註冊頁貼上）：$API_KEY"
+    AUTH_HEADER=(-H "X-API-Key: $API_KEY")
+fi
+
 # 驗證健康檢查
 echo "🩺 健康檢查驗證"
 echo "=================="
@@ -165,6 +197,7 @@ echo "$TEST_CSV_CONTENT" > "$TEMP_CSV"
 print_status "測試檔案上傳（5 列測試資料）..."
 
 UPLOAD_RESPONSE=$(curl -s -X POST \
+    "${AUTH_HEADER[@]}" \
     -F "file=@$TEMP_CSV" \
     http://localhost:18002/api/upload)
 
@@ -178,7 +211,7 @@ if [ -n "$FILE_ID" ]; then
     
     # 測試錯誤報告下載
     print_status "測試錯誤報告下載..."
-    if curl -f "http://localhost:18002/api/errors.csv?file_id=$FILE_ID" -o /tmp/errors.csv; then
+    if curl -f "${AUTH_HEADER[@]}" "http://localhost:18002/api/errors.csv?file_id=$FILE_ID" -o /tmp/errors.csv; then
         print_success "錯誤報告下載成功"
         echo "錯誤報告內容："
         cat /tmp/errors.csv
@@ -190,6 +223,7 @@ if [ -n "$FILE_ID" ]; then
     # 測試資料匯入
     print_status "測試資料匯入..."
     IMPORT_RESPONSE=$(curl -s -X POST \
+        "${AUTH_HEADER[@]}" \
         -H "Content-Type: application/json" \
         -d "{\"file_id\":\"$FILE_ID\"}" \
         http://localhost:18002/api/import)

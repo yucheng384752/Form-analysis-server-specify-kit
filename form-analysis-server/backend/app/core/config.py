@@ -46,7 +46,7 @@ class Settings(BaseSettings):
         description="Temporary directory for file uploads"
     )
     allowed_extensions: list[str] = Field(
-        default=["csv", "xlsx"], 
+        default=["csv", "xlsx", "pdf"], 
         description="Allowed file extensions"
     )
     max_concurrent_uploads: int = Field(
@@ -78,6 +78,81 @@ class Settings(BaseSettings):
         min_length=32,
         description="Secret key for JWT and other crypto operations"
     )
+
+    # Lightweight auth (API key) - for blocking public scanning/attacks
+    # Prefer a reverse proxy / WAF for stronger protection.
+    auth_mode: str = Field(
+        default="off",
+        description="Auth mode: off|api_key",
+        alias="AUTH_MODE",
+    )
+    auth_api_key_header: str = Field(
+        default="X-API-Key",
+        description="Header name for API key",
+        alias="AUTH_API_KEY_HEADER",
+    )
+    auth_protect_prefixes_str: str = Field(
+        default="/api",
+        description="Comma-separated path prefixes to protect (e.g. /api,/api/v2)",
+        alias="AUTH_PROTECT_PREFIXES",
+    )
+
+    auth_exempt_paths_str: str = Field(
+        default="/healthz,/docs,/redoc,/openapi.json",
+        description=(
+            "Comma-separated path prefixes to exempt from auth when AUTH_MODE=api_key "
+            "(e.g. /healthz,/docs,/openapi.json)."
+        ),
+        alias="AUTH_EXEMPT_PATHS",
+    )
+
+    # Admin bootstrap/auth (for privileged ops like creating tenants)
+    # Comma-separated raw keys. Keep this small and rotate as needed.
+    admin_api_keys_str: str = Field(
+        default="",
+        description="Comma-separated admin API keys for privileged operations",
+        alias="ADMIN_API_KEYS",
+    )
+
+    admin_api_key_header: str = Field(
+        default="X-Admin-API-Key",
+        description="Header name for admin API key",
+        alias="ADMIN_API_KEY_HEADER",
+    )
+
+    @property
+    def admin_api_keys(self) -> set[str]:
+        keys = [k.strip() for k in (self.admin_api_keys_str or "").split(",") if k.strip()]
+        return set(keys)
+
+    @property
+    def auth_protect_prefixes(self) -> list[str]:
+        prefixes = [p.strip() for p in (self.auth_protect_prefixes_str or "").split(",") if p.strip()]
+        return prefixes or ["/api"]
+
+    @property
+    def auth_exempt_paths(self) -> list[str]:
+        paths = [p.strip() for p in (self.auth_exempt_paths_str or "").split(",") if p.strip()]
+        # Default keeps health/docs available to ease local operations.
+        return paths or ["/healthz", "/docs", "/redoc", "/openapi.json"]
+
+    # Audit events (DB) - optional persistence for important operations.
+    # Keep disabled by default; enable explicitly when you want long-term querying/reporting.
+    audit_events_enabled: bool = Field(
+        default=False,
+        description="Enable DB audit_events persistence",
+        alias="AUDIT_EVENTS_ENABLED",
+    )
+    audit_events_methods_str: str = Field(
+        default="POST,PUT,PATCH,DELETE",
+        description="Comma-separated HTTP methods to persist as audit events",
+        alias="AUDIT_EVENTS_METHODS",
+    )
+
+    @property
+    def audit_events_methods(self) -> set[str]:
+        methods = [m.strip().upper() for m in (self.audit_events_methods_str or "").split(",") if m.strip()]
+        return set(methods) or {"POST", "PUT", "PATCH", "DELETE"}
     
     # Database connection pool settings
     database_echo: bool = Field(default=False, description="Enable SQLAlchemy SQL logging")

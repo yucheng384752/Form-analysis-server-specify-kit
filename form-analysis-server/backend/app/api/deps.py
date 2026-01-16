@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import Header, Depends
+from fastapi import Header, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -7,6 +7,7 @@ from app.core.tenant_resolver import resolve_tenant_or_raise
 from app.models.core.tenant import Tenant
 
 async def get_current_tenant(
+    request: Request = None,
     x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
     db: AsyncSession = Depends(get_db)
 ) -> Tenant:
@@ -21,4 +22,17 @@ async def get_current_tenant(
        - If exactly one default tenant exists, use it.
        - Otherwise, raise 422 error requiring explicit tenant ID.
     """
-    return await resolve_tenant_or_raise(db=db, x_tenant_id=x_tenant_id)
+    if request is not None:
+        auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+        if auth_tenant_id:
+            # When auth is enabled, tenant is bound to the API key.
+            tenant = await resolve_tenant_or_raise(db=db, x_tenant_id=str(auth_tenant_id))
+            request.state.tenant_id = tenant.id
+            request.state.tenant_code = tenant.code
+            return tenant
+
+    tenant = await resolve_tenant_or_raise(db=db, x_tenant_id=x_tenant_id)
+    if request is not None:
+        request.state.tenant_id = tenant.id
+        request.state.tenant_code = tenant.code
+    return tenant

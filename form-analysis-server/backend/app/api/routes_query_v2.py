@@ -674,8 +674,13 @@ async def get_field_options_v2(
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
     field = field_name.strip().lower()
-    if field not in {"machine_no", "mold_no", "specification", "winder_number"}:
+    if field not in {"machine_no", "mold_no", "specification", "winder_number", "material"}:
         raise HTTPException(status_code=400, detail=f"Unsupported field: {field_name}")
+
+    if field == "material":
+        from app.config.constants import get_material_list
+
+        return get_material_list()[:limit]
 
     if field == "machine_no":
         stmt = (
@@ -812,6 +817,7 @@ async def query_records_v2(
         machine_no=None,
         mold_no=None,
         product_id=None,
+        material=None,
         specification=None,
         winder_number=None,
         data_type=data_type,
@@ -830,6 +836,7 @@ async def query_records_advanced_v2(
     machine_no: Optional[str] = Query(None),
     mold_no: Optional[str] = Query(None),
     product_id: Optional[str] = Query(None),
+    material: Optional[str] = Query(None, description="材料代號 (P1/P2)"),
     specification: Optional[str] = Query(None, description="統一規格搜尋 (P1.Specification, P2.format, P3.Specification)"),
     winder_number: Optional[str] = Query(None, description="Winder Number (P2/P3)"),
     data_type: Optional[str] = Query(None, description="P1|P2|P3"),
@@ -869,10 +876,13 @@ async def query_records_advanced_v2(
     date_from_i = to_int_yyyymmdd(production_date_from)
     date_to_i = to_int_yyyymmdd(production_date_to)
 
+    material_norm = (material or '').strip().upper() or None
+
     records: List[QueryRecordV2Compat] = []
 
     # P1
-    if dt == "P1" or (dt is None and winder_requested is None):
+    # winder_number 僅適用 P2/P3：即使 data_type=P1，也不應在指定 winder_number 時回傳 P1。
+    if (dt == "P1" and winder_requested is None) or (dt is None and winder_requested is None):
         p1_stmt = select(P1Record).where(P1Record.tenant_id == current_tenant.id)
         if lot_no_norm is not None:
             p1_stmt = p1_stmt.where(P1Record.lot_no_norm == lot_no_norm)
@@ -992,6 +1002,41 @@ async def query_records_advanced_v2(
             items = p3_record.items_v2
             if items:  # 只有有 items 的才顯示
                 records.append(_p3_to_query_record_with_items(p3_record, items))
+
+    if material_norm:
+        material_keys = (
+            'material_code',
+            'Material',
+            'Material Code',
+            'material',
+            '材料',
+            '材料代號',
+        )
+
+        def _matches_material(rec: QueryRecordV2Compat) -> bool:
+            data = rec.additional_data
+            candidates: list[str] = []
+            if isinstance(data, dict):
+                for k in material_keys:
+                    v = data.get(k)
+                    if v is not None and str(v).strip():
+                        candidates.append(str(v).strip())
+                rows = data.get('rows')
+                if isinstance(rows, list):
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        for k in material_keys:
+                            v = row.get(k)
+                            if v is not None and str(v).strip():
+                                candidates.append(str(v).strip())
+
+            for c in candidates:
+                if material_norm in c.upper():
+                    return True
+            return False
+
+        records = [r for r in records if _matches_material(r)]
 
     # Sort and paginate in memory (simple, OK for current UI)
     records.sort(key=lambda r: r.created_at, reverse=True)

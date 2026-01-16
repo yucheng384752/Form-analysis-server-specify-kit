@@ -1,13 +1,13 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Path, Body
+from fastapi import APIRouter, Depends, HTTPException, Path, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from sqlalchemy.exc import NoResultFound
 
 from app.core.database import get_db
 from app.models import EditReason, RowEdit, P1Record, P2Record, P3Record
-from app.schemas.audit import EditReasonResponse, RecordUpdateRequest, RowEditResponse
+from app.schemas.audit import EditReasonResponse, EditRecordRequest, RowEditResponse
 
 router = APIRouter()
 
@@ -24,14 +24,24 @@ def get_model_by_table_code(table_code: str):
 
 @router.get("/reasons", response_model=List[EditReasonResponse])
 async def get_edit_reasons(
-    tenant_id: UUID, # In a real app, this would come from auth context
+    tenant_id: Optional[UUID] = None,
+    http_request: Request = None,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get list of active edit reasons for a tenant.
     """
+    resolved_tenant_id = tenant_id
+    if resolved_tenant_id is None and http_request is not None:
+        resolved_tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None) or getattr(
+            getattr(http_request, "state", None), "auth_tenant_id", None
+        )
+
+    if resolved_tenant_id is None:
+        raise HTTPException(status_code=422, detail="tenant_id is required (provide X-Tenant-Id header or tenant_id)")
+
     query = select(EditReason).where(
-        EditReason.tenant_id == tenant_id,
+        EditReason.tenant_id == resolved_tenant_id,
         EditReason.is_active == True
     ).order_by(EditReason.display_order)
     
@@ -43,8 +53,8 @@ async def get_edit_reasons(
 async def update_record(
     table_code: str = Path(..., description="Table code (P1, P2, P3)"),
     record_id: UUID = Path(..., description="Record ID"),
-    request: RecordUpdateRequest = Body(...),
-    tenant_id: UUID = Body(..., embed=True), # Temporary: pass tenant_id in body for now
+    http_request: Request = None,
+    payload: EditRecordRequest = Body(...),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -58,6 +68,19 @@ async def update_record(
     record = result.scalar_one_or_none()
     
     if not record:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    resolved_tenant_id = payload.tenant_id
+    if resolved_tenant_id is None and http_request is not None:
+        resolved_tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None) or getattr(
+            getattr(http_request, "state", None), "auth_tenant_id", None
+        )
+
+    if resolved_tenant_id is None:
+        raise HTTPException(status_code=422, detail="tenant_id is required (provide X-Tenant-Id header or tenant_id)")
+
+    # Prevent cross-tenant edits.
+    if getattr(record, "tenant_id", None) is not None and str(getattr(record, "tenant_id")) != str(resolved_tenant_id):
         raise HTTPException(status_code=404, detail="Record not found")
     
     # 2. Capture state before update
@@ -90,7 +113,7 @@ async def update_record(
     current_extras = dict(getattr(record, "extras", {}))
     extras_changed = False
 
-    for key, value in request.updates.items():
+    for key, value in payload.updates.items():
         if key == 'id':
             continue # Prevent ID update
             
@@ -115,15 +138,19 @@ async def update_record(
     after_json_safe = json_friendly(after_json)
     
     # 5. Create Audit Log
+    actor_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None) if http_request else None
+    actor_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None) if http_request else None
+    created_by = actor_label or (str(actor_id) if actor_id else None) or "system"
+
     row_edit = RowEdit(
-        tenant_id=tenant_id,
+        tenant_id=resolved_tenant_id,
         table_code=table_code.upper(),
         record_id=record_id,
-        reason_id=request.reason_id,
-        reason_text=request.reason_text,
+        reason_id=payload.reason_id,
+        reason_text=payload.reason_text,
         before_json=before_json_safe,
         after_json=after_json_safe,
-        created_by="system" # Placeholder
+        created_by=created_by,
     )
     
     db.add(row_edit)
@@ -136,12 +163,22 @@ async def update_record(
 
 @router.post("/reasons/init", response_model=List[EditReasonResponse])
 async def init_default_reasons(
-    tenant_id: UUID = Body(..., embed=True),
+    tenant_id: Optional[UUID] = Body(None, embed=True),
+    http_request: Request = None,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Initialize default edit reasons for a tenant.
     """
+    resolved_tenant_id = tenant_id
+    if resolved_tenant_id is None and http_request is not None:
+        resolved_tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None) or getattr(
+            getattr(http_request, "state", None), "auth_tenant_id", None
+        )
+
+    if resolved_tenant_id is None:
+        raise HTTPException(status_code=422, detail="tenant_id is required (provide X-Tenant-Id header or tenant_id)")
+
     defaults = [
         {"code": "TYPO", "desc": "Typo / Spelling Error", "order": 1},
         {"code": "WRONG_DATA", "desc": "Incorrect Data Entry", "order": 2},
@@ -154,7 +191,7 @@ async def init_default_reasons(
     for d in defaults:
         # Check if exists
         query = select(EditReason).where(
-            EditReason.tenant_id == tenant_id,
+            EditReason.tenant_id == resolved_tenant_id,
             EditReason.reason_code == d["code"]
         )
         result = await db.execute(query)
@@ -162,7 +199,7 @@ async def init_default_reasons(
         
         if not existing:
             reason = EditReason(
-                tenant_id=tenant_id,
+                tenant_id=resolved_tenant_id,
                 reason_code=d["code"],
                 description=d["desc"],
                 display_order=d["order"]
@@ -176,6 +213,6 @@ async def init_default_reasons(
             await db.refresh(r)
             
     # Return all
-    query = select(EditReason).where(EditReason.tenant_id == tenant_id).order_by(EditReason.display_order)
+    query = select(EditReason).where(EditReason.tenant_id == resolved_tenant_id).order_by(EditReason.display_order)
     result = await db.execute(query)
     return result.scalars().all()
