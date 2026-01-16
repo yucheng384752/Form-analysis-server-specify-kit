@@ -50,5 +50,37 @@
   {
     "title": "[QA] 列出每項測試的用途/輸入/輸出/預期結果",
     "body": "需求：整理測試清單，讓新同事能理解每個測試在保護什麼行為。\n\n驗收條件\n- 至少涵蓋 backend/tests/api 主要測試檔\n- 每個測試檔提供：目的、重要案例、資料建構方式\n"
+  },
+  {
+    "title": "[P2] FIX: P2 細項表格用 winder number 取代 # 欄位",
+    "body": "需求：P2 前端細項表格中，把目前的 # 欄位改成顯示 winder_number。\n\n驗收條件\n- 表格欄位顯示一致且排序/篩選不受影響\n- 若資料缺少 winder_number，有合理 fallback（例如顯示 '-'）\n"
+  },
+  {
+    "title": "[P2] UX: 進階搜尋按鈕縮小化與右對齊（與搜尋框同容器）",
+    "body": "需求：進階搜尋按鈕大小要與字寬相同，靠最右方（在搜尋框相同容器內最右）。\n\n驗收條件\n- 不影響現有展開/收合功能\n- 小螢幕下仍可點擊且不遮擋\n"
+  },
+  {
+    "title": "[BUG] P1 lot_no 查詢 production_date 解析錯誤",
+    "body": "問題：P1 lot_no 查詢時，production_date 欄位解析/顯示有誤。\n\n驗收條件\n- 釐清錯誤來源：匯入解析、DB 欄位、或前端格式化\n- 修正後同批資料在多頁面顯示一致\n- 補測試覆蓋（至少單元/API 層）\n"
+  },
+  {
+    "title": "[UX] P1 lot_no 查詢前端顯示風格調整（需提供表格/圖片規格）",
+    "body": "需求：調整 P1 lot_no 查詢結果的前端顯示風格，需對齊你提供的紙本/圖片版面。\n\n驗收條件\n- UI 版面與欄位順序對齊規格\n- 不影響既有查詢功能\n"
+  },
+  {
+    "title": "[P3] TODO: 確認 PDFtoCSV server 的 input/output 介面（你的 server 契約）",
+    "body": "需求：確認 PDFtoCSV server 的 input / output 格式與欄位定義。\n\n驗收條件\n- 明確 input（PDF bytes / 檔名 / metadata）\n- 明確 output（JSON schema 或 CSV 格式）\n- 錯誤格式與錯誤碼規範\n"
+  },
+  {
+    "title": "[P3] TODO: PDF → v2 import 串接設計",
+    "body": "需求：把 PDF 轉換結果（JSON/CSV）串接到 /api/v2/import/jobs 的 mapping 流程。\n\n驗收條件\n- 明確資料流：PDF upload -> convert job -> import job\n- failure/retry 策略\n- 需要的前端操作流程（按鈕/進度/錯誤提示）\n"
+  },
+  {
+    "title": "[MAINT] 整理腳本內容與歸檔（quick-start/monitor 等）",
+    "body": "需求：整理並歸檔現有腳本，避免重複與過時內容造成誤用。\n\n驗收條件\n- 腳本用途清楚、入口數量可控\n- README/QUICK_START 指到正確腳本\n- Windows/Linux/macOS 行為一致（或清楚標註差異）\n"
+  },
+  {
+    "title": "[QA] 最終整體總測試（從安裝開始模擬與測驗）",
+    "body": "需求：最後完成系統時，要做一套從『環境安裝』到『上傳/查詢/匯入/追溯』的總測試腳本與驗收清單。\n\n驗收條件\n- 有可重複執行的步驟（含期望輸出）\n- 能在乾淨環境完成（新 DB / 空資料）\n- 將關鍵 smoke test 納入 quick-start 或 CI（可選）\n"
   }
 ]
