@@ -1,0 +1,54 @@
+[
+  {
+    "title": "[P1] MIGRATION: legacy → v2 平移並逐步移除 /api/query/*",
+    "body": "目標：以 v2 API 為唯一正確來源，逐步移除 legacy /api/query/*，降低維護成本與資料路徑分叉。\n\n驗收條件\n- 前端查詢/進階查詢/追溯全部改用 /api/v2/*（或明確封裝在一個 adapter）\n- legacy 路由有清楚的 deprecate 註記與移除計畫\n- 測試覆蓋：至少有 end-to-end（或 API 層）驗證 v2 回傳與舊行為一致\n\n建議步驟\n1) 盤點前端目前仍呼叫 legacy 的點\n2) 將回傳 schema 對齊（必要時在 v2 做兼容）\n3) 逐步把 legacy endpoints 轉為 thin wrapper 或移除\n"
+  },
+  {
+    "title": "[P1] DATA: 修復 p3_records / p3_items 關聯與讀取路徑一致性",
+    "body": "問題：資料可能寫入 items，但 API 讀取 records（或反之），造成查詢/明細出現空資料或不一致。\n\n驗收條件\n- 定義『P3 明細』的權威資料來源（v2 或 legacy 或雙來源合併策略）\n- API 回傳欄位一致，前端呈現不再出現 additional_data 空/缺 row 的情況\n- 補 migration/修復腳本或背景修補路徑（若需要）\n"
+  },
+  {
+    "title": "[P1] IMPORT: 匯入路徑策略收斂（只寫 v2 或雙寫 legacy+v2）",
+    "body": "目標：明確規範匯入時資料寫入哪一套表，避免查詢/追溯路徑分裂。\n\n待決策\n- 未來匯入：只寫 v2？還是雙寫 legacy+v2？\n- 若雙寫：一致性驗證與回滾策略\n\n驗收條件\n- 文件化匯入策略與資料流\n- 程式碼層有明確的 single entry（避免多條匯入路徑）\n"
+  },
+  {
+    "title": "[P2] UX: 進階查詢結果呈現（單筆卡片 + 多筆條列）",
+    "body": "需求：使用高級查詢時，預設顯示單筆 row 摘要卡片（預設收合），點擊展開顯示與搜尋內容相關的 row。\n\n驗收條件\n- 可在查詢結果中切換『摘要/展開』\n- 多筆結果有清楚列表與可讀欄位\n- 不影響既有查詢/進階查詢 API 呼叫\n"
+  },
+  {
+    "title": "[P2] UX: 查詢/進階查詢按鈕視覺一致 + 展開動畫",
+    "body": "需求：查詢/進階查詢按鈕大小一致（與『資料查詢』tab 風格一致），並補齊進階查詢展開動畫。\n\n驗收條件\n- 按鈕寬度/高度/字距一致，視覺規則可複用\n- 展開/收合動畫不影響操作（含鍵盤/可點範圍）\n"
+  },
+  {
+    "title": "[P2] OBS: 匯入/查詢/修正流程事件記錄（最小 audit）",
+    "body": "目標：補齊最小可追溯事件（job 狀態機 audit），可回答『何時、誰、對哪個 tenant、做了什麼、結果如何』。\n\n驗收條件\n- 至少涵蓋：job 建立、validate 完成、commit 開始/成功/失敗（含錯誤摘要）\n- audit_events 可查 request_id / tenant / actor / entity\n- 不寫入敏感資訊（raw key / 個資）\n"
+  },
+  {
+    "title": "[P3] DOC: PDF 轉換流程與 API 契約（PDF→JSON/CSV→v2 import）",
+    "body": "需求：定義 PDFtoCSV server 的 input/output 與轉換 API（例如 POST /api/upload/pdf/{process_id}/convert 回 job_id），並決定輸出 JSON schema。\n\n驗收條件\n- 文件包含：API 路徑、request/response、錯誤碼、JSON schema 範例\n- 說明如何把轉換結果串到 /api/v2/import/jobs\n"
+  },
+  {
+    "title": "[P3] MAINT: staging/upload/import 資料清理策略（保留天數/成功後摘要）",
+    "body": "問題：staging_rows / upload_jobs / import_files 等資料若無清理，可能持續膨脹導致查詢/備份成本上升。\n\n驗收條件\n- 定義保留策略（例如 30/90 天，或成功後只保留摘要）\n- 提供清理腳本（可 dry-run）\n- 產出操作文件（什麼時候跑、跑完會刪什麼）\n"
+  },
+  {
+    "title": "[P3] I18N: 中英文介面切換",
+    "body": "需求：介面文字、表格標題與 toast 提示支援中/英文切換。\n\n建議\n- 放在 app-header 右下角，使用切換開關樣式\n- 導入 i18n 套件（或最小自製字典）\n\n驗收條件\n- 主要頁面（Upload/Query/Traceability）可切換語系\n- toast 也跟隨語系\n"
+  },
+  {
+    "title": "[BUG] P1 上傳驗證不需要 Screw Pressure(psi) 欄位",
+    "body": "問題：P1 上傳驗證目前要求 Screw Pressure(psi) 欄位，疑似不符合實際資料格式。\n\n驗收條件\n- 更新驗證規則，使其不再要求該欄位（或改成 optional）\n- 補測試：缺少該欄位仍可通過/給出合理提示\n"
+  },
+  {
+    "title": "[MAINT] 搜尋條件正規化（例如 PE32 等規格/材料）",
+    "body": "需求：PE32 以及其他搜尋條件需要正規化（大小寫、空白、全形半形、別名等），避免查不到或查到錯資料。\n\n驗收條件\n- 後端統一 normalize 函數（或共用 util）\n- 前端輸入提示/自動轉換（可選）\n- 補測試覆蓋常見變體（PE 32 / PE32 / pe32）\n"
+  },
+  {
+    "title": "[DOC] 建立 client tenant / key 使用說明（getting-started）",
+    "body": "需求：補文件說明 client 端如何設定 tenant（與 API key / admin key）。\n\n驗收條件\n- 放在 getting-started/（可連到 REGISTRATION_FLOW.md）\n- 有 UI 操作步驟 + curl 範例\n- 說明多 tenant 時的選擇策略\n"
+  },
+  {
+    "title": "[QA] 列出每項測試的用途/輸入/輸出/預期結果",
+    "body": "需求：整理測試清單，讓新同事能理解每個測試在保護什麼行為。\n\n驗收條件\n- 至少涵蓋 backend/tests/api 主要測試檔\n- 每個測試檔提供：目的、重要案例、資料建構方式\n"
+  }
+]
