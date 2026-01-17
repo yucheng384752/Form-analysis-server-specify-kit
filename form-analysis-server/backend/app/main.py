@@ -30,12 +30,14 @@ from app.core.database import init_db, Base
 from app.core.logging import setup_logging
 from app.core.middleware import RequestLoggingMiddleware, add_process_time_header
 from app.api import routes_health, routes_upload, routes_validate, routes_import, routes_export, routes_query, routes_logs, routes_import_v2, routes_tenants, routes_query_v2, routes_edit
+from app.api import routes_auth
 from app.api import constants as routes_constants
 from app.api import traceability as routes_traceability
 from app.api import routes_analytics, routes_ut
 from app.api.deps import get_current_tenant
 from app.core.auth import hash_api_key
 from app.models.core.tenant_api_key import TenantApiKey
+from app.models.core.tenant_user import TenantUser
 
 # Import all models to ensure they're registered with Base
 from app.models import UploadJob, UploadError, Record, AuditEvent
@@ -220,7 +222,7 @@ async def api_key_auth_middleware(request: Request, call_next):
     provided = request.headers.get(header_name)
     if not provided:
         # Allow admin-only bootstrap for tenant creation without a tenant API key.
-        if is_admin and path == "/api/tenants":
+        if is_admin and path in {"/api/tenants", "/api/auth/users"}:
             return await call_next(request)
         return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
@@ -247,6 +249,28 @@ async def api_key_auth_middleware(request: Request, call_next):
         request.state.auth_tenant_id = api_key.tenant_id
         request.state.auth_api_key_id = api_key.id
         request.state.auth_api_key_label = api_key.label
+
+        # Optional: resolve actor user & role for RBAC-style checks.
+        request.state.actor_user_id = None
+        request.state.actor_role = None
+        try:
+            if getattr(api_key, "user_id", None):
+                actor = (
+                    await db.execute(
+                        select(TenantUser).where(
+                            TenantUser.id == api_key.user_id,
+                            TenantUser.tenant_id == api_key.tenant_id,
+                            TenantUser.is_active == True,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if actor:
+                    request.state.actor_user_id = actor.id
+                    request.state.actor_role = actor.role
+        except Exception:
+            # Best-effort: do not block request if actor resolution fails.
+            request.state.actor_user_id = None
+            request.state.actor_role = None
 
         # Best-effort last_used update (do not block request).
         try:
@@ -355,6 +379,11 @@ app.include_router(
     tags=["Health Check"]
 )
 
+app.include_router(
+    routes_auth.router,
+    prefix="/api/auth",
+    tags=["Authentication"]
+)
 # 檔案上傳路由
 app.include_router(
     routes_upload.router,

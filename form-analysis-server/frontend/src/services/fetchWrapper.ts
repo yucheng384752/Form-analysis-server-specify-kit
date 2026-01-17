@@ -26,10 +26,11 @@ export function installGlobalFetchWrapper(): () => void {
       const url = new URL(urlString, window.location.href)
       const isApiPath = url.pathname.startsWith('/api')
       const isTenantListPath = url.pathname.startsWith('/api/tenants')
+      const isAuthPath = url.pathname.startsWith('/api/auth')
 
       // If tenant is missing but we are calling tenant-scoped APIs, try to auto-select
       // when exactly one tenant exists.
-      if (!tenantId && isApiPath && !isTenantListPath) {
+      if (!tenantId && isApiPath && !isTenantListPath && !isAuthPath) {
         tenantId = await ensureTenantId()
       }
 
@@ -37,11 +38,11 @@ export function installGlobalFetchWrapper(): () => void {
         return originalFetch(input as any, init)
       }
 
-      // Always attach API key when present (even for /api/tenants), but do not force tenant header on /api/tenants.
-      if (isTenantListPath) {
+      // Always attach auth headers when present, but do not force tenant header on /api/tenants or /api/auth.
+      if (isTenantListPath || isAuthPath) {
         const mergedHeaders = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined))
 
-        // Allow admin bootstrap: /api/tenants may require admin key when AUTH_MODE=api_key.
+        // Allow admin bootstrap: /api/tenants and /api/auth/* may require admin key depending on operation.
         if (adminKeyValue) {
           mergedHeaders.set(adminKeyHeaderName, adminKeyValue)
         }

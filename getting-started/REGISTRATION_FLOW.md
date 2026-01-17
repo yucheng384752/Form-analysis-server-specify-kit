@@ -1,64 +1,201 @@
-# 註冊 / 初始化流程（tenant + API key）
+# 第一次使用：初始化 / 登入（外部上線版）
 
-這份文件描述「第一次啟動後」要怎麼把系統設定到可用狀態。
+這份文件是給**第一次接觸這套系統**的人使用。
 
-本專案的「註冊」不是傳統帳號密碼註冊，而是：
+在前端看到的「註冊 / 初始化」頁面，目的分成兩件事：
 
-- 建立（或選擇）tenant（租戶）
-- （可選）啟用 API key 驗證，並建立第一把 tenant-bound API key
-- 讓前端/呼叫端在每次 API request 都帶上正確 header
+- 讓系統知道你要操作哪一個「工作區」（Tenant）
+- 如果公司有開啟「通行碼（API key）」保護：用「帳號/密碼」登入取得通行碼
 
----
-
-## 名詞與規則
-
-- **Tenant**：資料隔離單位。後端用 `X-Tenant-Id` header（或 API key 綁定 tenant）決定你在操作哪一個租戶。
-- **API key（tenant-bound）**：簡易防護用。啟用後，所有受保護的 API 都需要 `X-API-Key`。
-  - key 會綁定 tenant：啟用後，server 會以 key 推導 tenant，並忽略 client 提供的 `X-Tenant-Id`（避免繞過）。
+完成後，你就能正常進行匯入、查詢、追溯等功能。
 
 ---
 
-## 0) 啟動系統
+## 流程圖 1：初次初始化 / 註冊流程（第一次上線、資料庫全新）
 
-你可以用 docker compose 或腳本啟動。
+```mermaid
+flowchart TD
+  A[使用者打開前端 / 註冊初始化頁] --> B{tenant 列表是否為空?}
 
-- 後端 Swagger：`http://localhost:18002/docs`
-- 前端：`http://localhost:18003`
+  B -- 是 --> C[內部維運：使用 admin key 建立/初始化 tenant]
+  C --> D[內部維運：用 admin key 建立該 tenant 第一個管理者帳號 role=admin]
+  D --> E[外部使用者：用 tenant_code + 帳號密碼登入]
 
-（詳細啟動方式請看：getting-started/QUICK_START.md）
+  B -- 否 --> F{是否已有該 tenant 的管理者帳號?}
+  F -- 否 --> D
+  F -- 是 --> E
+
+  E --> G[前端保存：tenant_id + API key 到瀏覽器]
+  G --> H[開始使用：匯入/查詢/追溯]
+```
+
+## 流程圖 2：再次進入註冊/初始化頁（已使用過、日常）
+
+```mermaid
+flowchart TD
+  A[使用者再次打開前端 / 註冊初始化頁] --> B{瀏覽器是否已有 tenant_id + API key?}
+  B -- 是 --> C[直接可操作業務功能]
+  C --> D{需要換 tenant 或 key 嗎?}
+  D -- 否 --> Z[結束]
+  D -- 是 --> E[刷新 tenant 列表 / 選擇 tenant]
+  E --> F[用帳密登入取得新 API key（會輪替舊 key）]
+  F --> G[保存新 API key]
+  G --> Z
+
+  B -- 否 --> H[選 tenant（或單 tenant 自動推導）]
+  H --> I[用帳密登入取得 API key]
+  I --> J[保存 tenant_id + API key]
+  J --> C
+```
 
 ---
 
-## 1) 建立 / 選擇 tenant（第一次必做）
+## 需要知道的 3 個名詞
 
-### 方法 A（推薦）：用前端自動 bootstrap
+### 1) Tenant（工作區 / 場域）是什麼？
 
-前端啟動時會呼叫 `/api/tenants`：
+可以把 Tenant 想成「**不同工廠 / 不同客戶 / 不同專案**的資料分區」。
 
-- 若後端回傳 **0 個 tenants**：前端會自動呼叫 `POST /api/tenants` 建立預設 tenant（名稱 `UT`、code `ut`），並把 tenant id 存到瀏覽器 localStorage。
-- 若後端回傳 **1 個 tenant**：前端會自動選擇該 tenant。
-- 若後端回傳 **多個 tenants**：你需要明確指定要用哪個 tenant（目前做法是把 tenant id 放在 localStorage，或後續做 UI 選擇器）。
+- 選錯 Tenant，就會看到別的區的資料（或看到空的）
+- 所以第一次進系統要先「建立或選擇」正確的 Tenant
 
-#### 補充：用「註冊 / 初始化」頁（UI）手動完成
+### 2) API key（通行碼）是什麼？
 
-前端提供一個專門的 onboarding 頁面，適合初次建置/切換環境時使用：
+有些環境會要求通行碼，避免外人亂連線。
 
-1. 開啟前端：`http://localhost:18003`
-2. 點選頁面中的「註冊 / 初始化（tenant + API key）」tab
-3. 你可以在頁面上：
-  - 按「自動初始化 Tenant」：在空資料庫下建立預設 tenant（UT / ut）並保存 tenant id
-  - 按「刷新 tenants 列表」並選擇要使用的 tenant
-  - 在啟用 `AUTH_MODE=api_key` 後，貼上 raw API key 並按「保存 API key」（保存到 localStorage）
+- 不需要理解技術細節
+- 只需要知道：它就是你的「登入後通行證」，貼上後才能操作 API
 
-### 方法 B：用 API 手動建立
+### 3) admin key 是什麼？（只給內部維運）
 
-1) 列出 tenants
+admin key 是「初始化 / 緊急復原」用的最高權限金鑰（break-glass）。
 
-`GET /api/tenants`
+- 原則上**不提供給外部使用者**
+- 只用在：第一次建立場域、第一次建立該場域的管理者帳號、或緊急救援
 
-2) 若為空，建立 tenant
+---
 
-`POST /api/tenants`
+## 0) 先確認系統已啟動
+
+請先打開這兩個網址確認能看到畫面：
+
+- 前端（操作畫面）：http://localhost:18003
+- 後端（API 文件，通常不用管）：http://localhost:18002/docs
+
+如果前端打不開，請先回到快速啟動文件：getting-started/QUICK_START.md
+
+---
+
+## 1) 用前端「註冊 / 初始化」頁完成場域（Tenant）設定（推薦）
+
+1. 打開前端：http://localhost:18003
+2. 找到並進入「註冊 / 初始化」頁籤
+
+會看到「快速開始（建立/選擇場域）」與「場域（Tenant）初始化 / 選擇」。接下來依你看到的狀況操作：
+
+### 情況 A：列表顯示「沒有任何 Tenant」或是空的
+
+代表這是一個全新的資料庫（第一次使用很常見）。
+
+外部上線情境下，通常由**內部維運**先做一次初始化（可能需要 admin key）。初始化完成後，外部使用者只需要登入即可。
+
+1. 按下「一鍵建立/選擇場域」
+2. 等待出現成功訊息
+3. 再按一次「刷新 tenants 列表」
+4. 確認列表裡出現一筆 Tenant，並顯示「已選擇 / 已啟用」之類的狀態
+
+完成後通常就可以開始使用系統。
+
+### 情況 B：列表中只有 1 個場域（Tenant）
+
+系統通常會自動選取它。
+
+- 如果畫面顯示已選取，就可以直接開始使用
+- 如果沒有，請點選那一筆，按「使用 / 保存」之類的按鈕
+
+### 情況 C：列表中有多個場域（Tenant）
+
+這表示同一套系統有多個工作區。
+
+1. 先問清楚你應該使用哪一個（通常看名稱或代碼）
+2. 在列表中點選正確那一筆
+3. 按「使用 / 保存」
+
+---
+
+## 2) 用「帳號/密碼」登入取得通行碼（API key）（推薦）
+
+如果你操作功能時顯示「401 未授權 / Unauthorized」，通常代表環境已開啟通行碼保護。
+
+操作方式：
+
+1. 回到「註冊 / 初始化」頁面
+2. 按「展開進階設定」
+3. 在「帳號/密碼登入」區塊輸入：
+  - tenant_code（場域代碼，通常是你負責的區/場區代碼）
+  - username / password
+4. 按「登入並取得 API key」
+5. 登入成功後，系統會把 API key 保存到瀏覽器（之後就不用每次貼）
+
+小提醒：如果你換電腦或清掉瀏覽器資料，需要再登入一次。
+
+## 3) 建立新帳號：不需要把 admin key 給外部
+
+日常新增帳號建議走「場域管理者（role=admin）」權限：
+
+- 外部使用者不需要知道 admin key
+- 由該場域的管理者登入後，在「建立帳號」區塊新增使用者
+
+第一次的「場域管理者帳號」如果還不存在，才需要由**內部維運**用 admin key 建立第一個管理者（bootstrap）。
+
+---
+
+## 常見問題（照著做就能排除）
+
+### 看到「需要提供 X-Tenant-Id」或類似訊息
+
+意思是：系統不知道你要用哪個工作區。
+
+請回到「註冊 / 初始化」頁：
+
+1. 按「刷新 tenants 列表」
+2. 確認有選到一個 Tenant（情況 A/B/C）
+3. 重新整理頁面再試一次
+
+### 看到「401 未授權 / Unauthorized」
+
+意思是：這個環境有開通行碼保護，但你尚未登入取得通行碼。
+
+請照本文件第 2 節用帳密登入。
+
+### 我明明選了 Tenant，但還是看不到資料
+
+可能原因：
+
+- 你選錯 Tenant（請確認名稱/代碼）
+- 這個 Tenant 目前還沒有匯入任何資料
+
+你可以先去匯入一份測試檔，或請管理者確認你應該用的 Tenant。
+
+---
+
+## 進階（給工程師 / 維運）
+
+如果需要用 API 或環境變數做自動化設定，請看下面（一般使用者可以忽略）。
+
+### Tenant（後端規則）
+
+- 後端會用 `X-Tenant-Id` header（或 API key 綁定 tenant）決定目前工作區
+
+### API key（簡易防護）
+
+- 若後端啟用 `AUTH_MODE=api_key`，受保護 API 需要 `X-API-Key`
+- key 會綁定 tenant：啟用後，server 會以 key 推導 tenant，並忽略 client 提供的 `X-Tenant-Id`
+
+### 用 API 手動建立 tenant
+
+- `GET /api/tenants`
+- `POST /api/tenants`
 
 Body 範例：
 
@@ -71,82 +208,18 @@ Body 範例：
 }
 ```
 
----
+### 建立第一把 API key（bootstrap）
 
-## 2) （可選）啟用 API key 驗證（簡易身份驗證）
-
-目標：阻擋公網掃描/濫用，不做完整 RBAC。
-
-注意：**第一次建立 tenant 時，建議先不要開 `AUTH_MODE=api_key`**。
-
-推薦順序：
-
-1. `AUTH_MODE=off` 啟動 → 建立 tenant
-2. 用腳本建立第一把 API key（需要 tenant 已存在）
-3. 再把 `AUTH_MODE=api_key` 打開並重啟
-
-### 2.1 建立第一把 API key（bootstrap）
-
-PowerShell：
+PowerShell（在 form-analysis-server 目錄下）：
 
 ```powershell
-# 在 form-analysis-server 目錄下
 python .\backend\scripts\bootstrap_tenant_api_key.py --tenant-code ut --label local-dev
 ```
 
-會輸出 raw key（只顯示一次，請保存）。
+### 建立第一個管理者帳號（bootstrap / break-glass）
 
-安全閘門：預設只允許在 DB 還沒有任何 key 時建立；若真的要再加 key，才用 `--force`。
+如果該 tenant 還沒有任何管理者帳號，內部維運可用 admin key 呼叫：
 
-### 2.2 啟用 API key middleware
+- `POST /api/auth/users`
 
-後端環境變數（示例）：
-
-```env
-AUTH_MODE=api_key
-AUTH_API_KEY_HEADER=X-API-Key
-AUTH_PROTECT_PREFIXES=/api
-```
-
-如果你要保護所有路徑（包含 docs），請看後端 README 的 profiles 說明。
-
----
-
-## 3) 前端/呼叫端 header 要怎麼帶
-
-### 3.1 Tenant header（前端已自動處理）
-
-- 前端會自動對所有 `/api*` request 注入 `X-Tenant-Id`（除了 `/api/tenants`）。
-- 若 DB 重建導致 tenant id 失效，前端會嘗試自癒（重新選擇/重建預設 tenant）。
-
-### 3.2 API key header（若啟用 AUTH_MODE=api_key）
-
-前端支援兩種來源（二選一）：
-
-1) **環境變數**（建議 dev 使用）：
-
-- `VITE_API_KEY=<你的 raw key>`
-- （可選）`VITE_API_KEY_HEADER=X-API-Key`
-
-2) **瀏覽器 localStorage**（方便手動切換）：
-
-- key：`form_analysis_api_key`
-- value：你的 raw key
-
-你可以在 DevTools Console 設定：
-
-```js
-localStorage.setItem('form_analysis_api_key', '<your-raw-key>')
-```
-
----
-
-## 常見問題
-
-### Q: 我開了 `AUTH_MODE=api_key`，前端進不去 / 變 401？
-
-A: 代表前端沒有送 `X-API-Key`。請用本文件「3.2」設定 `VITE_API_KEY` 或 localStorage。
-
-### Q: 我想用 API key 綁 tenant，那還需要 `X-Tenant-Id` 嗎？
-
-A: 不需要。啟用後 server 會忽略 `X-Tenant-Id`，以 API key 綁定 tenant 為準。
+注意：這是 break-glass 行為，原則上不提供給外部。

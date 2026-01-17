@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     )
 
     auth_exempt_paths_str: str = Field(
-        default="/healthz,/docs,/redoc,/openapi.json",
+        default="/healthz,/docs,/redoc,/openapi.json,/api/auth/login",
         description=(
             "Comma-separated path prefixes to exempt from auth when AUTH_MODE=api_key "
             "(e.g. /healthz,/docs,/openapi.json)."

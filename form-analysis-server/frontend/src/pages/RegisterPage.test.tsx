@@ -22,6 +22,10 @@ describe('RegisterPage (strict)', () => {
 
     render(<RegisterPage />)
 
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: '展開進階設定' }))
+    })
+
     const input = screen.getByPlaceholderText('例如：abc123...')
     await act(async () => {
       await user.type(input, '  key-123  ')

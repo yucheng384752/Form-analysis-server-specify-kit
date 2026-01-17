@@ -15,6 +15,14 @@ class TenantApiKey(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
 
+    # Optional link to the user who owns/obtained this key (e.g. password login).
+    # Helps audit/actor attribution and enables role-based operations.
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("tenant_users.id"),
+        nullable=True,
+        index=True,
+    )
+
     # HMAC-SHA256(secret_key, raw_key) hex digest (64 chars). Never store raw keys.
     key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
 

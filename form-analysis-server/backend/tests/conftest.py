@@ -22,6 +22,8 @@ from app.core.database import Base, init_db, close_db
 # Import models early so they are registered on Base.metadata before create_all.
 from app.models import UploadJob, Record, UploadError
 from app.models.core.tenant import Tenant  # noqa: F401
+from app.models.core.tenant_api_key import TenantApiKey  # noqa: F401
+from app.models.core.tenant_user import TenantUser  # noqa: F401
 from app.models.core.schema_registry import TableRegistry, SchemaVersion  # noqa: F401
 
 # 測試資料庫引擎 (使用 shared-cache 記憶體 SQLite)
