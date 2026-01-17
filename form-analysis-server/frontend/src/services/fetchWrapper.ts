@@ -1,6 +1,5 @@
 import { ensureTenantId, ensureTenantIdWithOptions, TENANT_STORAGE_KEY } from './tenant'
 import { getApiKeyHeaderName, getApiKeyValue } from './auth'
-import { getAdminApiKeyHeaderName, getAdminApiKeyValue } from './adminAuth'
 
 // Global fetch wrapper: auto-inject X-Tenant-Id for all /api* requests except /api/tenants.
 // This prevents accidental cross-tenant calls and removes per-call header boilerplate.
@@ -12,8 +11,6 @@ export function installGlobalFetchWrapper(): () => void {
       let tenantId = window.localStorage.getItem(TENANT_STORAGE_KEY) || ''
       const apiKeyHeaderName = getApiKeyHeaderName()
       const apiKeyValue = getApiKeyValue()
-      const adminKeyHeaderName = getAdminApiKeyHeaderName()
-      const adminKeyValue = getAdminApiKeyValue()
 
       // Determine request URL
       const urlString =
@@ -38,20 +35,19 @@ export function installGlobalFetchWrapper(): () => void {
         return originalFetch(input as any, init)
       }
 
-      // Always attach auth headers when present, but do not force tenant header on /api/tenants or /api/auth.
+      // Do not auto-inject admin headers globally.
+      // Admin-only requests must explicitly set X-Admin-API-Key at call sites after the user
+      // deliberately enables admin mode. This avoids surprising "admin parameter" usage on load.
+      //
+      // We still allow attaching the regular API key when present.
       if (isTenantListPath || isAuthPath) {
         const mergedHeaders = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined))
-
-        // Allow admin bootstrap: /api/tenants and /api/auth/* may require admin key depending on operation.
-        if (adminKeyValue) {
-          mergedHeaders.set(adminKeyHeaderName, adminKeyValue)
-        }
         if (apiKeyValue) {
           mergedHeaders.set(apiKeyHeaderName, apiKeyValue)
         }
 
         // If no auth headers exist, call as-is.
-        if (!adminKeyValue && !apiKeyValue) {
+        if (!apiKeyValue) {
           return originalFetch(input as any, init)
         }
 

@@ -59,6 +59,80 @@ interface QueryResponse {
   records: QueryRecord[];
 }
 
+const normalizeMaybeNumber = (v: any): number | null => {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  const s = String(v).trim();
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+};
+
+const getP2RowWinderNumber = (row: any): number | null => {
+  if (!row || typeof row !== 'object') return null;
+  return (
+    normalizeMaybeNumber(row.winder_number) ??
+    normalizeMaybeNumber(row['winder_number']) ??
+    normalizeMaybeNumber(row['Winder number']) ??
+    normalizeMaybeNumber(row['Winder Number'])
+  );
+};
+
+const mergeP2RecordsForLotNo = (records: QueryRecord[], lotNo: string): QueryRecord[] => {
+  if (!lotNo) return records;
+
+  const isTarget = (r: QueryRecord) => r?.data_type === 'P2' && String(r?.lot_no || '') === lotNo;
+  const p2Records = records.filter(isTarget);
+  if (p2Records.length <= 1) return records;
+
+  const mergedRows: any[] = [];
+  for (const r of p2Records) {
+    const rows = (r as any)?.additional_data?.rows;
+    if (Array.isArray(rows)) {
+      for (const row of rows) {
+        if (row && typeof row === 'object' && !Array.isArray(row)) {
+          mergedRows.push(row);
+        }
+      }
+    }
+  }
+
+  // 依 winder_number 做穩定排序（有的就排前面，沒有就維持原順序）。
+  const mergedRowsSorted = mergedRows
+    .map((row, idx) => ({ row, idx, w: getP2RowWinderNumber(row) }))
+    .sort((a, b) => {
+      if (a.w === null && b.w === null) return a.idx - b.idx;
+      if (a.w === null) return 1;
+      if (b.w === null) return -1;
+      if (a.w !== b.w) return a.w - b.w;
+      return a.idx - b.idx;
+    })
+    .map(x => x.row);
+
+  // 用第一筆 record 當 base，把 rows 合併進去；避免誤導，清掉會「每 winder 不同」的欄位。
+  const base = { ...p2Records[0] };
+  (base as any).winder_number = undefined;
+  (base as any).slitting_machine_number = undefined;
+  base.additional_data = {
+    ...(base.additional_data || {}),
+    rows: mergedRowsSorted,
+  };
+
+  const out: QueryRecord[] = [];
+  let inserted = false;
+  for (const r of records) {
+    if (isTarget(r)) {
+      if (!inserted) {
+        out.push(base);
+        inserted = true;
+      }
+      continue;
+    }
+    out.push(r);
+  }
+  return out;
+};
+
 export function QueryPage() {
   // 搜尋相關狀態
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -376,11 +450,25 @@ export function QueryPage() {
   // 搜尋記錄 (支援基本搜尋和進階搜尋)
   const searchRecords = async (search: string, page: number = 1, advancedParams?: AdvancedSearchParams) => {
     setLoading(true);
+    // 每次搜尋預設收合（避免沿用上一次展開狀態）
+    setExpandedRecordId(null);
+    setCollapsedSections({});
     try {
       let apiUrl = '/api/v2/query/records';
+      const lotNoForMerge = (advancedParams?.lot_no || search || '').trim();
+      const canMergeP2LotNo =
+        !!lotNoForMerge &&
+        (!advancedParams || !advancedParams.winder_number) &&
+        (!advancedParams?.data_type || advancedParams.data_type === 'P2');
+
+      // lot_no 查詢下，P2 可能會是一個 lot 多筆 records（每個 winder 一筆）。
+      // 為了讓前端能顯示「20 筆 items 明細」，這裡把 page_size 拉到上限並固定抓第 1 頁。
+      const effectivePage = canMergeP2LotNo ? 1 : page;
+      const effectivePageSize = canMergeP2LotNo ? (advancedParams ? 200 : 100) : pageSize;
+
       const params = new URLSearchParams({
-        page: page.toString(),
-        page_size: pageSize.toString()
+        page: effectivePage.toString(),
+        page_size: effectivePageSize.toString()
       });
       
       // 優先使用進階搜尋參數
@@ -403,9 +491,17 @@ export function QueryPage() {
       const response = await fetchWithTenant(`${apiUrl}?${params}`);
       if (response.ok) {
         const data: QueryResponse = await response.json();
-        setRecords(data.records);
-        setTotalCount(data.total_count);
-        setCurrentPage(data.page);
+
+        if (canMergeP2LotNo) {
+          const merged = mergeP2RecordsForLotNo(data.records, lotNoForMerge);
+          setRecords(merged);
+          setTotalCount(merged.length);
+          setCurrentPage(1);
+        } else {
+          setRecords(data.records);
+          setTotalCount(data.total_count);
+          setCurrentPage(data.page);
+        }
         setSearchPerformed(true);
       } else {
         console.error("搜尋記錄時出錯:", response.status);
@@ -1365,21 +1461,24 @@ export function QueryPage() {
     });
 
     // 2. 合併額外資料
-    // 如果 P2 資料包含 rows 且只有一筆，提取出來以 Grid 方式顯示 (像 P1 一樣)
-    // 這樣可以顯示單個 row 的所有細項
-    if (record.additional_data && 
-        record.additional_data.rows && 
-        Array.isArray(record.additional_data.rows) && 
-        record.additional_data.rows.length === 1) {
-      displayData = { ...displayData, ...record.additional_data.rows[0] };
-    } else if (record.additional_data) {
-      displayData = { ...displayData, ...record.additional_data };
+    // P2 的細項通常在 additional_data.rows（多筆 items）。
+    // - 若只有 1 筆：直接展開成 Grid（像 P1 一樣）
+    // - 若多筆：Grid 顯示 record-level 欄位，並在下方顯示明細表
+    const additional = (record.additional_data || {}) as any;
+    const rows = Array.isArray(additional.rows) ? (additional.rows as any[]) : [];
+    const { rows: _rowsIgnored, ...additionalWithoutRows } = additional || {};
+
+    if (rows.length === 1 && rows[0] && typeof rows[0] === 'object' && !Array.isArray(rows[0])) {
+      displayData = { ...displayData, ...additionalWithoutRows, ...rows[0] };
+    } else {
+      displayData = { ...displayData, ...additionalWithoutRows };
     }
 
-    // 移除 rows 屬性，避免在 renderAdditionalData 中被誤判為表格顯示
-    if (displayData.rows) {
-        delete displayData.rows;
-    }
+    const hasItemRows = rows.length > 1;
+    const sortedRows = hasItemRows ? sortRowsNgFirst(rows, ['striped results', 'Striped results', '分條結果']) : rows;
+    const rowHeaders = hasItemRows && rows[0] && typeof rows[0] === 'object' && !Array.isArray(rows[0])
+      ? Object.keys(rows[0])
+      : [];
 
     return (
       <div className="detail-grid">
@@ -1399,6 +1498,56 @@ export function QueryPage() {
               <span>{formatFieldValue(key, value)}</span>
             </div>
         ))}
+
+        {hasItemRows && (
+          <div className="additional-data-section" style={{ gridColumn: '1 / -1' }}>
+            <div className="section-title">檢查項目明細</div>
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    {rowHeaders.map((h) => (
+                      <th key={h}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRows.map((row: any, idx: number) => (
+                    <tr key={idx}>
+                      <td>{idx + 1}</td>
+                      {rowHeaders.map((header: string, vidx: number) => {
+                        const rawValue = row?.[header];
+
+                        // P2 分條時間：若只有時間（HH:MM 或 HH:MM:SS），補上本筆 record 的 production_date。
+                        if (
+                          (header === '分條時間' || header === 'slitting time') &&
+                          record.production_date &&
+                          typeof rawValue === 'string'
+                        ) {
+                          const v = rawValue.trim();
+                          const timeOnly = /^\d{1,2}:\d{2}(:\d{2})?$/.test(v);
+                          const hasLeadingDate = /^\d{3}[\/-]\d{1,2}[\/-]\d{1,2}/.test(v) || /^\d{4}-\d{2}-\d{2}/.test(v);
+                          if (timeOnly && !hasLeadingDate) {
+                            return (
+                              <td key={vidx}>
+                                {`${formatFieldValue('production_date', record.production_date)} ${v}`}
+                              </td>
+                            );
+                          }
+                        }
+
+                        return (
+                          <td key={vidx}>{formatFieldValue(header, rawValue)}</td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1652,61 +1801,112 @@ export function QueryPage() {
               <div className="records-header">
                 <h3>{searchKeyword ? `${searchKeyword} - ` : ''}共找到 {totalCount} 筆資料</h3>
               </div>
-              
-              <table className="records-table">
-                <thead>
-                  <tr>
-                    <th>Lot No</th>
-                    <th>資料類型</th>
-                    <th>生產日期</th>
-                    <th>建立時間</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.map((record) => (
-                    <React.Fragment key={record.id}>
-                      <tr>
-                        <td>{record.lot_no}</td>
-                        <td>
-                          <span className={`data-type-label ${record.data_type.toLowerCase()}`}>
-                            {record.data_type}
-                          </span>
-                        </td>
-                        <td>{formatFieldValue('production_date', record.production_date)}</td>
-                        <td>{new Date(record.created_at).toLocaleString('zh-TW', {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: false
-                        })}</td>
-                        <td>
+
+              {(() => {
+                const lotNoForDisplay = (advancedSearchParams?.lot_no || searchKeyword || '').trim();
+                const isSingleP2LotCard =
+                  !!lotNoForDisplay &&
+                  !advancedSearchParams?.winder_number &&
+                  records.length === 1 &&
+                  records[0]?.data_type === 'P2';
+
+                if (isSingleP2LotCard) {
+                  const record = records[0];
+                  return (
+                    <div className="single-record-card">
+                      <div className="single-record-card-header">
+                        <div className="single-record-card-title">
+                          <span className="single-record-lot">{record.lot_no}</span>
+                          <span className={`data-type-label ${record.data_type.toLowerCase()}`}>{record.data_type}</span>
+                        </div>
+                        <div className="single-record-card-meta">
+                          <div>生產日期：{formatFieldValue('production_date', record.production_date)}</div>
+                          <div>建立時間：{new Date(record.created_at).toLocaleString('zh-TW', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false
+                          })}</div>
+                        </div>
+                        <div className="single-record-card-actions">
                           <button
                             className="btn-expand"
-                            title="展開查看CSV資料"
+                            title="展開查看細項"
                             onClick={() => toggleExpand(record.id)}
                           >
                             {expandedRecordId === record.id ? '收起' : '展開'}
                           </button>
-                        </td>
-                      </tr>
-                      
-                      {/* 展開行 - 顯示分組資料 */}
+                        </div>
+                      </div>
+
                       {expandedRecordId === record.id && (
-                        <tr className="expanded-row">
-                          <td colSpan={5}>
-                            <div className="expanded-data-container">
-                              {renderExpandedContent(record)}
-                            </div>
-                          </td>
-                        </tr>
+                        <div className="single-record-card-body">
+                          {renderP2Details(record)}
+                        </div>
                       )}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
+                    </div>
+                  );
+                }
+
+                return (
+                  <table className="records-table">
+                    <thead>
+                      <tr>
+                        <th>Lot No</th>
+                        <th>資料類型</th>
+                        <th>生產日期</th>
+                        <th>建立時間</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {records.map((record) => (
+                        <React.Fragment key={record.id}>
+                          <tr>
+                            <td>{record.lot_no}</td>
+                            <td>
+                              <span className={`data-type-label ${record.data_type.toLowerCase()}`}>
+                                {record.data_type}
+                              </span>
+                            </td>
+                            <td>{formatFieldValue('production_date', record.production_date)}</td>
+                            <td>{new Date(record.created_at).toLocaleString('zh-TW', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: false
+                            })}</td>
+                            <td>
+                              <button
+                                className="btn-expand"
+                                title="展開查看CSV資料"
+                                onClick={() => toggleExpand(record.id)}
+                              >
+                                {expandedRecordId === record.id ? '收起' : '展開'}
+                              </button>
+                            </td>
+                          </tr>
+
+                          {/* 展開行 - 顯示分組資料 */}
+                          {expandedRecordId === record.id && (
+                            <tr className="expanded-row">
+                              <td colSpan={5}>
+                                <div className="expanded-data-container">
+                                  {renderExpandedContent(record)}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
               
               {/* 分頁控制 */}
               {totalCount > pageSize && (

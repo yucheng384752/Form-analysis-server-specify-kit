@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { clearTenantId, ensureTenantId, getTenantId, setTenantId, TENANT_STORAGE_KEY } from './tenant'
+import { clearTenantId, ensureTenantId, ensureTenantIdWithOptions, getTenantId, setTenantId, TENANT_STORAGE_KEY } from './tenant'
+import { ADMIN_API_KEY_STORAGE_KEY } from './adminAuth'
 
 function mockFetchSequence(responses: Array<{ ok: boolean; json: any; status?: number }>) {
   const fetchMock = vi.fn()
@@ -11,7 +12,7 @@ function mockFetchSequence(responses: Array<{ ok: boolean; json: any; status?: n
       json: vi.fn().mockResolvedValue(r.json),
     })
   }
-  // @ts-expect-error test override
+  // @ts-ignore test override
   global.fetch = fetchMock
   return fetchMock
 }
@@ -37,7 +38,7 @@ describe('ensureTenantId (strict)', () => {
 
   it('ensureTenantId returns immediately when setTenantId has been called (no fetch)', async () => {
     const fetchMock = vi.fn()
-    // @ts-expect-error test override
+    // @ts-ignore test override
     global.fetch = fetchMock
 
     setTenantId('t-fast')
@@ -70,14 +71,15 @@ describe('ensureTenantId (strict)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('repairs stale localStorage tenant by creating a default tenant when backend has none', async () => {
+  it('repairs stale localStorage tenant by creating a default tenant when backend has none (explicit admin bootstrap)', async () => {
     window.localStorage.setItem(TENANT_STORAGE_KEY, 'stale-tenant')
+    window.localStorage.setItem(ADMIN_API_KEY_STORAGE_KEY, 'admin-demo')
     const fetchMock = mockFetchSequence([
       { ok: true, json: [] },
       { ok: true, json: { id: 'created-1' }, status: 201 },
     ])
 
-    const id = await ensureTenantId()
+    const id = await ensureTenantIdWithOptions({ allowAdminBootstrap: true })
     expect(id).toBe('created-1')
     expect(window.localStorage.getItem(TENANT_STORAGE_KEY)).toBe('created-1')
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -94,13 +96,14 @@ describe('ensureTenantId (strict)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('when GET /api/tenants returns 0, POST creates default and stores it', async () => {
+  it('when GET /api/tenants returns 0, POST creates default and stores it (explicit admin bootstrap)', async () => {
+    window.localStorage.setItem(ADMIN_API_KEY_STORAGE_KEY, 'admin-demo')
     const fetchMock = mockFetchSequence([
       { ok: true, json: [] },
       { ok: true, json: { id: 'created-1' }, status: 201 },
     ])
 
-    const id = await ensureTenantId()
+    const id = await ensureTenantIdWithOptions({ allowAdminBootstrap: true })
     expect(id).toBe('created-1')
     expect(window.localStorage.getItem(TENANT_STORAGE_KEY)).toBe('created-1')
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -118,14 +121,15 @@ describe('ensureTenantId (strict)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('when POST create returns non-ok (e.g. 409), retries GET once and stores single tenant if present', async () => {
+  it('when POST create returns non-ok (e.g. 409), retries GET once and stores single tenant if present (explicit admin bootstrap)', async () => {
+    window.localStorage.setItem(ADMIN_API_KEY_STORAGE_KEY, 'admin-demo')
     const fetchMock = mockFetchSequence([
       { ok: true, json: [] },
       { ok: false, json: { detail: 'Tenant already exists' }, status: 409 },
       { ok: true, json: [{ id: 't-after-race' }] },
     ])
 
-    const id = await ensureTenantId()
+    const id = await ensureTenantIdWithOptions({ allowAdminBootstrap: true })
     expect(id).toBe('t-after-race')
     expect(window.localStorage.getItem(TENANT_STORAGE_KEY)).toBe('t-after-race')
     expect(fetchMock).toHaveBeenCalledTimes(3)

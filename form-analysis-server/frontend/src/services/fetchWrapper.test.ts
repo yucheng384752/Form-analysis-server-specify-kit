@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ensureTenantId, TENANT_STORAGE_KEY } from './tenant'
+import { ensureTenantIdWithOptions, TENANT_STORAGE_KEY } from './tenant'
 import { installGlobalFetchWrapper } from './fetchWrapper'
 import { ADMIN_API_KEY_STORAGE_KEY } from './adminAuth'
 
@@ -55,11 +55,13 @@ describe('installGlobalFetchWrapper (registration -> tenant header)', () => {
       calls.push({ url: url.pathname, headers: headerSnapshot, init })
 
       if (url.pathname === '/api/tenants' && (!init?.method || init.method === 'GET')) {
-        expect(headers.get('X-Admin-API-Key')).toBe('adminkey-1')
+        // Admin key should not be implicitly injected by fetchWrapper.
+        expect(headers.get('X-Admin-API-Key')).toBeNull()
         return makeJsonResponse(200, [])
       }
 
       if (url.pathname === '/api/tenants' && init?.method === 'POST') {
+        // Tenant bootstrap explicitly attaches admin key when creating a tenant.
         expect(headers.get('X-Admin-API-Key')).toBe('adminkey-1')
         // UT bootstrap payload
         expect(String(init.body)).toBe(
@@ -87,7 +89,7 @@ describe('installGlobalFetchWrapper (registration -> tenant header)', () => {
     const restore = installGlobalFetchWrapper()
 
     // Simulate registration/bootstrap: no tenants -> create default UT/ut -> store tenant id.
-    const tenantId = await ensureTenantId()
+    const tenantId = await ensureTenantIdWithOptions({ allowAdminBootstrap: true })
     expect(tenantId).toBe('tenant-ut')
     expect(window.localStorage.getItem(TENANT_STORAGE_KEY)).toBe('tenant-ut')
 

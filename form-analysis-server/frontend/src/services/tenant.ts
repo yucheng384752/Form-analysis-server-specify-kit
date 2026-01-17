@@ -2,6 +2,9 @@ export const TENANT_STORAGE_KEY = 'form_analysis_tenant_id'
 
 const API_BASE_URL = (import.meta.env?.VITE_API_URL as string) || ''
 
+import { getAdminApiKeyValue } from './adminAuth'
+import { getAdminApiKeyHeaderName } from './adminAuth'
+
 type TenantRow = {
   id: string
   name?: string
@@ -14,6 +17,11 @@ type ToastType = 'info' | 'error' | 'success'
 type EnsureTenantIdOptions = {
   notify?: boolean
   reason?: 'bootstrap' | 'recovery'
+  /**
+   * Whether to allow using admin privileges to create a default tenant when none exist.
+   * Defaults to false to avoid surprising admin actions during normal browsing.
+   */
+  allowAdminBootstrap?: boolean
 }
 
 function emitToast(type: ToastType, message: string): void {
@@ -72,6 +80,7 @@ export async function ensureTenantIdWithOptions(options?: EnsureTenantIdOptions)
   let expiredDetected = false
   const notify = options?.notify === true
   const reason = options?.reason ?? 'bootstrap'
+  const allowAdminBootstrap = options?.allowAdminBootstrap === true
 
   const notifyExpiredRecovered = (mode: 'reconnected' | 'recreated') => {
     if (!notify && !expiredDetected) return
@@ -140,10 +149,21 @@ export async function ensureTenantIdWithOptions(options?: EnsureTenantIdOptions)
 
         if (Array.isArray(tenants) && tenants.length === 0) {
           // No tenants exist yet; create a default tenant for local/dev bootstrap.
+          // This requires admin privileges.
+          const adminKey = getAdminApiKeyValue()
+          if (!allowAdminBootstrap || !adminKey) {
+            if (notify || reason === 'recovery') {
+              emitToast('error', '目前資料庫沒有任何場域（tenant）。請在「管理者模式」貼上 Admin key，並使用「一鍵建立/選擇場域」或「建立場域」。')
+            }
+            return ''
+          }
           const createUrl = API_BASE_URL ? `${API_BASE_URL}/api/tenants` : '/api/tenants'
           const createRes = await fetch(createUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              [getAdminApiKeyHeaderName()]: adminKey,
+            },
             body: JSON.stringify({ name: 'UT', code: 'ut', is_default: true, is_active: true }),
           })
 
