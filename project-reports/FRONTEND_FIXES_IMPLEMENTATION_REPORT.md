@@ -355,7 +355,7 @@ form-analysis-server/frontend/src/styles/query-page.css
 # 進入前端目錄
 cd form-analysis-server/frontend
 
-# 如果服務正在運行，先停止（Ctrl+C）
+# 如果服務正在執行，先停止（Ctrl+C）
 
 # 重新啟動開發服務器
 npm run dev

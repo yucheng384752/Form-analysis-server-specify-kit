@@ -68,11 +68,18 @@
             2) 若未提供：
                - 若 tenants 總數=1 → 自動帶入該 tenant
                - 否則若 `is_default=true` 且唯一 → 自動帶入 default tenant
-               - 否則 → Raise 422（要求指定 tenant）
+               - 否則 → Raise 400（要求指定 tenant）
+
+    *   **錯誤碼設計（400 vs 422）**：
+        *   `400 Bad Request`：請求缺少必要的 tenant 選擇資訊（多 tenant 且無唯一 default 時未提供 `X-Tenant-Id`）。
+            *   用意：讓前端/用戶端可用「缺 header」的語意處理（提示使用者選 tenant / 注入 header），避免與 FastAPI/Pydantic 的 schema 驗證 422 混在一起。
+        *   `422 Unprocessable Entity`：輸入格式/型別驗證失敗（例如 `X-Tenant-Id` 不是 UUID）。
+            *   用意：保留給「格式不正確」這類可機器判斷與修正的輸入錯誤。
+        *   實作位置：`app/core/tenant_resolver.py`（`resolve_tenant_or_raise`）。
 *   **測試策略**：
     *   **Integration Test (`tests/api/test_tenant_dependency.py`)**:
         *   Case 1: 單 Tenant 環境，不帶 Header -> 預期成功。
-        *   Case 2: 多 Tenant 環境，不帶 Header -> 預期失敗 (422)。
+        *   Case 2: 多 Tenant 環境，不帶 Header -> 預期失敗 (400)。
         *   Case 3: 帶錯誤的 Tenant ID -> 預期失敗 (404/422)。
 
 ### L1-3 Schema Registry & Normalization

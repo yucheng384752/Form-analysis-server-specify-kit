@@ -38,7 +38,7 @@ docker-compose up -d --build frontend
 ### 為什麼需要 localhost 而不是 backend？
 
 1. **Docker 內部通信**: 容器之間使用容器名稱 `backend` 進行通信
-2. **瀏覽器請求**: 前端應用在用戶瀏覽器中運行，瀏覽器無法解析 Docker 容器名稱
+2. **瀏覽器請求**: 前端應用在用戶瀏覽器中執行，瀏覽器無法解析 Docker 容器名稱
 3. **端口映射**: Docker 將容器端口映射到主機 `localhost:8000`
 
 ###  網絡架構
@@ -53,8 +53,8 @@ docker-compose up -d --build frontend
 ##  驗證結果
 
 ###  修復後的狀態
-- **後端 API**:  正常運行 (http://localhost:8000)
-- **前端應用**:  正常運行 (http://localhost:5173)  
+- **後端 API**:  正常執行 (http://localhost:8000)
+- **前端應用**:  正常執行 (http://localhost:5173)  
 - **環境變數**:  正確配置 (`VITE_API_URL=http://localhost:8000`)
 - **容器狀態**:  所有服務健康
 

@@ -78,7 +78,7 @@ DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/form_analysis_db
 
 ## **驗證結果**
 
-運行 `python check_config.py` 的結果:
+執行 `python check_config.py` 的結果:
 ```
  配置一致性檢查
 
@@ -115,7 +115,7 @@ docker-compose up
 cp .env.local.example .env.local
 
 # 啟動本地 PostgreSQL
-# 然後運行應用
+# 然後執行應用
 ```
 
 ### 3. 配置檢查

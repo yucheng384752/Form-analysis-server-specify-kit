@@ -1,0 +1,10 @@
+﻿CSV_EXISTS=True
+CSV_SIZE=2538
+TENANT_ID=ec6dd17f-234a-4c82-9ff1-a89e30e72a40
+TENANT_CODE=default
+API_KEY_HEADER=X-API-Key
+CURL_EXIT=0
+CURL_OUTPUT_BEGIN
+CURL_OUTPUT_END
+BODY_FILE=C:\Users\yucheng\Desktop\Form-analysis-server-specify-kit\form-analysis-server\project-reports\import_job_create_body_minilog_20260118_012949.json
+BODY_EXISTS=False

@@ -341,7 +341,7 @@ FRONTEND_PORT=18003
 
 ### Docker 權限問題
 ```bash
-# 確保 Docker 正在運行
+# 確保 Docker 正在執行
 docker info
 
 # 重啟 Docker Desktop（Windows）

@@ -86,8 +86,8 @@ throw new Error(errorMessage);
 
 ### 當前狀態
 ```
-PostgreSQL 資料庫: ✓ 健康運行 (Port 18001)
-FastAPI 後端: ✓ 健康運行 (Port 18002)  
+PostgreSQL 資料庫: ✓ 健康執行 (Port 18001)
+FastAPI 後端: ✓ 健康執行 (Port 18002)  
 React 前端: ✓ 重新建構並啟動 (Port 18003)
 ```
 

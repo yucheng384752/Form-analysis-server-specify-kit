@@ -103,9 +103,9 @@ records 表現在包含:
 
 ### 服務狀態
 ```
-✓ PostgreSQL: 健康運行 (Port 18001)
-✓ FastAPI Backend: 健康運行 (Port 18002)
-✓ React Frontend: 健康運行 (Port 18003)
+✓ PostgreSQL: 健康執行 (Port 18001)
+✓ FastAPI Backend: 健康執行 (Port 18002)
+✓ React Frontend: 健康執行 (Port 18003)
 ✓ API 端點: 全部可訪問
 ```
 

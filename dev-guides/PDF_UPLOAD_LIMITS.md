@@ -26,7 +26,12 @@
 ## Tenant 限制
 
 - PDF 上傳端點屬於 tenant-scoped 路由集合（依專案既有規則）
-- 必須帶 `X-Tenant-Id` 才能成功呼叫（前端已在共用注入/確保 tenant 的流程補齊）
+- `X-Tenant-Id` 建議一律帶上（前端已在共用注入/確保 tenant 的流程補齊），避免依賴「單 tenant / default tenant」推導。
+- 若未帶 `X-Tenant-Id`：
+	- tenants 總數=1 → 允許（自動帶入該 tenant）
+	- 多 tenants 且存在唯一 `is_default=true` → 允許（自動帶入 default tenant）
+	- 多 tenants 且無唯一 default → 回 400（要求指定 `X-Tenant-Id`）
+- 若 `X-Tenant-Id` 格式不是 UUID → 回 422（格式錯誤）
 
 ## 儲存策略（v1）
 

@@ -102,7 +102,7 @@ copy .env.example .env
 
 ### Step 3: 檢查 Docker 服務
 ```bash
-# 確認 Docker 正在運行
+# 確認 Docker 正在執行
 docker --version
 docker-compose --version
 
@@ -133,7 +133,7 @@ docker-compose up -d --build
 **問題**: Docker 無法啟動
 ```bash
 # 解決方案：
-1. 確認 Docker Desktop 正在運行
+1. 確認 Docker Desktop 正在執行
 2. 重啟 Docker Desktop
 3. 檢查 WSL2 是否正常
 ```
@@ -201,7 +201,7 @@ echo.
 echo "檢查 Docker..."
 docker --version
 if %errorlevel% neq 0 (
-    echo " Docker 未安裝或未運行"
+    echo " Docker 未安裝或未執行"
     exit /b 1
 )
 

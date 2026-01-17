@@ -25,7 +25,7 @@
 
 ### 前提條件
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop) 已安裝並運行
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) 已安裝並執行
 - [curl](https://curl.se/download.html) 已安裝（用於 API 測試）
 - 可用埠口：18003（前端）、18002（後端）、18001（資料庫）
 
@@ -250,7 +250,7 @@ A: 檢查以下配置：
 
 **Q: API 請求 404 錯誤**
 A: 確認：
-- 後端服務正常運行（http://localhost:18002/docs）
+- 後端服務正常執行（http://localhost:18002/docs）
 - API Base URL 配置正確
 - 網路連線正常
 
@@ -324,7 +324,7 @@ docker compose up -d --build
 
 ### 本地開發環境
 
-如果您想要在本地開發環境中運行（不使用 Docker）：
+如果您想要在本地開發環境中執行（不使用 Docker）：
 
 1. **後端開發**
    ```bash
@@ -342,7 +342,7 @@ docker compose up -d --build
 
 3. **資料庫設置**
    ```bash
-   # 使用 Docker 運行 PostgreSQL
+   # 使用 Docker 執行 PostgreSQL
    docker run -d --name postgres \
      -e POSTGRES_USER=app \
      -e POSTGRES_PASSWORD=app_secure_password_2024 \
