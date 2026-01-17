@@ -17,10 +17,10 @@ if /I "%~1"=="--reset-db" set "RESET_DB=true"
 echo  Form Analysis - Docker 一鍵啟動與驗證
 echo ========================================
 
-REM 檢查 Docker 是否運行
+REM 檢查 Docker 是否執行
 docker info >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Docker 未運行，請先啟動 Docker
+    echo [ERROR] Docker 未執行，請先啟動 Docker
     pause
     exit /b 1
 )

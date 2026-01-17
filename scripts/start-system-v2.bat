@@ -18,7 +18,7 @@ echo    根目錄: %PROJECT_ROOT%
 echo    服務器: %SERVER_PATH%
 echo.
 
-REM 檢查 Docker Desktop 是否正在運行
+REM 檢查 Docker Desktop 是否正在執行
 echo [1/7] 檢查 Docker Desktop 狀態...
 docker --version >nul 2>&1
 if errorlevel 1 (
@@ -28,7 +28,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM 檢查 Docker daemon 是否運行
+REM 檢查 Docker daemon 是否執行
 docker ps >nul 2>&1
 if errorlevel 1 (
     echo   Docker Desktop 未啟動，嘗試自動啟動...
@@ -69,7 +69,7 @@ if errorlevel 1 (
     echo     等待中... (!timeout_counter!/24)
     goto docker_wait
 ) else (
-    echo  Docker 服務正常運行
+    echo  Docker 服務正常執行
 )
 
 :docker_ready
@@ -315,7 +315,7 @@ if /i "!open_logs!"=="y" (
 
 echo.
 echo  提示：
-echo    - 服務將在背景持續運行
+echo    - 服務將在背景持續執行
 echo    - 要停止所有服務，請執行: %DOCKER_COMPOSE% down
 echo    - 服務啟動後，通常需要 1-2 分鐘才能完全準備就緒
 echo.

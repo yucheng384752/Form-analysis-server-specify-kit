@@ -5,8 +5,9 @@ Write-Host " Form Analysis System - 啟動腳本" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 
 # 檢查目錄是否存在
-$backendDir = "C:\Users\Yucheng\Desktop\form-analysis-sepc-kit\form-analysis-server\backend"
-$frontendDir = "C:\Users\Yucheng\Desktop\form-analysis-sepc-kit\form-analysis-server\frontend"
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
+$backendDir = Join-Path $repoRoot 'form-analysis-server\backend'
+$frontendDir = Join-Path $repoRoot 'form-analysis-server\frontend'
 
 if (-not (Test-Path $backendDir)) {
     Write-Host " 後端目錄不存在: $backendDir" -ForegroundColor Red

@@ -24,11 +24,11 @@ try {
     if ($LASTEXITCODE -eq 0) {
         Write-Host " Docker 服務正常" -ForegroundColor Green
     } else {
-        throw "Docker 未正常運行"
+        throw "Docker 未正常執行"
     }
 } catch {
     Write-Host " Docker 未安裝或未啟動" -ForegroundColor Red
-    Write-Host "   請安裝 Docker Desktop 並確保服務正在運行" -ForegroundColor Red
+    Write-Host "   請安裝 Docker Desktop 並確保服務正在執行" -ForegroundColor Red
     Read-Host "按 Enter 繼續"
     exit 1
 }

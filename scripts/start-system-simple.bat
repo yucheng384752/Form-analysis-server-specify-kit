@@ -17,7 +17,7 @@ echo 項目路徑: %PROJECT_ROOT%
 echo 服務器路徑: %SERVER_PATH%
 echo.
 
-REM 檢查 Docker Desktop 是否正在運行
+REM 檢查 Docker Desktop 是否正在執行
 echo [1] 檢查 Docker Desktop...
 docker ps >nul 2>&1
 if errorlevel 1 (
@@ -32,7 +32,7 @@ if errorlevel 1 (
     pause
     exit /b 1
 ) else (
-    echo  Docker 服務正常運行
+    echo  Docker 服務正常執行
 )
 
 REM 檢查 docker-compose 檔案

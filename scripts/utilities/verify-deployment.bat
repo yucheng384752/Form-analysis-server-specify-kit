@@ -8,7 +8,7 @@ echo.
 echo [1/6] 檢查 Docker 安裝...
 docker --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  Docker 未安裝或未運行
+    echo  Docker 未安裝或未執行
     echo    請先安裝 Docker Desktop
     pause
     exit /b 1
@@ -67,7 +67,7 @@ echo.
 echo [5/6] 檢查 Docker 服務...
 docker info >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  Docker 服務未運行
+    echo  Docker 服務未執行
     echo    請啟動 Docker Desktop
     pause
     exit /b 1

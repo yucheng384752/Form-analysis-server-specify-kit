@@ -148,7 +148,7 @@ def test_api_endpoints():
     """測試 API 端點"""
     print_header("API 端點測試")
     
-    # 假設服務運行在 8001 端口
+    # 假設服務執行在 8001 端口
     base_url = "http://localhost:8001"
     
     print_test("測試基本健康檢查")
@@ -160,7 +160,7 @@ def test_api_endpoints():
         else:
             print_fail(f"健康檢查失敗，狀態碼: {response.status_code}")
     except requests.exceptions.ConnectionError:
-        print_skip("無法連接到 API 服務，請確保服務正在運行")
+        print_skip("無法連接到 API 服務，請確保服務正在執行")
         return
     except Exception as e:
         print_fail(f"健康檢查異常: {e}")
@@ -413,7 +413,7 @@ def print_summary():
     print(f"\n 使用建議:")
     if test_results['failed'] > 0:
         print("   1. 修復失敗的測試項目")
-        print("   2. 確保後端服務正在運行（端口 8001）")
+        print("   2. 確保後端服務正在執行（端口 8001）")
         print("   3. 檢查資料庫遷移是否完成")
     
     print("   4. 啟動前端開發服務器：npm run dev")

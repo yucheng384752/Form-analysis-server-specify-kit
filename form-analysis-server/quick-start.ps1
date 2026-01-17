@@ -70,12 +70,12 @@ if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
     $useCurl = $true
 }
 
-# 檢查 Docker 是否運行
+# 檢查 Docker 是否執行
 try {
     docker info | Out-Null
-    Write-Success "Docker 正在運行"
+    Write-Success "Docker 正在執行"
 } catch {
-    Write-Error "Docker 未運行，請先啟動 Docker Desktop"
+    Write-Error "Docker 未執行，請先啟動 Docker Desktop"
     exit 1
 }
 

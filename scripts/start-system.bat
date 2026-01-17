@@ -16,12 +16,50 @@ cd ..
 set "PROJECT_ROOT=%cd%"
 set "SERVER_PATH=%PROJECT_ROOT%\form-analysis-server"
 
-REM 檢查 Docker 是否運行
+REM --------------------------------------------------------
+REM 環境檔（.env）初始化：讓 docker-compose 變數可正確帶入
+REM --------------------------------------------------------
+if not exist "%SERVER_PATH%\.env" (
+    if exist "%SERVER_PATH%\.env.example" (
+        echo [0/6] 偵測到未設定環境檔，建立 %SERVER_PATH%\.env ...
+        copy "%SERVER_PATH%\.env.example" "%SERVER_PATH%\.env" >nul
+    ) else (
+        echo [0/6] 找不到 %SERVER_PATH%\.env 與 .env.example，將直接使用系統環境變數
+    )
+)
+
+REM 產生 ADMIN_API_KEYS（僅用於本機 demo bootstrap：建立 tenant / 建立 tenant user）
+REM 若已存在 ADMIN_API_KEYS=（非註解），則不覆蓋。
+if exist "%SERVER_PATH%\.env" (
+    findstr /R /B /C:"ADMIN_API_KEYS=" "%SERVER_PATH%\.env" >nul 2>&1
+    if errorlevel 1 (
+        for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "[guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')"`) do set "GENERATED_ADMIN_KEY=%%i"
+        echo.>> "%SERVER_PATH%\.env"
+        echo ADMIN_API_KEYS=!GENERATED_ADMIN_KEY!>> "%SERVER_PATH%\.env"
+        echo [0/6] 已自動產生 ADMIN_API_KEYS（Header: X-Admin-API-Key）:
+        echo   !GENERATED_ADMIN_KEY!
+        echo   你可以把它貼到前端 Register Page 的 Admin Key 欄位使用。
+    )
+)
+
+REM 顯示 API base URL（docker-compose 會把主機的 API_PORT 對應到容器 8000）
+set "HOST_API_PORT=18002"
+if exist "%SERVER_PATH%\.env" (
+    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"API_PORT=" "%SERVER_PATH%\.env"`) do (
+        if not "%%b"=="" set "HOST_API_PORT=%%b"
+    )
+)
+echo [0/6] API base URL: http://localhost:!HOST_API_PORT!
+echo [0/6] PowerShell 提示：請用 curl.exe 或 Invoke-RestMethod 傳 headers
+echo   curl.exe -H "X-Admin-API-Key: <key>" http://localhost:!HOST_API_PORT!/api/auth/whoami
+echo   Invoke-RestMethod http://localhost:!HOST_API_PORT!/api/auth/whoami -Headers @{"X-Admin-API-Key"="<key>"}
+
+REM 檢查 Docker 是否執行
 echo [1/6] 檢查 Docker 服務狀態...
 docker --version >nul 2>&1
 if errorlevel 1 (
     echo  Docker 未安裝或未啟動
-    echo    請安裝 Docker Desktop 並確保服務正在運行
+    echo    請安裝 Docker Desktop 並確保服務正在執行
     pause
     exit /b 1
 ) else (
@@ -163,7 +201,7 @@ set /a counter+=1
 REM 檢查容器狀態
 docker-compose ps db --format "table {{.State}}" | find "running" >nul 2>&1
 if errorlevel 1 (
-    echo  資料庫容器未運行，檢查啟動日誌：
+    echo  資料庫容器未執行，檢查啟動日誌：
     docker-compose logs --tail=20 db
     pause
     exit /b 1
@@ -251,10 +289,10 @@ set /a counter=0
 :backend_check
 set /a counter+=1
 
-REM 檢查容器運行狀態
+REM 檢查容器執行狀態
 docker-compose ps backend --format "table {{.State}}" | find "running" >nul 2>&1
 if errorlevel 1 (
-    echo  後端容器未運行，檢查建置和啟動日誌：
+    echo  後端容器未執行，檢查建置和啟動日誌：
     docker-compose logs --tail=30 backend
     pause
     exit /b 1
@@ -329,10 +367,10 @@ set /a counter=0
 :frontend_check
 set /a counter+=1
 
-REM 檢查容器運行狀態
+REM 檢查容器執行狀態
 docker-compose ps frontend --format "table {{.State}}" | find "running" >nul 2>&1
 if errorlevel 1 (
-    echo  前端容器未運行，檢查建置和啟動日誌：
+    echo  前端容器未執行，檢查建置和啟動日誌：
     docker-compose logs --tail=30 frontend
     pause
     exit /b 1

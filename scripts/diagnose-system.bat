@@ -92,11 +92,11 @@ if errorlevel 1 (
     
     docker info >nul 2>nul
     if errorlevel 1 (
-        echo   Docker 服務未運行
-        echo   Docker 服務未運行 >> %REPORT_FILE%
+        echo   Docker 服務未執行
+        echo   Docker 服務未執行 >> %REPORT_FILE%
     ) else (
-        echo  Docker 服務正在運行
-        echo  Docker 服務正在運行 >> %REPORT_FILE%
+        echo  Docker 服務正在執行
+        echo  Docker 服務正在執行 >> %REPORT_FILE%
     )
 )
 echo. >> %REPORT_FILE%
@@ -228,7 +228,7 @@ if "%DOCKER_AVAILABLE%"=="true" (
 
 echo [12/12] 進程檢查...
 echo ──────────────────────────────────────── >> %REPORT_FILE%
-echo  運行中的相關程序 >> %REPORT_FILE%
+echo  執行中的相關程序 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 tasklist | findstr /I "python" >> %REPORT_FILE% 2>nul
 tasklist | findstr /I "node" >> %REPORT_FILE% 2>nul
@@ -240,7 +240,7 @@ echo ─────────────────────────
 echo 建議和總結 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 echo 1. 如果 Python 或 Node.js 未安裝，請先安裝相應的環境 >> %REPORT_FILE%
-echo 2. 確保 Docker 服務正在運行以使用容器化部署 >> %REPORT_FILE%
+echo 2. 確保 Docker 服務正在執行以使用容器化部署 >> %REPORT_FILE%
 echo 3. 檢查連接埠占用情況，必要時調整配置或停止衝突服務 >> %REPORT_FILE%
 echo 4. 定期監控日誌檔案大小和磁碟空間使用情況 >> %REPORT_FILE%
 echo 5. 如有網路問題，檢查防火牆和代理設定 >> %REPORT_FILE%

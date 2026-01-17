@@ -44,7 +44,7 @@ def start_backend():
     # 檢查虛擬環境
     venv_python = backend_dir / "venv" / "Scripts" / "python.exe"
     if not venv_python.exists():
-        print_error("虛擬環境不存在，請先運行 python -m venv venv")
+        print_error("虛擬環境不存在，請先執行 python -m venv venv")
         return None
     
     # 檢查 app 模塊
@@ -163,7 +163,7 @@ def main():
     # 啟動前端
     frontend_process = start_frontend()
     if not frontend_process:
-        print_error("前端啟動失敗，但後端仍在運行...")
+        print_error("前端啟動失敗，但後端仍在執行...")
         return 1
     
     # 測試服務
@@ -181,7 +181,7 @@ def main():
     print("\n按 Ctrl+C 停止服務")
     print("=" * 50)
     
-    # 保持運行
+    # 保持執行
     try:
         while True:
             time.sleep(1)

@@ -77,7 +77,7 @@ def test_upload():
                 print(response.text)
                 
         except requests.exceptions.ConnectionError:
-            print("無法連接到後端服務，請確認 Docker 容器正在運行")
+            print("無法連接到後端服務，請確認 Docker 容器正在執行")
         except Exception as e:
             print(f"發生錯誤: {e}")
             import traceback

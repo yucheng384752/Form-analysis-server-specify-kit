@@ -9,7 +9,7 @@ Write-Host ""
 
 Write-Host "測試項目：" -ForegroundColor Yellow
 Write-Host "前端連接正常" -ForegroundColor Green
-Write-Host "後端API運行" -ForegroundColor Green  
+Write-Host "後端API執行" -ForegroundColor Green  
 Write-Host "資料庫連接" -ForegroundColor Green
 Write-Host "根路徑需要修復" -ForegroundColor Red
 

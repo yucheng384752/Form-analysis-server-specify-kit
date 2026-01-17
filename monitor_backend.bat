@@ -1,8 +1,7 @@
 @echo off 
 chcp 65001 > nul 
 title 表單分析系統 - 後端日誌監控 
-set "SCRIPT_DIR=%~dp0"
-cd /d "%SCRIPT_DIR%form-analysis-server" 
+cd /d "%~dp0form-analysis-server" 
 echo ======================================== 
 echo     後端 API 服務日誌監控 
 echo ======================================== 

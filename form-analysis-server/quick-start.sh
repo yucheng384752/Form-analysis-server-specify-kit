@@ -44,9 +44,9 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# 檢查 Docker 是否運行
+# 檢查 Docker 是否執行
 if ! docker info >/dev/null 2>&1; then
-    print_error "Docker 未運行，請先啟動 Docker"
+    print_error "Docker 未執行，請先啟動 Docker"
     exit 1
 fi
 
