@@ -7,15 +7,18 @@ from httpx import AsyncClient, ASGITransport
 from app.main import app
 from app.api.deps import get_db
 from app.models.core.tenant import Tenant
-from app.models.record import Record, DataType
-from app.models.p2_item import P2Item
-from app.models.p3_item import P3Item
+from app.models.p1_record import P1Record
+from app.models.p2_record import P2Record
+from app.models.p3_record import P3Record
+from app.models.p2_item_v2 import P2ItemV2
+from app.models.p3_item_v2 import P3ItemV2
+from app.utils.normalization import normalize_lot_no
 
 
 @pytest.fixture
-async def client(db_session):
+async def client(db_session_clean):
     async def override_get_db():
-        yield db_session
+        yield db_session_clean
 
     app.dependency_overrides[get_db] = override_get_db
 
@@ -26,59 +29,65 @@ async def client(db_session):
 
 
 @pytest.mark.asyncio
-async def test_legacy_advanced_query_winder_does_not_include_p1(client, db_session):
+async def test_legacy_advanced_query_winder_does_not_include_p1(client, db_session_clean):
     # Arrange
     tenant = Tenant(
         name=f"Test Tenant {uuid.uuid4()}",
         code=f"test_tenant_{uuid.uuid4()}",
         is_default=True,
     )
-    db_session.add(tenant)
-    await db_session.commit()
-    await db_session.refresh(tenant)
+    db_session_clean.add(tenant)
+    await db_session_clean.commit()
+    await db_session_clean.refresh(tenant)
 
     lot_no = "2507173_02"
+    lot_no_norm = normalize_lot_no(lot_no)
 
-    p1 = Record(
-        lot_no=lot_no,
-        data_type=DataType.P1,
-        production_date=date(2025, 1, 1),
-        product_name="P1",
-        quantity=1,
-        additional_data={"rows": [{"Specification": "P1-SPEC"}]},
+    p1 = P1Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        extras={"rows": [{"Specification": "P1-SPEC"}]},
     )
 
-    p2 = Record(
-        lot_no=lot_no,
-        data_type=DataType.P2,
-        production_date=date(2025, 1, 1),
-        additional_data={"rows": [{"format": "P2-FORMAT"}]},
+    p2 = P2Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        winder_number=5,
+        extras={"rows": [{"format": "P2-FORMAT", "winder_number": 5}]},
     )
-    p2.p2_items = [
-        P2Item(
+    p2.items_v2 = [
+        P2ItemV2(
+            tenant_id=tenant.id,
             winder_number=5,
-            row_data={"winder_number": 5},
+            row_data={"winder_number": 5, "format": "P2-FORMAT"},
         )
     ]
 
-    p3 = Record(
-        lot_no=lot_no,
-        data_type=DataType.P3,
-        production_date=date(2025, 1, 1),
-        additional_data={"rows": [{"specification": "P3-SPEC"}]},
+    p3 = P3Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        production_date_yyyymmdd=int(date(2025, 1, 1).strftime('%Y%m%d')),
+        machine_no="P24",
+        mold_no="M1",
+        product_id="2025-01-01-P24-M1-2507173_02",
+        extras={"rows": [{"specification": "P3-SPEC"}]},
     )
-    p3.p3_items = [
-        P3Item(
+    p3.items_v2 = [
+        P3ItemV2(
+            tenant_id=tenant.id,
             row_no=1,
             lot_no=lot_no,
             source_winder=5,
             specification="P3-SPEC",
-            row_data={"source_winder": 5},
+            row_data={"source_winder": 5, "specification": "P3-SPEC"},
         )
     ]
 
-    db_session.add_all([p1, p2, p3])
-    await db_session.commit()
+    db_session_clean.add_all([p1, p2, p3])
+    await db_session_clean.commit()
 
     # Act
     headers = {"X-Tenant-Id": str(tenant.id)}

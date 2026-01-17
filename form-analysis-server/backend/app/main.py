@@ -222,8 +222,28 @@ async def api_key_auth_middleware(request: Request, call_next):
     provided = request.headers.get(header_name)
     if not provided:
         # Allow admin-only bootstrap for tenant creation without a tenant API key.
-        if is_admin and path in {"/api/tenants", "/api/auth/users"}:
+        bootstrap_paths = {"/api/tenants", "/api/auth/users", "/api/auth/whoami", "/api/auth/bootstrap-status"}
+        if is_admin and path in bootstrap_paths:
             return await call_next(request)
+
+        # In development, give a more actionable hint for bootstrap endpoints.
+        try:
+            is_dev = bool(getattr(settings, "is_development", False))
+        except Exception:
+            is_dev = False
+
+        if is_dev and path in bootstrap_paths:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": (
+                        f"Unauthorized: missing {header_name}. "
+                        f"For bootstrap endpoints you may use {admin_header_name} "
+                        f"(and ensure ADMIN_API_KEYS is configured on the server)."
+                    )
+                },
+            )
+
         return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
     try:

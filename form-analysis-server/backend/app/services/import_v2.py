@@ -219,10 +219,8 @@ class ImportService:
         required_fields: List[str] = []
         numeric_fields: List[str] = []
 
-        if table.table_code == "P1":
-            # Minimal validation expected by tests/api/test_import_v2.py
-            required_fields = ["Line Speed(M/min)", "Screw Pressure(psi)"]
-            numeric_fields = ["Line Speed(M/min)", "Screw Pressure(psi)"]
+        # P1：只做最小的 lot_no 驗證（從檔名擷取），不再強制要求任何資料欄位。
+        lot_no_pattern = re.compile(r"^\d{7}_\d{2}$")
 
         # 3. Iterate and Validate Staging Rows
         offset = 0
@@ -241,6 +239,15 @@ class ImportService:
                 errors = []
                 data = row.parsed_json
                 filename = file_map.get(row.file_id, "")
+
+                # Minimal LOT NO validation (P1 only)
+                if table.table_code == "P1":
+                    lot_no_raw = self._extract_lot_no(filename)
+                    if not lot_no_raw or not lot_no_pattern.match(lot_no_raw):
+                        errors.append({
+                            "field": "lot_no",
+                            "message": f"Invalid or missing LOT NO in filename: {filename}",
+                        })
                 
                 # Check required fields
                 for field in required_fields:
@@ -682,7 +689,15 @@ class ImportService:
                 break
         for prefix in ["P1_", "P2_", "P3_", "QC_"]:
             if stem.upper().startswith(prefix):
-                return stem[len(prefix):]
+                stem = stem[len(prefix):]
+                break
+
+        # Normalize P1/P2 style lot numbers: keep only the first 7+2 segment
+        # e.g. 2507173_02_10 -> 2507173_02
+        m = re.match(r"^(\d{7})_(\d{1,2})(?:_.+)?$", stem)
+        if m:
+            return f"{m.group(1)}_{m.group(2).zfill(2)}"
+
         return stem
 
     def _extract_p2_info(self, filename: str, row_data: List[Dict[str, Any]]) -> int:

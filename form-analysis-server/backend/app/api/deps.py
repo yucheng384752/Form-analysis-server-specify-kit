@@ -20,7 +20,7 @@ async def get_current_tenant(
        - If only 1 tenant exists in DB, use it.
        - If multiple tenants exist, check for is_default=True.
        - If exactly one default tenant exists, use it.
-       - Otherwise, raise 422 error requiring explicit tenant ID.
+         - Otherwise, raise 400 error requiring explicit tenant ID.
     """
     if request is not None:
         auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)

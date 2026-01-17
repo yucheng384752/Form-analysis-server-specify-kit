@@ -3,7 +3,7 @@ from uuid import UUID
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, and_, or_, func, cast
+from sqlalchemy import select, and_, or_, func, cast, union_all, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
@@ -89,6 +89,16 @@ class LotGroupListV2Compat(BaseModel):
     page: int
     page_size: int
     groups: List[LotGroupV2Compat]
+
+
+class RecordStatsV2Compat(BaseModel):
+    total_records: int
+    unique_lots: int
+    p1_records: int
+    p2_records: int
+    p3_records: int
+    latest_production_date: Optional[str]
+    earliest_production_date: Optional[str]
 
 
 def _yyyymmdd_to_yyyy_mm_dd(v: Optional[int]) -> Optional[str]:
@@ -321,7 +331,15 @@ def _p2_to_query_record_with_items(p2_record: P2Record, items: list) -> QueryRec
     # 將 items 轉為 rows 格式（前端期望）
     rows = []
     for item in items:
-        row = item.row_data if isinstance(item.row_data, dict) else {}
+        raw = item.row_data if isinstance(item.row_data, dict) else {}
+        # Some datasets store the real row fields inside row_data.rows[0]
+        # (legacy import shape). Flatten it to keep UI tables consistent.
+        row: dict = {}
+        if isinstance(raw.get('rows'), list) and raw.get('rows') and isinstance(raw.get('rows')[0], dict):
+            row.update({k: v for k, v in raw.items() if k != 'rows'})
+            row.update(raw.get('rows')[0])
+        else:
+            row.update(raw)
         row['winder_number'] = item.winder_number
         # 加入結構化欄位
         for field in ['sheet_width', 'thickness1', 'thickness2', 'thickness3',
@@ -396,10 +414,15 @@ def _merge_p2_records(records: list[P2Record]) -> list[QueryRecordV2Compat]:
         # 將所有 winder 的 extras 展開為 rows 陣列（前端期望的格式）
         rows = []
         for rec in lot_records:
-            # P2Record.extras 是扁平的 dict，包含所有欄位
-            # 直接使用 extras 作為 row，這樣前端可以正確渲染表格
             if isinstance(rec.extras, dict):
-                row = rec.extras.copy()
+                extras = rec.extras
+                row: dict = {}
+                # Legacy shape: extras may be { rows: [ { ...real fields... } ], ... }
+                if isinstance(extras.get('rows'), list) and extras.get('rows') and isinstance(extras.get('rows')[0], dict):
+                    row.update({k: v for k, v in extras.items() if k != 'rows'})
+                    row.update(extras.get('rows')[0])
+                else:
+                    row.update(extras)
                 # 確保 winder_number 包含在 row 中（前端可能需要）
                 row['winder_number'] = rec.winder_number
                 rows.append(row)
@@ -440,7 +463,9 @@ def _p3_to_query_record_with_items(p3_record: P3Record, items: list) -> QueryRec
     for item in items:
         row = item.row_data if isinstance(item.row_data, dict) else {}
         row['row_no'] = item.row_no
-        row['product_id'] = item.product_id
+        # Some datasets store product_id only on the record; legacy UI expects
+        # it to exist inside each row dict as well.
+        row['product_id'] = item.product_id or p3_record.product_id
         row['source_winder'] = item.source_winder
         row['specification'] = item.specification
         rows.append(row)
@@ -674,7 +699,7 @@ async def get_field_options_v2(
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
     field = field_name.strip().lower()
-    if field not in {"machine_no", "mold_no", "specification", "winder_number", "material"}:
+    if field not in {"machine_no", "mold_no", "product_id", "specification", "winder_number", "material"}:
         raise HTTPException(status_code=400, detail=f"Unsupported field: {field_name}")
 
     if field == "material":
@@ -701,6 +726,18 @@ async def get_field_options_v2(
             .where(P3Record.mold_no.isnot(None))
             .distinct()
             .order_by(P3Record.mold_no)
+            .limit(limit)
+        )
+        result = await db.execute(stmt)
+        return [str(v[0]).strip() for v in result.fetchall() if v[0] and str(v[0]).strip()]
+
+    if field == "product_id":
+        stmt = (
+            select(P3Record.product_id)
+            .where(P3Record.tenant_id == current_tenant.id)
+            .where(P3Record.product_id.isnot(None))
+            .distinct()
+            .order_by(P3Record.product_id)
             .limit(limit)
         )
         result = await db.execute(stmt)
@@ -880,6 +917,14 @@ async def query_records_advanced_v2(
 
     records: List[QueryRecordV2Compat] = []
 
+    dialect_name = (db.get_bind().dialect.name if db.get_bind() else "").lower()
+
+    def _json_key_text(col, key: str):
+        if dialect_name == "postgresql":
+            return func.jsonb_extract_path_text(cast(col, JSONB), key)
+        # SQLite test DB uses JSON1 extension functions
+        return func.json_extract(cast(col, JSON), f"$.{key}")
+
     # P1
     # winder_number 僅適用 P2/P3：即使 data_type=P1，也不應在指定 winder_number 時回傳 P1。
     if (dt == "P1" and winder_requested is None) or (dt is None and winder_requested is None):
@@ -894,9 +939,9 @@ async def query_records_advanced_v2(
             spec = specification.strip()
             p1_stmt = p1_stmt.where(
                 or_(
-                    func.jsonb_extract_path_text(cast(P1Record.extras, JSONB), 'Specification').ilike(f"%{spec}%"),
-                    func.jsonb_extract_path_text(cast(P1Record.extras, JSONB), 'specification').ilike(f"%{spec}%"),
-                    func.jsonb_extract_path_text(cast(P1Record.extras, JSONB), '規格').ilike(f"%{spec}%"),
+                    _json_key_text(P1Record.extras, 'Specification').ilike(f"%{spec}%"),
+                    _json_key_text(P1Record.extras, 'specification').ilike(f"%{spec}%"),
+                    _json_key_text(P1Record.extras, '規格').ilike(f"%{spec}%"),
                 )
             )
         
@@ -925,9 +970,9 @@ async def query_records_advanced_v2(
             p2_stmt = p2_stmt.join(P2ItemV2, P2Record.id == P2ItemV2.p2_record_id)
             p2_stmt = p2_stmt.where(
                 or_(
-                    func.jsonb_extract_path_text(cast(P2ItemV2.row_data, JSONB), 'format').ilike(f"%{spec}%"),
-                    func.jsonb_extract_path_text(cast(P2ItemV2.row_data, JSONB), 'Format').ilike(f"%{spec}%"),
-                    func.jsonb_extract_path_text(cast(P2ItemV2.row_data, JSONB), '規格').ilike(f"%{spec}%"),
+                    _json_key_text(P2ItemV2.row_data, 'format').ilike(f"%{spec}%"),
+                    _json_key_text(P2ItemV2.row_data, 'Format').ilike(f"%{spec}%"),
+                    _json_key_text(P2ItemV2.row_data, '規格').ilike(f"%{spec}%"),
                 )
             ).distinct()
         
@@ -975,9 +1020,9 @@ async def query_records_advanced_v2(
         if date_to_i is not None:
             p3_stmt = p3_stmt.where(P3Record.production_date_yyyymmdd <= date_to_i)
         if machine_no and machine_no.strip():
-            p3_stmt = p3_stmt.where(P3Record.machine_no == machine_no.strip())
+            p3_stmt = p3_stmt.where(P3Record.machine_no.ilike(f"%{machine_no.strip()}%"))
         if mold_no and mold_no.strip():
-            p3_stmt = p3_stmt.where(P3Record.mold_no == mold_no.strip())
+            p3_stmt = p3_stmt.where(P3Record.mold_no.ilike(f"%{mold_no.strip()}%"))
         if product_id and product_id.strip():
             p3_stmt = p3_stmt.where(P3Record.product_id.ilike(f"%{product_id.strip()}%"))
 
@@ -1050,6 +1095,68 @@ async def query_records_advanced_v2(
         page=page,
         page_size=page_size,
         records=page_records,
+    )
+
+
+@router.get("/records/stats", response_model=RecordStatsV2Compat)
+async def get_record_stats_v2(
+    db: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+) -> RecordStatsV2Compat:
+    """Tenant-scoped record stats across v2 P1/P2/P3 tables."""
+    p1_count = await db.scalar(
+        select(func.count()).select_from(P1Record).where(P1Record.tenant_id == current_tenant.id)
+    )
+    p2_count = await db.scalar(
+        select(func.count()).select_from(P2Record).where(P2Record.tenant_id == current_tenant.id)
+    )
+    p3_count = await db.scalar(
+        select(func.count()).select_from(P3Record).where(P3Record.tenant_id == current_tenant.id)
+    )
+
+    p1_records = int(p1_count or 0)
+    p2_records = int(p2_count or 0)
+    p3_records = int(p3_count or 0)
+    total_records = p1_records + p2_records + p3_records
+
+    if total_records == 0:
+        return RecordStatsV2Compat(
+            total_records=0,
+            unique_lots=0,
+            p1_records=0,
+            p2_records=0,
+            p3_records=0,
+            latest_production_date=None,
+            earliest_production_date=None,
+        )
+
+    lot_union = union_all(
+        select(P1Record.lot_no_norm.label("lot_no_norm")).where(P1Record.tenant_id == current_tenant.id),
+        select(P2Record.lot_no_norm.label("lot_no_norm")).where(P2Record.tenant_id == current_tenant.id),
+        select(P3Record.lot_no_norm.label("lot_no_norm")).where(P3Record.tenant_id == current_tenant.id),
+    ).subquery()
+
+    unique_lots = await db.scalar(select(func.count(func.distinct(lot_union.c.lot_no_norm))))
+    unique_lots = int(unique_lots or 0)
+
+    date_row = (
+        await db.execute(
+            select(func.max(P3Record.production_date_yyyymmdd), func.min(P3Record.production_date_yyyymmdd)).where(
+                P3Record.tenant_id == current_tenant.id
+            )
+        )
+    ).first()
+    latest_yyyymmdd = date_row[0] if date_row else None
+    earliest_yyyymmdd = date_row[1] if date_row else None
+
+    return RecordStatsV2Compat(
+        total_records=total_records,
+        unique_lots=unique_lots,
+        p1_records=p1_records,
+        p2_records=p2_records,
+        p3_records=p3_records,
+        latest_production_date=_yyyymmdd_to_yyyy_mm_dd(latest_yyyymmdd),
+        earliest_production_date=_yyyymmdd_to_yyyy_mm_dd(earliest_yyyymmdd),
     )
 
 

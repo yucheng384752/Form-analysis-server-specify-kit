@@ -13,15 +13,20 @@ from sqlalchemy import select, func, or_, and_, String, exists
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from app.core.database import get_db
 from app.core.logging import get_logger
 from app.models.record import Record, DataType
 from app.models.p2_item import P2Item
 from app.models.p3_item import P3Item
+from app.models.p1_record import P1Record
+from app.models.p2_record import P2Record
+from app.models.p3_record import P3Record
+from app.utils.normalization import normalize_lot_no
 
 from app.api.deps import get_current_tenant
+from app.models.core.tenant import Tenant
 
 # 獲取日誌記錄器
 logger = get_logger(__name__)
@@ -30,6 +35,43 @@ logger = get_logger(__name__)
 router = APIRouter(
     tags=["資料查詢"]
 )
+
+
+async def _legacy_fallback_enabled(db: AsyncSession) -> bool:
+    """Legacy tables are not tenant-scoped.
+
+    To prevent cross-tenant leakage, only allow legacy fallback when the DB has
+    a single tenant.
+    """
+    try:
+        tenants_count = await db.scalar(select(func.count()).select_from(Tenant))
+        return (tenants_count or 0) <= 1
+    except Exception:
+        return False
+
+
+async def _resolve_current_tenant(db: AsyncSession, x_tenant_id: Optional[str]) -> Optional[Tenant]:
+    if x_tenant_id is not None:
+        # If client explicitly provided tenant id, let errors surface.
+        return await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
+
+    # If not provided, try best-effort (works for single-tenant DBs).
+    try:
+        return await get_current_tenant(x_tenant_id=None, db=db)
+    except Exception:
+        return None
+
+
+def _map_v2_record_to_legacy(r: Any) -> "QueryRecord":
+    return QueryRecord(
+        id=r.id,
+        lot_no=r.lot_no,
+        data_type=r.data_type,
+        production_date=r.production_date,
+        created_at=r.created_at,
+        display_name=r.display_name,
+        additional_data=r.additional_data,
+    )
 
 
 class QueryRecord(BaseModel):
@@ -117,6 +159,49 @@ async def query_lot_groups(
     """查詢批號分組"""
     try:
         logger.info("開始查詢批號分組", search=search, page=page, page_size=page_size)
+
+        current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        if current_tenant is None and not await _legacy_fallback_enabled(db):
+            raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
+
+        # Prefer v2 (tenant-scoped).
+        # If a tenant is resolved, treat v2 as the source of truth and do not
+        # fall back to legacy just because v2 is empty.
+        if current_tenant is not None:
+            try:
+                from app.api.routes_query_v2 import query_lot_groups_v2
+
+                v2_resp = await query_lot_groups_v2(
+                    search=search,
+                    page=page,
+                    page_size=page_size,
+                    db=db,
+                    current_tenant=current_tenant,
+                )
+
+                mapped_groups = [
+                    LotGroupResponse(
+                        lot_no=g.lot_no,
+                        p1_count=g.p1_count,
+                        p2_count=g.p2_count,
+                        p3_count=g.p3_count,
+                        total_count=g.total_count,
+                        latest_production_date=g.latest_production_date,
+                        created_at=g.created_at,
+                    )
+                    for g in v2_resp.groups
+                ]
+
+                return LotGroupListResponse(
+                    total_count=v2_resp.total_count,
+                    page=v2_resp.page,
+                    page_size=v2_resp.page_size,
+                    groups=mapped_groups,
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("批號分組 v2 查詢失敗，嘗試 legacy fallback", error=str(e))
         
         # 簡化查詢：先獲取所有lot_no，然後分別統計
         lot_query = (
@@ -183,42 +268,8 @@ async def query_lot_groups(
         
         logger.info("批號分組查詢完成", search=search, total_count=total_count, returned_count=len(groups))
 
-        # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 lots 分組
-        if total_count == 0 and x_tenant_id:
-            try:
-                from app.api.routes_query_v2 import query_lot_groups_v2
-                current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
-                v2_resp = await query_lot_groups_v2(
-                    search=search,
-                    page=page,
-                    page_size=page_size,
-                    db=db,
-                    current_tenant=current_tenant,
-                )
-
-                mapped_groups = [
-                    LotGroupResponse(
-                        lot_no=g.lot_no,
-                        p1_count=g.p1_count,
-                        p2_count=g.p2_count,
-                        p3_count=g.p3_count,
-                        total_count=g.total_count,
-                        latest_production_date=g.latest_production_date,
-                        created_at=g.created_at,
-                    )
-                    for g in v2_resp.groups
-                ]
-
-                return LotGroupListResponse(
-                    total_count=v2_resp.total_count,
-                    page=v2_resp.page,
-                    page_size=v2_resp.page_size,
-                    groups=mapped_groups,
-                )
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.warning("批號分組 legacy fallback to v2 失敗", error=str(e))
+        if not await _legacy_fallback_enabled(db):
+            return LotGroupListResponse(total_count=0, page=page, page_size=page_size, groups=[])
         
         return LotGroupListResponse(
             total_count=total_count,
@@ -292,6 +343,81 @@ async def advanced_search_records(
                    data_type=data_type,
                    page=page,
                    page_size=page_size)
+
+        current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        tenant_header_provided = x_tenant_id is not None and x_tenant_id.strip() != ""
+        if current_tenant is None and not await _legacy_fallback_enabled(db):
+            raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
+
+        # Prefer v2 (tenant-scoped).
+        # - If tenant is explicitly provided via header, treat v2 as the source of truth
+        #   and do not fall back to legacy just because v2 is empty.
+        # - If tenant is inferred (single-tenant convenience, header missing), keep
+        #   backward-compat: allow legacy fallback when v2 is empty.
+        if current_tenant is not None and tenant_header_provided:
+            try:
+                from app.api.routes_query_v2 import query_records_advanced_v2
+
+                v2_resp = await query_records_advanced_v2(
+                    lot_no=lot_no,
+                    production_date_from=production_date_from.isoformat() if production_date_from else None,
+                    production_date_to=production_date_to.isoformat() if production_date_to else None,
+                    machine_no=machine_no,
+                    mold_no=mold_no,
+                    product_id=product_id,
+                    material=material,
+                    specification=p3_specification,
+                    winder_number=str(winder_number) if winder_number is not None else None,
+                    data_type=data_type.value if data_type else None,
+                    page=page,
+                    page_size=page_size,
+                    db=db,
+                    current_tenant=current_tenant,
+                )
+
+                return QueryResponse(
+                    total_count=v2_resp.total_count,
+                    page=v2_resp.page,
+                    page_size=v2_resp.page_size,
+                    records=[_map_v2_record_to_legacy(r) for r in v2_resp.records],
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("records/advanced v2 查詢失敗，嘗試 legacy fallback", error=str(e))
+
+        if current_tenant is not None and not tenant_header_provided:
+            try:
+                from app.api.routes_query_v2 import query_records_advanced_v2
+
+                v2_resp = await query_records_advanced_v2(
+                    lot_no=lot_no,
+                    production_date_from=production_date_from.isoformat() if production_date_from else None,
+                    production_date_to=production_date_to.isoformat() if production_date_to else None,
+                    machine_no=machine_no,
+                    mold_no=mold_no,
+                    product_id=product_id,
+                    material=material,
+                    specification=p3_specification,
+                    winder_number=str(winder_number) if winder_number is not None else None,
+                    data_type=data_type.value if data_type else None,
+                    page=page,
+                    page_size=page_size,
+                    db=db,
+                    current_tenant=current_tenant,
+                )
+
+                if v2_resp.total_count > 0 or not await _legacy_fallback_enabled(db):
+                    return QueryResponse(
+                        total_count=v2_resp.total_count,
+                        page=v2_resp.page,
+                        page_size=v2_resp.page_size,
+                        records=[_map_v2_record_to_legacy(r) for r in v2_resp.records],
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("records/advanced v2 查詢失敗，嘗試 legacy fallback", error=str(e))
         
         # 建構查詢條件列表
         conditions = []
@@ -481,52 +607,8 @@ async def advanced_search_records(
                    returned_count=len(query_records),
                    conditions_count=len(conditions))
 
-        # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 查詢並轉成 legacy schema
-        if total_count == 0 and x_tenant_id:
-            try:
-                from app.api.routes_query_v2 import query_records_advanced_v2
-                current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
-
-                v2_resp = await query_records_advanced_v2(
-                    lot_no=lot_no,
-                    production_date_from=production_date_from.isoformat() if production_date_from else None,
-                    production_date_to=production_date_to.isoformat() if production_date_to else None,
-                    machine_no=machine_no,
-                    mold_no=mold_no,
-                    product_id=product_id,
-                    specification=p3_specification,
-                    winder_number=str(winder_number) if winder_number is not None else None,
-                    data_type=data_type.value if data_type else None,
-                    page=page,
-                    page_size=page_size,
-                    db=db,
-                    current_tenant=current_tenant,
-                )
-
-                mapped_records: List[QueryRecord] = []
-                for r in v2_resp.records:
-                    mapped_records.append(
-                        QueryRecord(
-                            id=r.id,
-                            lot_no=r.lot_no,
-                            data_type=r.data_type,
-                            production_date=r.production_date,
-                            created_at=r.created_at,
-                            display_name=r.display_name,
-                            additional_data=r.additional_data,
-                        )
-                    )
-
-                return QueryResponse(
-                    total_count=v2_resp.total_count,
-                    page=v2_resp.page,
-                    page_size=v2_resp.page_size,
-                    records=mapped_records,
-                )
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.warning("進階搜尋 legacy fallback to v2 失敗", error=str(e))
+        if not await _legacy_fallback_enabled(db):
+            return QueryResponse(total_count=0, page=page, page_size=page_size, records=[])
         
         return QueryResponse(
             total_count=total_count,
@@ -574,6 +656,65 @@ async def query_records(
     """查詢指定批號的資料記錄"""
     try:
         logger.info("開始查詢資料記錄", lot_no=lot_no, data_type=data_type, page=page, page_size=page_size)
+
+        current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        tenant_header_provided = x_tenant_id is not None and x_tenant_id.strip() != ""
+        if current_tenant is None and not await _legacy_fallback_enabled(db):
+            raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
+
+        # Prefer v2 (tenant-scoped).
+        # - If tenant is explicitly provided via header, treat v2 as the source of truth
+        #   and do not fall back to legacy just because v2 is empty.
+        # - If tenant is inferred (single-tenant convenience, header missing), keep
+        #   backward-compat: allow legacy fallback when v2 is empty.
+        if current_tenant is not None and tenant_header_provided:
+            try:
+                from app.api.routes_query_v2 import query_records_v2
+
+                v2_resp = await query_records_v2(
+                    lot_no=lot_no,
+                    data_type=data_type.value if data_type else None,
+                    page=page,
+                    page_size=page_size,
+                    db=db,
+                    current_tenant=current_tenant,
+                )
+
+                return QueryResponse(
+                    total_count=v2_resp.total_count,
+                    page=v2_resp.page,
+                    page_size=v2_resp.page_size,
+                    records=[_map_v2_record_to_legacy(r) for r in v2_resp.records],
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("records v2 查詢失敗，嘗試 legacy fallback", error=str(e))
+
+        if current_tenant is not None and not tenant_header_provided:
+            try:
+                from app.api.routes_query_v2 import query_records_v2
+
+                v2_resp = await query_records_v2(
+                    lot_no=lot_no,
+                    data_type=data_type.value if data_type else None,
+                    page=page,
+                    page_size=page_size,
+                    db=db,
+                    current_tenant=current_tenant,
+                )
+
+                if v2_resp.total_count > 0 or not await _legacy_fallback_enabled(db):
+                    return QueryResponse(
+                        total_count=v2_resp.total_count,
+                        page=v2_resp.page,
+                        page_size=v2_resp.page_size,
+                        records=[_map_v2_record_to_legacy(r) for r in v2_resp.records],
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("records v2 查詢失敗，嘗試 legacy fallback", error=str(e))
         
         # 建構查詢條件
         conditions = [Record.lot_no == lot_no]
@@ -659,45 +800,8 @@ async def query_records(
         
         logger.info("查詢完成", lot_no=lot_no, data_type=data_type, total_count=total_count, returned_count=len(query_records))
 
-        # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 查詢並轉成 legacy schema
-        if total_count == 0 and x_tenant_id:
-            try:
-                from app.api.routes_query_v2 import query_records_v2
-                current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
-
-                v2_resp = await query_records_v2(
-                    lot_no=lot_no,
-                    data_type=data_type.value if data_type else None,
-                    page=page,
-                    page_size=page_size,
-                    db=db,
-                    current_tenant=current_tenant,
-                )
-
-                mapped_records: List[QueryRecord] = []
-                for r in v2_resp.records:
-                    mapped_records.append(
-                        QueryRecord(
-                            id=r.id,
-                            lot_no=r.lot_no,
-                            data_type=r.data_type,
-                            production_date=r.production_date,
-                            created_at=r.created_at,
-                            display_name=r.display_name,
-                            additional_data=r.additional_data,
-                        )
-                    )
-
-                return QueryResponse(
-                    total_count=v2_resp.total_count,
-                    page=v2_resp.page,
-                    page_size=v2_resp.page_size,
-                    records=mapped_records,
-                )
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.warning("查詢資料記錄 legacy fallback to v2 失敗", error=str(e))
+        if not await _legacy_fallback_enabled(db):
+            return QueryResponse(total_count=0, page=page, page_size=page_size, records=[])
 
         return QueryResponse(
             total_count=total_count,
@@ -737,6 +841,26 @@ async def get_lot_suggestions(
         List[str]: lot_no建議列表
     """
     try:
+        current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        if current_tenant is None and not await _legacy_fallback_enabled(db):
+            raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
+
+        # Prefer v2 suggestions.
+        # If a tenant is resolved, treat v2 as the source of truth and do not
+        # fall back to legacy just because v2 is empty.
+        if current_tenant is not None:
+            try:
+                from app.api.routes_query_v2 import suggest_lots
+
+                return await suggest_lots(term=query, limit=limit, db=db, current_tenant=current_tenant)
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("批號建議 v2 查詢失敗，嘗試 legacy fallback", error=str(e))
+
+        if not await _legacy_fallback_enabled(db):
+            return []
+
         # 查詢符合條件的lot_no，按字母順序排序並去重
         query_filter = f"%{query.strip()}%"
         sql_query = (
@@ -749,17 +873,6 @@ async def get_lot_suggestions(
         
         result = await db.execute(sql_query)
         suggestions = [row[0] for row in result.fetchall()]
-
-        # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 suggestions
-        if not suggestions and x_tenant_id:
-            try:
-                from app.api.routes_query_v2 import suggest_lots
-                current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
-                return await suggest_lots(term=query, limit=limit, db=db, current_tenant=current_tenant)
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.warning("批號建議 legacy fallback to v2 失敗", error=str(e))
 
         return suggestions
         
@@ -792,6 +905,45 @@ async def get_field_options(
         List[str]: 選項列表
     """
     try:
+        current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        if current_tenant is None and not await _legacy_fallback_enabled(db):
+            raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
+
+        # Prefer v2 options when supported.
+        v2_field = None
+        if field_name in {"machine_no", "mold_no", "specification", "winder_number", "material"}:
+            v2_field = field_name
+        elif field_name == "bottom_tape_lot":
+            # legacy bottom_tape_lot maps to v2 mold_no
+            v2_field = "mold_no"
+        elif field_name == "material_code":
+            # legacy material_code maps to v2 material options list
+            v2_field = "material"
+        elif field_name == "p3_specification":
+            v2_field = "specification"
+        elif field_name == "product_id":
+            v2_field = "product_id"
+
+        if v2_field and current_tenant is not None:
+            try:
+                from app.api.routes_query_v2 import get_field_options_v2
+                v2_options = await get_field_options_v2(
+                    field_name=v2_field,
+                    limit=200,
+                    db=db,
+                    current_tenant=current_tenant,
+                )
+                # If tenant context is available, treat v2 as the source of truth
+                # and do not fall back to legacy just because v2 is empty.
+                return v2_options
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("欄位選項 v2 查詢失敗，嘗試 legacy fallback", field_name=field_name, error=str(e))
+
+        if not await _legacy_fallback_enabled(db):
+            return []
+
         # 映射前端欄位名稱到資料庫模型欄位
         field_map = {
             "specification": P3Item.specification,
@@ -820,29 +972,6 @@ async def get_field_options(
         result = await db.execute(stmt)
         options = [str(row[0]) for row in result.fetchall() if row[0]]
 
-        # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 options (limited fields)
-        if not options and x_tenant_id:
-            v2_field = None
-            if field_name in {"machine_no", "mold_no", "specification", "winder_number"}:
-                v2_field = field_name
-            elif field_name == "p3_specification":
-                v2_field = "specification"
-
-            if v2_field:
-                try:
-                    from app.api.routes_query_v2 import get_field_options_v2
-                    current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
-                    return await get_field_options_v2(
-                        field_name=v2_field,
-                        limit=200,
-                        db=db,
-                        current_tenant=current_tenant,
-                    )
-                except HTTPException:
-                    raise
-                except Exception as e:
-                    logger.warning("欄位選項 legacy fallback to v2 失敗", field_name=field_name, error=str(e))
-
         return options
         
     except HTTPException:
@@ -855,102 +984,9 @@ async def get_field_options(
         )
 
 
-@router.get(
-    "/records/{record_id}",
-    response_model=QueryRecord,
-    summary="取得單筆記錄",
-    description="根據記錄ID取得詳細資訊"
-)
-async def get_record(
-    record_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
-) -> QueryRecord:
-    """
-    取得單筆記錄
-    
-    Args:
-        record_id: 記錄ID
-        db: 資料庫會話
-    
-    Returns:
-        QueryRecord: 記錄詳情
-    """
-    try:
-        query = select(Record).where(Record.id == record_id).options(selectinload(Record.p2_items))
-        result = await db.execute(query)
-        record = result.scalar_one_or_none()
-        
-        if not record:
-            # Fallback: 若 legacy tables 沒資料、但有 tenant header，改走 v2 record lookup
-            if x_tenant_id:
-                try:
-                    from app.api.routes_query_v2 import get_record_v2
-                    current_tenant = await get_current_tenant(x_tenant_id=x_tenant_id, db=db)
-                    v2_record = await get_record_v2(record_id=record_id, db=db, current_tenant=current_tenant)
-                    return QueryRecord(
-                        id=v2_record.id,
-                        lot_no=v2_record.lot_no,
-                        data_type=v2_record.data_type,
-                        production_date=v2_record.production_date,
-                        created_at=v2_record.created_at,
-                        display_name=v2_record.display_name,
-                        additional_data=v2_record.additional_data,
-                    )
-                except HTTPException:
-                    raise
-                except Exception as e:
-                    logger.warning("單筆記錄 legacy fallback to v2 失敗", record_id=str(record_id), error=str(e))
-
-            raise HTTPException(
-                status_code=404,
-                detail="找不到指定的記錄"
-            )
-        
-        query_record = QueryRecord(
-            id=str(record.id),
-            lot_no=record.lot_no,
-            data_type=record.data_type.value,
-            production_date=record.production_date.isoformat() if record.production_date else None,
-            created_at=record.created_at.isoformat(),
-            display_name=record.display_name,
-            additional_data=record.additional_data
-        )
-        
-        # 根據資料類型設置對應欄位
-        if record.data_type == DataType.P1:
-            query_record.product_name = record.product_name
-            query_record.quantity = record.quantity
-            query_record.notes = record.notes
-        elif record.data_type == DataType.P2:
-            # P2 改為從 p2_items 獲取資料並放入 additional_data['rows']
-            if record.p2_items:
-                rows = []
-                # 排序 p2_items (按 winder_number)
-                sorted_items = sorted(record.p2_items, key=lambda x: x.winder_number)
-                for item in sorted_items:
-                    if item.row_data:
-                        rows.append(item.row_data)
-                
-                if not query_record.additional_data:
-                    query_record.additional_data = {}
-                query_record.additional_data['rows'] = rows
-        elif record.data_type == DataType.P3:
-            query_record.product_name = record.product_name
-            query_record.quantity = record.quantity
-            query_record.notes = record.notes
-        
-        return query_record
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"取得記錄時發生錯誤：{str(e)}"
-        )
-
-
+# NOTE: This must be declared before `/records/{record_id}`.
+# Otherwise FastAPI can match `/records/{record_id}` first and reject
+# `/records/stats` with a 422 UUID parsing error.
 @router.get(
     "/records/stats",
     response_model=RecordStats,
@@ -958,7 +994,8 @@ async def get_record(
     description="取得資料庫中記錄的統計資訊，包含總數、P1/P2/P3分類統計等"
 )
 async def get_record_stats(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
 ) -> RecordStats:
     """
     取得記錄統計資訊
@@ -970,6 +1007,66 @@ async def get_record_stats(
         RecordStats: 統計資訊
     """
     try:
+        current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        tenant_header_provided = x_tenant_id is not None and x_tenant_id.strip() != ""
+        if current_tenant is None and not await _legacy_fallback_enabled(db):
+            raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
+
+        # Prefer v2 (tenant-scoped).
+        # - If tenant is explicitly provided via header, treat v2 as the source of truth
+        #   and do not fall back to legacy just because v2 is empty.
+        # - If tenant is inferred (single-tenant convenience, header missing), keep
+        #   backward-compat: allow legacy fallback when v2 is empty.
+        if current_tenant is not None and tenant_header_provided:
+            try:
+                from app.api.routes_query_v2 import get_record_stats_v2
+
+                v2_stats = await get_record_stats_v2(db=db, current_tenant=current_tenant)
+                return RecordStats(
+                    total_records=v2_stats.total_records,
+                    unique_lots=v2_stats.unique_lots,
+                    p1_records=v2_stats.p1_records,
+                    p2_records=v2_stats.p2_records,
+                    p3_records=v2_stats.p3_records,
+                    latest_production_date=v2_stats.latest_production_date,
+                    earliest_production_date=v2_stats.earliest_production_date,
+                )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("records/stats v2 查詢失敗，嘗試 legacy fallback", error=str(e))
+
+        if current_tenant is not None and not tenant_header_provided:
+            try:
+                from app.api.routes_query_v2 import get_record_stats_v2
+
+                v2_stats = await get_record_stats_v2(db=db, current_tenant=current_tenant)
+                if v2_stats.total_records > 0 or not await _legacy_fallback_enabled(db):
+                    return RecordStats(
+                        total_records=v2_stats.total_records,
+                        unique_lots=v2_stats.unique_lots,
+                        p1_records=v2_stats.p1_records,
+                        p2_records=v2_stats.p2_records,
+                        p3_records=v2_stats.p3_records,
+                        latest_production_date=v2_stats.latest_production_date,
+                        earliest_production_date=v2_stats.earliest_production_date,
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning("records/stats v2 查詢失敗，嘗試 legacy fallback", error=str(e))
+
+        if not await _legacy_fallback_enabled(db):
+            return RecordStats(
+                total_records=0,
+                unique_lots=0,
+                p1_records=0,
+                p2_records=0,
+                p3_records=0,
+                latest_production_date=None,
+                earliest_production_date=None,
+            )
+
         # 總記錄數
         total_query = select(func.count(Record.id))
         total_result = await db.execute(total_query)
@@ -1028,13 +1125,105 @@ async def get_record_stats(
         )
 
 
+@router.get(
+    "/records/{record_id}",
+    response_model=QueryRecord,
+    summary="取得單筆記錄",
+    description="根據記錄ID取得詳細資訊"
+)
+async def get_record(
+    record_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
+) -> QueryRecord:
+    """
+    取得單筆記錄
+    
+    Args:
+        record_id: 記錄ID
+        db: 資料庫會話
+    
+    Returns:
+        QueryRecord: 記錄詳情
+    """
+    try:
+        current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        if current_tenant is None and not await _legacy_fallback_enabled(db):
+            raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
+
+        # Prefer v2 lookup.
+        if current_tenant is not None:
+            from app.api.routes_query_v2 import get_record_v2
+
+            try:
+                v2_record = await get_record_v2(record_id=record_id, db=db, current_tenant=current_tenant)
+                return _map_v2_record_to_legacy(v2_record)
+            except HTTPException as e:
+                if e.status_code != 404:
+                    raise
+
+        if not await _legacy_fallback_enabled(db):
+            raise HTTPException(status_code=404, detail="找不到指定的記錄")
+
+        query = select(Record).where(Record.id == record_id).options(selectinload(Record.p2_items))
+        result = await db.execute(query)
+        record = result.scalar_one_or_none()
+
+        if not record:
+            raise HTTPException(status_code=404, detail="找不到指定的記錄")
+        
+        query_record = QueryRecord(
+            id=str(record.id),
+            lot_no=record.lot_no,
+            data_type=record.data_type.value,
+            production_date=record.production_date.isoformat() if record.production_date else None,
+            created_at=record.created_at.isoformat(),
+            display_name=record.display_name,
+            additional_data=record.additional_data
+        )
+        
+        # 根據資料類型設置對應欄位
+        if record.data_type == DataType.P1:
+            query_record.product_name = record.product_name
+            query_record.quantity = record.quantity
+            query_record.notes = record.notes
+        elif record.data_type == DataType.P2:
+            # P2 改為從 p2_items 獲取資料並放入 additional_data['rows']
+            if record.p2_items:
+                rows = []
+                # 排序 p2_items (按 winder_number)
+                sorted_items = sorted(record.p2_items, key=lambda x: x.winder_number)
+                for item in sorted_items:
+                    if item.row_data:
+                        rows.append(item.row_data)
+                
+                if not query_record.additional_data:
+                    query_record.additional_data = {}
+                query_record.additional_data['rows'] = rows
+        elif record.data_type == DataType.P3:
+            query_record.product_name = record.product_name
+            query_record.quantity = record.quantity
+            query_record.notes = record.notes
+        
+        return query_record
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"取得記錄時發生錯誤：{str(e)}"
+        )
+
+
 @router.post(
     "/records/create-test-data",
     summary="創建測試資料",
     description="為演示目的創建一些測試記錄（僅開發環境使用）"
 )
 async def create_test_data(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
 ) -> dict:
     """
     創建測試資料
@@ -1046,54 +1235,49 @@ async def create_test_data(
         dict: 創建結果
     """
     try:
+        # Seed v2 tenant-scoped tables so legacy query wrappers (which prefer v2)
+        # can immediately show demo data without relying on legacy tables.
+        lot_no = "2503033_01"
+        lot_no_norm = normalize_lot_no(lot_no)
+
+        now = datetime.now(timezone.utc)
         test_records = [
-            # P1 測試資料
-            Record(
-                lot_no="2503033_01",
-                data_type=DataType.P1,
-                product_name="產品A",
-                quantity=100,
-                production_date=date(2024, 1, 15),
-                notes="測試產品"
+            P1Record(
+                tenant_id=current_tenant.id,
+                lot_no_raw=lot_no,
+                lot_no_norm=lot_no_norm,
+                extras={"product_name": "產品A", "quantity": 100, "notes": "測試產品"},
+                created_at=now,
             ),
-            Record(
-                lot_no="2503033_01",
-                data_type=DataType.P1,
-                product_name="產品B",
-                quantity=200,
-                production_date=date(2024, 1, 16),
-                notes="另一個測試產品"
+            P2Record(
+                tenant_id=current_tenant.id,
+                lot_no_raw=lot_no,
+                lot_no_norm=lot_no_norm,
+                winder_number=1,
+                extras={
+                    "sheet_width": 7.985,
+                    "thickness": [319.0, 325.0, 320.0, 319.0, 319.0, 326.0, 324.0],
+                    "appearance": 0,
+                    "rough_edge": 1,
+                    "slitting_result": 1,
+                },
+                created_at=now,
             ),
-            # P2 測試資料
-            Record(
-                lot_no="2503033_01",
-                data_type=DataType.P2,
-                sheet_width=7.985,
-                thickness1=319.0,
-                thickness2=325.0,
-                thickness3=320.0,
-                thickness4=319.0,
-                thickness5=319.0,
-                thickness6=326.0,
-                thickness7=324.0,
-                appearance=0,
-                rough_edge=1,
-                slitting_result=1,
-                production_date=date(2024, 1, 15)
+            P3Record(
+                tenant_id=current_tenant.id,
+                lot_no_raw=lot_no,
+                lot_no_norm=lot_no_norm,
+                production_date_yyyymmdd=20240115,
+                machine_no="P24",
+                mold_no="M1",
+                product_id=f"2024-01-15-P24-M1-{lot_no}",
+                extras={"rows": [{"specification": "P3-SPEC", "notes": "測試產品"}]},
+                created_at=now,
             ),
-            # P3 測試資料
-            Record(
-                lot_no="2503033_01",
-                data_type=DataType.P3,
-                product_name="產品A",
-                quantity=100,
-                production_date=date(2024, 1, 15),
-                notes="測試產品"
-            )
         ]
-        
-        for record in test_records:
-            db.add(record)
+
+        for r in test_records:
+            db.add(r)
         
         await db.commit()
         

@@ -51,6 +51,49 @@ class CreateUserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class WhoAmIResponse(BaseModel):
+    is_admin: bool
+    tenant_id: Optional[str] = None
+    actor_user_id: Optional[str] = None
+    actor_role: Optional[str] = None
+    api_key_label: Optional[str] = None
+
+
+@router.get("/whoami", response_model=WhoAmIResponse)
+async def whoami(request: Request):
+    state = getattr(request, "state", None)
+    return WhoAmIResponse(
+        is_admin=bool(getattr(state, "is_admin", False)),
+        tenant_id=str(getattr(state, "auth_tenant_id", "")) or None,
+        actor_user_id=str(getattr(state, "actor_user_id", "")) or None,
+        actor_role=getattr(state, "actor_role", None),
+        api_key_label=getattr(state, "auth_api_key_label", None),
+    )
+
+
+class BootstrapStatusResponse(BaseModel):
+    auth_mode: str
+    auth_api_key_header: str
+    auth_protect_prefixes: list[str]
+    auth_exempt_paths: list[str]
+    admin_api_key_header: str
+    admin_keys_configured: bool
+
+
+@router.get("/bootstrap-status", response_model=BootstrapStatusResponse)
+async def bootstrap_status():
+    settings = get_settings()
+    admin_keys = getattr(settings, "admin_api_keys", set())
+    return BootstrapStatusResponse(
+        auth_mode=str(getattr(settings, "auth_mode", "off")),
+        auth_api_key_header=str(getattr(settings, "auth_api_key_header", "X-API-Key")),
+        auth_protect_prefixes=list(getattr(settings, "auth_protect_prefixes", ["/api"])),
+        auth_exempt_paths=list(getattr(settings, "auth_exempt_paths", ["/healthz"])),
+        admin_api_key_header=str(getattr(settings, "admin_api_key_header", "X-Admin-API-Key")),
+        admin_keys_configured=bool(isinstance(admin_keys, set) and len(admin_keys) > 0),
+    )
+
+
 @router.post("/users", response_model=CreateUserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     request: Request,

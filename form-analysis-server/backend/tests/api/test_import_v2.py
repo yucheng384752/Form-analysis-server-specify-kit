@@ -160,12 +160,11 @@ async def test_validate_import_job(client, db_session):
     await db_session.commit()
     await db_session.refresh(tenant)
     
-    # Prepare CSV content with P1 headers
-    # Required: Line Speed(M/min), Screw Pressure(psi)
-    csv_content = "Line Speed(M/min),Screw Pressure(psi),Other\n10.5,100,abc\nInvalid,200,def\n,300,ghi"
+    # Prepare CSV content (P1 validation should only verify LOT NO from filename)
+    csv_content = "Any,Other\n10.5,abc\nInvalid,def\n,ghi"
     
     files = [
-        ('files', ('data_val.csv', csv_content.encode('utf-8'), 'text/csv'))
+        ('files', ('P1_2503033_01.csv', csv_content.encode('utf-8'), 'text/csv'))
     ]
     data = {'table_code': 'P1'}
     headers = {'X-Tenant-Id': str(tenant.id)}
@@ -190,18 +189,13 @@ async def test_validate_import_job(client, db_session):
     
     assert len(rows) == 3
     
-    # Row 1: Valid
-    assert rows[0].is_valid == True
+    # All rows valid as long as LOT NO is present in filename
+    assert rows[0].is_valid is True
     assert rows[0].errors_json == []
-    
-    # Row 2: Invalid (Line Speed is "Invalid")
-    assert rows[1].is_valid == False
-    assert len(rows[1].errors_json) > 0
-    assert rows[1].errors_json[0]["field"] == "Line Speed(M/min)"
-    
-    # Row 3: Invalid (Line Speed is empty)
-    assert rows[2].is_valid == False
-    assert len(rows[2].errors_json) > 0
+    assert rows[1].is_valid is True
+    assert rows[1].errors_json == []
+    assert rows[2].is_valid is True
+    assert rows[2].errors_json == []
     
     # Cleanup
     upload_dir = Path(settings.upload_temp_dir) / job_id
@@ -276,9 +270,8 @@ async def test_get_import_job_errors(client, db_session):
     await db_session.commit()
     await db_session.refresh(tenant)
     
-    # Prepare CSV content with errors
-    # Missing required field
-    csv_content = "Line Speed(M/min),Screw Pressure(psi)\n,100.2"
+    # Prepare CSV content; trigger errors by using an invalid filename (no LOT NO)
+    csv_content = "Any,Other\n,100.2"
     
     files = [('files', ('P1_error.csv', csv_content.encode('utf-8'), 'text/csv'))]
     data = {'table_code': 'P1'}

@@ -13,7 +13,7 @@ if %errorlevel% neq 0 (
 
 REM 檢查虛擬環境
 if not exist ".venv\Scripts\python.exe" (
-    echo  虛擬環境不存在，請先運行 setup.bat
+    echo  虛擬環境不存在，請先執行 setup.bat
     pause
     exit /b 1
 )

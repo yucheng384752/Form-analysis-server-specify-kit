@@ -19,7 +19,7 @@ async def resolve_tenant_or_raise(*, db: AsyncSession, x_tenant_id: Optional[str
       - 404 if no tenants exist.
       - returns the only tenant if exactly one exists.
       - returns the unique default tenant if multiple exist and exactly one has `is_default=True`.
-      - otherwise 422 to require explicit header.
+            - otherwise 400 to require explicit header.
     """
 
     if x_tenant_id:
@@ -56,7 +56,7 @@ async def resolve_tenant_or_raise(*, db: AsyncSession, x_tenant_id: Optional[str
         return default_tenants[0]
 
     raise HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status_code=status.HTTP_400_BAD_REQUEST,
         detail="X-Tenant-Id header is required (Multiple tenants exist and no unique default)",
     )
 

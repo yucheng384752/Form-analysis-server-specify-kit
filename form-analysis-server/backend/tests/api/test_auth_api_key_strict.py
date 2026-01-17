@@ -81,7 +81,7 @@ async def test_auth_off_multiple_tenants_requires_header(client, db_session_clea
     settings.auth_mode = "off"
 
     resp = await client.get("/api/constants/materials")
-    assert resp.status_code == 422, resp.text
+    assert resp.status_code == 400, resp.text
 
 
 @pytest.mark.asyncio

@@ -51,7 +51,7 @@ async def test_get_current_tenant_fail_multiple_no_default(db_session, clean_db)
     # Test
     with pytest.raises(HTTPException) as exc:
         await get_current_tenant(x_tenant_id=None, db=db_session)
-    assert exc.value.status_code == 422
+    assert exc.value.status_code == 400
 
 @pytest.mark.asyncio
 async def test_get_current_tenant_invalid_header(db_session, clean_db):

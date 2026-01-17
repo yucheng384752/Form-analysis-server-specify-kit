@@ -193,7 +193,7 @@ def main():
     try:
         response = requests.get(f"{API_BASE_URL}/")
         if response.status_code != 200:
-            print(" API 伺服器未運行，請先啟動伺服器")
+            print(" API 伺服器未執行，請先啟動伺服器")
             return
     except Exception as e:
         print(f" 無法連接到 API 伺服器：{e}")

@@ -127,7 +127,7 @@ error during connect: ... dockerDesktopLinuxEngine
 psycopg.errors.ConnectionTimeout: connection timeout expired
 ```
 **解決方案**: 
-1. 確認 Docker 容器正在運行: `docker-compose ps`
+1. 確認 Docker 容器正在執行: `docker-compose ps`
 2. 檢查資料庫日誌: `docker-compose logs db`
 3. 等待資料庫完全啟動
 

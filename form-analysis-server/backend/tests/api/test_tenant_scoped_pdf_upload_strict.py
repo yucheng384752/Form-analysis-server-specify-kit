@@ -90,7 +90,7 @@ async def test_tenant_scoped_pdf_upload_multiple_tenants_no_default_requires_hea
     files = {"file": (_pdf_filename(), _pdf_bytes(), "application/pdf")}
     resp = await client.post("/api/upload/pdf", files=files)
 
-    assert resp.status_code == 422, resp.text
+    assert resp.status_code == 400, resp.text
     body = resp.json()
     assert "detail" in body
     assert "X-Tenant-Id header is required" in body["detail"]

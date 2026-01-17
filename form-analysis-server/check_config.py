@@ -169,7 +169,7 @@ def main():
     print(f"   1. 確保 DATABASE_URL 在 Docker 環境使用 'db:5432'")
     print(f"   2. 為本地開發創建 .env.local.example (使用 localhost)")
     print(f"   3. 確保所有 config.py 欄位都有對應的環境變數")
-    print(f"   4. 定期運行此檢查確保配置同步")
+    print(f"   4. 定期執行此檢查確保配置同步")
 
 if __name__ == "__main__":
     main()

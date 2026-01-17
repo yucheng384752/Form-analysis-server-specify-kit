@@ -8,7 +8,7 @@ from app.api.deps import get_db
 from app.main import app
 from app.models.core.tenant import Tenant
 
-# Legacy models
+# Legacy models (for endpoints that still fall back to legacy in single-tenant)
 from app.models.record import DataType, Record
 from app.models.p2_item import P2Item
 from app.models.p3_item import P3Item
@@ -87,6 +87,62 @@ async def _seed_legacy_records_for_pagination(db_session_clean) -> tuple[str, li
 
     # Return ids as strings
     return lot_no, [str(r1.id), str(r2.id), str(r3.id)]
+
+
+async def _seed_v2_records_for_pagination(db_session_clean, tenant: Tenant) -> tuple[str, list[str]]:
+    lot_no = "1234567_01"
+    lot_no_norm = normalize_lot_no(lot_no)
+
+    p1 = P1Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        extras={"rows": [{"Specification": "P1-A"}]},
+        created_at=datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+    )
+
+    p2 = P2Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        winder_number=5,
+        extras={"rows": [{"format": "P2-B", "winder_number": 5}]},
+        created_at=datetime(2025, 1, 2, 0, 0, 0, tzinfo=timezone.utc),
+    )
+    p2.items_v2 = [
+        P2ItemV2(
+            tenant_id=tenant.id,
+            winder_number=5,
+            row_data={"format": "P2-B", "winder_number": 5},
+        )
+    ]
+
+    p3 = P3Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        production_date_yyyymmdd=20250103,
+        machine_no="P24",
+        mold_no="M1",
+        product_id="2025-01-03-P24-M1-1234567_01",
+        extras={"rows": [{"specification": "PE 32"}]},
+        created_at=datetime(2025, 1, 3, 0, 0, 0, tzinfo=timezone.utc),
+    )
+    p3.items_v2 = [
+        P3ItemV2(
+            tenant_id=tenant.id,
+            row_no=1,
+            lot_no=lot_no,
+            source_winder=5,
+            specification="PE 32",
+            row_data={"source_winder": 5, "specification": "PE 32"},
+        )
+    ]
+
+    db_session_clean.add_all([p1, p2, p3])
+    await db_session_clean.commit()
+
+    return lot_no, [str(p1.id), str(p2.id), str(p3.id)]
 
 
 async def _seed_legacy_p2_with_items(db_session_clean) -> str:
@@ -210,6 +266,31 @@ async def _seed_v2_all_types(db_session_clean, tenant: Tenant) -> str:
     return lot_no
 
 
+async def _seed_v2_p2_multi_winder_legacy_extras(db_session_clean, tenant: Tenant) -> str:
+    lot_no = "2507173_99"
+    lot_no_norm = normalize_lot_no(lot_no)
+
+    # Simulate a legacy-shaped extras payload: { rows: [ { ..fields.. } ] }
+    p2a = P2Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        winder_number=1,
+        extras={"rows": [{"format": "P2-FORMAT", "sheet_width": 100}]},
+    )
+    p2b = P2Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        winder_number=2,
+        extras={"rows": [{"format": "P2-FORMAT", "sheet_width": 110}]},
+    )
+
+    db_session_clean.add_all([p2a, p2b])
+    await db_session_clean.commit()
+    return lot_no
+
+
 @pytest.mark.asyncio
 async def test_legacy_records_requires_lot_no(client, db_session_clean):
     tenant = await _create_tenant(db_session_clean)
@@ -220,7 +301,7 @@ async def test_legacy_records_requires_lot_no(client, db_session_clean):
 @pytest.mark.asyncio
 async def test_legacy_records_pagination_and_ordering(client, db_session_clean):
     tenant = await _create_tenant(db_session_clean)
-    lot_no, ids = await _seed_legacy_records_for_pagination(db_session_clean)
+    lot_no, ids = await _seed_v2_records_for_pagination(db_session_clean, tenant)
 
     resp1 = await client.get(
         "/api/query/records",
@@ -233,7 +314,7 @@ async def test_legacy_records_pagination_and_ordering(client, db_session_clean):
     assert payload1["total_count"] == 3
     assert len(payload1["records"]) == 2
 
-    # created_at desc => r3, r2
+    # created_at desc => P3, P2
     got_ids_page1 = [r["id"] for r in payload1["records"]]
     assert got_ids_page1 == [ids[2], ids[1]]
 
@@ -253,21 +334,35 @@ async def test_legacy_records_pagination_and_ordering(client, db_session_clean):
 async def test_legacy_records_data_type_filter(client, db_session_clean):
     tenant = await _create_tenant(db_session_clean)
     lot_no = "9999999_01"
-    r_p1 = Record(
-        lot_no=lot_no,
-        data_type=DataType.P1,
-        production_date=date(2025, 1, 1),
-        product_name="P1",
-        quantity=1,
-        additional_data={},
+    lot_no_norm = normalize_lot_no(lot_no)
+
+    p1 = P1Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        extras={"rows": [{"Specification": "P1"}]},
     )
-    r_p3 = Record(
-        lot_no=lot_no,
-        data_type=DataType.P3,
-        production_date=date(2025, 1, 1),
-        additional_data={},
+    p3 = P3Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        production_date_yyyymmdd=20250101,
+        machine_no="P24",
+        mold_no="M1",
+        product_id="PID-9999999_01",
+        extras={"rows": [{"specification": "PE 32"}]},
     )
-    db_session_clean.add_all([r_p1, r_p3])
+    p3.items_v2 = [
+        P3ItemV2(
+            tenant_id=tenant.id,
+            row_no=1,
+            lot_no=lot_no,
+            source_winder=5,
+            specification="PE 32",
+            row_data={"source_winder": 5, "specification": "PE 32"},
+        )
+    ]
+    db_session_clean.add_all([p1, p3])
     await db_session_clean.commit()
 
     resp = await client.get(
@@ -304,7 +399,30 @@ async def test_legacy_advanced_returns_empty_when_no_conditions(client, db_sessi
 @pytest.mark.asyncio
 async def test_legacy_advanced_winder_filters_p2_items_rows(client, db_session_clean):
     tenant = await _create_tenant(db_session_clean)
-    await _seed_legacy_p2_with_items(db_session_clean)
+    lot_no = "2507173_02"
+    lot_no_norm = normalize_lot_no(lot_no)
+
+    p2 = P2Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        winder_number=5,
+        extras={"rows": [{"format": "P2-FORMAT-5", "winder_number": 5}]},
+    )
+    p2.items_v2 = [
+        P2ItemV2(
+            tenant_id=tenant.id,
+            winder_number=5,
+            row_data={"winder_number": 5, "format": "P2-FORMAT-5"},
+        ),
+        P2ItemV2(
+            tenant_id=tenant.id,
+            winder_number=7,
+            row_data={"winder_number": 7, "format": "P2-FORMAT-7"},
+        ),
+    ]
+    db_session_clean.add(p2)
+    await db_session_clean.commit()
 
     resp = await client.get(
         "/api/query/records/advanced",
@@ -327,18 +445,54 @@ async def test_legacy_advanced_winder_filters_p2_items_rows(client, db_session_c
 @pytest.mark.asyncio
 async def test_legacy_advanced_winder_does_not_return_p1_and_can_match_p3(client, db_session_clean):
     tenant = await _create_tenant(db_session_clean)
-    await _seed_legacy_p2_with_items(db_session_clean)
-    await _seed_legacy_p3_with_item(db_session_clean)
+    lot_no = "2507173_02"
+    lot_no_norm = normalize_lot_no(lot_no)
 
-    # Seed an unrelated P1 record; winder search must never return it.
-    db_session_clean.add(
-        Record(
-            lot_no="P1_IGNORED",
-            data_type=DataType.P1,
-            production_date=date(2025, 1, 1),
-            additional_data={},
-        )
+    p1_ignored_lot = "2507173_99"
+    p1_ignored = P1Record(
+        tenant_id=tenant.id,
+        lot_no_raw=p1_ignored_lot,
+        lot_no_norm=normalize_lot_no(p1_ignored_lot),
+        extras={"rows": [{"Specification": "P1-SPEC"}]},
     )
+
+    p2 = P2Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        winder_number=5,
+        extras={"rows": [{"format": "P2-FORMAT-5", "winder_number": 5}]},
+    )
+    p2.items_v2 = [
+        P2ItemV2(
+            tenant_id=tenant.id,
+            winder_number=5,
+            row_data={"winder_number": 5, "format": "P2-FORMAT-5"},
+        )
+    ]
+
+    p3 = P3Record(
+        tenant_id=tenant.id,
+        lot_no_raw="2507173_03",
+        lot_no_norm=normalize_lot_no("2507173_03"),
+        production_date_yyyymmdd=20250102,
+        machine_no="P24",
+        mold_no="M1",
+        product_id="2025-01-02-P24-M1-2507173_03",
+        extras={"rows": [{"specification": "PE 32"}]},
+    )
+    p3.items_v2 = [
+        P3ItemV2(
+            tenant_id=tenant.id,
+            row_no=1,
+            lot_no="2507173_03",
+            source_winder=5,
+            specification="PE 32",
+            row_data={"source_winder": 5, "specification": "PE 32"},
+        )
+    ]
+
+    db_session_clean.add_all([p1_ignored, p2, p3])
     await db_session_clean.commit()
 
     resp = await client.get(
@@ -357,7 +511,32 @@ async def test_legacy_advanced_winder_does_not_return_p1_and_can_match_p3(client
 @pytest.mark.asyncio
 async def test_legacy_advanced_p3_filters_machine_and_specification(client, db_session_clean):
     tenant = await _create_tenant(db_session_clean)
-    lot_no, product_id = await _seed_legacy_p3_with_item(db_session_clean)
+    lot_no = "2507173_03"
+    lot_no_norm = normalize_lot_no(lot_no)
+    product_id = "2025-01-02_P24_M1_2507173_03"
+
+    p3 = P3Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot_no,
+        lot_no_norm=lot_no_norm,
+        production_date_yyyymmdd=20250102,
+        machine_no="P24",
+        mold_no="M1",
+        product_id=product_id,
+        extras={"rows": [{"specification": "PE 32", "machine_no": "P24"}]},
+    )
+    p3.items_v2 = [
+        P3ItemV2(
+            tenant_id=tenant.id,
+            row_no=1,
+            lot_no=lot_no,
+            source_winder=5,
+            specification="PE 32",
+            row_data={"specification": "PE 32", "machine_no": "P24", "product_id": product_id},
+        )
+    ]
+    db_session_clean.add(p3)
+    await db_session_clean.commit()
 
     resp = await client.get(
         "/api/query/records/advanced",
@@ -411,6 +590,53 @@ async def test_v2_records_data_type_filter_p2_only(client, db_session_clean):
 
     assert payload["total_count"] >= 1
     assert {r["data_type"] for r in payload["records"]} == {"P2"}
+
+
+@pytest.mark.asyncio
+async def test_v2_records_p2_includes_item_rows(client, db_session_clean):
+    tenant = await _create_tenant(db_session_clean)
+    lot_no = await _seed_v2_all_types(db_session_clean, tenant)
+
+    resp = await client.get(
+        "/api/v2/query/records",
+        params={"lot_no": lot_no, "data_type": "P2", "page": 1, "page_size": 50},
+        headers={"X-Tenant-Id": str(tenant.id)},
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["total_count"] >= 1
+
+    rec = payload["records"][0]
+    assert rec["data_type"] == "P2"
+    rows = (rec.get("additional_data") or {}).get("rows")
+    assert isinstance(rows, list)
+    assert len(rows) >= 1
+    assert rows[0].get("format") == "P2-FORMAT"
+    assert rows[0].get("winder_number") == 5
+
+
+@pytest.mark.asyncio
+async def test_v2_records_p2_merge_flattens_legacy_rows_shape(client, db_session_clean):
+    tenant = await _create_tenant(db_session_clean)
+    lot_no = await _seed_v2_p2_multi_winder_legacy_extras(db_session_clean, tenant)
+
+    resp = await client.get(
+        "/api/v2/query/records",
+        params={"lot_no": lot_no, "data_type": "P2", "page": 1, "page_size": 50},
+        headers={"X-Tenant-Id": str(tenant.id)},
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+
+    assert payload["total_count"] >= 1
+    rec = payload["records"][0]
+    rows = (rec.get("additional_data") or {}).get("rows")
+    assert isinstance(rows, list)
+    assert len(rows) == 2
+    assert all(isinstance(r, dict) for r in rows)
+    assert all("rows" not in r for r in rows)
+    assert {r.get("winder_number") for r in rows} == {1, 2}
+    assert {r.get("sheet_width") for r in rows} == {100, 110}
 
 
 @pytest.mark.asyncio

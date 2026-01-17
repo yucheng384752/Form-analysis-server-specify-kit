@@ -7,7 +7,7 @@
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from typing import Dict, List, Optional, Any
 
@@ -25,6 +25,19 @@ from app.services.product_id_generator import parse_product_id, validate_product
 from app.utils.normalization import normalize_lot_no
 
 router = APIRouter(prefix="/api/traceability", tags=["traceability"])
+
+
+async def _legacy_fallback_enabled(db: AsyncSession) -> bool:
+    """Legacy tables (records/p2_items/p3_items) are not tenant-scoped.
+
+    To avoid cross-tenant data leakage, only allow legacy fallback when the
+    database has a single tenant.
+    """
+    try:
+        tenants_count = await db.scalar(select(func.count()).select_from(Tenant))
+        return (tenants_count or 0) <= 1
+    except Exception:
+        return False
 
 
 @router.get("/product/{product_id}", response_model=Dict[str, Any])
@@ -55,6 +68,8 @@ async def trace_by_product_id(
             status_code=400,
             detail=f"Product_ID 格式錯誤: {error_msg}"
         )
+
+    legacy_enabled = await _legacy_fallback_enabled(db)
     
     # 步驟 1: 查詢 P3（V2 優先 → legacy → v2 record fallback）
     p3_data: Optional[Dict[str, Any]] = None
@@ -77,17 +92,18 @@ async def trace_by_product_id(
             else p3_item_v2.source_winder
         )
     else:
-        p3_legacy_stmt = (
-            select(P3Item)
-            .join(Record)
-            .options(selectinload(P3Item.record))
-            .where(
-                Record.tenant_id == current_tenant.id,
-                P3Item.product_id == product_id,
+        p3_item = None
+        if legacy_enabled:
+            p3_legacy_stmt = (
+                select(P3Item)
+                .join(Record)
+                .options(selectinload(P3Item.record))
+                .where(
+                    P3Item.product_id == product_id,
+                )
             )
-        )
-        p3_legacy_result = await db.execute(p3_legacy_stmt)
-        p3_item = p3_legacy_result.scalar_one_or_none()
+            p3_legacy_result = await db.execute(p3_legacy_stmt)
+            p3_item = p3_legacy_result.scalar_one_or_none()
 
         if p3_item:
             p3_data = _p3_item_to_dict(p3_item)
@@ -106,7 +122,7 @@ async def trace_by_product_id(
             p3_v2: Optional[P3Record] = None
 
             # 1) Exact match by product_id
-            p3_v2_stmt = select(P3Record).where(
+            p3_v2_stmt = select(P3Record).options(selectinload(P3Record.items_v2)).where(
                 P3Record.tenant_id == current_tenant.id,
                 P3Record.product_id == product_id,
             )
@@ -118,7 +134,7 @@ async def trace_by_product_id(
                 parts = product_id.split('_')
                 if len(parts) >= 4:
                     base_product_id = '_'.join(parts[:4])
-                    p3_v2_prefix_stmt = select(P3Record).where(
+                    p3_v2_prefix_stmt = select(P3Record).options(selectinload(P3Record.items_v2)).where(
                         P3Record.tenant_id == current_tenant.id,
                         P3Record.product_id.ilike(f"{base_product_id}%"),
                     )
@@ -133,7 +149,7 @@ async def trace_by_product_id(
                     machine_no = str(parsed['machine_no']).strip() if parsed.get('machine_no') else None
                     mold_no = str(parsed['mold_no']).strip() if parsed.get('mold_no') else None
                     if machine_no and mold_no:
-                        p3_v2_comp_stmt = select(P3Record).where(
+                        p3_v2_comp_stmt = select(P3Record).options(selectinload(P3Record.items_v2)).where(
                             P3Record.tenant_id == current_tenant.id,
                             P3Record.production_date_yyyymmdd == prod_yyyymmdd,
                             P3Record.machine_no == machine_no,
@@ -184,13 +200,12 @@ async def trace_by_product_id(
         if p2_v2:
             p2_data = _p2_record_to_dict(p2_v2)
 
-    if not p2_data and lot_no:
+    if not p2_data and lot_no and legacy_enabled:
         p2_item_stmt = (
             select(P2Item)
             .join(Record)
             .options(selectinload(P2Item.record))
             .where(
-                Record.tenant_id == current_tenant.id,
                 Record.data_type == DataType.P2,
                 Record.lot_no == lot_no,
             )
@@ -203,9 +218,8 @@ async def trace_by_product_id(
         if p2_item:
             p2_data = _p2_item_to_dict(p2_item)
 
-    if not p2_data and lot_no:
+    if not p2_data and lot_no and legacy_enabled:
         p2_records_stmt = select(Record).where(
-            Record.tenant_id == current_tenant.id,
             Record.data_type == DataType.P2,
             Record.lot_no == lot_no,
         )
@@ -239,9 +253,8 @@ async def trace_by_product_id(
         if p1_v2:
             p1_data = _p1_record_to_dict(p1_v2)
 
-    if not p1_data and lot_no:
+    if not p1_data and lot_no and legacy_enabled:
         p1_legacy_stmt = select(Record).where(
-            Record.tenant_id == current_tenant.id,
             Record.data_type == DataType.P1,
             Record.lot_no == lot_no,
         )
@@ -376,6 +389,8 @@ async def trace_by_winder(
     except Exception:
         lot_no_norm = None
 
+    legacy_enabled = await _legacy_fallback_enabled(db)
+
     if lot_no_norm is not None:
         p2_v2_stmt = select(P2Record).options(selectinload(P2Record.items_v2)).where(
             P2Record.tenant_id == current_tenant.id,
@@ -387,13 +402,12 @@ async def trace_by_winder(
         if p2_v2:
             p2_data = _p2_record_to_dict(p2_v2)
 
-    if not p2_data:
+    if not p2_data and legacy_enabled:
         # Legacy
         p2_item_query = (
             select(P2Item)
             .join(Record)
             .where(
-                Record.tenant_id == current_tenant.id,
                 Record.lot_no == lot_no,
                 Record.data_type == DataType.P2,
                 P2Item.winder_number == winder_number,
@@ -407,23 +421,22 @@ async def trace_by_winder(
         if p2_item:
             p2_data = _p2_item_to_dict(p2_item)
         else:
-        # Fallback
+            # Fallback
             p2_query = select(Record).where(
-                Record.tenant_id == current_tenant.id,
                 Record.data_type == DataType.P2,
                 Record.lot_no == lot_no
             )
             p2_result = await db.execute(p2_query)
             p2_records = p2_result.scalars().all()
-        
-        for rec in p2_records:
-            if rec.additional_data and 'rows' in rec.additional_data:
-                for row in rec.additional_data['rows']:
-                    w_val = _extract_winder_from_json(row)
-                    if w_val is not None and w_val == winder_number:
-                        p2_data = _record_row_to_dict(rec, row, w_val)
-                        break
-            if p2_data: break
+            for rec in p2_records:
+                if rec.additional_data and 'rows' in rec.additional_data:
+                    for row in rec.additional_data['rows']:
+                        w_val = _extract_winder_from_json(row)
+                        if w_val is not None and w_val == winder_number:
+                            p2_data = _record_row_to_dict(rec, row, w_val)
+                            break
+                if p2_data:
+                    break
 
     # 查詢 P1（優先 V2）
 
@@ -441,9 +454,8 @@ async def trace_by_winder(
         if p1_v2:
             p1_data = _p1_record_to_dict(p1_v2)
 
-    if not p1_data:
+    if not p1_data and legacy_enabled:
         p1_query = select(Record).where(
-            Record.tenant_id == current_tenant.id,
             Record.data_type == DataType.P1,
             Record.lot_no == lot_no
         )
@@ -463,13 +475,12 @@ async def trace_by_winder(
     p3_items_v2 = p3_items_v2_result.scalars().all()
     if p3_items_v2:
         p3_data_list = [_p3_item_v2_to_dict(item) for item in p3_items_v2]
-    else:
+    elif legacy_enabled:
         # Legacy
         p3_items_query = (
             select(P3Item)
             .join(Record)
             .where(
-                Record.tenant_id == current_tenant.id,
                 Record.lot_no == lot_no,
                 Record.data_type == DataType.P3,
                 P3Item.source_winder == winder_number,
@@ -485,7 +496,6 @@ async def trace_by_winder(
         else:
             # Fallback P3
             p3_query = select(Record).where(
-                Record.tenant_id == current_tenant.id,
                 Record.data_type == DataType.P3,
                 Record.lot_no == lot_no
             )
@@ -698,6 +708,33 @@ def _extras_to_additional_data(extras: Any) -> Dict[str, Any]:
 
 
 def _p3_record_to_dict(rec: P3Record) -> Dict[str, Any]:
+    rows: list[Dict[str, Any]] = []
+    try:
+        items = list(getattr(rec, 'items_v2', None) or [])
+        for it in items:
+            row: Dict[str, Any] = {}
+            if getattr(it, 'row_data', None):
+                if isinstance(it.row_data, dict):
+                    row.update(it.row_data)
+                else:
+                    row['value'] = it.row_data
+
+            # Ensure common fields are present for frontend filtering/linkage.
+            if getattr(it, 'product_id', None):
+                row.setdefault('product_id', it.product_id)
+            if getattr(it, 'source_winder', None) is not None:
+                row.setdefault('source_winder', it.source_winder)
+            if getattr(it, 'specification', None):
+                row.setdefault('specification', it.specification)
+            if getattr(it, 'row_no', None) is not None:
+                row.setdefault('row_no', it.row_no)
+
+            if row:
+                rows.append(row)
+    except Exception:
+        rows = []
+
+    additional_data = {"rows": rows} if rows else _extras_to_additional_data(rec.extras)
     return {
         "id": str(rec.id),
         "data_type": DataType.P3.value,
@@ -707,7 +744,7 @@ def _p3_record_to_dict(rec: P3Record) -> Dict[str, Any]:
         "machine_no": rec.machine_no,
         "mold_no": rec.mold_no,
         "production_date": str(rec.production_date_yyyymmdd) if rec.production_date_yyyymmdd else None,
-        "additional_data": _extras_to_additional_data(rec.extras),
+        "additional_data": additional_data,
         "created_at": rec.created_at.isoformat() if rec.created_at else None,
     }
 
@@ -717,15 +754,40 @@ def _p2_record_to_dict(rec: P2Record) -> Dict[str, Any]:
     try:
         items = list(getattr(rec, 'items_v2', None) or [])
         for it in items:
-            if getattr(it, 'row_data', None):
-                if isinstance(it.row_data, dict):
-                    rows.append(it.row_data)
-                else:
-                    rows.append({"value": it.row_data})
+            # Always build a row object. Some datasets store structured fields on
+            # columns (sheet_width/thickness...) while row_data can be empty/None.
+            row: Dict[str, Any] = {}
+
+            if isinstance(getattr(it, 'row_data', None), dict):
+                row.update(it.row_data)
+            elif getattr(it, 'row_data', None) is not None:
+                row['value'] = it.row_data
+
+            row.setdefault('winder_number', getattr(it, 'winder_number', None))
+            for field in [
+                'sheet_width',
+                'thickness1', 'thickness2', 'thickness3', 'thickness4', 'thickness5', 'thickness6', 'thickness7',
+                'appearance', 'rough_edge', 'slitting_result',
+            ]:
+                val = getattr(it, field, None)
+                if val is not None:
+                    row.setdefault(field, val)
+
+            if row:
+                rows.append(row)
     except Exception:
         rows = []
 
     additional_data = {"rows": rows} if rows else _extras_to_additional_data(rec.extras)
+
+    # If we fell back to extras and it doesn't include winder_number, add it.
+    try:
+        if isinstance(additional_data, dict) and isinstance(additional_data.get('rows'), list):
+            for r in additional_data['rows']:
+                if isinstance(r, dict):
+                    r.setdefault('winder_number', rec.winder_number)
+    except Exception:
+        pass
 
     return {
         "id": str(rec.id),
