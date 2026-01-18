@@ -164,6 +164,33 @@ if /I "%TENANTS_CODE%"=="401" (
     )
 )
 
+REM 嘗試取得 tenant id（多租戶模式下 /api/* 需要 X-Tenant-Id）
+set "TENANT_ID=%TENANT_ID%"
+if not defined TENANT_ID (
+    set "TENANTS_JSON=%TEMP%\tenants_out.json"
+    if defined API_KEY (
+        curl -s -H "X-API-Key: %API_KEY%" http://localhost:18002/api/tenants > "%TENANTS_JSON%"
+    ) else (
+        curl -s http://localhost:18002/api/tenants > "%TENANTS_JSON%"
+    )
+
+    for /f "usebackq tokens=4 delims=\"" %%T in (`type "%TENANTS_JSON%" ^| findstr /c:"\"tenant_id\""`) do (
+        if not defined TENANT_ID set "TENANT_ID=%%T"
+    )
+    if not defined TENANT_ID (
+        for /f "usebackq tokens=4 delims=\"" %%T in (`type "%TENANTS_JSON%" ^| findstr /c:"\"id\""`) do (
+            if not defined TENANT_ID set "TENANT_ID=%%T"
+        )
+    )
+    del "%TENANTS_JSON%" >nul 2>&1
+)
+
+if defined TENANT_ID (
+    echo [SUCCESS] 使用 tenant: %TENANT_ID%
+) else (
+    echo [WARNING] 無法自動取得 tenant id（/api/* 可能需要 X-Tenant-Id）
+)
+
 REM 驗證健康檢查
 echo 🩺 健康檢查驗證
 echo ==================
@@ -205,9 +232,17 @@ echo [INFO] 測試檔案上傳（5 列測試資料）...
 
 REM 使用 curl 上傳文件
 if defined API_KEY (
-    curl -s -H "X-API-Key: %API_KEY%" -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
+    if defined TENANT_ID (
+        curl -s -H "X-API-Key: %API_KEY%" -H "X-Tenant-Id: %TENANT_ID%" -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
+    ) else (
+        curl -s -H "X-API-Key: %API_KEY%" -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
+    )
 ) else (
-    curl -s -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
+    if defined TENANT_ID (
+        curl -s -H "X-Tenant-Id: %TENANT_ID%" -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
+    ) else (
+        curl -s -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
+    )
 )
 
 echo 上傳回應:

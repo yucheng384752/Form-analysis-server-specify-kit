@@ -11,6 +11,31 @@ echo "============================="
 # 設定 API Base URL
 API_BASE="http://localhost:18002"
 
+# Optional env vars:
+# - API_KEY: if AUTH_MODE=api_key is enabled, provide X-API-Key
+# - TENANT_ID: tenant-scoped requests send X-Tenant-Id
+API_KEY="${API_KEY:-}"
+TENANT_ID="${TENANT_ID:-}"
+
+AUTH_HEADER=()
+TENANT_HEADER=()
+
+if [ -n "$API_KEY" ]; then
+    AUTH_HEADER=(-H "X-API-Key: $API_KEY")
+fi
+
+if [ -z "$TENANT_ID" ]; then
+    TENANTS_JSON=$(curl -s "${AUTH_HEADER[@]}" "$API_BASE/api/tenants" || true)
+    TENANT_ID=$(echo "$TENANTS_JSON" | grep -o '"tenant_id":"[^"]*"' | head -n 1 | cut -d'"' -f4)
+    if [ -z "$TENANT_ID" ]; then
+        TENANT_ID=$(echo "$TENANTS_JSON" | grep -o '"id":"[^"]*"' | head -n 1 | cut -d'"' -f4)
+    fi
+fi
+
+if [ -n "$TENANT_ID" ]; then
+    TENANT_HEADER=(-H "X-Tenant-Id: $TENANT_ID")
+fi
+
 # 顏色定義
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -87,6 +112,8 @@ echo ""
 print_test "4. 測試有效檔案上傳"
 
 UPLOAD_RESPONSE=$(curl -s -X POST \
+    "${AUTH_HEADER[@]}" \
+    "${TENANT_HEADER[@]}" \
     -F "file=@${VALID_CSV}" \
     "${API_BASE}/api/upload")
 
@@ -107,6 +134,8 @@ echo ""
 print_test "5. 測試有錯誤檔案上傳"
 
 ERROR_UPLOAD_RESPONSE=$(curl -s -X POST \
+    "${AUTH_HEADER[@]}" \
+    "${TENANT_HEADER[@]}" \
     -F "file=@${ERROR_CSV}" \
     "${API_BASE}/api/upload")
 
@@ -126,7 +155,7 @@ if [ -n "${ERROR_FILE_ID}" ]; then
     echo ""
     print_test "6. 測試錯誤報告下載"
     
-    if curl -f -s "${API_BASE}/api/errors.csv?file_id=${ERROR_FILE_ID}" -o /tmp/errors_test.csv; then
+    if curl -f -s "${AUTH_HEADER[@]}" "${TENANT_HEADER[@]}" "${API_BASE}/api/errors.csv?file_id=${ERROR_FILE_ID}" -o /tmp/errors_test.csv; then
         print_success "錯誤報告下載成功"
         echo "錯誤報告內容:"
         cat /tmp/errors_test.csv
@@ -141,6 +170,8 @@ echo ""
 print_test "7. 測試資料匯入（有效檔案）"
 
 IMPORT_RESPONSE=$(curl -s -X POST \
+    "${AUTH_HEADER[@]}" \
+    "${TENANT_HEADER[@]}" \
     -H "Content-Type: application/json" \
     -d "{\"file_id\":\"${VALID_FILE_ID}\"}" \
     "${API_BASE}/api/import")
@@ -161,6 +192,8 @@ print_test "8. 測試錯誤處理"
 # 測試無效 file_id
 echo "測試無效 file_id:"
 INVALID_IMPORT=$(curl -s -X POST \
+    "${AUTH_HEADER[@]}" \
+    "${TENANT_HEADER[@]}" \
     -H "Content-Type: application/json" \
     -d '{"file_id":"invalid-file-id"}' \
     "${API_BASE}/api/import")
@@ -172,6 +205,8 @@ echo ""
 echo "測試無效檔案格式:"
 echo "This is not a CSV file" > /tmp/invalid.txt
 INVALID_UPLOAD=$(curl -s -X POST \
+    "${AUTH_HEADER[@]}" \
+    "${TENANT_HEADER[@]}" \
     -F "file=@/tmp/invalid.txt" \
     "${API_BASE}/api/upload")
 
@@ -185,6 +220,8 @@ echo ""
 print_test "9. 測試內聯 CSV 上傳 (--form file=@-)"
 
 INLINE_RESPONSE=$(cat << 'EOF' | curl -s -X POST \
+    "${AUTH_HEADER[@]}" \
+    "${TENANT_HEADER[@]}" \
     -H "Content-Type: multipart/form-data" \
     --form 'file=@-;filename=inline_test.csv;type=text/csv' \
     "${API_BASE}/api/upload"
@@ -210,6 +247,8 @@ if [ -n "${INLINE_FILE_ID}" ]; then
     print_test "10. 測試內聯資料匯入"
     
     INLINE_IMPORT_RESPONSE=$(curl -s -X POST \
+        "${AUTH_HEADER[@]}" \
+        "${TENANT_HEADER[@]}" \
         -H "Content-Type: application/json" \
         -d "{\"file_id\":\"${INLINE_FILE_ID}\"}" \
         "${API_BASE}/api/import")

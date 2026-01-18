@@ -156,6 +156,23 @@ if [ "$HTTP_CODE" = "401" ]; then
     AUTH_HEADER=(-H "X-API-Key: $API_KEY")
 fi
 
+# Pick a tenant id for tenant-scoped /api/* smoke calls.
+TENANT_ID="${TENANT_ID:-}"
+TENANT_HEADER=()
+if [ -z "$TENANT_ID" ]; then
+    TENANTS_JSON=$(curl -s "${AUTH_HEADER[@]}" http://localhost:18002/api/tenants || true)
+    TENANT_ID=$(echo "$TENANTS_JSON" | grep -o '"tenant_id":"[^"]*"' | head -n 1 | cut -d'"' -f4)
+    if [ -z "$TENANT_ID" ]; then
+        TENANT_ID=$(echo "$TENANTS_JSON" | grep -o '"id":"[^"]*"' | head -n 1 | cut -d'"' -f4)
+    fi
+fi
+if [ -n "$TENANT_ID" ]; then
+    TENANT_HEADER=(-H "X-Tenant-Id: $TENANT_ID")
+    print_success "使用 tenant: $TENANT_ID"
+else
+    print_warning "無法自動取得 tenant id（/api/* 可能需要 X-Tenant-Id）"
+fi
+
 # 驗證健康檢查
 echo "🩺 健康檢查驗證"
 echo "=================="
@@ -198,6 +215,7 @@ print_status "測試檔案上傳（5 列測試資料）..."
 
 UPLOAD_RESPONSE=$(curl -s -X POST \
     "${AUTH_HEADER[@]}" \
+    "${TENANT_HEADER[@]}" \
     -F "file=@$TEMP_CSV" \
     http://localhost:18002/api/upload)
 
@@ -211,7 +229,7 @@ if [ -n "$FILE_ID" ]; then
     
     # 測試錯誤報告下載
     print_status "測試錯誤報告下載..."
-    if curl -f "${AUTH_HEADER[@]}" "http://localhost:18002/api/errors.csv?file_id=$FILE_ID" -o /tmp/errors.csv; then
+    if curl -f "${AUTH_HEADER[@]}" "${TENANT_HEADER[@]}" "http://localhost:18002/api/errors.csv?file_id=$FILE_ID" -o /tmp/errors.csv; then
         print_success "錯誤報告下載成功"
         echo "錯誤報告內容："
         cat /tmp/errors.csv
@@ -224,6 +242,7 @@ if [ -n "$FILE_ID" ]; then
     print_status "測試資料匯入..."
     IMPORT_RESPONSE=$(curl -s -X POST \
         "${AUTH_HEADER[@]}" \
+        "${TENANT_HEADER[@]}" \
         -H "Content-Type: application/json" \
         -d "{\"file_id\":\"$FILE_ID\"}" \
         http://localhost:18002/api/import)
