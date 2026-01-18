@@ -161,6 +161,7 @@ async def query_lot_groups(
         logger.info("開始查詢批號分組", search=search, page=page, page_size=page_size)
 
         current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        tenant_header_provided = x_tenant_id is not None and x_tenant_id.strip() != ""
         if current_tenant is None and not await _legacy_fallback_enabled(db):
             raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
 
@@ -201,6 +202,10 @@ async def query_lot_groups(
             except HTTPException:
                 raise
             except Exception as e:
+                # If client explicitly provided tenant id, never fall back to legacy tables.
+                # Legacy tables are not tenant-scoped.
+                if tenant_header_provided:
+                    raise HTTPException(status_code=500, detail="批號分組 v2 查詢失敗（已禁用 legacy fallback）")
                 logger.warning("批號分組 v2 查詢失敗，嘗試 legacy fallback", error=str(e))
         
         # 簡化查詢：先獲取所有lot_no，然後分別統計
@@ -384,7 +389,9 @@ async def advanced_search_records(
             except HTTPException:
                 raise
             except Exception as e:
-                logger.warning("records/advanced v2 查詢失敗，嘗試 legacy fallback", error=str(e))
+                # If client explicitly provided tenant id, never fall back to legacy tables.
+                # Legacy tables are not tenant-scoped.
+                raise HTTPException(status_code=500, detail="records/advanced v2 查詢失敗（已禁用 legacy fallback）")
 
         if current_tenant is not None and not tenant_header_provided:
             try:
@@ -689,7 +696,9 @@ async def query_records(
             except HTTPException:
                 raise
             except Exception as e:
-                logger.warning("records v2 查詢失敗，嘗試 legacy fallback", error=str(e))
+                # If client explicitly provided tenant id, never fall back to legacy tables.
+                # Legacy tables are not tenant-scoped.
+                raise HTTPException(status_code=500, detail="records v2 查詢失敗（已禁用 legacy fallback）")
 
         if current_tenant is not None and not tenant_header_provided:
             try:
@@ -842,6 +851,7 @@ async def get_lot_suggestions(
     """
     try:
         current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        tenant_header_provided = x_tenant_id is not None and x_tenant_id.strip() != ""
         if current_tenant is None and not await _legacy_fallback_enabled(db):
             raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
 
@@ -856,6 +866,8 @@ async def get_lot_suggestions(
             except HTTPException:
                 raise
             except Exception as e:
+                if tenant_header_provided:
+                    raise HTTPException(status_code=500, detail="批號建議 v2 查詢失敗（已禁用 legacy fallback）")
                 logger.warning("批號建議 v2 查詢失敗，嘗試 legacy fallback", error=str(e))
 
         if not await _legacy_fallback_enabled(db):
@@ -906,6 +918,7 @@ async def get_field_options(
     """
     try:
         current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        tenant_header_provided = x_tenant_id is not None and x_tenant_id.strip() != ""
         if current_tenant is None and not await _legacy_fallback_enabled(db):
             raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
 
@@ -939,6 +952,8 @@ async def get_field_options(
             except HTTPException:
                 raise
             except Exception as e:
+                if tenant_header_provided:
+                    raise HTTPException(status_code=500, detail="欄位選項 v2 查詢失敗（已禁用 legacy fallback）")
                 logger.warning("欄位選項 v2 查詢失敗，嘗試 legacy fallback", field_name=field_name, error=str(e))
 
         if not await _legacy_fallback_enabled(db):
@@ -1034,7 +1049,9 @@ async def get_record_stats(
             except HTTPException:
                 raise
             except Exception as e:
-                logger.warning("records/stats v2 查詢失敗，嘗試 legacy fallback", error=str(e))
+                # If client explicitly provided tenant id, never fall back to legacy tables.
+                # Legacy tables are not tenant-scoped.
+                raise HTTPException(status_code=500, detail="records/stats v2 查詢失敗（已禁用 legacy fallback）")
 
         if current_tenant is not None and not tenant_header_provided:
             try:
@@ -1148,6 +1165,7 @@ async def get_record(
     """
     try:
         current_tenant = await _resolve_current_tenant(db=db, x_tenant_id=x_tenant_id)
+        tenant_header_provided = x_tenant_id is not None and x_tenant_id.strip() != ""
         if current_tenant is None and not await _legacy_fallback_enabled(db):
             raise HTTPException(status_code=400, detail="需要提供 X-Tenant-Id")
 
@@ -1161,6 +1179,8 @@ async def get_record(
             except HTTPException as e:
                 if e.status_code != 404:
                     raise
+                if tenant_header_provided:
+                    raise HTTPException(status_code=404, detail="找不到指定的記錄")
 
         if not await _legacy_fallback_enabled(db):
             raise HTTPException(status_code=404, detail="找不到指定的記錄")
@@ -1204,6 +1224,19 @@ async def get_record(
             query_record.product_name = record.product_name
             query_record.quantity = record.quantity
             query_record.notes = record.notes
+
+            # P3: 從 p3_items 獲取資料並放入 additional_data['rows']
+            if record.p3_items:
+                rows = []
+                # 排序 p3_items (按 row_no)
+                sorted_items = sorted(record.p3_items, key=lambda x: x.row_no)
+                for item in sorted_items:
+                    if item.row_data:
+                        rows.append(item.row_data)
+
+                if not query_record.additional_data:
+                    query_record.additional_data = {}
+                query_record.additional_data['rows'] = rows
         
         return query_record
         
