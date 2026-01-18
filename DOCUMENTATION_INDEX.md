@@ -9,6 +9,7 @@
 - [getting-started/MANUAL_STARTUP_GUIDE.md](getting-started/MANUAL_STARTUP_GUIDE.md)（手動啟動流程）
 - [getting-started/POSTGRESQL_SETUP.md](getting-started/POSTGRESQL_SETUP.md)（資料庫安裝/設定）
 - [getting-started/DBEAVER_CONNECTION_GUIDE.md](getting-started/DBEAVER_CONNECTION_GUIDE.md)（DB GUI 連線）
+- [getting-started/REGISTRATION_FLOW.md](getting-started/REGISTRATION_FLOW.md)（外部上線版：初始化/登入/tenant/API key）
 
 ## P1：開發指南（規格/設計/待辦）
 
@@ -26,6 +27,7 @@
 - [dev-guides/STARTUP_SCRIPT_FEATURES.md](dev-guides/STARTUP_SCRIPT_FEATURES.md)
 - [dev-guides/RESTRUCTURE_PLAN.md](dev-guides/RESTRUCTURE_PLAN.md)
 - [dev-guides/TODO_IN_20251229.md](dev-guides/TODO_IN_20251229.md)
+- [dev-guides/TENANT_INIT_ADMIN_GUIDE.md](dev-guides/TENANT_INIT_ADMIN_GUIDE.md)（多租戶 header / admin key / Tenant & Users CRUD 摘要）
 
 ## P1：服務內文件（form-analysis-server 子專案）
 

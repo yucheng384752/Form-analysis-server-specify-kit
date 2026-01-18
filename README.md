@@ -24,14 +24,20 @@
 - 系統會自動下載所需元件並建立資料庫，首次啟動約需 **3-5 分鐘**。
 - 當看到瀏覽器自動開啟並顯示登入畫面時，代表啟動成功！
 
-### 4. 註冊 / 初始化（tenant + API key）
+### 4. 登入 / 初始化（Tenant + API key）
 
-第一次啟動後，請到前端 `http://localhost:18003` 的「註冊 / 初始化（tenant + API key）」tab 完成初始化：
+第一次啟動後，請到前端 `http://localhost:18003` 依序完成「初始化 → 登入」：
 
-- 建立/選擇 tenant（空資料庫可按「自動初始化 Tenant」）
-- （可選）貼上 raw API key 並保存（若後端啟用 `AUTH_MODE=api_key`）
+- 「初始化」：第一次建立 Tenant / 建立 Tenant 管理者（需要 admin key，通常由內部維運操作）
+- 「登入」：選擇 Tenant、用帳密登入取得 API key（若後端啟用 `AUTH_MODE=api_key`）
+- （可選）「管理者」：日常 CRUD（Tenant / Tenant users）
+
+- 空資料庫：先到「初始化」貼上 admin key → 建立/選擇 Tenant → 建立第一個 tenant admin
+- 有 tenant：到「登入」選擇 Tenant → 帳密登入取得 API key
 
 完整流程與常見問題：getting-started/REGISTRATION_FLOW.md
+
+（工程師補充）多租戶與管理者端點/權限摘要：dev-guides/TENANT_INIT_ADMIN_GUIDE.md
 
 ---
 

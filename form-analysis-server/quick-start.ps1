@@ -341,63 +341,53 @@ lot_no,product_name,quantity,production_date
     }
 
     try {
-        if ($useCurl) {
+        if (-not $useCurl) {
+            Write-Warning "使用 PowerShell 進行 v2 匯入測試需要 curl.exe；此段跳過。"
+        } else {
+            # v2 匯入（建議流程）：POST /api/v2/import/jobs -> poll READY -> POST /commit
             $headers = @("-H", "X-Tenant-Id: $tenantId")
             if ($rawKey) {
                 $headers += @("-H", "X-API-Key: $rawKey")
             }
-            $uploadResponse = curl.exe -s -X POST @headers -F "file=@$testCsvPath" http://localhost:18002/api/upload
-        } else {
-            # PowerShell 檔案上傳比較複雜，這裡簡化處理
-            Write-Warning "使用 PowerShell 進行檔案上傳測試（簡化版本）"
-            $uploadResponse = "PowerShell upload test - please use browser for full test"
-        }
 
-        Write-Host "上傳回應: $uploadResponse"
-        
-        # 嘗試解析 process_id
-        if ($uploadResponse -match '"process_id":"([^"]*)"') {
-            $processId = $Matches[1]
-            Write-Success "檔案上傳成功，process_id: $processId"
-            
-            # 測試錯誤報告下載
-            Write-Info "測試錯誤報告下載..."
+            $tableCode = "P1"
             try {
-                if ($useCurl) {
-                    $headers = @("-H", "X-Tenant-Id: $tenantId")
-                    if ($rawKey) {
-                        $headers += @("-H", "X-API-Key: $rawKey")
-                    }
-                    curl.exe -f "http://localhost:18002/api/errors.csv?process_id=$processId" @headers -o errors.csv -s
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Success "錯誤報告下載成功"
-                        Write-Host "錯誤報告內容："
-                        Get-Content errors.csv
-                        Remove-Item errors.csv -ErrorAction SilentlyContinue
+                $fn = [System.IO.Path]::GetFileName($testCsvPath)
+                if ($fn -match '^(P[123])_') { $tableCode = $Matches[1] }
+            } catch {}
+
+            Write-Info "測試 v2 匯入（table_code=$tableCode）..."
+            $jobCreateResp = curl.exe -s -X POST @headers -F "table_code=$tableCode" -F "allow_duplicate=false" -F "files=@$testCsvPath" http://localhost:18002/api/v2/import/jobs
+            Write-Host "建立 job 回應: $jobCreateResp"
+
+            if ($jobCreateResp -match '"id"\s*:\s*"([^"]+)"') {
+                $jobId = $Matches[1]
+                Write-Success "已建立 import job: $jobId"
+
+                $status = ""
+                for ($i = 0; $i -lt 30; $i++) {
+                    Start-Sleep -Seconds 1
+                    $jobStatusResp = curl.exe -s -X GET @headers "http://localhost:18002/api/v2/import/jobs/$jobId"
+                    if ($jobStatusResp -match '"status"\s*:\s*"([^"]+)"') {
+                        $status = $Matches[1]
+                        Write-Info "job status: $status"
+                        if ($status -eq "READY" -or $status -eq "FAILED") { break }
                     }
                 }
-            } catch {
-                Write-Warning "錯誤報告下載失敗或無錯誤"
-            }
-            
-            # 測試資料匯入
-            Write-Info "測試資料匯入..."
-            try {
-                if ($useCurl) {
-                    $importBody = @{ process_id = $processId } | ConvertTo-Json -Compress
-                    $headers = @("-H", "X-Tenant-Id: $tenantId", "-H", "Content-Type: application/json")
-                    if ($rawKey) {
-                        $headers += @("-H", "X-API-Key: $rawKey")
-                    }
-                    $importResponse = $importBody | curl.exe -s -X POST @headers --data-binary "@-" http://localhost:18002/api/import
-                    Write-Host "匯入回應: $importResponse"
-                    Write-Success "資料匯入測試完成"
+
+                if ($status -eq "FAILED") {
+                    Write-Warning "匯入 job 失敗（可用 /api/v2/import/jobs/$jobId/errors 檢視錯誤）"
+                } elseif ($status -eq "READY") {
+                    Write-Info "提交匯入（commit）..."
+                    $commitResp = curl.exe -s -X POST @headers "http://localhost:18002/api/v2/import/jobs/$jobId/commit"
+                    Write-Host "commit 回應: $commitResp"
+                    Write-Success "v2 匯入測試完成"
+                } else {
+                    Write-Warning "等待逾時：job 尚未 READY/FAILED，請稍後到 UI 或 API 查詢狀態。"
                 }
-            } catch {
-                Write-Warning "資料匯入測試失敗"
+            } else {
+                Write-Warning "無法解析 job_id，跳過後續測試"
             }
-        } else {
-            Write-Warning "無法解析 process_id，跳過後續測試"
         }
         
     } catch {

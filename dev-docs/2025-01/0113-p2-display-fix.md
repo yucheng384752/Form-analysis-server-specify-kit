@@ -34,10 +34,10 @@ V2 API (`routes_query_v2.py`) 的 `_merge_p2_records()` 函數原本返回：
 ```python
 additional_data = {
   'lot_no': '2507173_02',
-  'winders': [  # ❌ 錯誤: 前端期望 'rows'，不是 'winders'
+  'winders': [  # 錯誤: 前端期望 'rows'，不是 'winders'
     {
       'winder_number': 1,
-      'data': { field1: value1, field2: value2, ... }  # ❌ 資料被包裝在 'data' 內
+      'data': { field1: value1, field2: value2, ... }  # 資料被包裝在 'data' 內
     },
     {
       'winder_number': 2,

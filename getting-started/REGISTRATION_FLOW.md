@@ -2,10 +2,16 @@
 
 這份文件是給**第一次接觸這套系統**的人使用。
 
-在前端看到的「註冊 / 初始化」頁面，目的分成兩件事：
+前端現在把「登入」與「初始化」拆成不同頁籤，目的分成兩件事：
 
 - 讓系統知道你要操作哪一個「工作區」（Tenant）
 - 如果公司有開啟「通行碼（API key）」保護：用「帳號/密碼」登入取得通行碼
+
+頁籤責任簡表：
+
+- 「初始化」：貼上 admin key（只給內部維運），建立 Tenant / 建立第一個 tenant admin
+- 「登入」：選擇 Tenant、帳密登入取得 API key
+- 「管理者」：日常 CRUD（Tenant / Tenant users，包含停用/預設/安全刪除）
 
 完成後，你就能正常進行匯入、查詢、追溯等功能。
 
@@ -15,11 +21,11 @@
 
 ```mermaid
 flowchart TD
-  A[使用者打開前端 / 註冊初始化頁] --> B{tenant 列表是否為空?}
+  A[使用者打開前端 / 初始化頁] --> B{tenant 列表是否為空?}
 
   B -- 是 --> C[內部維運：使用 admin key 建立/初始化 tenant]
   C --> D[內部維運：用 admin key 建立該 tenant 第一個管理者帳號 role=admin]
-  D --> E[外部使用者：用 tenant_code + 帳號密碼登入]
+  D --> E[外部使用者：到「登入」用 tenant_code + 帳號密碼登入]
 
   B -- 否 --> F{是否已有該 tenant 的管理者帳號?}
   F -- 否 --> D
@@ -29,11 +35,11 @@ flowchart TD
   G --> H[開始使用：匯入/查詢/追溯]
 ```
 
-## 流程圖 2：再次進入註冊/初始化頁（已使用過、日常）
+## 流程圖 2：再次進入（已使用過、日常）
 
 ```mermaid
 flowchart TD
-  A[使用者再次打開前端 / 註冊初始化頁] --> B{瀏覽器是否已有 tenant_id + API key?}
+  A[使用者再次打開前端 / 登入頁] --> B{瀏覽器是否已有 tenant_id + API key?}
   B -- 是 --> C[直接可操作業務功能]
   C --> D{需要換 tenant 或 key 嗎?}
   D -- 否 --> Z[結束]
@@ -86,12 +92,12 @@ admin key 是「初始化 / 緊急復原」用的最高權限金鑰（break-glas
 
 ---
 
-## 1) 用前端「註冊 / 初始化」頁完成場域（Tenant）設定（推薦）
+## 1) 用前端完成場域（Tenant）設定（推薦）
 
 1. 打開前端：http://localhost:18003
-2. 找到並進入「註冊 / 初始化」頁籤
+2. 依你看到的狀況，進入「初始化」或「登入」頁籤
 
-會看到「快速開始（建立/選擇場域）」與「場域（Tenant）初始化 / 選擇」。接下來依你看到的狀況操作：
+接下來依你看到的狀況操作：
 
 ### 情況 A：列表顯示「沒有任何 Tenant」或是空的
 
@@ -99,10 +105,11 @@ admin key 是「初始化 / 緊急復原」用的最高權限金鑰（break-glas
 
 外部上線情境下，通常由**內部維運**先做一次初始化（可能需要 admin key）。初始化完成後，外部使用者只需要登入即可。
 
-1. 按下「一鍵建立/選擇場域」
-2. 等待出現成功訊息
-3. 再按一次「刷新 tenants 列表」
-4. 確認列表裡出現一筆 Tenant，並顯示「已選擇 / 已啟用」之類的狀態
+1. 到「初始化」頁籤貼上 admin key（內部維運）
+2. 按下「一鍵建立/選擇場域」或「建立場域（Tenant）」
+3. 再按一次「刷新 tenants」確認 tenant 已存在
+4. （建議）在「初始化」建立第一個 tenant admin（role=admin）
+5. 外部使用者改到「登入」頁籤，用帳密登入取得 API key
 
 完成後通常就可以開始使用系統。
 
@@ -129,13 +136,12 @@ admin key 是「初始化 / 緊急復原」用的最高權限金鑰（break-glas
 
 操作方式：
 
-1. 回到「註冊 / 初始化」頁面
-2. 按「展開進階設定」
-3. 在「帳號/密碼登入」區塊輸入：
+1. 進入「登入」頁籤
+2. 在「帳號/密碼登入」區塊輸入：
   - tenant_code（場域代碼，通常是你負責的區/場區代碼）
   - username / password
-4. 按「登入並取得 API key」
-5. 登入成功後，系統會把 API key 保存到瀏覽器（之後就不用每次貼）
+3. 按「登入並取得 API key」
+4. 登入成功後，系統會把 API key 保存到瀏覽器（之後就不用每次貼）
 
 小提醒：如果你換電腦或清掉瀏覽器資料，需要再登入一次。
 
@@ -144,7 +150,7 @@ admin key 是「初始化 / 緊急復原」用的最高權限金鑰（break-glas
 日常新增帳號建議走「場域管理者（role=admin）」權限：
 
 - 外部使用者不需要知道 admin key
-- 由該場域的管理者登入後，在「建立帳號」區塊新增使用者
+- 由該場域的管理者登入後，可在「管理者」頁籤新增/停用使用者
 
 第一次的「場域管理者帳號」如果還不存在，才需要由**內部維運**用 admin key 建立第一個管理者（bootstrap）。
 
@@ -158,7 +164,7 @@ admin key 是「初始化 / 緊急復原」用的最高權限金鑰（break-glas
 
 為了避免「自動使用 default tenant / 取第一個 tenant」造成資料跑錯租戶，目前前端會**要求你先明確選擇 tenant**（保存 tenant_id）後才允許呼叫 tenant-scoped API。
 
-請回到「註冊 / 初始化」頁：
+請回到「登入」頁籤：
 
 1. 按「刷新 tenants 列表」
 2. 確認有選到一個 Tenant（情況 A/B/C）
@@ -199,6 +205,12 @@ admin key 是「初始化 / 緊急復原」用的最高權限金鑰（break-glas
 - `GET /api/tenants`
 - `POST /api/tenants`
 
+補充：日常新增/停用 tenant 建議走 admin CRUD 端點（避免佔用 bootstrap-only 的 `/api/tenants` 行為）：
+
+- `POST /api/tenants/admin`
+- `PATCH /api/tenants/{tenant_id}`
+- `DELETE /api/tenants/{tenant_id}`（安全刪除：is_active=false）
+
 Body 範例：
 
 ```json
@@ -225,3 +237,7 @@ python .\backend\scripts\bootstrap_tenant_api_key.py --tenant-code ut --label lo
 - `POST /api/auth/users`
 
 注意：這是 break-glass 行為，原則上不提供給外部。
+
+---
+
+工程師：多租戶/管理者/soft delete 的完整摘要請看：dev-guides/TENANT_INIT_ADMIN_GUIDE.md

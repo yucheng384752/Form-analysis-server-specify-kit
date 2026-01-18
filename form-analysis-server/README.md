@@ -107,30 +107,33 @@ chmod +x quick-start.sh
    上傳檔案：
    ```bash
       # 上傳檔案
-      # 注意：若你使用 Docker Compose 預設設定（AUTH_MODE=api_key），所有 /api/* 請求都需要帶 API key。
+      # 建議流程（v2 import jobs）：一次上傳檔案 -> 解析/驗證 -> commit。
+      # 注意：多租戶情境請務必帶 X-Tenant-Id；若你使用 AUTH_MODE=api_key，還需帶 X-API-Key。
+
+      # 1) 建立匯入 job（multipart/form-data）
       curl -X POST \
+         -H "X-Tenant-Id: <TENANT_ID>" \
          -H "X-API-Key: <YOUR_API_KEY>" \
-         -F "file=@test_upload.csv" \
-         http://localhost:18002/api/upload
-   
-   # 範例回應:
-   # {
-   #   "file_id": "abc123def456",
-   #   "filename": "test_upload.csv",
-   #   "status": "validated",
-   #   "message": "File uploaded and validated successfully"
-   # }
-   
-   # 如果有錯誤，下載錯誤報告（使用上傳回應中的 file_id）
-      curl -H "X-API-Key: <YOUR_API_KEY>" \
-         "http://localhost:18002/api/errors.csv?file_id=abc123def456"
-   
-   # 確認匯入資料（使用上傳回應中的 file_id）
+         -F "table_code=P1" \
+         -F "allow_duplicate=false" \
+         -F "files=@test_upload.csv" \
+         http://localhost:18002/api/v2/import/jobs
+
+      # 2) 查詢 job 狀態（等待 READY 或 FAILED）
+      curl -H "X-Tenant-Id: <TENANT_ID>" \
+         -H "X-API-Key: <YOUR_API_KEY>" \
+         http://localhost:18002/api/v2/import/jobs/<JOB_ID>
+
+      # 3) 若驗證失敗，可查錯誤列表
+      curl -H "X-Tenant-Id: <TENANT_ID>" \
+         -H "X-API-Key: <YOUR_API_KEY>" \
+         "http://localhost:18002/api/v2/import/jobs/<JOB_ID>/errors?page=1&page_size=200"
+
+      # 4) 提交匯入（READY 才能 commit）
       curl -X POST \
+         -H "X-Tenant-Id: <TENANT_ID>" \
          -H "X-API-Key: <YOUR_API_KEY>" \
-         -H "Content-Type: application/json" \
-        -d '{"file_id":"abc123def456"}' \
-        http://localhost:18002/api/import
+         http://localhost:18002/api/v2/import/jobs/<JOB_ID>/commit
    ```
 
 4. **訪問前端應用**
@@ -204,9 +207,13 @@ export default defineConfig({
 
 | 端點 | 方法 | 說明 |
 |------|------|------|
-| `/api/upload` | POST | 檔案上傳和驗證 |
-| `/api/errors.csv` | GET | 下載錯誤報告 |
-| `/api/import` | POST | 確認資料匯入 |
+| `/api/v2/import/jobs` | POST | 建立匯入任務（上傳檔案、背景 parse/validate） |
+| `/api/v2/import/jobs/{id}` | GET | 查詢匯入任務狀態 |
+| `/api/v2/import/jobs/{id}/errors` | GET | 查詢驗證錯誤 |
+| `/api/v2/import/jobs/{id}/commit` | POST | 提交匯入（寫入 v2 tables） |
+| `/api/upload` | POST | （舊流程/相容性保留）檔案上傳與驗證 |
+| `/api/errors.csv` | GET | （舊流程/相容性保留）下載錯誤報告 |
+| `/api/import` | POST | （舊流程/相容性保留）確認資料匯入 |
 | `/healthz` | GET | 基本健康檢查 |
 | `/healthz/detailed` | GET | 詳細健康檢查 |
 

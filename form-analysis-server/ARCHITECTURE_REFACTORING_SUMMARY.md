@@ -128,7 +128,7 @@ Query API (/api/v2/query/records/advanced)
 | **P2 查詢** | 查詢 p2_records，合併20筆 | 查詢 p2_records JOIN p2_items_v2 |
 | **P3 查詢** | 查詢 p3_records，從 extras 提取 | 查詢 p3_records JOIN p3_items_v2 |
 | **篩選** | 在 JSONB extras 中搜尋 | 在結構化欄位中搜尋 (更快) |
-| **擴展性** | ❌ 難以添加新欄位 | ✅ 可添加 p*_items_v2 欄位 |
+| **擴展性** | 難以添加新欄位 | ✅ 可添加 p*_items_v2 欄位 |
 
 ## 🧪 測試步驟
 

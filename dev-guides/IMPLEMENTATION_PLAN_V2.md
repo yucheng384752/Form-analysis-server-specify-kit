@@ -198,8 +198,8 @@
 ### L3-2 Traceability Search（優先 Trace Index，fallback join）
 *   **實作內容**：
     *   **API**：
-        * `POST /api/query/advanced`：多條件交集（lot/date_range/machine/mold/winder）
-        * `GET /api/query/trace/{trace_key}`：展開回完整追溯鏈（P1+P2[]+P3[]，缺漏也回）
+        * `GET /api/v2/query/records/advanced`：多條件交集（lot/date_range/machine/mold/winder）
+        * `GET /api/v2/query/trace/{trace_key}`：展開回完整追溯鏈（P1+P2[]+P3[]，缺漏也回）
     *   **索引策略**：
         1) 若已建置 Trace Index（`trace_lots/trace_p2_index/trace_p3_index`）→ 查詢優先走索引表
         2) 若尚未建置 → fallback 使用 join（MVP），但需標註後續切換成本
@@ -248,7 +248,7 @@
 ### FE-4 查詢/追溯（卡片 + 展開彈窗）
 * `AdvancedSearchForm`：lot/date_range/machine/mold/winder 任意組合
 * `SearchResultCards`：回 trace_key
-* `TraceModal`：呼叫 `GET /api/query/trace/{trace_key}` 展開顯示 P1/P2/P3（缺漏也顯示）
+* `TraceModal`：呼叫 `GET /api/v2/query/trace/{trace_key}` 展開顯示 P1/P2/P3（缺漏也顯示）
 
 ### FE-5 線上編輯（inline edit + reason）
 * `RecordTable`（PrimeReact DataTable + virtual scroll）

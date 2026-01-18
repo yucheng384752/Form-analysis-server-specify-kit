@@ -1,6 +1,6 @@
 # Form Analysis API - 一鍵啟動與驗證指令摘要
 
-> 重要：本專案的「註冊」= 建立/選擇 tenant（租戶）+（可選）啟用 API key。
+> 重要：本專案的「初始化/登入」= 建立/選擇 tenant（租戶）+（可選）啟用 API key。
 > 詳細流程請看：getting-started/REGISTRATION_FLOW.md
 
 ##  一鍵啟動命令
@@ -87,7 +87,7 @@ curl -f http://localhost:18002/healthz/detailed
 ##  檔案上傳與驗證流程
 
 > 注意：在多租戶模式下，`/api/*` 端點通常需要 `X-Tenant-Id`。
-> 你可以先用 `GET /api/tenants` 取得 tenant id，或在前端「註冊/初始化」頁籤完成選擇。
+> 你可以先用 `GET /api/tenants` 取得 tenant id，或在前端「登入」頁籤完成選擇。
 
 ### 1. 創建測試 CSV 檔案
 
@@ -223,7 +223,7 @@ rm test_upload.csv
 - **API 文件**: http://localhost:18002/docs
 - **ReDoc 文件**: http://localhost:18002/redoc
 
-## 註冊 / 初始化（tenant + API key）
+## 登入 / 初始化（Tenant + API key）
 
 第一次啟動後，建議依序做：
 
@@ -235,11 +235,21 @@ rm test_upload.csv
 
 ### 註冊頁（UI）入口
 
-開啟前端 `http://localhost:18003`，點選「註冊 / 初始化（tenant + API key）」tab，即可：
+開啟前端 `http://localhost:18003`，依序使用：
+
+- 「初始化」：第一次建立 Tenant / 建立第一個 tenant admin（需要 admin key，通常由內部維運）
+- 「登入」：選擇 Tenant、帳密登入取得 API key
+- （可選）「管理者」：日常 CRUD（Tenant / Tenant users）
+
+「登入」頁籤可：
 
 - 保存 / 清除 API key（localStorage）
-- 自動初始化 tenant（空資料庫會建立 UT/ut）
 - 刷新 tenants 列表並選擇 tenant
+
+「初始化」頁籤可：
+
+- 以 admin key 建立/選擇 tenant（空資料庫 bootstrap）
+- 建立 tenant 使用者 / tenant 管理者（role=admin）
 
 ### 前端環境配置
 

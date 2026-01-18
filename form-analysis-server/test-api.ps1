@@ -154,34 +154,63 @@ try {
     Write-Skip "錯誤報告下載失敗: $_"
 }
 
-# 5. 資料匯入測試
+# 5. v2 資料匯入測試（建議流程）
 Write-Host ""
-Write-Test "7. 測試資料匯入（有效檔案）"
+Write-Test "7. 測試資料匯入（v2 import jobs）"
 
-$importBody = @{ process_id = $processId }
+$tableCode = "P1"
 try {
-    $importResponse = Invoke-RestMethod -Uri "$ApiBase/api/import" -Method Post -Headers @{ "X-Tenant-Id" = $tenantId } -ContentType "application/json" -Body ($importBody | ConvertTo-Json)
-    Write-Host "匯入回應:"
-    Write-Host ($importResponse | ConvertTo-Json -Depth 6)
-    if ($importResponse.process_id -eq $processId -and $null -ne $importResponse.imported_rows -and $importResponse.imported_rows -ge 0) {
-        Write-Pass "資料匯入成功 (imported_rows=$($importResponse.imported_rows), skipped_rows=$($importResponse.skipped_rows))"
+    $fn = [System.IO.Path]::GetFileName($validCsvPath)
+    if ($fn -match '^(P[123])_') { $tableCode = $Matches[1] }
+} catch {}
+
+try {
+    $createJobResp = curl.exe -sS -X POST -H "X-Tenant-Id: $tenantId" -F "table_code=$tableCode" -F "allow_duplicate=false" -F "files=@$validCsvPath" "$ApiBase/api/v2/import/jobs"
+    Write-Host "建立 job 回應:"
+    Write-Host $createJobResp
+
+    $job = $createJobResp | ConvertFrom-Json
+    $jobId = $job.id
+    if (-not $jobId) {
+        Write-Skip "無法解析 job_id，跳過 v2 匯入測試"
     } else {
-        Write-Skip "資料匯入回應格式與預期不符"
+        Write-Pass "建立 v2 import job 成功，job_id: $jobId"
+
+        $status = ""
+        for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 1
+            $jobStatusText = curl.exe -sS -H "X-Tenant-Id: $tenantId" "$ApiBase/api/v2/import/jobs/$jobId"
+            $jobStatus = $jobStatusText | ConvertFrom-Json
+            $status = $jobStatus.status
+            Write-Host "job status: $status"
+            if ($status -eq "READY" -or $status -eq "FAILED") { break }
+        }
+
+        if ($status -eq "FAILED") {
+            Write-Skip "v2 匯入驗證失敗（可查詢 /api/v2/import/jobs/$jobId/errors）"
+        } elseif ($status -eq "READY") {
+            $commitText = curl.exe -sS -X POST -H "X-Tenant-Id: $tenantId" "$ApiBase/api/v2/import/jobs/$jobId/commit"
+            Write-Host "commit 回應:"
+            Write-Host $commitText
+            Write-Pass "v2 匯入提交完成"
+        } else {
+            Write-Skip "等待逾時：job 尚未 READY/FAILED"
+        }
     }
 } catch {
-    Write-Skip "匯入失敗: $($_.Exception.Message)"
+    Write-Skip "v2 匯入流程失敗: $($_.Exception.Message)"
 }
 
 # 6. 錯誤處理測試
 Write-Host ""
 Write-Test "8. 測試錯誤處理"
 
-# 測試無效 process_id
-Write-Host "測試無效 process_id:"
-$invalidProcessId = "00000000-0000-0000-0000-000000000000"
+# 測試無效 job_id（v2 commit）
+Write-Host "測試無效 job_id (v2 commit):"
+$invalidJobId = "00000000-0000-0000-0000-000000000000"
 try {
-    $invalidImportResponse = Invoke-RestMethod -Uri "$ApiBase/api/import" -Method Post -Headers @{ "X-Tenant-Id" = $tenantId } -ContentType "application/json" -Body (@{ process_id = $invalidProcessId } | ConvertTo-Json)
-    Write-Host ($invalidImportResponse | ConvertTo-Json -Depth 6)
+    $invalidCommitText = curl.exe -sS -w "`n%{http_code}" -X POST -H "X-Tenant-Id: $tenantId" "$ApiBase/api/v2/import/jobs/$invalidJobId/commit"
+    Write-Host $invalidCommitText
 } catch {
     Write-Host "(預期失敗) $($_.Exception.Message)"
 }

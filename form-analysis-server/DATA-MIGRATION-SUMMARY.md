@@ -1,16 +1,16 @@
 # 資料遷移問題修復總結 (2026-01-13)
 
-## 🔴 根本問題
+## 根本問題
 
 **資料架構不一致**: 系統存在兩套資料表結構但資料未同步
 
 | 項目 | Legacy 模式 | V2 模式 | 狀態 |
 |------|------------|---------|------|
 | 資料表 | `records`, `p2_items`, `p3_items` | `p1_records`, `p2_records`, `p3_records` | ⚠️ 不同步 |
-| Tenant 支援 | ❌ 無 `tenant_id` 欄位 | ✅ 有 `tenant_id` 欄位 | - |
+| Tenant 支援 | 無 `tenant_id` 欄位 | ✅ 有 `tenant_id` 欄位 | - |
 | 資料數量 | 3 筆測試資料 (已清除) | 0 筆 | ⚠️ 空的 |
-| API 端點 | `/api/query` | `/api/v2/query` | - |
-| 前端使用 | ❌ 未使用 | ✅ **正在使用** | ⚠️ **導致查無資料** |
+| API 端點 | `/api/query` | `/api/v2/query` | Legacy 已移除 |
+| 前端使用 | 未使用 | ✅ **正在使用** | ⚠️ **導致查無資料** |
 
 ### 診斷過程
 
@@ -107,7 +107,7 @@ Invoke-RestMethod -Uri "http://localhost:18002/api/v2/query/records/advanced?lot
 
 | 批號 | P1 | P2 | P3 | 狀態 |
 |------|----|----|----| -----|
-| 2507173_02 | ⏳ 待匯入 | ⏳ 待匯入 | ❌ 無檔案 | 待處理 |
+| 2507173_02 | ⏳ 待匯入 | ⏳ 待匯入 | 無檔案 | 待處理 |
 
 ## 🔧 相關檔案
 
@@ -137,7 +137,7 @@ Invoke-RestMethod -Uri "http://localhost:18002/api/v2/query/records/advanced?lot
 
 ## ⚠️ 重要提醒
 
-1. **不要使用 Legacy API**: `/api/query` 已棄用，所有新資料應匯入 V2 表
+1. **不要使用 Legacy API**: `/api/query` 已移除，請使用 `/api/v2/*`
 2. **Tenant 已配置**: 無需手動指定 tenant_id，系統自動使用 Default Tenant
 3. **匯入順序**: 必須先匯入 P1，再匯入 P2/P3 (因有外鍵關聯)
 4. **P2 結構已修正**: 後端會自動將 20 個 winders 合併為 rows 陣列

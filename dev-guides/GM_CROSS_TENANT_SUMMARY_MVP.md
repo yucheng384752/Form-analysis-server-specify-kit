@@ -27,7 +27,7 @@
 ### Out-of-scope（先不做）
 
 - GM 在同一個頁面做「跨 tenant 明細逐筆編輯」
-- 既有業務端點（/api/query/*、/api/import/*）全面改寫成多 tenant
+- 既有業務端點（/api/v2/query/*、/api/v2/import/*）全面改寫成多 tenant
 - 以 SSO/OAuth2 取代現有 API key（保留未來擴充空間）
 
 ---
