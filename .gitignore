@@ -70,6 +70,7 @@ Thumbs.db
 
 # 忽略 IDE 配置
 .vscode/settings.json
+.vscode/tasks.json
 .idea/
 *.iml
 
@@ -103,3 +104,6 @@ out/
 form-analysis-server/backend/file
 form-analysis-server/backend/test_0113_fixes.py
 form-analysis-server/backend/test_product_id_simple.py
+
+# Local scratch artifact (created by some local tooling)
+file
