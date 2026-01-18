@@ -42,7 +42,7 @@ flowchart TD
   F --> G[保存新 API key]
   G --> Z
 
-  B -- 否 --> H[選 tenant（或單 tenant 自動推導）]
+  B -- 否 --> H[選 tenant（需明確選擇並保存）]
   H --> I[用帳密登入取得 API key]
   I --> J[保存 tenant_id + API key]
   J --> C
@@ -155,6 +155,8 @@ admin key 是「初始化 / 緊急復原」用的最高權限金鑰（break-glas
 ### 看到「需要提供 X-Tenant-Id」或類似訊息
 
 意思是：系統不知道你要用哪個工作區。
+
+為了避免「自動使用 default tenant / 取第一個 tenant」造成資料跑錯租戶，目前前端會**要求你先明確選擇 tenant**（保存 tenant_id）後才允許呼叫 tenant-scoped API。
 
 請回到「註冊 / 初始化」頁：
 

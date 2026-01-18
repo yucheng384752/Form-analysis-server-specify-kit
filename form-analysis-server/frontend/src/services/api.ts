@@ -2,7 +2,7 @@
  * API 請求工具函數
  */
 
-import { ensureTenantId, TENANT_STORAGE_KEY } from './tenant';
+import { TENANT_STORAGE_KEY } from './tenant';
 import { getApiKeyHeaderName, getApiKeyValue } from './auth'
 
 interface RequestOptions {
@@ -123,9 +123,6 @@ export async function uploadFile<T = any>(
   formData: FormData,
   onProgress?: (progress: number) => void
 ): Promise<T> {
-  // Make sure tenant id exists (auto-select when only one tenant exists)
-  const resolvedTenantId = await ensureTenantId();
-
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     
@@ -168,7 +165,12 @@ export async function uploadFile<T = any>(
     // Keep tenant header consistent even for XHR uploads
     try {
       const u = new URL(fullUrl, window.location.href);
-      const tenantId = resolvedTenantId || window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
+      const tenantId = window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
+      if (u.pathname.startsWith('/api') && !u.pathname.startsWith('/api/tenants') && !tenantId) {
+        reject(new Error('尚未選擇 Tenant（X-Tenant-Id）。請先到「註冊/初始化」頁籤建立/選擇 Tenant。'));
+        xhr.abort();
+        return;
+      }
       if (tenantId && u.pathname.startsWith('/api') && !u.pathname.startsWith('/api/tenants')) {
         xhr.setRequestHeader('X-Tenant-Id', tenantId);
       }

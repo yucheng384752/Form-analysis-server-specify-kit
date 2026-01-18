@@ -86,6 +86,9 @@ curl -f http://localhost:18002/healthz/detailed
 
 ##  檔案上傳與驗證流程
 
+> 注意：在多租戶模式下，`/api/*` 端點通常需要 `X-Tenant-Id`。
+> 你可以先用 `GET /api/tenants` 取得 tenant id，或在前端「註冊/初始化」頁籤完成選擇。
+
 ### 1. 創建測試 CSV 檔案
 
 **5 列範例資料：**
@@ -102,7 +105,10 @@ EOF
 
 ### 2. 上傳檔案
 ```bash
+TENANT_ID="<your-tenant-id>"
+
 curl -X POST \
+  -H "X-Tenant-Id: $TENANT_ID" \
      -F "file=@test_upload.csv" \
      http://localhost:18002/api/upload
 ```
@@ -137,7 +143,8 @@ EOF
 ### 4. 下載錯誤報告（如果有錯誤）
 ```bash
 # 使用上傳回應中的 file_id
-curl "http://localhost:18002/api/errors.csv?file_id=550e8400-e29b-41d4-a716-446655440000"
+curl -H "X-Tenant-Id: $TENANT_ID" \
+  "http://localhost:18002/api/errors.csv?file_id=550e8400-e29b-41d4-a716-446655440000"
 ```
 
 **錯誤報告 CSV 格式：**
@@ -152,6 +159,7 @@ row,column,value,error
 ### 5. 確認資料匯入
 ```bash
 curl -X POST \
+  -H "X-Tenant-Id: $TENANT_ID" \
      -H "Content-Type: application/json" \
      -d '{"file_id":"550e8400-e29b-41d4-a716-446655440000"}' \
      http://localhost:18002/api/import

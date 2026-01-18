@@ -213,7 +213,11 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
                       <Input
                         value={editedData[0][colIndex] || ''}
                         onChange={(e) => handleCellChange(0, colIndex, e.target.value)}
-                        className="border-0 bg-transparent p-1 h-8 w-full font-semibold"
+                        className={`border-0 bg-transparent p-1 h-8 w-full font-semibold ${
+                          editingCell?.row === 0 && editingCell.col === colIndex
+                            ? 'ring-1 ring-blue-500 rounded'
+                            : ''
+                        }`}
                         onFocus={() => setEditingCell({ row: 0, col: colIndex })}
                         onBlur={() => setEditingCell(null)}
                       />
@@ -236,7 +240,11 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
                         <Input
                           value={editedData[rowIndex + 1] && editedData[rowIndex + 1][colIndex] || ''}
                           onChange={(e) => handleCellChange(rowIndex + 1, colIndex, e.target.value)}
-                          className="border-0 hover:border hover:border-blue-300 focus:border-blue-500 p-1 h-8 transition-all w-full"
+                          className={`border-0 hover:border hover:border-blue-300 focus:border-blue-500 p-1 h-8 transition-all w-full ${
+                            editingCell?.row === rowIndex + 1 && editingCell.col === colIndex
+                              ? 'ring-1 ring-blue-500 rounded'
+                              : ''
+                          }`}
                           onFocus={() => setEditingCell({ row: rowIndex + 1, col: colIndex })}
                           onBlur={() => setEditingCell(null)}
                         />

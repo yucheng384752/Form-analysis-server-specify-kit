@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { useToast } from "../components/common/ToastContext";
 import { ProgressBar } from "../components/common/ProgressBar";
 import { Modal } from "../components/common/Modal";
-import { ensureTenantId } from "../services/tenant";
+import { TENANT_STORAGE_KEY } from "../services/tenant";
 import "./../styles/upload-page.css";
 
 const EDIT_ENABLED = false; // 第一版：不提供編輯（僅預覽 + 重傳）
@@ -130,13 +130,12 @@ export function UploadPage() {
   }, [files]);
 
   useEffect(() => {
-    ensureTenantId()
-      .then((id) => {
-        if (id) setTenantId(id);
-      })
-      .catch(() => {
-        // 不阻斷 UI；若後端無法自動解析 tenant，後續 v2 呼叫會回 422。
-      });
+    const stored = window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
+    if (stored) {
+      setTenantId(stored);
+      return;
+    }
+    showToast('error', '尚未選擇 Tenant。請先到「註冊/初始化」頁籤建立/選擇 Tenant，再進行匯入。');
   }, []);
 
   const buildTenantHeaders = (): HeadersInit => {

@@ -18,7 +18,6 @@ interface AdvancedSearchProps {
   onSearch: (params: AdvancedSearchParams) => void;
   onReset: () => void;
   isExpanded: boolean;
-  onToggle: () => void;
   tenantId?: string;
 }
 
@@ -26,7 +25,6 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   onSearch,
   onReset,
   isExpanded,
-  onToggle,
   tenantId,
 }) => {
   // 批號

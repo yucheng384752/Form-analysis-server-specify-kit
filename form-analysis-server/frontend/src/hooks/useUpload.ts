@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { FilePreview, FileValidationError, UploadStatus } from '../types/api';
-import { apiClient } from '../lib/api';
+import { apiPost, uploadFile as uploadFormData } from '../services/api';
 
 export interface UseUploadOptions {
   maxFileSize?: number; // in bytes
@@ -60,7 +60,10 @@ export function useUpload(options: UseUploadOptions = {}) {
       }, 200);
 
       // 上傳檔案
-      const uploadResponse = await apiClient.uploadFile('/api/upload/files', file);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const uploadResponse: any = await uploadFormData('/api/upload/files', formData);
       
       clearInterval(progressInterval);
       setProgress(100);
@@ -99,7 +102,12 @@ export function useUpload(options: UseUploadOptions = {}) {
       setProgress(0);
       setErrors([]);
 
-      const response = await apiClient.uploadFiles('/api/upload/files', files);
+      const formData = new FormData();
+      for (const file of files) {
+        formData.append('files', file);
+      }
+
+      const response: any = await uploadFormData('/api/upload/files', formData);
       
       if (!response.success) {
         throw new Error(response.message || '批次上傳失敗');
@@ -120,8 +128,8 @@ export function useUpload(options: UseUploadOptions = {}) {
 
     try {
       setStatus('uploading');
-      
-      const response = await apiClient.post(`/api/upload/confirm?process_id=${processId}`);
+
+      const response: any = await apiPost(`/api/upload/confirm?process_id=${processId}`);
       
       if (!response.success) {
         throw new Error(response.message || '確認上傳失敗');

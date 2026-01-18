@@ -1,4 +1,4 @@
-import { ensureTenantId, ensureTenantIdWithOptions, TENANT_STORAGE_KEY } from './tenant'
+import { ensureTenantIdWithOptions, TENANT_STORAGE_KEY } from './tenant'
 import { getApiKeyHeaderName, getApiKeyValue } from './auth'
 
 // Global fetch wrapper: auto-inject X-Tenant-Id for all /api* requests except /api/tenants.
@@ -24,12 +24,6 @@ export function installGlobalFetchWrapper(): () => void {
       const isApiPath = url.pathname.startsWith('/api')
       const isTenantListPath = url.pathname.startsWith('/api/tenants')
       const isAuthPath = url.pathname.startsWith('/api/auth')
-
-      // If tenant is missing but we are calling tenant-scoped APIs, try to auto-select
-      // when exactly one tenant exists.
-      if (!tenantId && isApiPath && !isTenantListPath && !isAuthPath) {
-        tenantId = await ensureTenantId()
-      }
 
       if (!isApiPath) {
         return originalFetch(input as any, init)
@@ -63,9 +57,15 @@ export function installGlobalFetchWrapper(): () => void {
       const attemptFetch = async (forcedTenantId?: string) => {
         const effectiveTenantId = forcedTenantId ?? tenantId
 
-        // If still no tenant id, call as-is (backend may auto-resolve when exactly one tenant exists)
+        // Hard block tenant-scoped API calls when tenant is not explicitly selected.
+        // This prevents silently using a default/guessed tenant.
         if (!effectiveTenantId) {
-          return originalFetch(input as any, init)
+          return new Response(
+            JSON.stringify({
+              detail: '尚未選擇 Tenant（X-Tenant-Id）。請到「註冊/初始化」頁籤建立/選擇 Tenant 後再操作。',
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          )
         }
 
         const mergedHeaders = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined))

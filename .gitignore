@@ -20,6 +20,7 @@ __pycache__/
 *.so
 .coverage
 .pytest_cache/
+.venv/
 venv/
 env/
 .env
@@ -61,6 +62,9 @@ test_dummy.txt
 *.log
 *.log.*
 logs/
+
+# 報表/匯出（本機產生，不建議納入版控）
+project-reports/
 
 # 忽略系統檔案
 .DS_Store

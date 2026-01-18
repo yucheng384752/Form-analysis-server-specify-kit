@@ -34,6 +34,23 @@ describe('installGlobalFetchWrapper (registration -> tenant header)', () => {
     vi.restoreAllMocks()
   })
 
+  it('blocks tenant-scoped /api calls when tenant is not selected (no network)', async () => {
+    const originalFetch = vi.fn(async () => makeJsonResponse(200, { ok: true }))
+
+    // @ts-expect-error test override
+    global.fetch = originalFetch
+    // @ts-expect-error test override
+    window.fetch = originalFetch
+
+    const restore = installGlobalFetchWrapper()
+
+    const res = await window.fetch('/api/upload')
+    expect(res.status).toBe(400)
+    expect(originalFetch).not.toHaveBeenCalled()
+
+    restore()
+  })
+
   it('after bootstrap (UT/ut) stores tenant id and auto-injects X-Tenant-Id for /api calls', async () => {
     // Simulate admin bootstrap key exists in browser.
     window.localStorage.setItem(ADMIN_API_KEY_STORAGE_KEY, 'adminkey-1')
@@ -52,7 +69,11 @@ describe('installGlobalFetchWrapper (registration -> tenant header)', () => {
         headerSnapshot[key] = value
       })
 
-      calls.push({ url: url.pathname, headers: headerSnapshot, init })
+      calls.push({
+        url: url.pathname,
+        headers: headerSnapshot,
+        ...(init ? { init } : {}),
+      })
 
       if (url.pathname === '/api/tenants' && (!init?.method || init.method === 'GET')) {
         // Admin key should not be implicitly injected by fetchWrapper.

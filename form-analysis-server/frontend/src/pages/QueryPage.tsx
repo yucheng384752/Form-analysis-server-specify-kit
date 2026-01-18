@@ -160,23 +160,7 @@ export function QueryPage() {
     const storedTenantId = window.localStorage.getItem(TENANT_STORAGE_KEY);
     if (storedTenantId) {
       setTenantId(storedTenantId);
-      return;
     }
-
-    fetch('/api/tenants')
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.length > 0) {
-          const id = data[0].id;
-          setTenantId(id);
-          try {
-            window.localStorage.setItem(TENANT_STORAGE_KEY, id);
-          } catch {
-            // ignore
-          }
-        }
-      })
-      .catch(err => console.error("Failed to fetch tenants", err));
   }, []);
 
   const mergeTenantHeaders = (headers?: HeadersInit): HeadersInit => {
@@ -758,6 +742,11 @@ export function QueryPage() {
 
   // 處理基本搜尋
   const handleSearch = async () => {
+    if (!tenantId) {
+      alert('尚未選擇 Tenant。請先到「註冊/初始化」頁籤建立/選擇 Tenant，再進行查詢。');
+      return;
+    }
+
     const keyword = searchKeyword.trim();
     if (!keyword) return;
 
@@ -803,6 +792,11 @@ export function QueryPage() {
   
   // 處理進階搜尋
   const handleAdvancedSearch = async (params: AdvancedSearchParams) => {
+    if (!tenantId) {
+      alert('尚未選擇 Tenant。請先到「註冊/初始化」頁籤建立/選擇 Tenant，再進行查詢。');
+      return;
+    }
+
     setAdvancedSearchParams(params);
     setSearchKeyword(''); // 清除基本搜尋關鍵字
     await searchRecords('', 1, params);
@@ -820,20 +814,24 @@ export function QueryPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchKeyword(value);
-    fetchSuggestions(value);
+    if (tenantId) fetchSuggestions(value);
   };
 
   // 處理建議點擊
   const handleSuggestionClick = (suggestion: string) => {
     setSearchKeyword(suggestion);
     setShowSuggestions(false);
+    if (!tenantId) {
+      alert('尚未選擇 Tenant。請先到「註冊/初始化」頁籤建立/選擇 Tenant，再進行查詢。');
+      return;
+    }
     searchRecords(suggestion);
   };
 
   // 處理輸入焦點
   const handleInputFocus = () => {
     if (searchKeyword.trim().length >= 1) {
-      fetchSuggestions(searchKeyword);
+      if (tenantId) fetchSuggestions(searchKeyword);
     }
   };
 
@@ -1155,19 +1153,6 @@ export function QueryPage() {
     if (!record.additional_data) {
       return <p className="no-data">此記錄沒有額外的CSV資料</p>;
     }
-
-    // 基本資料
-    const basicData = {
-      lot_no: record.lot_no,
-      // p3_no: record.p3_no || '-',
-      // product_id: record.product_id || '-',
-      // machine_no: record.machine_no || '-',
-      // mold_no: record.mold_no || '-',
-      // specification: record.specification || '-',
-      // bottom_tape_lot: record.bottom_tape_lot || '-',
-      updated_at: new Date(record.created_at).toLocaleString('zh-TW'),
-      created_at: new Date(record.created_at).toLocaleString('zh-TW')
-    };
 
     // 檢查是否有 rows 陣列
     const rows = record.additional_data.rows || [];
@@ -1653,6 +1638,21 @@ export function QueryPage() {
           </div>
 
           <div className="query-search-input-wrapper autocomplete-wrapper">
+            {!tenantId && (
+              <div
+                style={{
+                  marginBottom: '10px',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  background: '#fff3cd',
+                  border: '1px solid #ffeeba',
+                  color: '#856404',
+                  fontSize: '14px',
+                }}
+              >
+                尚未選擇 Tenant。請先到上方「註冊/初始化」頁籤完成場域設定。
+              </div>
+            )}
             <input
               ref={inputRef}
               type="text"
@@ -1695,7 +1695,7 @@ export function QueryPage() {
             <button 
               className="btn-primary" 
               onClick={handleSearch}
-              disabled={loading}
+              disabled={loading || !tenantId}
             >
               {loading ? "查詢中..." : "查詢"}
             </button>
@@ -1727,7 +1727,6 @@ export function QueryPage() {
             onSearch={handleAdvancedSearch}
             onReset={handleAdvancedReset}
             isExpanded={advancedSearchExpanded}
-            onToggle={() => setAdvancedSearchExpanded(!advancedSearchExpanded)}
             tenantId={tenantId}
           />
         </label>
