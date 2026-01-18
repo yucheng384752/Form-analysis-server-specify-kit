@@ -227,6 +227,8 @@
 **目標：配合後端 API 調整 UI，且完整對應「單 tenant 隱藏 / 多 tenant 選擇 / 匯入進度 / 錯誤列顯示 / 可取消 / PDF 轉檔下載&套用 / 追溯彈窗」。**
 
 ### FE-1 Tenant（單 tenant 隱藏；多 tenant 顯示）
+* 狀態：已完成（2026-01-18，commit: f5d0729）
+* 備註：前端不再自動選 tenant；未選 tenant 時會阻擋 tenant-scoped 的 `/api/*` 呼叫，並要求使用者明確選擇（`X-Tenant-Id` 一律顯式送出）。
 * `TenantProvider`：App 啟動時 `GET /api/tenants`
 * `TenantSelector`：若 tenants>1 顯示 Modal/Dropdown；若=1 隱藏
 * Axios Interceptor：對除 `GET /api/tenants` 以外的請求自動注入 Header `X-Tenant-Id`
