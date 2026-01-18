@@ -10,7 +10,7 @@ import uuid
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,7 @@ from app.models.upload_job import UploadJob, JobStatus
 from app.models.record import Record
 from app.models.p3_item import P3Item
 from app.models.p3_record import P3Record
+from app.models.p3_item_v2 import P3ItemV2
 from app.schemas.import_data import (
     ImportRequest,
     ImportResponse,
@@ -183,6 +184,87 @@ async def _upsert_p3_record_for_analytics(
         p3_record.lot_no_raw = str(lot_no_raw).strip()
         p3_record.product_id = product_id
         p3_record.extras = {**(p3_record.extras or {}), **new_extras}
+
+    # Keep p3_records <-> p3_items_v2 consistent for v2 query / traceability.
+    # Legacy import writes into records/p3_items, then we sync normalized tables for analytics.
+    await db.execute(delete(P3ItemV2).where(P3ItemV2.p3_record_id == p3_record.id))
+    await db.flush()
+
+    for row_no, row in enumerate(all_rows, start=1):
+        if not isinstance(row, dict):
+            continue
+
+        item_production_lot_raw = _pick_first_non_empty(
+            row,
+            ["lot", "Lot", "LOT", "Production Lot", "production_lot", "Produce_No.", "Produce No.", "produce_no"],
+        )
+        try:
+            item_production_lot = int(float(item_production_lot_raw)) if item_production_lot_raw is not None else None
+        except (ValueError, TypeError):
+            item_production_lot = None
+
+        item_source_winder_raw = _pick_first_non_empty(
+            row,
+            [
+                "source_winder",
+                "Source Winder",
+                "Source winder",
+                "source winder",
+                "Winder number",
+                "winder number",
+                "Winder",
+                "winder",
+                "收卷機",
+                "收卷機編號",
+                "捲收機號碼",
+            ],
+        )
+        try:
+            item_source_winder = (
+                int(float(item_source_winder_raw)) if item_source_winder_raw is not None else None
+            )
+        except (ValueError, TypeError):
+            item_source_winder = None
+
+        item_specification = _pick_first_non_empty(row, ["Specification", "specification", "規格", "Spec"])
+        item_bottom_tape = _pick_first_non_empty(
+            row,
+            ["Bottom Tape", "bottom tape", "Bottom Tape LOT", "BottomTape", "bottom_tape", "下膠編號", "下膠"],
+        )
+
+        # NOTE: P3ItemV2.product_id is globally unique in the schema.
+        # Avoid guessing derived IDs here to prevent cross-tenant collisions.
+        item_product_id = _pick_first_non_empty(
+            row,
+            [
+                "P3_No.",
+                "P3 No.",
+                "P3_No",
+                "P3 No",
+                "p3_no",
+                "product_id",
+            ],
+        )
+        item_product_id_s = str(item_product_id).strip() if item_product_id is not None else None
+
+        db.add(
+            P3ItemV2(
+                id=uuid.uuid4(),
+                p3_record_id=p3_record.id,
+                tenant_id=tenant.id,
+                row_no=row_no,
+                product_id=item_product_id_s,
+                lot_no=str(lot_no_raw).strip(),
+                production_date=prod_date,
+                machine_no=machine_no_str,
+                mold_no=mold_no_str,
+                production_lot=item_production_lot,
+                source_winder=item_source_winder,
+                specification=str(item_specification).strip() if item_specification is not None else None,
+                bottom_tape_lot=str(item_bottom_tape).strip() if item_bottom_tape is not None else None,
+                row_data=row,
+            )
+        )
 
 
 @router.post(
