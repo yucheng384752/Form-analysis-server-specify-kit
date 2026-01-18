@@ -1247,51 +1247,85 @@ async def get_trace_detail(
             "created_at": p1_record.created_at
         }
         
+    from sqlalchemy.orm import selectinload
+
     # Fetch P2
-    p2_stmt = select(P2Record).where(
+    p2_stmt = (
+        select(P2Record)
+        .options(selectinload(P2Record.items_v2))
+        .where(
         P2Record.tenant_id == current_tenant.id,
         P2Record.lot_no_norm == lot_no_norm
-    ).order_by(P2Record.winder_number)
+        )
+        .order_by(P2Record.winder_number)
+    )
     p2_result = await db.execute(p2_stmt)
     p2_records = p2_result.scalars().all()
     
-    p2_data = [
-        {
-            "id": r.id,
-            "winder_number": r.winder_number,
-            "extras": r.extras,
-            "created_at": r.created_at
-        }
-        for r in p2_records
-    ]
+    p2_data: list[dict[str, Any]] = []
+    for r in p2_records:
+        items = list(r.items_v2 or [])
+        extras: Any = r.extras
+        if items:
+            extras = _p2_to_query_record_with_items(r, items).additional_data
+
+        p2_data.append(
+            {
+                "id": r.id,
+                "winder_number": r.winder_number,
+                "extras": extras,
+                "created_at": r.created_at,
+            }
+        )
     
     # Fetch P3
-    p3_stmt = select(P3Record).where(
+    p3_stmt = (
+        select(P3Record)
+        .options(selectinload(P3Record.items_v2))
+        .where(
         P3Record.tenant_id == current_tenant.id,
         P3Record.lot_no_norm == lot_no_norm
-    ).order_by(P3Record.production_date_yyyymmdd, P3Record.machine_no)
+        )
+        .order_by(P3Record.production_date_yyyymmdd, P3Record.machine_no)
+    )
     p3_result = await db.execute(p3_stmt)
     p3_records = p3_result.scalars().all()
     
-    p3_data = [
-        {
-            "id": r.id,
-            "production_date": r.production_date_yyyymmdd,
-            "machine_no": (
-                _derive_machine_mold_from_extras(r.extras)[0]
-                if str(r.machine_no).upper() == "UNKNOWN"
-                else r.machine_no
-            ),
-            "mold_no": (
-                _derive_machine_mold_from_extras(r.extras)[1]
-                if str(r.mold_no).upper() == "UNKNOWN"
-                else r.mold_no
-            ),
-            "extras": r.extras,
-            "created_at": r.created_at
-        }
-        for r in p3_records
-    ]
+    p3_data: list[dict[str, Any]] = []
+    for r in p3_records:
+        items = list(r.items_v2 or [])
+        extras: Any = r.extras
+        if items:
+            extras = _p3_to_query_record_with_items(r, items).additional_data
+
+        machine_no = r.machine_no
+        mold_no = r.mold_no
+        if str(machine_no).upper() == "UNKNOWN" or str(mold_no).upper() == "UNKNOWN":
+            derived_machine = None
+            derived_mold = None
+            if items:
+                derived_machine = items[0].machine_no
+                derived_mold = items[0].mold_no
+            if derived_machine is None or derived_mold is None:
+                dm, dmo = _derive_machine_mold_from_extras(r.extras)
+                derived_machine = derived_machine or dm
+                derived_mold = derived_mold or dmo
+
+            if str(machine_no).upper() == "UNKNOWN":
+                machine_no = derived_machine
+            if str(mold_no).upper() == "UNKNOWN":
+                mold_no = derived_mold
+
+        p3_data.append(
+            {
+                "id": r.id,
+                "production_date": r.production_date_yyyymmdd,
+                "machine_no": machine_no,
+                "mold_no": mold_no,
+                "extras": extras,
+                "created_at": r.created_at,
+            }
+        )
     
     return TraceDetailResponse(
         trace_key=trace_key,
