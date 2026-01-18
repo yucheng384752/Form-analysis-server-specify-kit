@@ -33,6 +33,12 @@ export interface UploadedFile {
   processId: string | undefined;  // 後端返回的 process_id
   isValidated: boolean; // 是否已驗證過
   validationErrors: any[] | undefined; // 驗證錯誤
+
+  // PDF 轉檔狀態（PDF 專用）
+  pdfConvertStatus: "not_started" | "queued" | "uploading" | "processing" | "completed" | "failed" | undefined;
+  pdfConvertJobId: string | undefined;
+  pdfConvertProgress: number | undefined;
+  pdfConvertError: string | undefined;
 }
 
 const MAX_SIZE_BYTES = 10 * 1024 * 1024;
@@ -120,8 +126,6 @@ export function UploadPage() {
   const [showBatchImportConfirm, setShowBatchImportConfirm] = useState(false);
   const { showToast } = useToast();
 
-  const [tenantId, setTenantId] = useState<string>("");
-
   // 使用 ref 追蹤最新的 files 狀態，以解決在非同步操作（如 setTimeout）中存取過時狀態的問題
   // 同時避免在 setFiles 的 updater function 中執行副作用（如 showToast）
   const filesRef = useRef(files);
@@ -129,17 +133,8 @@ export function UploadPage() {
     filesRef.current = files;
   }, [files]);
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
-    if (stored) {
-      setTenantId(stored);
-      return;
-    }
-    showToast('error', '尚未選擇 Tenant。請先到「註冊/初始化」頁籤建立/選擇 Tenant，再進行匯入。');
-  }, []);
-
   const buildTenantHeaders = (): HeadersInit => {
-    const id = tenantId || window.localStorage.getItem('form_analysis_tenant_id') || '';
+    const id = window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
     return id ? { 'X-Tenant-Id': id } : {};
   };
 
@@ -173,6 +168,37 @@ export function UploadPage() {
       default:
         return 30;
     }
+  };
+
+  const toPdfConvertProgress = (convertStatus: string): number => {
+    switch (convertStatus) {
+      case 'NOT_STARTED':
+        return 0;
+      case 'QUEUED':
+        return 10;
+      case 'UPLOADING':
+        return 25;
+      case 'PROCESSING':
+        return 65;
+      case 'COMPLETED':
+        return 100;
+      case 'FAILED':
+        return 100;
+      default:
+        return 30;
+    }
+  };
+
+  const fetchPdfConvertStatus = async (processId: string) => {
+    const res = await fetch(`/api/upload/pdf/${processId}/convert/status`, {
+      headers: buildTenantHeaders(),
+    });
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({ detail: '取得 PDF 轉檔狀態失敗' }));
+      const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || '取得 PDF 轉檔狀態失敗');
+      throw new Error(message);
+    }
+    return res.json();
   };
 
   const fetchImportJob = async (jobId: string) => {
@@ -230,6 +256,11 @@ export function UploadPage() {
         processId: undefined,
         isValidated: false,
         validationErrors: undefined,
+
+        pdfConvertStatus: type === "PDF" ? "not_started" : undefined,
+        pdfConvertJobId: undefined,
+        pdfConvertProgress: type === "PDF" ? 0 : undefined,
+        pdfConvertError: undefined,
       });
     });
 
@@ -296,12 +327,17 @@ export function UploadPage() {
                   validationErrors: undefined,
                   hasUnsavedChanges: false,
                   expanded: false,
+
+                  pdfConvertStatus: 'not_started',
+                  pdfConvertJobId: undefined,
+                  pdfConvertProgress: 0,
+                  pdfConvertError: undefined,
                 }
               : f
           )
         );
 
-        showToast('success', 'PDF 已上傳（目前僅保存，尚未轉檔/匯入）');
+        showToast('success', 'PDF 已上傳（可開始 PDF→CSV 轉檔）');
       } catch (e: any) {
         setFiles((prev) =>
           prev.map((f) => (f.id === fileId ? { ...f, status: 'uploaded', validateProgress: 0 } : f))
@@ -504,6 +540,114 @@ export function UploadPage() {
             : f
         )
       );
+    }
+  };
+
+  const handlePdfConvert = async (fileId: string) => {
+    const target = files.find((f) => f.id === fileId);
+    if (!target) return;
+    if (target.type !== 'PDF') return;
+    if (!target.processId) {
+      showToast('error', '找不到 process_id，請先上傳 PDF');
+      return;
+    }
+
+    setFiles((prev) =>
+      prev.map((f) =>
+        f.id === fileId
+          ? {
+              ...f,
+              pdfConvertStatus: 'queued',
+              pdfConvertProgress: 10,
+              pdfConvertError: undefined,
+            }
+          : f
+      )
+    );
+
+    try {
+      const res = await fetch(`/api/upload/pdf/${target.processId}/convert`, {
+        method: 'POST',
+        headers: buildTenantHeaders(),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: '觸發 PDF 轉檔失敗' }));
+        const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || '觸發 PDF 轉檔失敗');
+        throw new Error(message);
+      }
+
+      const trigger = await res.json();
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === fileId
+            ? {
+                ...f,
+                pdfConvertJobId: trigger.job_id,
+              }
+            : f
+        )
+      );
+
+      // Poll status until completed/failed
+      const maxTries = 180; // ~3 minutes
+      for (let i = 0; i < maxTries; i++) {
+        const s = await fetchPdfConvertStatus(target.processId);
+        const status = String(s.status || '');
+        const progress = typeof s.progress === 'number' ? s.progress : toPdfConvertProgress(status);
+        const errorSummary = s.error_summary;
+        const errorText = errorSummary?.error ? String(errorSummary.error) : undefined;
+
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileId
+              ? {
+                  ...f,
+                  pdfConvertStatus:
+                    status === 'COMPLETED'
+                      ? 'completed'
+                      : status === 'FAILED'
+                      ? 'failed'
+                      : status === 'UPLOADING'
+                      ? 'uploading'
+                      : status === 'PROCESSING'
+                      ? 'processing'
+                      : status === 'QUEUED'
+                      ? 'queued'
+                      : 'not_started',
+                  pdfConvertProgress: progress,
+                  pdfConvertError: status === 'FAILED' ? (errorText || 'PDF 轉檔失敗') : undefined,
+                }
+              : f
+          )
+        );
+
+        if (status === 'COMPLETED') {
+          showToast('success', 'PDF 轉檔完成（CSV 已產生）');
+          return;
+        }
+        if (status === 'FAILED') {
+          showToast('error', errorText || 'PDF 轉檔失敗');
+          return;
+        }
+
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+
+      showToast('info', 'PDF 轉檔仍在處理中，可稍後再查看狀態');
+    } catch (e: any) {
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === fileId
+            ? {
+                ...f,
+                pdfConvertStatus: 'failed',
+                pdfConvertProgress: 100,
+                pdfConvertError: e?.message || 'PDF 轉檔失敗',
+              }
+            : f
+        )
+      );
+      showToast('error', e?.message || 'PDF 轉檔失敗');
     }
   };
 
@@ -964,6 +1108,7 @@ export function UploadPage() {
               key={f.id}
               file={f}
               onValidate={() => handleValidate(f.id)}
+              onConvertPdf={() => handlePdfConvert(f.id)}
               onSaveChanges={() => handleSaveChanges(f.id)}
               onToggleExpand={() => handleToggleExpand(f.id)}
               onRemove={() => handleRemoveFile(f.id)}
@@ -1102,6 +1247,7 @@ function FileDropArea({ onFiles }: FileDropAreaProps) {
 interface UploadedFileCardProps {
   file: UploadedFile;
   onValidate: () => void;
+  onConvertPdf: () => void;
   onSaveChanges: () => void;
   onToggleExpand: () => void;
   onRemove: () => void;
@@ -1117,6 +1263,7 @@ interface UploadedFileCardProps {
 function UploadedFileCard({
   file,
   onValidate,
+  onConvertPdf,
   onSaveChanges,
   onToggleExpand,
   onRemove,
@@ -1136,6 +1283,23 @@ function UploadedFileCard({
     !EDIT_ENABLED || !file.csvData || !file.hasUnsavedChanges;
 
   const isPdf = file.type === 'PDF';
+
+  const pdfStatusText = () => {
+    if (!isPdf || !file.isValidated) return '';
+    switch (file.pdfConvertStatus) {
+      case 'queued':
+      case 'uploading':
+      case 'processing':
+        return '轉檔中（PDF→CSV）';
+      case 'completed':
+        return '已轉檔（CSV）';
+      case 'failed':
+        return '轉檔失敗';
+      case 'not_started':
+      default:
+        return '已上傳（PDF）/待轉檔';
+    }
+  };
 
   return (
     <div className="uploaded-card">
@@ -1201,7 +1365,9 @@ function UploadedFileCard({
 
       <div className="uploaded-card__body">
         <div className="uploaded-card__status">
-          {file.status === "uploaded" && <span>{isPdf && file.isValidated ? '已上傳（PDF）' : '待驗證'}</span>}
+          {file.status === "uploaded" && (
+            <span>{isPdf && file.isValidated ? pdfStatusText() : '待驗證'}</span>
+          )}
           {file.status === "validating" && (
             <span>驗證中...</span>
           )}
@@ -1217,6 +1383,10 @@ function UploadedFileCard({
         )}
         {file.status === "importing" && (
           <ProgressBar value={file.importProgress} label="匯入進度" />
+        )}
+
+        {isPdf && file.isValidated && (file.pdfConvertStatus === 'queued' || file.pdfConvertStatus === 'uploading' || file.pdfConvertStatus === 'processing') && (
+          <ProgressBar value={file.pdfConvertProgress ?? 0} label="PDF→CSV 轉檔進度" />
         )}
 
         <div className="uploaded-card__buttons">
@@ -1251,6 +1421,33 @@ function UploadedFileCard({
               : "驗證檔案"
             }
           </button>
+
+          {isPdf && file.isValidated && (
+            <button
+              className={`btn-primary ${
+                file.pdfConvertStatus === 'queued' || file.pdfConvertStatus === 'uploading' || file.pdfConvertStatus === 'processing'
+                  ? 'btn-primary--disabled'
+                  : ''
+              }`}
+              onClick={onConvertPdf}
+              disabled={
+                file.pdfConvertStatus === 'queued' ||
+                file.pdfConvertStatus === 'uploading' ||
+                file.pdfConvertStatus === 'processing'
+              }
+              title={
+                file.pdfConvertStatus === 'completed'
+                  ? '已完成轉檔'
+                  : '開始將 PDF 轉成 CSV（非同步）'
+              }
+            >
+              {file.pdfConvertStatus === 'completed'
+                ? '已轉檔 ✓'
+                : file.pdfConvertStatus === 'failed'
+                ? '重新轉檔'
+                : '開始轉檔'}
+            </button>
+          )}
 
           {!isPdf && (
             <button
@@ -1308,6 +1505,12 @@ function UploadedFileCard({
             </button>
           )}
         </div>
+
+        {isPdf && file.isValidated && file.pdfConvertStatus === 'failed' && file.pdfConvertError && (
+          <div style={{ marginTop: '8px', color: '#dc2626', fontSize: '14px' }}>
+            轉檔失敗原因：{file.pdfConvertError}
+          </div>
+        )}
       </div>
 
       {file.expanded && file.csvData && (

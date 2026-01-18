@@ -62,7 +62,7 @@ export function installGlobalFetchWrapper(): () => void {
         if (!effectiveTenantId) {
           return new Response(
             JSON.stringify({
-              detail: '尚未選擇 Tenant（X-Tenant-Id）。請到「註冊/初始化」頁籤建立/選擇 Tenant 後再操作。',
+              detail: '尚未選擇 Tenant（X-Tenant-Id）。請到「登入」頁籤選擇 Tenant；若尚未初始化，先用管理者金鑰解鎖「管理者」頁籤建立 Tenant。',
             }),
             { status: 400, headers: { 'Content-Type': 'application/json' } },
           )

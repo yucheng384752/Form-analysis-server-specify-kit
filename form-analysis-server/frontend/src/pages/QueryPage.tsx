@@ -152,6 +152,8 @@ export function QueryPage() {
   const [detailRecord, setDetailRecord] = useState<QueryRecord | null>(null);
   const [editRecord, setEditRecord] = useState<QueryRecord | null>(null);
   const [tenantId, setTenantId] = useState<string>("");
+
+  const effectiveTenantId = tenantId || window.localStorage.getItem(TENANT_STORAGE_KEY) || ''
   
   // 表格排序狀態: { 'recordId-tableType': { column: 'columnName', direction: 'asc'|'desc' } }
   const [tableSortState, setTableSortState] = useState<{ [key: string]: { column: string; direction: 'asc' | 'desc' } }>({});
@@ -164,7 +166,7 @@ export function QueryPage() {
   }, []);
 
   const mergeTenantHeaders = (headers?: HeadersInit): HeadersInit => {
-    const tenantHeaders: Record<string, string> = tenantId ? { 'X-Tenant-Id': tenantId } : {};
+    const tenantHeaders: Record<string, string> = effectiveTenantId ? { 'X-Tenant-Id': effectiveTenantId } : {};
 
     if (!headers) return tenantHeaders;
     if (headers instanceof Headers) {
@@ -742,8 +744,8 @@ export function QueryPage() {
 
   // 處理基本搜尋
   const handleSearch = async () => {
-    if (!tenantId) {
-      alert('尚未選擇 Tenant。請先到「註冊/初始化」頁籤建立/選擇 Tenant，再進行查詢。');
+    if (!effectiveTenantId) {
+      alert('尚未選擇 Tenant。請先到「登入」頁籤選擇 Tenant；若尚未初始化，請先用管理者金鑰解鎖「管理者」頁籤建立 Tenant。');
       return;
     }
 
@@ -792,8 +794,8 @@ export function QueryPage() {
   
   // 處理進階搜尋
   const handleAdvancedSearch = async (params: AdvancedSearchParams) => {
-    if (!tenantId) {
-      alert('尚未選擇 Tenant。請先到「註冊/初始化」頁籤建立/選擇 Tenant，再進行查詢。');
+    if (!effectiveTenantId) {
+      alert('尚未選擇 Tenant。請先到「登入」頁籤選擇 Tenant；若尚未初始化，請先用管理者金鑰解鎖「管理者」頁籤建立 Tenant。');
       return;
     }
 
@@ -821,8 +823,8 @@ export function QueryPage() {
   const handleSuggestionClick = (suggestion: string) => {
     setSearchKeyword(suggestion);
     setShowSuggestions(false);
-    if (!tenantId) {
-      alert('尚未選擇 Tenant。請先到「註冊/初始化」頁籤建立/選擇 Tenant，再進行查詢。');
+    if (!effectiveTenantId) {
+      alert('尚未選擇 Tenant。請先到「登入」頁籤選擇 Tenant；若尚未初始化，請先用管理者金鑰解鎖「管理者」頁籤建立 Tenant。');
       return;
     }
     searchRecords(suggestion);
@@ -894,8 +896,9 @@ export function QueryPage() {
     const multiplier = direction === 'asc' ? 1 : -1;
     
     return [...rows].sort((a, b) => {
-      const aVal = a[column];
-      const bVal = b[column];
+      const isP2WinderSort = tableType === 'p2' && column === '__winder_number__';
+      const aVal = isP2WinderSort ? getP2RowWinderNumber(a) : a[column];
+      const bVal = isP2WinderSort ? getP2RowWinderNumber(b) : b[column];
       
       // 處理 null/undefined
       if (aVal === null || aVal === undefined) return 1;
@@ -1059,6 +1062,12 @@ export function QueryPage() {
     // 應用使用者排序
     const displayRows = sortTableData(sortedRows, record.id, 'p2');
     const hasRows = Array.isArray(rows) && rows.length > 0;
+    const p2Headers = hasRows
+      ? Object.keys(rows[0]).filter((k) => {
+          const nk = k.toLowerCase().replace(/[\s_]/g, '');
+          return nk !== 'windernumber';
+        })
+      : [];
     
     // 取得排序狀態
     const sortState = tableSortState[`${record.id}-p2`];
@@ -1087,8 +1096,19 @@ export function QueryPage() {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>#</th>
-                      {Object.keys(rows[0]).map(key => (
+                      <th
+                        onClick={() => handleTableSort(record.id, 'p2', '__winder_number__')}
+                        style={{ cursor: 'pointer', userSelect: 'none' }}
+                        title="點擊排序"
+                      >
+                        winder_number
+                        {sortState && sortState.column === '__winder_number__' && (
+                          <span style={{ marginLeft: '4px' }}>
+                            {sortState.direction === 'asc' ? '▲' : '▼'}
+                          </span>
+                        )}
+                      </th>
+                      {p2Headers.map(key => (
                         <th 
                           key={key} 
                           onClick={() => handleTableSort(record.id, 'p2', key)}
@@ -1108,8 +1128,8 @@ export function QueryPage() {
                   <tbody>
                     {displayRows.map((row: any, idx: number) => (
                       <tr key={idx}>
-                        <td>{idx + 1}</td>
-                        {Object.keys(rows[0]).map((header: string, vidx: number) => {
+                        <td>{getP2RowWinderNumber(row) ?? '-'}</td>
+                        {p2Headers.map((header: string, vidx: number) => {
                           const rawValue = row?.[header];
 
                           // P2 分條時間：若只有時間（HH:MM 或 HH:MM:SS），補上本筆 record 的 production_date。
@@ -1638,7 +1658,7 @@ export function QueryPage() {
           </div>
 
           <div className="query-search-input-wrapper autocomplete-wrapper">
-            {!tenantId && (
+            {!effectiveTenantId && (
               <div
                 style={{
                   marginBottom: '10px',
@@ -1650,7 +1670,7 @@ export function QueryPage() {
                   fontSize: '14px',
                 }}
               >
-                尚未選擇 Tenant。請先到上方「註冊/初始化」頁籤完成場域設定。
+                尚未選擇 Tenant。請先到上方「登入」頁籤選擇場域；若尚未初始化，請先驗證管理者金鑰以解鎖「管理者」頁籤。
               </div>
             )}
             <input

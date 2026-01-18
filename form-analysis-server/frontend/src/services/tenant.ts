@@ -153,7 +153,7 @@ export async function ensureTenantIdWithOptions(options?: EnsureTenantIdOptions)
           const adminKey = getAdminApiKeyValue()
           if (!allowAdminBootstrap || !adminKey) {
             if (notify || reason === 'recovery') {
-              emitToast('error', '目前資料庫沒有任何場域（tenant）。請在「管理者模式」貼上 Admin key，並使用「一鍵建立/選擇場域」或「建立場域」。')
+              emitToast('error', '目前資料庫沒有任何場域（tenant）。請到「登入」頁籤驗證管理者金鑰以解鎖「管理者」，再使用「一鍵建立/選擇場域」或「建立場域」。')
             }
             return ''
           }
