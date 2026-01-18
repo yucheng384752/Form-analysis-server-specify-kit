@@ -10,18 +10,27 @@ from datetime import datetime, timezone
 from typing import List
 from pathlib import Path
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, status, Request
+from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, status, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from app.core.database import get_db
+from app.core import database
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models.upload_job import UploadJob, JobStatus
 from app.models.upload_error import UploadError
+from app.models.pdf_upload import PdfUpload
+from app.models.pdf_conversion_job import PdfConversionJob, PdfConversionStatus
 from app.schemas.upload import FileUploadResponse, UploadErrorResponse, UpdateUploadContentRequest
+from app.schemas.pdf_conversion import (
+    PdfConvertTriggerResponse,
+    PdfConvertStatusResponse,
+    PdfConversionStatus as PdfSchemaConversionStatus,
+)
 from app.services.validation import file_validation_service, ValidationError
+from app.services.pdf_conversion import process_pdf_conversion_job_background
 
 # 獲取日誌記錄器
 logger = get_logger(__name__)
@@ -495,6 +504,8 @@ async def upload_file(
 )
 async def upload_pdf(
     file: UploadFile = File(..., description="要上傳的 PDF 檔案"),
+    http_request: Request = None,
+    db: AsyncSession = Depends(get_db),
 ) -> FileUploadResponse:
     start_time = time.time()
 
@@ -541,6 +552,49 @@ async def upload_pdf(
     target_path = pdf_dir / f"{process_id}.pdf"
     target_path.write_bytes(file_content)
 
+    # Persist tenant-scoped upload record for later conversion/status.
+    tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None) if http_request else None
+    if not tenant_id:
+        # Should not happen because the router is tenant-scoped via dependencies.
+        # Still keep it defensive.
+        try:
+            target_path.unlink(missing_ok=True)
+        except TypeError:
+            if target_path.exists():
+                target_path.unlink()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Tenant context missing",
+        )
+
+    actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None) if http_request else None
+    actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None) if http_request else None
+
+    try:
+        db.add(
+            PdfUpload(
+                process_id=process_id,
+                tenant_id=tenant_id,
+                filename=file.filename,
+                file_size=file_size,
+                storage_path=str(target_path),
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_api_key_label,
+            )
+        )
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        try:
+            target_path.unlink(missing_ok=True)
+        except TypeError:
+            if target_path.exists():
+                target_path.unlink()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"PDF 保存紀錄寫入失敗：{str(e)}",
+        )
+
     logger.info(
         "PDF 上傳完成（僅保存）",
         process_id=str(process_id),
@@ -555,6 +609,137 @@ async def upload_pdf(
         valid_rows=0,
         invalid_rows=0,
         sample_errors=[],
+    )
+
+
+@router.post(
+    "/upload/pdf/{process_id}/convert",
+    response_model=PdfConvertTriggerResponse,
+    status_code=status.HTTP_200_OK,
+    summary="觸發 PDF → CSV 轉檔（非同步）",
+    description="""
+    觸發指定 process_id 的 PDF 進行轉檔。
+
+    - 會建立一筆 PdfConversionJob 並回傳 job_id
+    - 若系統未設定外部 PDF server，背景任務會標記為 FAILED（可從 status 取得錯誤原因）
+    """,
+)
+async def trigger_pdf_convert(
+    process_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> PdfConvertTriggerResponse:
+    tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=500, detail="Tenant context missing")
+
+    upload = (
+        await db.execute(
+            select(PdfUpload).where(
+                PdfUpload.process_id == process_id,
+                PdfUpload.tenant_id == tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not upload:
+        raise HTTPException(status_code=404, detail="找不到指定的 PDF 上傳紀錄")
+
+    # Idempotency: return latest active/completed job if exists.
+    latest_job = (
+        await db.execute(
+            select(PdfConversionJob)
+            .where(
+                PdfConversionJob.process_id == process_id,
+                PdfConversionJob.tenant_id == tenant_id,
+            )
+            .order_by(PdfConversionJob.created_at.desc())
+        )
+    ).scalars().first()
+
+    if latest_job and latest_job.status in {
+        PdfConversionStatus.QUEUED,
+        PdfConversionStatus.UPLOADING,
+        PdfConversionStatus.PROCESSING,
+        PdfConversionStatus.COMPLETED,
+    }:
+        return PdfConvertTriggerResponse(
+            job_id=latest_job.id,
+            status=PdfSchemaConversionStatus(latest_job.status.value),
+        )
+
+    actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None)
+    actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None)
+
+    job = PdfConversionJob(
+        process_id=process_id,
+        tenant_id=tenant_id,
+        status=PdfConversionStatus.QUEUED,
+        progress=0,
+        actor_api_key_id=actor_api_key_id,
+        actor_label_snapshot=actor_api_key_label,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    # Background processing only when global session factory is available.
+    if database.async_session_factory:
+        background_tasks.add_task(process_pdf_conversion_job_background, job.id)
+    else:
+        if get_settings().environment.lower() != "testing":
+            logger.warning("Skip pdf conversion background task: async_session_factory not initialized")
+
+    return PdfConvertTriggerResponse(job_id=job.id, status=PdfSchemaConversionStatus.QUEUED)
+
+
+@router.get(
+    "/upload/pdf/{process_id}/convert/status",
+    response_model=PdfConvertStatusResponse,
+    status_code=status.HTTP_200_OK,
+    summary="查詢 PDF → CSV 轉檔狀態",
+)
+async def get_pdf_convert_status(
+    process_id: uuid.UUID,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> PdfConvertStatusResponse:
+    tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=500, detail="Tenant context missing")
+
+    upload = (
+        await db.execute(
+            select(PdfUpload).where(
+                PdfUpload.process_id == process_id,
+                PdfUpload.tenant_id == tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not upload:
+        raise HTTPException(status_code=404, detail="找不到指定的 PDF 上傳紀錄")
+
+    latest_job = (
+        await db.execute(
+            select(PdfConversionJob)
+            .where(
+                PdfConversionJob.process_id == process_id,
+                PdfConversionJob.tenant_id == tenant_id,
+            )
+            .order_by(PdfConversionJob.created_at.desc())
+        )
+    ).scalars().first()
+
+    if not latest_job:
+        return PdfConvertStatusResponse(status=PdfSchemaConversionStatus.NOT_STARTED, progress=0)
+
+    return PdfConvertStatusResponse(
+        status=PdfSchemaConversionStatus(latest_job.status.value),
+        job_id=latest_job.id,
+        progress=int(latest_job.progress or 0),
+        external_job_id=latest_job.external_job_id,
+        output_path=latest_job.output_path,
+        error_summary=latest_job.error_summary,
     )
 
 

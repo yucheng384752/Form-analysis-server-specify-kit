@@ -14,6 +14,8 @@ from .core.tenant import Tenant
 from .core.tenant_api_key import TenantApiKey
 from .core.audit_event import AuditEvent
 from .audit import EditReason, RowEdit
+from .pdf_upload import PdfUpload
+from .pdf_conversion_job import PdfConversionJob
 
 __all__ = [
     "UploadJob", 
@@ -30,5 +32,7 @@ __all__ = [
     "TenantApiKey",
     "AuditEvent",
     "EditReason",
-    "RowEdit"
+    "RowEdit",
+    "PdfUpload",
+    "PdfConversionJob",
 ]

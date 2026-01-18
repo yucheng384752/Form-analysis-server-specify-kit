@@ -55,6 +55,25 @@ class Settings(BaseSettings):
         le=100,
         description="Maximum concurrent upload operations"
     )
+
+    # External PDF conversion server (optional)
+    pdf_server_url: str = Field(
+        default="",
+        description="Base URL of external PDF conversion service (optional)",
+        alias="PDF_SERVER_URL",
+    )
+    pdf_server_convert_path: str = Field(
+        default="/convert",
+        description="Convert endpoint path on PDF server",
+        alias="PDF_SERVER_CONVERT_PATH",
+    )
+    pdf_server_timeout_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=600,
+        description="Timeout (seconds) for PDF server requests",
+        alias="PDF_SERVER_TIMEOUT_SECONDS",
+    )
     
     # CORS settings (using string for environment variable compatibility)
     cors_origins_str: str = Field(
