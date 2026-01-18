@@ -1,14 +1,22 @@
 param(
     [string]$ApiBase = "http://localhost:18002",
-    [string]$P1File = "c:\Users\yucheng\Desktop\侑特資料\新侑特資料\P1_2507173_02.csv",
-    [string]$P2File = "c:\Users\yucheng\Desktop\侑特資料\新侑特資料\P2_2507173_02.csv",
-    [string]$P3File = "c:\Users\yucheng\Desktop\侑特資料\新侑特資料\P3_0902_P24 copy.csv"
+    [string]$DataDir,
+    [string]$P1File,
+    [string]$P2File,
+    [string]$P3File
 )
 
 # Import V2: run P1/P2/P3 with the provided 3 CSV files
 
 $faRoot = Resolve-Path (Join-Path $PSScriptRoot "..\\..")
 $LocalDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+if (-not $DataDir) { $DataDir = $env:UT_DATA_DIR }
+if (-not $DataDir) { throw "DataDir is required. Set -DataDir or env:UT_DATA_DIR" }
+
+if (-not $P1File) { $P1File = Join-Path $DataDir "P1_2507173_02.csv" }
+if (-not $P2File) { $P2File = Join-Path $DataDir "P2_2507173_02.csv" }
+if (-not $P3File) { $P3File = Join-Path $DataDir "P3_0902_P24 copy.csv" }
 
 function Get-TenantId {
     $tenants = Invoke-RestMethod -Uri "$ApiBase/api/tenants" -Method Get

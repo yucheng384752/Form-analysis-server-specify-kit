@@ -1,7 +1,19 @@
 param(
     [string]$ApiBase = "http://localhost:18002",
-    [string]$P1File = "C:\Users\yucheng\Desktop\侑特資料\新侑特資料\P1_2507173_02.csv"
+    [string]$DataDir,
+    [string]$P1File
 )
+
+if (-not $DataDir) { $DataDir = $env:UT_DATA_DIR }
+if (-not $DataDir) { throw "DataDir is required. Set -DataDir or env:UT_DATA_DIR" }
+
+if (-not $P1File) {
+    $P1File = Join-Path $DataDir "P1_2507173_02.csv"
+}
+
+if (-not (Test-Path -LiteralPath $P1File)) {
+    throw "P1File not found: $P1File (set -P1File, or set -DataDir / env:UT_DATA_DIR)"
+}
 
 Write-Host "Importing P1 data..." -ForegroundColor Yellow
 

@@ -1,7 +1,7 @@
 param(
     [string]$BaseUrl = "http://localhost:18002",
     [string]$TenantId,
-    [string]$DataDir = "C:\Users\yucheng\Desktop\侑特資料\新侑特資料",
+    [string]$DataDir,
     [int]$Take = 3
 )
 
@@ -21,6 +21,12 @@ if (-not $TenantId) {
 
 Write-Host "=== Production Data Import & Query Test ===" -ForegroundColor Cyan
 Write-Host "Using Tenant ID: $TenantId" -ForegroundColor Green
+
+if (-not $DataDir) { $DataDir = $env:UT_DATA_DIR }
+if (-not $DataDir) { throw "DataDir is required. Set -DataDir or env:UT_DATA_DIR" }
+if (-not (Test-Path -LiteralPath $DataDir)) {
+    throw "DataDir not found: $DataDir (set -DataDir or env:UT_DATA_DIR)"
+}
 
 # Base path for production data
 $P1Dir = Join-Path $DataDir "P1"
