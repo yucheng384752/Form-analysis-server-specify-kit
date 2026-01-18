@@ -29,7 +29,7 @@ from app.core.config import get_settings
 from app.core.database import init_db, Base
 from app.core.logging import setup_logging
 from app.core.middleware import RequestLoggingMiddleware, add_process_time_header
-from app.api import routes_health, routes_upload, routes_validate, routes_import, routes_export, routes_query, routes_logs, routes_import_v2, routes_tenants, routes_query_v2, routes_edit
+from app.api import routes_health, routes_upload, routes_validate, routes_import, routes_export, routes_logs, routes_import_v2, routes_tenants, routes_query_v2, routes_edit, routes_audit_events
 from app.api import routes_auth
 from app.api import constants as routes_constants
 from app.api import traceability as routes_traceability
@@ -40,7 +40,7 @@ from app.models.core.tenant_api_key import TenantApiKey
 from app.models.core.tenant_user import TenantUser
 
 # Import all models to ensure they're registered with Base
-from app.models import UploadJob, UploadError, Record, AuditEvent
+from app.models import UploadJob, UploadError, Record, AuditEvent, PdfUpload, PdfConversionJob
 
 # Initialize application settings
 settings = get_settings()
@@ -222,8 +222,13 @@ async def api_key_auth_middleware(request: Request, call_next):
     provided = request.headers.get(header_name)
     if not provided:
         # Allow admin-only bootstrap for tenant creation without a tenant API key.
-        bootstrap_paths = {"/api/tenants", "/api/auth/users", "/api/auth/whoami", "/api/auth/bootstrap-status"}
-        if is_admin and path in bootstrap_paths:
+        bootstrap_prefixes = (
+            "/api/tenants",
+            "/api/auth/users",
+            "/api/auth/whoami",
+            "/api/auth/bootstrap-status",
+        )
+        if is_admin and any(path.startswith(p) for p in bootstrap_prefixes):
             return await call_next(request)
 
         # In development, give a more actionable hint for bootstrap endpoints.
@@ -232,7 +237,7 @@ async def api_key_auth_middleware(request: Request, call_next):
         except Exception:
             is_dev = False
 
-        if is_dev and path in bootstrap_paths:
+        if is_dev and any(path.startswith(p) for p in bootstrap_prefixes):
             return JSONResponse(
                 status_code=401,
                 content={
@@ -444,14 +449,6 @@ app.include_router(
     dependencies=tenant_deps,
 )
 
-# 資料查詢路由
-app.include_router(
-    routes_query.router,
-    prefix="/api/query",
-    tags=["資料查詢"],
-    dependencies=tenant_deps,
-)
-
 # 日誌管理路由
 app.include_router(
     routes_logs.router,
@@ -500,6 +497,11 @@ app.include_router(
     prefix="/api/edit",
     tags=["Inline Edit"],
     dependencies=tenant_deps,
+)
+
+app.include_router(
+    routes_audit_events.router,
+    tags=["Audit Events"],
 )
 
 # UT API (侑特資料查詢)

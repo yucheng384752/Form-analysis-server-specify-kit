@@ -1,8 +1,9 @@
+import re
 from typing import List, Optional, Dict, Any, Iterable
 from uuid import UUID
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, and_, or_, func, cast, union_all, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,8 @@ from app.models.core.tenant import Tenant
 from app.models.p1_record import P1Record
 from app.models.p2_record import P2Record
 from app.models.p3_record import P3Record
-from app.utils.normalization import normalize_lot_no
+from app.utils.normalization import normalize_lot_no, normalize_search_term, normalize_search_term_variants
+from app.services.audit_events import write_audit_event_best_effort
 
 router = APIRouter()
 
@@ -745,8 +747,39 @@ async def get_field_options_v2(
 
     # specification: 統一規格選項，從 P1/P2/P3 的 extras 中提取
     if field == "specification":
-        specs: List[str] = []
-        seen = set()
+        # Deduplicate across formatting variants, e.g. "PE32" vs "PE 32" vs "ＰＥ３２".
+        # We still return a human-friendly display value (stable by heuristic).
+        display_by_key: dict[str, str] = {}
+
+        def _normalize_display(s: str) -> str:
+            # NFKC happens in normalize_search_term already; keep a readable form.
+            s2 = str(s).strip()
+            s2 = re.sub(r"\s+", " ", s2)
+            # Make common ASCII tokens consistent (e.g. 'pe 32' -> 'PE 32').
+            if re.fullmatch(r"[A-Za-z0-9 _\-\.]+", s2 or ""):
+                s2 = s2.upper()
+            return s2
+
+        def _score_display(s: str) -> tuple[int, int, int]:
+            # Prefer letter + space + digit boundary like 'PE 32'
+            boundary_space = 1 if re.search(r"[A-Za-z]+\s+\d", s) else 0
+            ascii_only = 1 if all(ord(ch) < 128 for ch in s) else 0
+            return (boundary_space, ascii_only, -len(s))
+
+        def _maybe_add_spec(raw: object) -> None:
+            if raw is None:
+                return
+            raw_s = str(raw).strip()
+            if not raw_s:
+                return
+            key = normalize_search_term(raw_s)
+            if not key:
+                return
+            disp = _normalize_display(raw_s)
+
+            existing = display_by_key.get(key)
+            if existing is None or _score_display(disp) > _score_display(existing):
+                display_by_key[key] = disp
         
         # P1: extras.Specification
         p1_stmt = (
@@ -758,9 +791,7 @@ async def get_field_options_v2(
         for (extras,) in p1_result.fetchall():
             if isinstance(extras, dict):
                 spec = extras.get('Specification') or extras.get('specification') or extras.get('規格')
-                if spec and str(spec).strip() and str(spec).strip() not in seen:
-                    seen.add(str(spec).strip())
-                    specs.append(str(spec).strip())
+                _maybe_add_spec(spec)
         
         # P2: extras.format
         p2_stmt = (
@@ -772,9 +803,7 @@ async def get_field_options_v2(
         for (extras,) in p2_result.fetchall():
             if isinstance(extras, dict):
                 spec = extras.get('format') or extras.get('Format') or extras.get('規格')
-                if spec and str(spec).strip() and str(spec).strip() not in seen:
-                    seen.add(str(spec).strip())
-                    specs.append(str(spec).strip())
+                _maybe_add_spec(spec)
         
         # P3: extras.rows[0].Specification
         p3_stmt = (
@@ -786,11 +815,10 @@ async def get_field_options_v2(
         for (extras,) in p3_result.fetchall():
             row0 = _first_row(extras)
             spec = _extract_spec_from_row(row0)
-            if spec and spec not in seen:
-                seen.add(spec)
-                specs.append(spec)
-        
-        specs.sort()
+
+            _maybe_add_spec(spec)
+
+        specs = sorted(display_by_key.values())
         return specs[:limit]
     
     # winder_number: 從 P2/P3 的 extras 中提取
@@ -867,6 +895,7 @@ async def query_records_v2(
 
 @router.get("/records/advanced", response_model=QueryResponseV2Compat)
 async def query_records_advanced_v2(
+    request: Request = None,
     lot_no: Optional[str] = Query(None),
     production_date_from: Optional[str] = Query(None),
     production_date_to: Optional[str] = Query(None),
@@ -913,11 +942,41 @@ async def query_records_advanced_v2(
     date_from_i = to_int_yyyymmdd(production_date_from)
     date_to_i = to_int_yyyymmdd(production_date_to)
 
-    material_norm = (material or '').strip().upper() or None
+    material_norm = normalize_search_term(material)
+    specification_norm = normalize_search_term(specification)
 
     records: List[QueryRecordV2Compat] = []
 
     dialect_name = (db.get_bind().dialect.name if db.get_bind() else "").lower()
+
+    def _canon_sql(expr):
+        """Best-effort canonicalization for SQL text expressions.
+
+        Removes common separators and lowercases the string so we can match
+        user input normalized by normalize_search_term().
+        """
+        s = func.coalesce(expr, "")
+        s = func.lower(s)
+        for ch in [
+            " ", "\t", "\n", "\r",
+            "_",
+            "-", "‐", "‑", "–", "—", "－",
+            "　",
+        ]:
+            s = func.replace(s, ch, "")
+        return s
+
+    def _escape_like(term: str) -> str:
+        return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    def _normalized_like(expr, term_obj: object):
+        variants = normalize_search_term_variants(term_obj)
+        if not variants:
+            return None
+        preds = []
+        for v in variants:
+            preds.append(_canon_sql(expr).like(f"%{_escape_like(v)}%", escape="\\"))
+        return or_(*preds)
 
     def _json_key_text(col, key: str):
         if dialect_name == "postgresql":
@@ -936,14 +995,14 @@ async def query_records_advanced_v2(
         
         # 統一規格搜尋: P1 查 extras.Specification
         if specification and specification.strip():
-            spec = specification.strip()
-            p1_stmt = p1_stmt.where(
-                or_(
-                    _json_key_text(P1Record.extras, 'Specification').ilike(f"%{spec}%"),
-                    _json_key_text(P1Record.extras, 'specification').ilike(f"%{spec}%"),
-                    _json_key_text(P1Record.extras, '規格').ilike(f"%{spec}%"),
-                )
-            )
+            preds = [
+                _normalized_like(_json_key_text(P1Record.extras, 'Specification'), specification),
+                _normalized_like(_json_key_text(P1Record.extras, 'specification'), specification),
+                _normalized_like(_json_key_text(P1Record.extras, '規格'), specification),
+            ]
+            preds = [p for p in preds if p is not None]
+            if preds:
+                p1_stmt = p1_stmt.where(or_(*preds))
         
         p1_stmt = p1_stmt.order_by(P1Record.created_at.desc()).limit(page * page_size)
         p1_result = await db.execute(p1_stmt)
@@ -964,21 +1023,52 @@ async def query_records_advanced_v2(
             p2_stmt = p2_stmt.where(P2Record.lot_no_raw.ilike(f"%{lot_no_raw}%"))
         
         # 統一規格搜尋: 在 items 的 row_data 中搜尋
-        if specification and specification.strip():
-            spec = specification.strip()
+        # NOTE: SQLite's JSON/LIKE canonicalization is less reliable across environments.
+        # For sqlite, we rely on Python-side item pruning (still correct, test-friendly).
+        if specification and specification.strip() and dialect_name != "sqlite":
             # 需要 JOIN p2_items_v2 來篩選
             p2_stmt = p2_stmt.join(P2ItemV2, P2Record.id == P2ItemV2.p2_record_id)
-            p2_stmt = p2_stmt.where(
-                or_(
-                    _json_key_text(P2ItemV2.row_data, 'format').ilike(f"%{spec}%"),
-                    _json_key_text(P2ItemV2.row_data, 'Format').ilike(f"%{spec}%"),
-                    _json_key_text(P2ItemV2.row_data, '規格').ilike(f"%{spec}%"),
-                )
-            ).distinct()
+            preds = [
+                _normalized_like(_json_key_text(P2ItemV2.row_data, 'format'), specification),
+                _normalized_like(_json_key_text(P2ItemV2.row_data, 'Format'), specification),
+                _normalized_like(_json_key_text(P2ItemV2.row_data, '規格'), specification),
+            ]
+            preds = [p for p in preds if p is not None]
+            if preds:
+                p2_stmt = p2_stmt.where(or_(*preds)).distinct()
         
         p2_stmt = p2_stmt.order_by(P2Record.created_at.desc())
         p2_result = await db.execute(p2_stmt)
         p2_records = p2_result.scalars().unique().all()
+
+        def _p2_item_matches_spec(item: Any) -> bool:
+            if not specification_norm:
+                return True
+            raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
+            for key in ["format", "Format", "規格", "specification", "Specification"]:
+                v = raw.get(key)
+                v_norm = normalize_search_term(v)
+                if v_norm and specification_norm in v_norm:
+                    return True
+            return False
+
+        def _p2_item_matches_material(item: Any) -> bool:
+            if not material_norm:
+                return True
+            raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
+            for key in [
+                'material_code',
+                'Material',
+                'Material Code',
+                'material',
+                '材料',
+                '材料代號',
+            ]:
+                v = raw.get(key)
+                v_norm = normalize_search_term(v)
+                if v_norm and material_norm in v_norm:
+                    return True
+            return False
 
         legacy_records: list[P2Record] = []
 
@@ -990,14 +1080,26 @@ async def query_records_advanced_v2(
             if winder_requested is not None:
                 items = [item for item in items if item.winder_number == winder_requested]
 
+            # 進階查詢時，只顯示與搜尋條件相關的 row（避免 UI 展開看到一堆不相關 rows）。
+            if specification_norm:
+                items = [item for item in items if _p2_item_matches_spec(item)]
+            if material_norm:
+                items = [item for item in items if _p2_item_matches_material(item)]
+
             if items:
                 records.append(_p2_to_query_record_with_items(p2_record, items))
-            else:
-                # Legacy: 沒有 items_v2 的 P2Record 可能仍以 extras 方式保存
-                if winder_requested is not None:
-                    if p2_record.winder_number != winder_requested:
-                        continue
-                legacy_records.append(p2_record)
+                continue
+
+            # If we had items originally but they were pruned by row-level filters,
+            # do NOT fall back to legacy record shapes.
+            if list(p2_record.items_v2 or []):
+                continue
+
+            # Legacy: 沒有 items_v2 的 P2Record 可能仍以 extras 方式保存
+            if winder_requested is not None:
+                if p2_record.winder_number != winder_requested:
+                    continue
+            legacy_records.append(p2_record)
 
         if legacy_records:
             records.extend(_merge_p2_records(legacy_records))
@@ -1020,17 +1122,24 @@ async def query_records_advanced_v2(
         if date_to_i is not None:
             p3_stmt = p3_stmt.where(P3Record.production_date_yyyymmdd <= date_to_i)
         if machine_no and machine_no.strip():
-            p3_stmt = p3_stmt.where(P3Record.machine_no.ilike(f"%{machine_no.strip()}%"))
+            pred = _normalized_like(P3Record.machine_no, machine_no)
+            if pred is not None:
+                p3_stmt = p3_stmt.where(pred)
         if mold_no and mold_no.strip():
-            p3_stmt = p3_stmt.where(P3Record.mold_no.ilike(f"%{mold_no.strip()}%"))
+            pred = _normalized_like(P3Record.mold_no, mold_no)
+            if pred is not None:
+                p3_stmt = p3_stmt.where(pred)
         if product_id and product_id.strip():
-            p3_stmt = p3_stmt.where(P3Record.product_id.ilike(f"%{product_id.strip()}%"))
+            pred = _normalized_like(P3Record.product_id, product_id)
+            if pred is not None:
+                p3_stmt = p3_stmt.where(pred)
 
         # 統一規格搜尋: 在 items 的 specification 欄位中搜尋
         if specification and specification.strip():
-            spec = specification.strip()
             p3_stmt = p3_stmt.join(P3ItemV2, P3Record.id == P3ItemV2.p3_record_id)
-            p3_stmt = p3_stmt.where(P3ItemV2.specification.ilike(f"%{spec}%")).distinct()
+            pred = _normalized_like(P3ItemV2.specification, specification)
+            if pred is not None:
+                p3_stmt = p3_stmt.where(pred).distinct()
         
         # Winder Number 篩選: 搜尋 items 的 source_winder
         if winder_requested is not None:
@@ -1044,7 +1153,32 @@ async def query_records_advanced_v2(
         
         # 處理每個 P3Record + 其 items
         for p3_record in p3_records:
-            items = p3_record.items_v2
+            items = list(p3_record.items_v2 or [])
+
+            # 進階查詢時，只顯示與搜尋條件相關的 rows。
+            if winder_requested is not None:
+                items = [item for item in items if item.source_winder == winder_requested]
+            if specification_norm:
+                items = [item for item in items if (normalize_search_term(getattr(item, "specification", None)) or "").find(specification_norm) >= 0]
+            if material_norm:
+                def _p3_item_matches_material(item: Any) -> bool:
+                    raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
+                    for key in [
+                        'material_code',
+                        'Material',
+                        'Material Code',
+                        'material',
+                        '材料',
+                        '材料代號',
+                    ]:
+                        v = raw.get(key)
+                        v_norm = normalize_search_term(v)
+                        if v_norm and material_norm in v_norm:
+                            return True
+                    return False
+
+                items = [item for item in items if _p3_item_matches_material(item)]
+
             if items:  # 只有有 items 的才顯示
                 records.append(_p3_to_query_record_with_items(p3_record, items))
 
@@ -1068,16 +1202,28 @@ async def query_records_advanced_v2(
                         candidates.append(str(v).strip())
                 rows = data.get('rows')
                 if isinstance(rows, list):
+                    matched_rows: list[dict[str, Any]] = []
                     for row in rows:
                         if not isinstance(row, dict):
                             continue
+                        row_candidates: list[str] = []
                         for k in material_keys:
                             v = row.get(k)
                             if v is not None and str(v).strip():
+                                row_candidates.append(str(v).strip())
                                 candidates.append(str(v).strip())
 
+                        # Prune rows to only relevant ones for advanced searches.
+                        if row_candidates:
+                            if any((normalize_search_term(c) or "").find(material_norm) >= 0 for c in row_candidates):
+                                matched_rows.append(row)
+
+                    if matched_rows:
+                        rec.additional_data = {**data, 'rows': matched_rows}
+
             for c in candidates:
-                if material_norm in c.upper():
+                c_norm = normalize_search_term(c)
+                if c_norm and material_norm in c_norm:
                     return True
             return False
 
@@ -1089,6 +1235,54 @@ async def query_records_advanced_v2(
     start = (page - 1) * page_size
     end = start + page_size
     page_records = records[start:end]
+
+    # Optional semantic audit event for advanced queries.
+    # Avoids logging empty/no-op queries to reduce noise.
+    filters: dict[str, Any] = {}
+    if lot_no_raw:
+        filters["lot_no"] = lot_no_raw
+    if date_from_i is not None:
+        filters["production_date_from"] = int(date_from_i)
+    if date_to_i is not None:
+        filters["production_date_to"] = int(date_to_i)
+    if machine_no and machine_no.strip():
+        filters["machine_no"] = machine_no.strip()
+    if mold_no and mold_no.strip():
+        filters["mold_no"] = mold_no.strip()
+    if product_id and product_id.strip():
+        filters["product_id"] = product_id.strip()
+    if material and material.strip():
+        filters["material"] = material.strip()
+    if specification and specification.strip():
+        filters["specification"] = specification.strip()
+    if winder_requested is not None:
+        filters["winder_number"] = int(winder_requested)
+    if dt:
+        filters["data_type"] = dt
+
+    if request is not None and filters:
+        actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+        actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+        request_id = getattr(getattr(request, "state", None), "request_id", None)
+        await write_audit_event_best_effort(
+            tenant_id=current_tenant.id,
+            actor_api_key_id=actor_api_key_id,
+            actor_label_snapshot=actor_api_key_label,
+            request_id=str(request_id) if request_id else None,
+            method=request.method,
+            path=request.url.path,
+            status_code=200,
+            action="query.advanced",
+            metadata={
+                "filters": filters,
+                "page": int(page),
+                "page_size": int(page_size),
+                "total_count": int(total_count),
+                "returned_count": int(len(page_records)),
+            },
+            client_host=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
 
     return QueryResponseV2Compat(
         total_count=total_count,

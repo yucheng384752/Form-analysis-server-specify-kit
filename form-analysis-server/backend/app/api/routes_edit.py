@@ -8,6 +8,7 @@ from sqlalchemy.exc import NoResultFound
 from app.core.database import get_db
 from app.models import EditReason, RowEdit, P1Record, P2Record, P3Record
 from app.schemas.audit import EditReasonResponse, EditRecordRequest, RowEditResponse
+from app.services.audit_events import write_audit_event_best_effort
 
 router = APIRouter()
 
@@ -158,6 +159,32 @@ async def update_record(
     # 6. Commit
     await db.commit()
     await db.refresh(record)
+
+    # 7. Optional semantic audit event (best-effort).
+    if http_request is not None:
+        actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None)
+        actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None)
+        request_id = getattr(getattr(http_request, "state", None), "request_id", None)
+        changed_fields = [k for k in payload.updates.keys() if k and k != "id"]
+        await write_audit_event_best_effort(
+            tenant_id=resolved_tenant_id,
+            actor_api_key_id=actor_api_key_id,
+            actor_label_snapshot=actor_api_key_label,
+            request_id=str(request_id) if request_id else None,
+            method=http_request.method,
+            path=http_request.url.path,
+            status_code=200,
+            action="edit.record",
+            metadata={
+                "table_code": table_code.upper(),
+                "record_id": str(record_id),
+                "changed_fields": changed_fields,
+                "reason_id": str(payload.reason_id) if payload.reason_id else None,
+                "reason_text": (payload.reason_text or "")[:200] or None,
+            },
+            client_host=http_request.client.host if http_request.client else None,
+            user_agent=http_request.headers.get("user-agent"),
+        )
     
     return json_friendly({c.name: getattr(record, c.name) for c in record.__table__.columns})
 

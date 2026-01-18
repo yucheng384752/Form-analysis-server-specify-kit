@@ -18,6 +18,7 @@ from app.models.core.schema_registry import TableRegistry
 from app.models.import_job import ImportJob, ImportFile, ImportJobStatus, StagingRow
 from app.schemas.import_job import ImportJobRead, ImportJobErrorRow
 from app.services.import_v2 import ImportService
+from app.services.audit_events import write_audit_event_best_effort
 
 router = APIRouter()
 settings = get_settings()
@@ -36,6 +37,7 @@ async def _mark_job_failed(job_id: uuid.UUID, error: Exception | str) -> None:
         job = result.scalar_one_or_none()
         if not job:
             return
+        prev_status = job.status
         job.status = ImportJobStatus.FAILED
         job.error_summary = {"error": error_text}
         job.last_status_changed_at = datetime.now(timezone.utc)
@@ -44,7 +46,31 @@ async def _mark_job_failed(job_id: uuid.UUID, error: Exception | str) -> None:
         job.last_status_actor_label_snapshot = None
         await db.commit()
 
-async def process_import_job_background(job_id: uuid.UUID):
+        await write_audit_event_best_effort(
+            tenant_id=job.tenant_id,
+            actor_api_key_id=None,
+            actor_label_snapshot=None,
+            request_id=None,
+            method="INTERNAL",
+            path=f"/internal/v2/import/jobs/{job.id}/status",
+            status_code=0,
+            action="import.job.status",
+            metadata={
+                "job_id": str(job.id),
+                "from_status": str(prev_status),
+                "to_status": str(ImportJobStatus.FAILED),
+                "actor_kind": "system",
+                "error": error_text[:200],
+            },
+        )
+
+async def process_import_job_background(
+    job_id: uuid.UUID,
+    *,
+    actor_api_key_id: uuid.UUID | None = None,
+    actor_label_snapshot: str | None = None,
+    actor_kind: str = "system",
+):
     """
     Background task to parse and validate import job.
     """
@@ -57,9 +83,19 @@ async def process_import_job_background(job_id: uuid.UUID):
         try:
             logger.info(f"Starting background processing for job {job_id}")
             # 1. Parse
-            await service.parse_job(job_id)
+            await service.parse_job(
+                job_id,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                actor_kind=actor_kind,
+            )
             # 2. Validate
-            await service.validate_job(job_id)
+            await service.validate_job(
+                job_id,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                actor_kind=actor_kind,
+            )
             logger.info(f"Completed background processing for job {job_id}")
         except Exception as e:
             logger.exception(f"Background processing failed for job {job_id}: {e}")
@@ -174,6 +210,30 @@ async def create_import_job(
     
     await db.commit()
     await db.refresh(job)
+
+    # Semantic audit event (best-effort).
+    actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+    actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+    request_id = getattr(getattr(request, "state", None), "request_id", None)
+    await write_audit_event_best_effort(
+        tenant_id=current_tenant.id,
+        actor_api_key_id=actor_api_key_id,
+        actor_label_snapshot=actor_api_key_label,
+        request_id=str(request_id) if request_id else None,
+        method=request.method,
+        path=request.url.path,
+        status_code=status.HTTP_201_CREATED,
+        action="import.job.create",
+        metadata={
+            "job_id": str(job.id),
+            "batch_id": job.batch_id,
+            "table_code": table_code,
+            "total_files": len(files),
+            "allow_duplicate": bool(allow_duplicate),
+        },
+        client_host=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     
     # Eager load files for response
     # In async sqlalchemy, relationships are lazy by default. 
@@ -192,6 +252,7 @@ async def create_import_job(
     # Trigger background processing (only if global session factory is available).
     # In tests we often override `get_db` without initializing the global factory.
     if database.async_session_factory:
+        # Background work is attributed to system (it is executed by the service).
         background_tasks.add_task(process_import_job_background, job.id)
     else:
         # Avoid noisy errors in testing; callers can invoke service methods directly.
@@ -310,6 +371,23 @@ async def commit_import_job(
         job.last_status_actor_kind = "user"
         await db.commit()
         await db.refresh(job)
+
+        request_id = getattr(getattr(request, "state", None), "request_id", None)
+        await write_audit_event_best_effort(
+            tenant_id=current_tenant.id,
+            actor_api_key_id=actor_api_key_id,
+            actor_label_snapshot=actor_api_key_label,
+            request_id=str(request_id) if request_id else None,
+            method=request.method,
+            path=request.url.path,
+            status_code=status.HTTP_200_OK,
+            action="import.job.commit.requested",
+            metadata={
+                "job_id": str(job.id),
+            },
+            client_host=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
     
     # In tests we need deterministic behavior; commit synchronously.
     if settings.environment.lower() == "testing":
@@ -368,13 +446,36 @@ async def cancel_import_job(
         job.last_status_actor_kind = "user"
         await db.commit()
 
+        request_id = getattr(getattr(request, "state", None), "request_id", None)
+        await write_audit_event_best_effort(
+            tenant_id=current_tenant.id,
+            actor_api_key_id=actor_api_key_id,
+            actor_label_snapshot=actor_api_key_label,
+            request_id=str(request_id) if request_id else None,
+            method=request.method,
+            path=request.url.path,
+            status_code=status.HTTP_200_OK,
+            action="import.job.cancelled",
+            metadata={
+                "job_id": str(job.id),
+            },
+            client_host=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+
     from sqlalchemy.orm import selectinload
     stmt = select(ImportJob).options(selectinload(ImportJob.files)).where(ImportJob.id == job_id)
     result = await db.execute(stmt)
     job = result.scalar_one()
     return job
 
-async def process_commit_job_background(job_id: uuid.UUID):
+async def process_commit_job_background(
+    job_id: uuid.UUID,
+    *,
+    actor_api_key_id: uuid.UUID | None = None,
+    actor_label_snapshot: str | None = None,
+    actor_kind: str = "system",
+):
     """
     Background task to commit import job.
     """
@@ -387,7 +488,12 @@ async def process_commit_job_background(job_id: uuid.UUID):
         service = ImportService(db)
         try:
             logger.info(f"Starting background commit for job {job_id}")
-            await service.commit_job(job_id)
+            await service.commit_job(
+                job_id,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                actor_kind=actor_kind,
+            )
             logger.info(f"Completed background commit for job {job_id}")
         except Exception as e:
             logger.exception(f"Background commit failed for job {job_id}: {e}")

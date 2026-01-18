@@ -14,6 +14,7 @@ from app.models.import_job import ImportJob, ImportFile, StagingRow, ImportJobSt
 from app.models.core.schema_registry import TableRegistry
 from app.utils.normalization import normalize_lot_no
 from app.services.csv_field_mapper import CSVFieldMapper, csv_field_mapper
+from app.services.audit_events import write_audit_event_best_effort
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class ImportService:
             raise ValueError(f"Import job {job_id} not found")
 
         # 2. Update Status to PARSING
+        prev_status = job.status
         self._touch_status(
             job,
             ImportJobStatus.PARSING,
@@ -74,6 +76,23 @@ class ImportService:
             actor_kind=actor_kind,
         )
         await self.db.commit()
+
+        await write_audit_event_best_effort(
+            tenant_id=job.tenant_id,
+            actor_api_key_id=actor_api_key_id,
+            actor_label_snapshot=actor_label_snapshot,
+            request_id=None,
+            method="INTERNAL",
+            path=f"/internal/v2/import/jobs/{job.id}/status",
+            status_code=0,
+            action="import.job.status",
+            metadata={
+                "job_id": str(job.id),
+                "from_status": getattr(prev_status, "name", str(prev_status)),
+                "to_status": getattr(job.status, "name", str(job.status)),
+                "actor_kind": actor_kind,
+            },
+        )
 
         total_rows_job = 0
         
@@ -158,6 +177,7 @@ class ImportService:
             # 3. Update Job Status to VALIDATING (or READY if we skip validation for now)
             # The plan implies validation is next.
             job.total_rows = total_rows_job
+            prev_status = job.status
             self._touch_status(
                 job,
                 ImportJobStatus.VALIDATING,
@@ -167,10 +187,29 @@ class ImportService:
             )
             
             await self.db.commit()
+
+            await write_audit_event_best_effort(
+                tenant_id=job.tenant_id,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                request_id=None,
+                method="INTERNAL",
+                path=f"/internal/v2/import/jobs/{job.id}/status",
+                status_code=0,
+                action="import.job.status",
+                metadata={
+                    "job_id": str(job.id),
+                    "from_status": getattr(prev_status, "name", str(prev_status)),
+                    "to_status": getattr(job.status, "name", str(job.status)),
+                    "actor_kind": actor_kind,
+                    "total_rows": int(total_rows_job),
+                },
+            )
             return job
 
         except Exception as e:
             logger.exception(f"Error parsing job {job_id}: {e}")
+            prev_status = job.status
             self._touch_status(
                 job,
                 ImportJobStatus.FAILED,
@@ -180,6 +219,24 @@ class ImportService:
             )
             job.error_summary = {"error": str(e)}
             await self.db.commit()
+
+            await write_audit_event_best_effort(
+                tenant_id=job.tenant_id,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                request_id=None,
+                method="INTERNAL",
+                path=f"/internal/v2/import/jobs/{job.id}/status",
+                status_code=0,
+                action="import.job.status",
+                metadata={
+                    "job_id": str(job.id),
+                    "from_status": getattr(prev_status, "name", str(prev_status)),
+                    "to_status": getattr(job.status, "name", str(job.status)),
+                    "actor_kind": actor_kind,
+                    "error": str(e)[:200],
+                },
+            )
             raise e
 
     async def validate_job(
@@ -277,6 +334,7 @@ class ImportService:
         # 4. Update Job Status
         job.error_count = error_count_job
         # If validation is done, we mark it as READY (for review/commit)
+        prev_status = job.status
         self._touch_status(
             job,
             ImportJobStatus.READY,
@@ -285,6 +343,24 @@ class ImportService:
             actor_kind=actor_kind,
         )
         await self.db.commit()
+
+        await write_audit_event_best_effort(
+            tenant_id=job.tenant_id,
+            actor_api_key_id=actor_api_key_id,
+            actor_label_snapshot=actor_label_snapshot,
+            request_id=None,
+            method="INTERNAL",
+            path=f"/internal/v2/import/jobs/{job.id}/status",
+            status_code=0,
+            action="import.job.status",
+            metadata={
+                "job_id": str(job.id),
+                "from_status": getattr(prev_status, "name", str(prev_status)),
+                "to_status": getattr(job.status, "name", str(job.status)),
+                "actor_kind": actor_kind,
+                "error_count": int(error_count_job),
+            },
+        )
         return job
 
     async def commit_job(
@@ -314,6 +390,7 @@ class ImportService:
 
         # Update status (only when transitioning from READY)
         if job.status == ImportJobStatus.READY:
+            prev_status = job.status
             self._touch_status(
                 job,
                 ImportJobStatus.COMMITTING,
@@ -322,6 +399,23 @@ class ImportService:
                 actor_kind=actor_kind,
             )
             await self.db.commit()
+
+            await write_audit_event_best_effort(
+                tenant_id=job.tenant_id,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                request_id=None,
+                method="INTERNAL",
+                path=f"/internal/v2/import/jobs/{job.id}/status",
+                status_code=0,
+                action="import.job.status",
+                metadata={
+                    "job_id": str(job.id),
+                    "from_status": getattr(prev_status, "name", str(prev_status)),
+                    "to_status": getattr(job.status, "name", str(job.status)),
+                    "actor_kind": actor_kind,
+                },
+            )
 
         # Get Table Code
         table_stmt = select(TableRegistry).where(TableRegistry.id == job.table_id)
@@ -663,10 +757,28 @@ class ImportService:
                 actor_kind=actor_kind,
             )
             await self.db.commit()
+
+            await write_audit_event_best_effort(
+                tenant_id=job.tenant_id,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                request_id=None,
+                method="INTERNAL",
+                path=f"/internal/v2/import/jobs/{job.id}/status",
+                status_code=0,
+                action="import.job.status",
+                metadata={
+                    "job_id": str(job.id),
+                    "from_status": getattr(ImportJobStatus.COMMITTING, "name", str(ImportJobStatus.COMMITTING)),
+                    "to_status": getattr(job.status, "name", str(job.status)),
+                    "actor_kind": actor_kind,
+                },
+            )
             return job
             
         except Exception as e:
             logger.exception(f"Error committing job {job_id}: {e}")
+            prev_status = job.status
             self._touch_status(
                 job,
                 ImportJobStatus.FAILED,
@@ -676,6 +788,24 @@ class ImportService:
             )
             job.error_summary = {"error": str(e)}
             await self.db.commit()
+
+            await write_audit_event_best_effort(
+                tenant_id=job.tenant_id,
+                actor_api_key_id=actor_api_key_id,
+                actor_label_snapshot=actor_label_snapshot,
+                request_id=None,
+                method="INTERNAL",
+                path=f"/internal/v2/import/jobs/{job.id}/status",
+                status_code=0,
+                action="import.job.status",
+                metadata={
+                    "job_id": str(job.id),
+                    "from_status": getattr(prev_status, "name", str(prev_status)),
+                    "to_status": getattr(job.status, "name", str(job.status)),
+                    "actor_kind": actor_kind,
+                    "error": str(e)[:200],
+                },
+            )
             raise e
 
     def _extract_lot_no(self, filename: str) -> str:
