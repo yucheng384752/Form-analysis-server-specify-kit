@@ -26,7 +26,7 @@ async def client(db_session):
 
 
 @pytest.mark.asyncio
-async def test_legacy_advanced_search_falls_back_to_v2_when_no_legacy_records(client, db_session):
+async def test_v2_advanced_search_returns_items_v2_rows_for_p3(client, db_session):
     tenant = Tenant(
         name=f"Test Tenant {uuid.uuid4()}",
         code=f"test_tenant_{uuid.uuid4()}",
@@ -66,9 +66,9 @@ async def test_legacy_advanced_search_falls_back_to_v2_when_no_legacy_records(cl
 
     headers = {"X-Tenant-Id": str(tenant.id)}
 
-    # legacy endpoint should return v2-backed results when legacy tables are empty
+    # v2 advanced endpoint should return v2-backed results
     resp = await client.get(
-        "/api/query/records/advanced",
+        "/api/v2/query/records/advanced",
         params={"lot_no": lot_no},
         headers=headers,
     )
@@ -85,7 +85,7 @@ async def test_legacy_advanced_search_falls_back_to_v2_when_no_legacy_records(cl
 
 
 @pytest.mark.asyncio
-async def test_legacy_advanced_search_winder_with_data_type_p1_does_not_return_p1(client, db_session):
+async def test_v2_advanced_search_winder_with_data_type_p1_does_not_return_p1(client, db_session):
     tenant = Tenant(
         name=f"Test Tenant {uuid.uuid4()}",
         code=f"test_tenant_{uuid.uuid4()}",
@@ -98,7 +98,7 @@ async def test_legacy_advanced_search_winder_with_data_type_p1_does_not_return_p
     lot_no = "2507173_02"
     lot_no_norm = normalize_lot_no(lot_no)
 
-    # Only v2 tables have data; legacy tables remain empty so legacy endpoint must fallback.
+    # winder_number filter should exclude P1 even when data_type=P1 is requested.
     p1 = P1Record(
         tenant_id=tenant.id,
         lot_no_raw=lot_no,
@@ -110,7 +110,7 @@ async def test_legacy_advanced_search_winder_with_data_type_p1_does_not_return_p
 
     headers = {"X-Tenant-Id": str(tenant.id)}
     resp = await client.get(
-        "/api/query/records/advanced",
+        "/api/v2/query/records/advanced",
         params={"lot_no": lot_no, "winder_number": "5", "data_type": "P1"},
         headers=headers,
     )

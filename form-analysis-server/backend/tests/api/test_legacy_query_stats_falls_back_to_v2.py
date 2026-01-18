@@ -27,7 +27,7 @@ async def client(db_session):
 
 
 @pytest.mark.asyncio
-async def test_legacy_records_stats_prefers_v2_tenant_scoped(client, db_session):
+async def test_v2_records_stats_tenant_scoped(client, db_session):
     tenant = Tenant(
         name=f"Test Tenant {uuid.uuid4()}",
         code=f"test_tenant_{uuid.uuid4()}",
@@ -77,20 +77,14 @@ async def test_legacy_records_stats_prefers_v2_tenant_scoped(client, db_session)
 
     headers = {"X-Tenant-Id": str(tenant.id)}
 
-    legacy_resp = await client.get("/api/query/records/stats", headers=headers)
-    assert legacy_resp.status_code == 200, legacy_resp.text
-    legacy_payload = legacy_resp.json()
-
-    assert legacy_payload["total_records"] == 3
-    assert legacy_payload["unique_lots"] == 1
-    assert legacy_payload["p1_records"] == 1
-    assert legacy_payload["p2_records"] == 1
-    assert legacy_payload["p3_records"] == 1
-    assert legacy_payload["earliest_production_date"] == "2025-01-01"
-    assert legacy_payload["latest_production_date"] == "2025-01-01"
-
     v2_resp = await client.get("/api/v2/query/records/stats", headers=headers)
     assert v2_resp.status_code == 200, v2_resp.text
     v2_payload = v2_resp.json()
 
-    assert v2_payload == legacy_payload
+    assert v2_payload["total_records"] == 3
+    assert v2_payload["unique_lots"] == 1
+    assert v2_payload["p1_records"] == 1
+    assert v2_payload["p2_records"] == 1
+    assert v2_payload["p3_records"] == 1
+    assert v2_payload["earliest_production_date"] == "2025-01-01"
+    assert v2_payload["latest_production_date"] == "2025-01-01"

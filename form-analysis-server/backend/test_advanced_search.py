@@ -1,7 +1,7 @@
 """
 測試進階搜尋 API
 
-驗證新增的 /api/query/records/advanced 端點功能
+（Legacy query API 已移除）此檔案為歷史手動檢查腳本，內容為舊版資料表的查詢示例。
 """
 
 import asyncio

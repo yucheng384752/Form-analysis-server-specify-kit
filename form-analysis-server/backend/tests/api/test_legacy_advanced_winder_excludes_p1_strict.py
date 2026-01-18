@@ -92,7 +92,7 @@ async def test_legacy_advanced_query_winder_does_not_include_p1(client, db_sessi
     # Act
     headers = {"X-Tenant-Id": str(tenant.id)}
     resp = await client.get(
-        "/api/query/records/advanced",
+        "/api/v2/query/records/advanced",
         params={"lot_no": lot_no, "winder_number": "5"},
         headers=headers,
     )

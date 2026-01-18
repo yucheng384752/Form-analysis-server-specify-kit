@@ -1,6 +1,7 @@
 import re
+import unicodedata
 from datetime import date, datetime
-from typing import Union, Optional
+from typing import Union, Optional, Iterable
 
 class NormalizationError(Exception):
     def __init__(self, code: str, message: str):
@@ -84,3 +85,97 @@ def normalize_date_to_int(val: Union[str, int, date, datetime]) -> int:
     """
     d = normalize_date(val)
     return int(d.strftime("%Y%m%d"))
+
+
+_DEFAULT_SEARCH_SEPARATORS = {
+    " ",
+    "\t",
+    "\n",
+    "\r",
+    "_",
+    "-",
+    "‐",  # U+2010
+    "‑",  # U+2011
+    "–",  # U+2013
+    "—",  # U+2014
+    "－",  # U+FF0D (fullwidth hyphen-minus)
+    "　",  # U+3000 (ideographic space)
+}
+
+
+def normalize_search_term(val: Optional[object], *, remove_separators: Iterable[str] = _DEFAULT_SEARCH_SEPARATORS) -> Optional[str]:
+    """Normalize a free-form search term into a canonical string.
+
+    Goals:
+    - Case-insensitive matching (via casefold)
+    - Full/half width normalization (via NFKC)
+    - Tolerate common separators (spaces, underscores, hyphens)
+
+    Examples:
+    - "PE32" == "PE 32" == "pe-32" == "ＰＥ３２" -> "pe32"
+    """
+    if val is None:
+        return None
+
+    s = str(val)
+    if not s:
+        return None
+
+    s = unicodedata.normalize("NFKC", s).strip()
+    if not s:
+        return None
+
+    s = s.casefold()
+    if remove_separators:
+        for ch in remove_separators:
+            s = s.replace(ch, "")
+
+    s = s.strip()
+    return s or None
+
+
+def to_fullwidth_ascii(val: str) -> str:
+    """Convert ASCII letters/digits/punct into fullwidth equivalents.
+
+    This is mainly used to generate query variants for datasets that store
+    fullwidth characters.
+    """
+    if not val:
+        return ""
+
+    out_chars: list[str] = []
+    for ch in val:
+        code = ord(ch)
+        if ch == " ":
+            out_chars.append("　")
+        elif 0x21 <= code <= 0x7E:
+            # Fullwidth forms are ASCII + 0xFEE0
+            out_chars.append(chr(code + 0xFEE0))
+        else:
+            out_chars.append(ch)
+    return "".join(out_chars)
+
+
+def normalize_search_term_variants(val: Optional[object]) -> list[str]:
+    """Return normalized search term variants for matching.
+
+    Includes the NFKC/casefold canonical form and a fullwidth ASCII form to
+    cover datasets stored in fullwidth.
+    """
+    base = normalize_search_term(val)
+    if not base:
+        return []
+    # Ensure uniqueness while preserving order.
+    variants = [base]
+
+    # Fullwidth lower/upper variants help match datasets stored in fullwidth.
+    # NOTE: SQLite's lower()/upper() are ASCII-only by default, so we include
+    # both cases to remain portable across SQLite/PostgreSQL.
+    fw_lower = to_fullwidth_ascii(base)
+    fw_upper = to_fullwidth_ascii(base.upper())
+
+    for v in [fw_lower, fw_upper]:
+        if v and v not in variants:
+            variants.append(v)
+
+    return variants

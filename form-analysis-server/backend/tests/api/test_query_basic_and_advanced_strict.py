@@ -292,10 +292,13 @@ async def _seed_v2_p2_multi_winder_legacy_extras(db_session_clean, tenant: Tenan
 
 
 @pytest.mark.asyncio
-async def test_legacy_records_requires_lot_no(client, db_session_clean):
+async def test_v2_records_returns_empty_when_no_conditions(client, db_session_clean):
     tenant = await _create_tenant(db_session_clean)
-    resp = await client.get("/api/query/records", headers={"X-Tenant-Id": str(tenant.id)})
-    assert resp.status_code == 422, resp.text
+    resp = await client.get("/api/v2/query/records", headers={"X-Tenant-Id": str(tenant.id)})
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["total_count"] == 0
+    assert payload["records"] == []
 
 
 @pytest.mark.asyncio
@@ -304,7 +307,7 @@ async def test_legacy_records_pagination_and_ordering(client, db_session_clean):
     lot_no, ids = await _seed_v2_records_for_pagination(db_session_clean, tenant)
 
     resp1 = await client.get(
-        "/api/query/records",
+        "/api/v2/query/records",
         params={"lot_no": lot_no, "page": 1, "page_size": 2},
         headers={"X-Tenant-Id": str(tenant.id)},
     )
@@ -319,7 +322,7 @@ async def test_legacy_records_pagination_and_ordering(client, db_session_clean):
     assert got_ids_page1 == [ids[2], ids[1]]
 
     resp2 = await client.get(
-        "/api/query/records",
+        "/api/v2/query/records",
         params={"lot_no": lot_no, "page": 2, "page_size": 2},
         headers={"X-Tenant-Id": str(tenant.id)},
     )
@@ -366,7 +369,7 @@ async def test_legacy_records_data_type_filter(client, db_session_clean):
     await db_session_clean.commit()
 
     resp = await client.get(
-        "/api/query/records",
+        "/api/v2/query/records",
         params={"lot_no": lot_no, "data_type": "P1", "page": 1, "page_size": 10},
         headers={"X-Tenant-Id": str(tenant.id)},
     )
@@ -376,7 +379,7 @@ async def test_legacy_records_data_type_filter(client, db_session_clean):
     assert payload["records"][0]["data_type"] == "P1"
 
     resp2 = await client.get(
-        "/api/query/records",
+        "/api/v2/query/records",
         params={"lot_no": lot_no, "data_type": "P2", "page": 1, "page_size": 10},
         headers={"X-Tenant-Id": str(tenant.id)},
     )
@@ -389,7 +392,7 @@ async def test_legacy_records_data_type_filter(client, db_session_clean):
 @pytest.mark.asyncio
 async def test_legacy_advanced_returns_empty_when_no_conditions(client, db_session_clean):
     tenant = await _create_tenant(db_session_clean)
-    resp = await client.get("/api/query/records/advanced", headers={"X-Tenant-Id": str(tenant.id)})
+    resp = await client.get("/api/v2/query/records/advanced", headers={"X-Tenant-Id": str(tenant.id)})
     assert resp.status_code == 200, resp.text
     payload = resp.json()
     assert payload["total_count"] == 0
@@ -425,7 +428,7 @@ async def test_legacy_advanced_winder_filters_p2_items_rows(client, db_session_c
     await db_session_clean.commit()
 
     resp = await client.get(
-        "/api/query/records/advanced",
+        "/api/v2/query/records/advanced",
         params={"winder_number": 5, "page": 1, "page_size": 10},
         headers={"X-Tenant-Id": str(tenant.id)},
     )
@@ -496,7 +499,7 @@ async def test_legacy_advanced_winder_does_not_return_p1_and_can_match_p3(client
     await db_session_clean.commit()
 
     resp = await client.get(
-        "/api/query/records/advanced",
+        "/api/v2/query/records/advanced",
         params={"winder_number": 5, "page": 1, "page_size": 10},
         headers={"X-Tenant-Id": str(tenant.id)},
     )
@@ -539,7 +542,7 @@ async def test_legacy_advanced_p3_filters_machine_and_specification(client, db_s
     await db_session_clean.commit()
 
     resp = await client.get(
-        "/api/query/records/advanced",
+        "/api/v2/query/records/advanced",
         params={"machine_no": "P2", "p3_specification": "PE", "page": 1, "page_size": 10},
         headers={"X-Tenant-Id": str(tenant.id)},
     )
