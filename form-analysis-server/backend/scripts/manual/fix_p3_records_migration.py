@@ -153,7 +153,7 @@ async def main():
             response = 'yes'
             
             if response != 'yes':
-                print("❌ 取消遷移")
+                print("取消遷移")
                 return
             
             # 3. 執行遷移
@@ -167,7 +167,7 @@ async def main():
                     print(f"已遷移: {legacy_record.lot_no} -> p3_records.id={new_record.id}")
                     migrated_count += 1
                 except Exception as e:
-                    print(f"❌ 遷移失敗: {legacy_record.lot_no}, 錯誤: {e}")
+                    print(f"遷移失敗: {legacy_record.lot_no}, 錯誤: {e}")
             
             # 4. 提交變更
             if migrated_count > 0:
@@ -176,7 +176,7 @@ async def main():
                 print(f"成功遷移 {migrated_count} 筆記錄")
             else:
                 print()
-                print("❌ 沒有成功遷移任何記錄")
+                print("沒有成功遷移任何記錄")
             
             # 5. 驗證結果
             print()
@@ -220,7 +220,7 @@ async def main():
                 print(f"⚠️  資料完整性：仍有 {legacy_count - v2_count} 筆記錄未同步")
             
         except Exception as e:
-            print(f"❌ 執行錯誤: {e}")
+            print(f"執行錯誤: {e}")
             await session.rollback()
             raise
 

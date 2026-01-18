@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -51,12 +53,37 @@ class CreateUserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TenantUserResponse(BaseModel):
+    id: str
+    tenant_id: str
+    tenant_code: Optional[str] = None
+    username: str
+    role: str
+    is_active: bool
+    created_at: Optional[str] = None
+    last_login_at: Optional[str] = None
+
+
+class UpdateUserRequest(BaseModel):
+    username: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    role: Optional[str] = Field(default=None, min_length=1, max_length=30)
+    is_active: Optional[bool] = None
+
+
 class WhoAmIResponse(BaseModel):
     is_admin: bool
     tenant_id: Optional[str] = None
     actor_user_id: Optional[str] = None
     actor_role: Optional[str] = None
     api_key_label: Optional[str] = None
+
+
+def _is_admin_key(request: Request) -> bool:
+    settings = get_settings()
+    admin_header = getattr(settings, "admin_api_key_header", "X-Admin-API-Key")
+    admin_keys = getattr(settings, "admin_api_keys", set())
+    provided = request.headers.get(admin_header)
+    return bool(provided and provided.strip() in admin_keys)
 
 
 @router.get("/whoami", response_model=WhoAmIResponse)
@@ -107,12 +134,7 @@ async def create_user(
     - Day-to-day: authenticated API key whose linked user has role=admin, can only create users in its own tenant.
     """
 
-    settings = get_settings()
-    admin_header = getattr(settings, "admin_api_key_header", "X-Admin-API-Key")
-    admin_keys = getattr(settings, "admin_api_keys", set())
-
-    provided = request.headers.get(admin_header)
-    is_admin_key = bool(provided and provided.strip() in admin_keys)
+    is_admin_key = _is_admin_key(request)
 
     actor_role = getattr(getattr(request, "state", None), "actor_role", None)
     auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
@@ -166,6 +188,238 @@ async def create_user(
         username=user.username,
         role=user.role,
         is_active=bool(user.is_active),
+    )
+
+
+@router.get("/users", response_model=list[TenantUserResponse])
+async def list_users(
+    request: Request,
+    tenant_id: Optional[str] = None,
+    tenant_code: Optional[str] = None,
+    include_inactive: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """List tenant users.
+
+    Allowed callers:
+    - Break-glass bootstrap: valid ADMIN_API_KEYS (X-Admin-API-Key), can list across tenants.
+    - Day-to-day: authenticated API key whose linked user has role=admin, lists only its own tenant.
+    """
+
+    is_admin_key = _is_admin_key(request)
+    actor_role = getattr(getattr(request, "state", None), "actor_role", None)
+    auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+    is_tenant_admin = bool(actor_role == "admin" and auth_tenant_id)
+
+    if not is_admin_key and not is_tenant_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+
+    stmt = select(TenantUser, Tenant.code).join(Tenant, Tenant.id == TenantUser.tenant_id)
+
+    if is_tenant_admin:
+        stmt = stmt.where(TenantUser.tenant_id == auth_tenant_id)
+    else:
+        # Admin key: optional filters.
+        if tenant_id and tenant_id.strip():
+            try:
+                tenant_uuid = UUID(tenant_id.strip())
+            except Exception:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tenant_id")
+            stmt = stmt.where(TenantUser.tenant_id == tenant_uuid)
+        if tenant_code and tenant_code.strip():
+            stmt = stmt.where(Tenant.code == tenant_code.strip())
+
+    if not include_inactive:
+        stmt = stmt.where(TenantUser.is_active == True)
+
+    stmt = stmt.order_by(Tenant.code.asc(), TenantUser.username.asc())
+    rows = (await db.execute(stmt)).all()
+
+    out: list[TenantUserResponse] = []
+    for user, t_code in rows:
+        created_at = None
+        last_login_at = None
+        try:
+            created_at = user.created_at.isoformat() if getattr(user, "created_at", None) else None
+        except Exception:
+            created_at = None
+        try:
+            last_login_at = user.last_login_at.isoformat() if getattr(user, "last_login_at", None) else None
+        except Exception:
+            last_login_at = None
+
+        out.append(
+            TenantUserResponse(
+                id=str(user.id),
+                tenant_id=str(user.tenant_id),
+                tenant_code=str(t_code) if t_code is not None else None,
+                username=str(user.username),
+                role=str(user.role),
+                is_active=bool(user.is_active),
+                created_at=created_at,
+                last_login_at=last_login_at,
+            )
+        )
+
+    return out
+
+
+@router.patch("/users/{user_id}", response_model=TenantUserResponse)
+async def update_user(
+    user_id: UUID,
+    request: Request,
+    payload: UpdateUserRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update tenant user (username/role/is_active).
+
+    Password changes are intentionally not implemented yet.
+    """
+
+    is_admin_key = _is_admin_key(request)
+    actor_role = getattr(getattr(request, "state", None), "actor_role", None)
+    auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+    is_tenant_admin = bool(actor_role == "admin" and auth_tenant_id)
+
+    if not is_admin_key and not is_tenant_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+
+    row = (
+        await db.execute(
+            select(TenantUser, Tenant.code).join(Tenant, Tenant.id == TenantUser.tenant_id).where(TenantUser.id == user_id)
+        )
+    ).first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user, t_code = row
+
+    if is_tenant_admin and user.tenant_id != auth_tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot manage users in another tenant")
+
+    did_change = False
+
+    if payload.username is not None:
+        new_username = payload.username.strip()
+        if not new_username:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="username must not be empty")
+
+        if new_username != user.username:
+            existing = (
+                await db.execute(
+                    select(TenantUser).where(
+                        TenantUser.tenant_id == user.tenant_id,
+                        TenantUser.username == new_username,
+                        TenantUser.id != user.id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username already exists")
+            user.username = new_username
+            did_change = True
+
+    if payload.role is not None:
+        new_role = payload.role.strip() or "user"
+        if new_role != user.role:
+            user.role = new_role
+            did_change = True
+
+    if payload.is_active is not None:
+        if bool(payload.is_active) != bool(user.is_active):
+            user.is_active = bool(payload.is_active)
+            did_change = True
+
+    if not did_change:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No changes provided")
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Update violates uniqueness constraints")
+
+    created_at = None
+    last_login_at = None
+    try:
+        created_at = user.created_at.isoformat() if getattr(user, "created_at", None) else None
+    except Exception:
+        created_at = None
+    try:
+        last_login_at = user.last_login_at.isoformat() if getattr(user, "last_login_at", None) else None
+    except Exception:
+        last_login_at = None
+
+    return TenantUserResponse(
+        id=str(user.id),
+        tenant_id=str(user.tenant_id),
+        tenant_code=str(t_code) if t_code is not None else None,
+        username=str(user.username),
+        role=str(user.role),
+        is_active=bool(user.is_active),
+        created_at=created_at,
+        last_login_at=last_login_at,
+    )
+
+
+@router.delete("/users/{user_id}", response_model=TenantUserResponse)
+async def delete_user(
+    user_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete tenant user (safe delete).
+
+    For safety, this performs a soft-delete by setting is_active=False.
+    """
+
+    is_admin_key = _is_admin_key(request)
+    actor_role = getattr(getattr(request, "state", None), "actor_role", None)
+    auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+    is_tenant_admin = bool(actor_role == "admin" and auth_tenant_id)
+
+    if not is_admin_key and not is_tenant_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+
+    row = (
+        await db.execute(
+            select(TenantUser, Tenant.code).join(Tenant, Tenant.id == TenantUser.tenant_id).where(TenantUser.id == user_id)
+        )
+    ).first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user, t_code = row
+
+    if is_tenant_admin and user.tenant_id != auth_tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot manage users in another tenant")
+
+    if bool(user.is_active):
+        user.is_active = False
+        await db.commit()
+    else:
+        await db.commit()
+
+    created_at = None
+    last_login_at = None
+    try:
+        created_at = user.created_at.isoformat() if getattr(user, "created_at", None) else None
+    except Exception:
+        created_at = None
+    try:
+        last_login_at = user.last_login_at.isoformat() if getattr(user, "last_login_at", None) else None
+    except Exception:
+        last_login_at = None
+
+    return TenantUserResponse(
+        id=str(user.id),
+        tenant_id=str(user.tenant_id),
+        tenant_code=str(t_code) if t_code is not None else None,
+        username=str(user.username),
+        role=str(user.role),
+        is_active=bool(user.is_active),
+        created_at=created_at,
+        last_login_at=last_login_at,
     )
 
 
