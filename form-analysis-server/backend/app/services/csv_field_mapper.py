@@ -32,7 +32,6 @@ class CSVFieldMapper:
         'Actual Temp_C1(℃)',
         'Set Temp_C1(℃)',
         'Line Speed(M/min)',
-        'Screw Pressure(psi)',
         'Extruder Speed(rpm)'
     }
     
