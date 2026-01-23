@@ -74,6 +74,12 @@ class Settings(BaseSettings):
         description="Timeout (seconds) for PDF server requests",
         alias="PDF_SERVER_TIMEOUT_SECONDS",
     )
+
+    pdf_server_table: str = Field(
+        default="",
+        description="Default table name required by some PDF servers (e.g. /process expects table=P1/P2/P3)",
+        alias="PDF_SERVER_TABLE",
+    )
     
     # CORS settings (using string for environment variable compatibility)
     cors_origins_str: str = Field(

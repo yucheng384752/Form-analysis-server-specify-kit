@@ -70,6 +70,18 @@ class PdfConversionJob(Base):
         comment="Converted output path (e.g. csv)",
     )
 
+    output_paths: Mapped[Optional[list[str]]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Converted output paths (e.g. multiple csv files extracted from zip)",
+    )
+
+    ingested_upload_jobs: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Upload jobs created from converted outputs (for idempotency)",
+    )
+
     error_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=True,
