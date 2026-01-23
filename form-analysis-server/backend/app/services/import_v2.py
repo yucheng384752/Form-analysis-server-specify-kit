@@ -22,6 +22,48 @@ class ImportService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    def _extract_lot_no_from_row_dict(self, row: Dict[str, Any]) -> Optional[str]:
+        if not row or not isinstance(row, dict):
+            return None
+        for field in CSVFieldMapper.LOT_NO_FIELD_NAMES:
+            v = row.get(field)
+            if v is None or v == "":
+                continue
+            s = str(v).strip()
+            if s:
+                return s
+        return None
+
+    def _canonicalize_lot_no_raw(self, val: str) -> Optional[str]:
+        """Return canonical 7+2 lot in underscore form, or None if invalid."""
+        s = str(val or "").strip()
+        if not s:
+            return None
+        m = re.match(r"^(\d{7})_(\d{1,2})(?:_.+)?$", s)
+        if not m:
+            return None
+        return f"{m.group(1)}_{m.group(2).zfill(2)}"
+
+    def _extract_file_lot_no_raw_or_raise(self, row_data: List[Dict[str, Any]], *, table_code: str) -> str:
+        """Extract a single lot_no for a file from row content.
+
+        For P1/P2 we expect one lot per file.
+        """
+        seen: set[str] = set()
+        for row in row_data or []:
+            lot_raw = self._extract_lot_no_from_row_dict(row)
+            if not lot_raw:
+                continue
+            canonical = self._canonicalize_lot_no_raw(lot_raw)
+            if canonical:
+                seen.add(canonical)
+
+        if not seen:
+            raise ValueError(f"{table_code} file is missing lot_no in content")
+        if len(seen) > 1:
+            raise ValueError(f"{table_code} file contains multiple lot_no values: {sorted(seen)}")
+        return next(iter(seen))
+
     def _touch_status(
         self,
         job: ImportJob,
@@ -276,8 +318,9 @@ class ImportService:
         required_fields: List[str] = []
         numeric_fields: List[str] = []
 
-        # P1：只做最小的 lot_no 驗證（從檔名擷取），不再強制要求任何資料欄位。
+        # lot_no 驗證：一律從內容欄位抓取
         lot_no_pattern = re.compile(r"^\d{7}_\d{2}$")
+        lot_no_flexible_pattern = re.compile(r"^(\d{7})_(\d{1,2})(?:_.+)?$")
 
         # 3. Iterate and Validate Staging Rows
         offset = 0
@@ -297,14 +340,31 @@ class ImportService:
                 data = row.parsed_json
                 filename = file_map.get(row.file_id, "")
 
-                # Minimal LOT NO validation (P1 only)
-                if table.table_code == "P1":
-                    lot_no_raw = self._extract_lot_no(filename)
-                    if not lot_no_raw or not lot_no_pattern.match(lot_no_raw):
-                        errors.append({
-                            "field": "lot_no",
-                            "message": f"Invalid or missing LOT NO in filename: {filename}",
-                        })
+                # LOT NO validation (all tables): extract from row content
+                lot_no_val = self._extract_lot_no_from_row_dict(data if isinstance(data, dict) else {})
+                if not lot_no_val:
+                    errors.append({
+                        "field": "lot_no",
+                        "message": "Missing lot_no in row content",
+                    })
+                else:
+                    m = lot_no_flexible_pattern.match(str(lot_no_val).strip())
+                    canonical = f"{m.group(1)}_{m.group(2).zfill(2)}" if m else None
+
+                    if table.table_code in ("P1", "P2"):
+                        # P1/P2 enforce strict 7+2 format
+                        if not canonical or not lot_no_pattern.match(canonical):
+                            errors.append({
+                                "field": "lot_no",
+                                "message": f"Invalid lot_no format: {lot_no_val}",
+                            })
+                    elif table.table_code == "P3":
+                        # P3 allows suffixes (e.g. 2507173_02_18) but must still start with 7+2
+                        if not canonical:
+                            errors.append({
+                                "field": "lot_no",
+                                "message": f"Invalid lot_no format: {lot_no_val}",
+                            })
                 
                 # Check required fields
                 for field in required_fields:
@@ -443,16 +503,15 @@ class ImportService:
                 
                 if not rows:
                     continue
-                    
-                # Extract Lot No
-                lot_no_raw = self._extract_lot_no(file_record.filename)
-                lot_no_norm = normalize_lot_no(lot_no_raw)
-                
+
                 # Prepare Data
                 row_data = [r.parsed_json for r in rows]
                 
                 if table.table_code == "P1":
                     from app.models.p1_record import P1Record
+
+                    lot_no_raw = self._extract_file_lot_no_raw_or_raise(row_data, table_code="P1")
+                    lot_no_norm = normalize_lot_no(lot_no_raw)
                     
                     # Check existence
                     existing_stmt = select(P1Record).where(
@@ -481,68 +540,87 @@ class ImportService:
                 elif table.table_code == "P2":
                     from app.models.p2_record import P2Record
                     from app.models.p2_item_v2 import P2ItemV2
+
+                    lot_no_raw = self._extract_file_lot_no_raw_or_raise(row_data, table_code="P2")
+                    lot_no_norm = normalize_lot_no(lot_no_raw)
                     
-                    # P2 匯入：通常每個檔案對應 1 個 winder（例如 P2_Lot123_05.csv）。
-                    # 因此以 (tenant_id, lot_no_norm, winder_number) 為 key 建立/更新 P2Record。
+                    # P2 匯入：
+                    # - 支援「單檔單一 winder」（例如檔名含 _05 或內容只有一列）
+                    # - 也支援「單檔多個 winder」（內容多列且每列帶 winder_number）
+                    #
+                    # 目前資料模型以 (tenant_id, lot_no_norm, winder_number) 為 key 建立/更新 P2Record。
                     winder_num_for_file = self._extract_p2_info(file_record.filename, row_data)
 
-                    existing_stmt = select(P2Record).where(
-                        P2Record.tenant_id == job.tenant_id,
-                        P2Record.lot_no_norm == lot_no_norm,
-                        P2Record.winder_number == winder_num_for_file,
-                    )
-                    existing_result = await self.db.execute(existing_stmt)
-                    p2_record = existing_result.scalar_one_or_none()
-
-                    if not p2_record:
-                        p2_record = P2Record(
-                            id=uuid.uuid4(),
-                            tenant_id=job.tenant_id,
-                            lot_no_raw=lot_no_raw,
-                            lot_no_norm=lot_no_norm,
-                            schema_version_id=job.schema_version_id,
-                            winder_number=winder_num_for_file,
-                            extras={"rows": row_data},
-                        )
-                        self.db.add(p2_record)
-                        await self.db.flush()  # Get ID
-                    else:
-                        p2_record.extras = {"rows": row_data}
-                        p2_record.updated_at = func.now()
-                    
-                    # Delete existing items for this record (if re-importing)
-                    await self.db.execute(
-                        delete(P2ItemV2).where(P2ItemV2.p2_record_id == p2_record.id)
-                    )
-                    # Ensure DELETE is flushed before INSERT to avoid unique constraint conflicts
-                    await self.db.flush()
-                    
-                    # Create one P2ItemV2 for this file's winder.
-                    # 若內容缺少 winder 欄位，使用檔名推導的 winder；避免因缺欄位而整筆跳過。
-                    if row_data:
-                        row = row_data[0]
-                        winder_num = None
+                    def _extract_winder_from_row(row: Dict[str, Any]) -> int | None:
                         for field in CSVFieldMapper.WINDER_NUMBER_FIELD_NAMES:
-                            if field in row and row[field]:
-                                try:
-                                    winder_num = int(float(row[field]))
-                                    break
-                                except (ValueError, TypeError):
-                                    pass
-                        if winder_num is None:
-                            winder_num = winder_num_for_file
+                            v = row.get(field)
+                            if v is None or v == "":
+                                continue
+                            try:
+                                return int(float(v))
+                            except (ValueError, TypeError):
+                                continue
+                        return None
 
-                        if winder_num != winder_num_for_file:
-                            logger.warning(
-                                f"P2 file winder mismatch (filename={winder_num_for_file}, row={winder_num}); using filename winder"
+                    rows_by_winder: Dict[int, List[Dict[str, Any]]] = {}
+                    if row_data:
+                        for r0 in row_data:
+                            if not isinstance(r0, dict):
+                                continue
+                            w = _extract_winder_from_row(r0)
+                            if w is None:
+                                continue
+                            rows_by_winder.setdefault(w, []).append(r0)
+
+                    # 若內容沒有任何可用的 winder_number，視為單一 winder 檔案（用檔名/第一列推導的 winder）
+                    if not rows_by_winder and row_data:
+                        rows_by_winder[winder_num_for_file] = [r for r in row_data if isinstance(r, dict)]
+
+                    if not rows_by_winder:
+                        logger.warning(f"P2 import has no rows (filename={file_record.filename})")
+                        continue
+
+                    for winder_num, winder_rows in rows_by_winder.items():
+                        if not winder_rows:
+                            continue
+
+                        existing_stmt = select(P2Record).where(
+                            P2Record.tenant_id == job.tenant_id,
+                            P2Record.lot_no_norm == lot_no_norm,
+                            P2Record.winder_number == int(winder_num),
+                        )
+                        existing_result = await self.db.execute(existing_stmt)
+                        p2_record = existing_result.scalar_one_or_none()
+
+                        if not p2_record:
+                            p2_record = P2Record(
+                                id=uuid.uuid4(),
+                                tenant_id=job.tenant_id,
+                                lot_no_raw=lot_no_raw,
+                                lot_no_norm=lot_no_norm,
+                                schema_version_id=job.schema_version_id,
+                                winder_number=int(winder_num),
+                                extras={"rows": winder_rows},
                             )
-                            winder_num = winder_num_for_file
+                            self.db.add(p2_record)
+                            await self.db.flush()  # Get ID
+                        else:
+                            p2_record.extras = {"rows": winder_rows}
+                            p2_record.updated_at = func.now()
 
+                        # Delete existing items for this record (if re-importing)
+                        await self.db.execute(
+                            delete(P2ItemV2).where(P2ItemV2.p2_record_id == p2_record.id)
+                        )
+                        await self.db.flush()
+
+                        # Create one P2ItemV2 per winder (take the first row as the representative payload)
+                        row = winder_rows[0]
                         p2_item = P2ItemV2(
                             id=uuid.uuid4(),
                             p2_record_id=p2_record.id,
                             tenant_id=job.tenant_id,
-                            winder_number=winder_num,
+                            winder_number=int(winder_num),
                             row_data=row,
                         )
 
@@ -579,14 +657,24 @@ class ImportService:
                     # Group rows by lot_no_norm extracted from row content
                     groups: Dict[int, Dict[str, Any]] = {}
                     for row in row_data:
+                        # Skip completely blank CSV rows (common in real exports)
+                        if not row or not isinstance(row, dict) or all(
+                            (v is None) or (str(v).strip() == "") for v in row.values()
+                        ):
+                            continue
+
                         lot_from_row = None
                         for field in CSVFieldMapper.LOT_NO_FIELD_NAMES:
                             if field in row and row[field]:
                                 lot_from_row = str(row[field]).strip()
                                 break
                         if not lot_from_row:
-                            # Fallback: use filename-derived lot (may be wrong but prevents crash)
-                            lot_from_row = lot_no_raw
+                            # Do NOT fallback to filename-derived lot for P3 (e.g. P3_0902_P02.csv)
+                            # to avoid creating a spurious group/record like lot_no=0902_P02.
+                            logger.warning(
+                                f"P3 row missing lot_no; skipping row (filename={file_record.filename})"
+                            )
+                            continue
 
                         # P3 lot_no 可能帶尾碼（如 _18），分組與 records 關聯只需要前兩段
                         lot_from_row = self._normalize_p3_lot_no_raw(lot_from_row)
@@ -595,6 +683,9 @@ class ImportService:
                         if lot_norm_row not in groups:
                             groups[lot_norm_row] = {"lot_no_raw": lot_from_row, "rows": []}
                         groups[lot_norm_row]["rows"].append(row)
+
+                    if not groups:
+                        logger.warning(f"P3 import produced no groups (filename={file_record.filename})")
 
                     for lot_norm_row, payload in groups.items():
                         group_lot_raw = payload["lot_no_raw"]
@@ -626,9 +717,8 @@ class ImportService:
                         except (ValueError, TypeError):
                             lot_part = 0
 
-                        # product_id 格式：YYYYMMDD-machine-mold-lot
-                        # 注意：mold_no 可能含 '-'（例如 238-2），解析需使用 product_id_generator 的智慧解析。
-                        product_id = f"{date_str}-{p3_info.get('machine_no')}-{p3_info.get('mold_no')}-{lot_part}"
+                        # product_id 唯一格式：YYYYMMDD_machine_mold_lot
+                        product_id = f"{date_str}_{p3_info.get('machine_no')}_{p3_info.get('mold_no')}_{lot_part}"
 
                         if not p3_record:
                             p3_record = P3Record(

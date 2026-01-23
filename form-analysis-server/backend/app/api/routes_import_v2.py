@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, BackgroundTasks, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,7 @@ from app.core.config import get_settings
 from app.models.core.tenant import Tenant
 from app.models.core.schema_registry import TableRegistry
 from app.models.import_job import ImportJob, ImportFile, ImportJobStatus, StagingRow
+from app.models.upload_job import UploadJob
 from app.schemas.import_job import ImportJobRead, ImportJobErrorRow
 from app.services.import_v2 import ImportService
 from app.services.audit_events import write_audit_event_best_effort
@@ -23,6 +25,23 @@ from app.services.audit_events import write_audit_event_best_effort
 router = APIRouter()
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+class ImportJobFromUploadJobRequest(BaseModel):
+    upload_process_id: uuid.UUID
+    table_code: str | None = None
+    allow_duplicate: bool = False
+
+
+def _infer_table_code_from_filename(filename: str) -> str | None:
+    # Heuristic: prefer leading token before '_' (e.g., P1_2503033_01.csv)
+    name = (filename or "").strip()
+    if not name:
+        return None
+    token = Path(name).name.split("_", 1)[0].upper()
+    if token in {"P1", "P2", "P3"}:
+        return token
+    return None
 
 
 async def _mark_job_failed(job_id: uuid.UUID, error: Exception | str) -> None:
@@ -261,6 +280,147 @@ async def create_import_job(
                 "Skip background processing: async_session_factory not initialized"
             )
     
+    return job
+
+
+@router.post("/jobs/from-upload-job", response_model=ImportJobRead, status_code=status.HTTP_201_CREATED)
+async def create_import_job_from_upload_job(
+    payload: ImportJobFromUploadJobRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+):
+    """Create a v2 ImportJob from an existing UploadJob.
+
+    This supports the PDF→CSV→UploadJob(edit)→v2 validate/commit workflow.
+    We reuse the existing v2 import pipeline by writing the UploadJob's CSV bytes
+    to the v2 temp upload directory and creating a single-file ImportJob.
+    """
+
+    # 1) Fetch UploadJob
+    result = await db.execute(
+        select(UploadJob).where(
+            UploadJob.process_id == payload.upload_process_id,
+            UploadJob.tenant_id == current_tenant.id,
+        )
+    )
+    upload_job = result.scalar_one_or_none()
+    if not upload_job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload job not found")
+    if not upload_job.file_content:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Upload job file_content is empty")
+
+    # 2) Determine table_code
+    table_code = (payload.table_code or "").strip().upper() or _infer_table_code_from_filename(upload_job.filename)
+    if not table_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="table_code is required (cannot infer from filename)",
+        )
+
+    # 3) Validate TableRegistry
+    result = await db.execute(select(TableRegistry).where(TableRegistry.table_code == table_code))
+    table_registry = result.scalar_one_or_none()
+    if not table_registry:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid table code: {table_code}")
+
+    # 4) Create ImportJob + ImportFile
+    job_id = uuid.uuid4()
+    batch_id = f"{datetime.now().strftime('%Y%m%d')}-{str(job_id)[:8]}"
+
+    actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+    actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+
+    job = ImportJob(
+        id=job_id,
+        tenant_id=current_tenant.id,
+        table_id=table_registry.id,
+        batch_id=batch_id,
+        status=ImportJobStatus.UPLOADED,
+        total_files=1,
+    )
+    if actor_api_key_id:
+        job.actor_api_key_id = actor_api_key_id
+        job.actor_label_snapshot = actor_api_key_label
+        job.last_status_actor_api_key_id = actor_api_key_id
+        job.last_status_actor_label_snapshot = actor_api_key_label
+    job.last_status_changed_at = datetime.now(timezone.utc)
+    job.last_status_actor_kind = "user"
+    db.add(job)
+
+    upload_dir = Path(settings.upload_temp_dir) / str(job_id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        filename = Path(upload_job.filename).name
+        file_path = upload_dir / filename
+        content = bytes(upload_job.file_content)
+        file_hash = hashlib.sha256(content).hexdigest()
+        file_size = len(content)
+        file_path.write_bytes(content)
+
+        dup_stmt = select(ImportFile).where(
+            ImportFile.tenant_id == current_tenant.id,
+            ImportFile.table_id == table_registry.id,
+            ImportFile.file_hash == file_hash,
+        )
+        dup_result = await db.execute(dup_stmt)
+        if (not payload.allow_duplicate) and dup_result.scalars().first():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Duplicate file detected: {filename}",
+            )
+
+        import_file = ImportFile(
+            job_id=job_id,
+            tenant_id=current_tenant.id,
+            table_id=table_registry.id,
+            filename=filename,
+            file_hash=file_hash,
+            storage_path=str(file_path),
+            file_size=file_size,
+        )
+        db.add(import_file)
+    except Exception:
+        if upload_dir.exists():
+            shutil.rmtree(upload_dir)
+        raise
+
+    await db.commit()
+
+    request_id = getattr(getattr(request, "state", None), "request_id", None)
+    await write_audit_event_best_effort(
+        tenant_id=current_tenant.id,
+        actor_api_key_id=actor_api_key_id,
+        actor_label_snapshot=actor_api_key_label,
+        request_id=str(request_id) if request_id else None,
+        method=request.method,
+        path=request.url.path,
+        status_code=status.HTTP_201_CREATED,
+        action="import.job.create.from_upload_job",
+        metadata={
+            "job_id": str(job.id),
+            "batch_id": job.batch_id,
+            "table_code": table_code,
+            "upload_process_id": str(upload_job.process_id),
+            "allow_duplicate": bool(payload.allow_duplicate),
+        },
+        client_host=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    from sqlalchemy.orm import selectinload
+
+    stmt = select(ImportJob).options(selectinload(ImportJob.files)).where(ImportJob.id == job_id)
+    job = (await db.execute(stmt)).scalar_one()
+
+    if database.async_session_factory:
+        background_tasks.add_task(process_import_job_background, job.id)
+    else:
+        if settings.environment.lower() != "testing":
+            logger.warning("Skip background processing: async_session_factory not initialized")
+
     return job
 
 @router.get("/jobs/{job_id}", response_model=ImportJobRead)
