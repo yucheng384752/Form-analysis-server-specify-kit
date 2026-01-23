@@ -279,21 +279,87 @@ def _extract_spec_from_row(row: Optional[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
+def _normalize_production_date(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+
+    # Handle numeric-ish values like 250717 or 250717.0
+    try:
+        if isinstance(value, (int, float)):
+            value = str(int(value))
+    except Exception:
+        pass
+
+    s = str(value).strip()
+    if not s:
+        return None
+
+    # Common CSV artifact: "250717.0" (float rendered as string)
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+
+    # Common merged-data shape: YYYYMMDD_16_00
+    if "_" in s:
+        s = s.split("_", 1)[0]
+
+    # Normalize separators
+    if "/" in s and "-" not in s:
+        s = s.replace("/", "-")
+
+    # Already ISO-ish
+    parts = s.split("-")
+    if len(parts) == 3 and all(p.isdigit() for p in parts):
+        try:
+            y = int(parts[0])
+            m = int(parts[1])
+            d = int(parts[2])
+            if 1 <= m <= 12 and 1 <= d <= 31 and 1900 <= y <= 2100:
+                return f"{y:04d}-{m:02d}-{d:02d}"
+        except Exception:
+            pass
+
+    digits = "".join(ch for ch in s if ch.isdigit())
+    if len(digits) == 8:
+        try:
+            y = int(digits[:4])
+            m = int(digits[4:6])
+            d = int(digits[6:8])
+            if 1 <= m <= 12 and 1 <= d <= 31 and 1900 <= y <= 2100:
+                return f"{y:04d}-{m:02d}-{d:02d}"
+        except Exception:
+            pass
+
+    if len(digits) == 6:
+        # Assume 20YYMMDD (matches UT dataset)
+        try:
+            yy = int(digits[:2])
+            m = int(digits[2:4])
+            d = int(digits[4:6])
+            y = 2000 + yy
+            if 1 <= m <= 12 and 1 <= d <= 31:
+                return f"{y:04d}-{m:02d}-{d:02d}"
+        except Exception:
+            pass
+
+    return s
+
+
 def _extract_production_date_from_row(row: Optional[Dict[str, Any]]) -> Optional[str]:
     if not row:
         return None
     for key in [
         'production_date', 'Production Date', 'Production date',
+        'Production Date_x', 'Production Date_y',
+        'Slitting date',
+        'year-month-day', 'Year-Month-Day',
         '生產日期', '日期',
     ]:
         v = row.get(key)
         if v is None:
             continue
-        s = str(v).strip()
-        if not s:
-            continue
-        # allow YYYY-MM-DD, YYYY/MM/DD, YYMMDD etc (frontend will format too)
-        return s
+        normalized = _normalize_production_date(v)
+        if normalized:
+            return normalized
     return None
 
 
@@ -361,7 +427,7 @@ def _p2_to_query_record_with_items(p2_record: P2Record, items: list) -> QueryRec
     if first_item and isinstance(first_item.row_data, dict):
         for key in ['Production Date', 'production_date', '生產日期', 'date']:
             if key in first_item.row_data:
-                production_date = first_item.row_data[key]
+                production_date = _normalize_production_date(first_item.row_data[key])
                 break
     
     return QueryRecordV2Compat(
@@ -1071,6 +1137,11 @@ async def query_records_advanced_v2(
             return False
 
         legacy_records: list[P2Record] = []
+        # When P2 is stored as 1 record per winder (current v2 schema), advanced
+        # queries should still return ONE card per lot (like basic search).
+        # We therefore merge items across winders by lot_no_norm.
+        p2_items_by_lot: dict[int, list[Any]] = {}
+        p2_best_record_by_lot: dict[int, P2Record] = {}
 
         # 處理每個 P2Record + 其 items_v2；若沒有 items_v2，走 legacy merge/fallback
         for p2_record in p2_records:
@@ -1087,7 +1158,12 @@ async def query_records_advanced_v2(
                 items = [item for item in items if _p2_item_matches_material(item)]
 
             if items:
-                records.append(_p2_to_query_record_with_items(p2_record, items))
+                lot_key = int(getattr(p2_record, 'lot_no_norm'))
+                p2_items_by_lot.setdefault(lot_key, []).extend(items)
+
+                best = p2_best_record_by_lot.get(lot_key)
+                if best is None or (getattr(p2_record, 'created_at', None) and p2_record.created_at > best.created_at):
+                    p2_best_record_by_lot[lot_key] = p2_record
                 continue
 
             # If we had items originally but they were pruned by row-level filters,
@@ -1100,6 +1176,13 @@ async def query_records_advanced_v2(
                 if p2_record.winder_number != winder_requested:
                     continue
             legacy_records.append(p2_record)
+
+        # Merge items-based P2 results into one card per lot.
+        for lot_key, items in p2_items_by_lot.items():
+            best = p2_best_record_by_lot.get(lot_key)
+            if not best:
+                continue
+            records.append(_p2_to_query_record_with_items(best, items))
 
         if legacy_records:
             records.extend(_merge_p2_records(legacy_records))

@@ -75,7 +75,7 @@ async def test_v2_trace_detail_uses_items_rows_when_record_extras_empty(client, 
         production_date_yyyymmdd=20250902,
         machine_no="UNKNOWN",
         mold_no="UNKNOWN",
-        product_id="20250902-P24-238-2-301",
+        product_id="20250902_P24_238-2_301",
         extras={},
         created_at=datetime(2025, 9, 2, 0, 0, 0, tzinfo=timezone.utc),
     )

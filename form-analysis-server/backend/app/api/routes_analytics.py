@@ -11,9 +11,12 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
+from typing import List, Optional, Literal
 from datetime import datetime, timezone
 import time
+import json
+
+from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.services.traceability_flattener import TraceabilityFlattener
@@ -255,3 +258,59 @@ async def health_check():
             "empty_array_handling": "preserve"
         }
     }
+
+
+class AnalyzeRequest(BaseModel):
+    """Request payload for returning analysis JSON produced by an external analytics package."""
+
+    start_date: Optional[str] = Field(default=None, description="YYYY-MM-DD")
+    end_date: Optional[str] = Field(default=None, description="YYYY-MM-DD")
+    product_id: Optional[str] = Field(default=None, description="客戶退貨產品編號")
+    stations: List[Literal["P2", "P3", "ALL"]] = Field(
+        default_factory=list,
+        description="站點篩選（作為 query 參數傳給分析 package）",
+    )
+
+
+@router.post("/analyze")
+async def analyze(
+    payload: AnalyzeRequest,
+    request: Request = None,
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    依照前端提供的篩選條件（含站點 P2/P3/ALL）準備 query 後內容，交由外部分析 package 產生分析結果 JSON。
+
+    目前先回傳內建範例 JSON（sample_analysis_p2.json），讓前端可自動化繪圖流程。
+    後續只要把此端點內部的 sample 替換為：
+    - DB query 結果整理
+    - 呼叫外部分析 package
+    - 回傳 package 的 JSON
+    """
+
+    # Rate limiting（支援並發）
+    if request:
+        check_rate_limit(request)
+
+    # External analytics package integration (Analytical-Four).
+    # This endpoint returns the package-produced JSON directly, so the frontend doesn't need manual JSON paste.
+    try:
+        from app.services.analytics_external import run_external_categorical_analysis
+
+        data = run_external_categorical_analysis(
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            product_id=payload.product_id,
+            stations=payload.stations,
+        )
+        return data
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Analytics inputs not found. Please configure ANALYTICAL_FOUR_PATH / SEPTEMBER_V2_PATH "
+                f"(or provide ANALYTICS_CONFIG_PATH / ANALYTICS_MERGED_CSV_PATH). Error: {e}"
+            ),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analytics package execution failed: {e}")
