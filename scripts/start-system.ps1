@@ -49,13 +49,24 @@ Start-Sleep -Seconds 15
 
 Write-Host ""
 Write-Host "[4/5] Starting backend API..." -ForegroundColor Yellow  
-docker-compose up -d backend | Out-Null
+docker-compose up -d --build backend | Out-Null
 Write-Host "Waiting for API (20s)..." -ForegroundColor Cyan
 Start-Sleep -Seconds 20
 
 Write-Host ""
 Write-Host "[5/5] Starting frontend..." -ForegroundColor Yellow
-docker-compose up -d frontend | Out-Null
+docker-compose up -d --build frontend | Out-Null
+
+Write-Host "Ensuring frontend dependencies (node_modules) are installed..." -ForegroundColor Cyan
+try {
+    # The frontend service mounts /app and persists /app/node_modules as a Docker volume.
+    # When dependencies change (e.g. adding recharts), the volume may be stale.
+    docker exec form_analysis_frontend sh -lc "test -d node_modules/recharts || npm ci --silent" | Out-Null
+    Write-Host "Frontend dependencies OK" -ForegroundColor Green
+} catch {
+    Write-Host "Warning: failed to ensure frontend dependencies; check frontend logs if startup fails" -ForegroundColor Yellow
+}
+
 Write-Host "Waiting for frontend (15s)..." -ForegroundColor Cyan
 Start-Sleep -Seconds 15
 

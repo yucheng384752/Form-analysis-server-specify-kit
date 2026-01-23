@@ -51,11 +51,26 @@ services:
       # Admin keys are optional; set ADMIN_API_KEYS to enable privileged ops like creating tenants.
       - ADMIN_API_KEYS=${ADMIN_API_KEYS:-}
       - ADMIN_API_KEY_HEADER=${ADMIN_API_KEY_HEADER:-X-Admin-API-Key}
+
+      # External PDF conversion server (optional)
+      - PDF_SERVER_URL=${PDF_SERVER_URL:-}
+      - PDF_SERVER_CONVERT_PATH=${PDF_SERVER_CONVERT_PATH:-/convert}
+      - PDF_SERVER_TIMEOUT_SECONDS=${PDF_SERVER_TIMEOUT_SECONDS:-60}
+      - PDF_SERVER_TABLE=${PDF_SERVER_TABLE:-}
+
+      # External analytics inputs (Analytical-Four + september_v2)
+      # In Docker on Windows, mount host folders and point the backend to container paths.
+      - ANALYTICAL_FOUR_PATH=${ANALYTICAL_FOUR_PATH:-/external/Analytical-Four}
+      - SEPTEMBER_V2_PATH=${SEPTEMBER_V2_PATH:-/external/september_v2}
+      - ANALYTICS_CONFIG_PATH=${ANALYTICS_CONFIG_PATH:-/external/september_v2/config/ut_config_v3.json}
+      - ANALYTICS_MERGED_CSV_PATH=${ANALYTICS_MERGED_CSV_PATH:-/external/september_v2/merged_p1_p2_p3.csv}
     ports:
       - "${API_PORT:-18002}:8000"
     volumes:
       - ./backend:/app
       - upload_data:/app/uploads
+      - ${SEPTEMBER_V2_HOST_PATH:-C:/Users/yucheng/Desktop/september_v2}:/external/september_v2:ro
+      - ${ANALYTICAL_FOUR_HOST_PATH:-C:/Users/yucheng/Desktop/Analytical/Analytical-Four}:/external/Analytical-Four:ro
     networks:
       - app-network
     healthcheck:
@@ -78,6 +93,9 @@ services:
     environment:
       - VITE_API_URL=${VITE_API_URL:-http://localhost:18002}
       - VITE_MAX_FILE_SIZE=${VITE_MAX_FILE_SIZE:-10485760}
+      - VITE_ENABLE_CSV_EDIT=${VITE_ENABLE_CSV_EDIT:-true}
+      - VITE_API_KEY=${VITE_API_KEY:-}
+      - VITE_API_KEY_HEADER=${VITE_API_KEY_HEADER:-X-API-Key}
       - DOCKER_ENV=true
     ports:
       - "${FRONTEND_PORT:-18003}:5173"

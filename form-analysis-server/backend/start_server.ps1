@@ -1,2 +1,4 @@
-Set-Location "C:\Users\Yucheng\Desktop\form-analysis-sepc-kit\form-analysis-server\backend"
+$ErrorActionPreference = "Stop"
+
+Set-Location $PSScriptRoot
 python app\main.py

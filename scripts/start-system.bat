@@ -54,6 +54,52 @@ echo [0/6] PowerShell 提示：請用 curl.exe 或 Invoke-RestMethod 傳 headers
 echo   curl.exe -H "X-Admin-API-Key: <key>" http://localhost:!HOST_API_PORT!/api/auth/whoami
 echo   Invoke-RestMethod http://localhost:!HOST_API_PORT!/api/auth/whoami -Headers @{"X-Admin-API-Key"="<key>"}
 
+REM --------------------------------------------------------
+REM PDFtoCSV server 連線檢查（外部服務，可選）
+REM - 若未設定 PDF_SERVER_URL，則跳過
+REM - 設定 SKIP_PDF_SERVER_CHECK=1 可略過檢查
+REM - 設定 PDF_SERVER_CHECK_STRICT=1 則失敗直接中止（不詢問）
+REM --------------------------------------------------------
+if /I "%SKIP_PDF_SERVER_CHECK%"=="1" (
+    echo [0/6] 已略過 PDFtoCSV server 連線檢查（SKIP_PDF_SERVER_CHECK=1）
+) else (
+    set "PDF_SERVER_URL_FROM_ENVFILE="
+    if exist "%SERVER_PATH%\.env" (
+        for /f "usebackq tokens=1* delims==" %%a in (`findstr /R /B /C:"PDF_SERVER_URL=" "%SERVER_PATH%\.env"`) do (
+            set "PDF_SERVER_URL_FROM_ENVFILE=%%b"
+        )
+    )
+
+    set "PDF_SERVER_URL_EFFECTIVE=%PDF_SERVER_URL%"
+    if "!PDF_SERVER_URL_EFFECTIVE!"=="" set "PDF_SERVER_URL_EFFECTIVE=!PDF_SERVER_URL_FROM_ENVFILE!"
+    set "PDF_SERVER_URL_EFFECTIVE=!PDF_SERVER_URL_EFFECTIVE:"=!"
+
+    if "!PDF_SERVER_URL_EFFECTIVE!"=="" (
+        echo [0/6] 未設定 PDF_SERVER_URL，略過 PDFtoCSV server 連線檢查
+    ) else (
+        echo [0/6] 檢查 PDFtoCSV server 連線：!PDF_SERVER_URL_EFFECTIVE!
+        powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $base=$env:PDF_SERVER_URL_EFFECTIVE; if([string]::IsNullOrWhiteSpace($base)){ exit 0 }; $base=$base.Trim(); $paths=@('/healthz','/health','/'); foreach($p in $paths){ try { $u=$base.TrimEnd('/') + $p; $r=Invoke-WebRequest -UseBasicParsing -Uri $u -TimeoutSec 3 -Method GET; if($r.StatusCode -ge 200 -and $r.StatusCode -lt 500){ exit 0 } } catch { } }; try { $uri=[Uri]$base; $port=$uri.Port; if($port -le 0){ $port = if($uri.Scheme -eq 'https'){443}else{80} }; $tcp=Test-NetConnection -ComputerName $uri.Host -Port $port -WarningAction SilentlyContinue; if($tcp.TcpTestSucceeded){ exit 0 } } catch { }; exit 1" >nul 2>&1
+        if errorlevel 1 (
+            echo  [WARN] 無法連線到 PDFtoCSV server（將影響 PDF 轉檔功能）
+            echo   - 建議確認 PDF_SERVER_URL 是否正確、服務是否已啟動
+            echo   - 若要略過此檢查：設定 SKIP_PDF_SERVER_CHECK=1
+            if /I "%PDF_SERVER_CHECK_STRICT%"=="1" (
+                echo  [ERROR] PDF_SERVER_CHECK_STRICT=1：中止啟動
+                pause
+                exit /b 1
+            )
+            choice /M "PDFtoCSV server 目前不可用，仍要繼續啟動嗎"
+            if errorlevel 2 (
+                echo  使用者選擇中止
+                exit /b 1
+            )
+            echo  使用者選擇繼續（PDF 轉檔可能失敗）
+        ) else (
+            echo  PDFtoCSV server 連線檢查通過
+        )
+    )
+)
+
 REM 檢查 Docker 是否執行
 echo [1/6] 檢查 Docker 服務狀態...
 docker --version >nul 2>&1
@@ -273,7 +319,7 @@ goto db_check
 
 echo.
 echo [4/6] 啟動後端 API 服務...
-docker-compose up -d backend
+docker-compose up -d --build backend
 if errorlevel 1 (
     echo  後端服務啟動失敗
     pause
@@ -355,12 +401,33 @@ goto backend_check
 
 echo.
 echo [5/6] 啟動前端應用...
-docker-compose up -d frontend
+docker-compose up -d --build frontend
 if errorlevel 1 (
-    echo  前端服務啟動失敗
-    pause
-    exit /b 1
+    echo  前端服務啟動失敗，嘗試以 --no-cache 重新建置（可能是 Docker BuildKit 快取損壞）...
+    docker-compose build --no-cache frontend
+    if errorlevel 1 (
+        echo  前端服務建置仍然失敗
+        echo.
+        echo  建議排除步驟：
+        echo    1. 重新啟動 Docker Desktop
+        echo    2. 清理 build cache：docker builder prune -af
+        echo    3. 重新執行本腳本
+        pause
+        exit /b 1
+    )
+    docker-compose up -d frontend
+    if errorlevel 1 (
+        echo  前端服務啟動仍然失敗
+        pause
+        exit /b 1
+    )
 )
+
+echo     檢查前端依賴（node_modules）是否包含 recharts...
+docker exec form_analysis_frontend sh -lc "test -d node_modules/recharts || npm ci --silent" >nul 2>&1
+
+REM 重新啟動前端，確保新安裝的依賴生效
+docker-compose restart frontend >nul 2>&1
 
 echo     等待前端服務健康檢查...
 set /a counter=0
