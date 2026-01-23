@@ -31,7 +31,7 @@ class P3Record(BaseRecordMixin, Base):
         String(100),
         nullable=True,
         index=True,
-        comment="Derived Product ID (YYYY-MM-DD_machine_mold_lot)"
+        comment="Derived Product ID (YYYYMMDD_machine_mold_lot)"
     )
     
     # Relationships

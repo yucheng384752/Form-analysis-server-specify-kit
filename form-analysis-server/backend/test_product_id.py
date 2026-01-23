@@ -1,6 +1,8 @@
-"""測試 Product ID 產生器"""
+"""測試 Product ID 產生器
 
-import sys
+注意：此檔案是可直接執行的測試腳本，不是 pytest 測試模組。
+"""
+
 from datetime import date
 
 # 測試 Product ID 產生器
@@ -26,7 +28,7 @@ product_id = generator.generate(
     production_lot=301
 )
 print(f"   產生: {product_id}")
-assert product_id == "2025-09-02_P24_238-2_301", f"格式錯誤: {product_id}"
+assert product_id == "20250902_P24_238-2_301", f"格式錯誤: {product_id}"
 print("   ✓ 格式正確")
 
 # 測試 2: 從字串產生
@@ -38,12 +40,12 @@ product_id = generator.generate_from_strings(
     production_lot=301
 )
 print(f"   產生: {product_id}")
-assert product_id == "2025-09-02_P24_238-2_301"
+assert product_id == "20250902_P24_238-2_301"
 print("   ✓ 正確")
 
 # 測試 3: 解析
 print("\n3. 解析 Product ID")
-parsed = generator.parse("2025-09-02_P24_238-2_301")
+parsed = generator.parse("20250902_P24_238-2_301")
 print(f"   日期: {parsed['production_date']}")
 print(f"   機台: {parsed['machine_no']}")
 print(f"   模具號碼: {parsed['mold_no']}")
@@ -56,7 +58,7 @@ print("   ✓ 解析正確")
 
 # 測試 4: 驗證
 print("\n4. 驗證測試")
-valid, error = generator.validate("2025-09-02_P24_238-2_301")
+valid, error = generator.validate("20250902_P24_238-2_301")
 assert valid is True
 assert error is None
 print(f"   有效 Product ID: ✓")
@@ -70,7 +72,7 @@ print(f"   無效 Product ID: ✓ (錯誤: {error[:30]}...)")
 print("\n5. 快捷函數測試")
 product_id = generate_product_id(date(2025, 1, 15), "P02", "123", 100)
 print(f"   產生: {product_id}")
-assert product_id == "2025-01-15_P02_123_100"
+assert product_id == "20250115_P02_123_100"
 print("   ✓ 正確")
 
 parsed = parse_product_id(product_id)
@@ -85,13 +87,20 @@ print("   ✓ 驗證正確")
 print("\n6. 邊界情況測試")
 # 批號為 0
 product_id = generator.generate(date(2025, 1, 1), "P01", "1", 0)
-assert "2025-01-01_P01_1_0" == product_id
+assert "20250101_P01_1_0" == product_id
 print("   ✓ 批號 0: 正確")
 
 # 包含特殊字元的模具號碼
 product_id = generator.generate(date(2025, 1, 1), "P99", "ABC-123-X", 999)
-assert "2025-01-01_P99_ABC-123-X_999" == product_id
+assert "20250101_P99_ABC-123-X_999" == product_id
 print("   ✓ 特殊字元模具號碼: 正確")
+
+# 測試 7: 破折號格式應拒絕
+print("\n7. 破折號格式拒絕")
+valid, error = generator.validate("20250902-P24-238-2-301")
+assert valid is False
+assert error is not None
+print("   ✓ 正確拒絕")
 
 print("\n" + "=" * 60)
 print("🎉 Product ID 產生器測試全部通過！")

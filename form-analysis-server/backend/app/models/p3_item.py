@@ -62,7 +62,7 @@ class P3Item(Base):
         nullable=True,
         unique=True,
         index=True,
-        comment="產品編號（格式: YYYY-MM-DD_machine_mold_lot）"
+        comment="產品編號（格式: YYYYMMDD_machine_mold_lot）"
     )
     
     # 批號（繼承自父表，方便直接查詢）

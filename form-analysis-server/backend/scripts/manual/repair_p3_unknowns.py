@@ -157,7 +157,7 @@ async def run(lot_no: Optional[str], apply: bool, fix_date_from_row: bool) -> No
             new_pid = None
             if needs_pid_fix and prod_date and item.machine_no and item.mold_no and production_lot is not None:
                 date_str = prod_date.strftime("%Y%m%d")
-                base = f"{date_str}-{str(item.machine_no).strip()}-{str(item.mold_no).strip()}-{int(production_lot)}"
+                base = f"{date_str}_{str(item.machine_no).strip()}_{str(item.mold_no).strip()}_{int(production_lot)}"
                 candidate = base
                 if candidate in planned_pids and candidate != (item.product_id or ""):
                     # parser tolerates suffix; make it deterministic by row_no and counter

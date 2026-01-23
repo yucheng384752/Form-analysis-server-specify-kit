@@ -1,12 +1,11 @@
-"""
-Product ID 產生器服務
+"""Product ID 產生器服務
 
-格式: YYYYMMDD-機台-模具號碼-批號
-範例: 20250902-P24-238-2-301
+唯一格式（canonical）：YYYYMMDD_machine_mold_lot
+範例：20250902_P24_238-2_301
 
-此服務提供：
-1. 從 P3 資料產生唯一的 Product ID
-2. 從 Product ID 解析出原始資料
+設計重點：
+- 只允許用底線分隔日期/機台/模具/批號，避免模具號碼本身含 '-' 時造成歧義。
+- 可允許尾端附加後綴（例如 `_dup9`）以處理去重。
 """
 
 from datetime import date, datetime
@@ -17,7 +16,7 @@ class ProductIDGenerator:
     """
     Product ID 產生與解析服務
     
-    Product ID 格式: YYYYMMDD-machine-mold-lot
+    Product ID 格式（唯一）: YYYYMMDD_machine_mold_lot
     - YYYYMMDD: 生產日期（8位數字）
     - machine: 機台編號（如 P24）
     - mold: 模具號碼（如 238-2）
@@ -32,7 +31,7 @@ class ProductIDGenerator:
     ...     production_lot=301
     ... )
     >>> print(product_id)
-    20250902-P24-238-2-301
+    20250902_P24_238-2_301
     
     >>> parsed = generator.parse(product_id)
     >>> print(parsed)
@@ -61,7 +60,7 @@ class ProductIDGenerator:
             production_lot: 批號（整數，如 301）
         
         Returns:
-            Product ID 字串，格式: YYYYMMDD-machine-mold-lot
+            Product ID 字串，格式: YYYYMMDD_machine_mold_lot
         
         Raises:
             ValueError: 如果參數格式不正確
@@ -69,7 +68,7 @@ class ProductIDGenerator:
         Examples:
             >>> gen = ProductIDGenerator()
             >>> gen.generate(date(2025, 9, 2), "P24", "238-2", 301)
-            '20250902-P24-238-2-301'
+            '20250902_P24_238-2_301'
         """
         # 驗證參數
         if not isinstance(production_date, date):
@@ -87,8 +86,8 @@ class ProductIDGenerator:
         # 格式化日期為 YYYYMMDD
         date_str = production_date.strftime("%Y%m%d")
         
-        # 組合 Product ID (使用破折號分隔)
-        product_id = f"{date_str}-{machine_no}-{mold_no}-{production_lot}"
+        # 組合 Product ID（唯一格式：底線分隔）
+        product_id = f"{date_str}_{machine_no}_{mold_no}_{production_lot}"
         
         return product_id
     
@@ -143,7 +142,7 @@ class ProductIDGenerator:
         
         Examples:
             >>> gen = ProductIDGenerator()
-            >>> result = gen.parse("20250902-P24-238-2-301")
+            >>> result = gen.parse("20250902_P24_238-2_301")
             >>> result['production_date']
             datetime.date(2025, 9, 2)
             >>> result['machine_no']
@@ -154,20 +153,18 @@ class ProductIDGenerator:
         if not product_id or not isinstance(product_id, str):
             raise ValueError(f"product_id 必須是非空字串: {product_id}")
         
-        # 分割 Product ID (支援破折號或底線分隔)
-        # 優先使用底線分隔（舊資料格式），如果沒有底線則使用破折號
-        # 允許尾端附加額外片段（例如去重後的 suffix）
-        if '_' in product_id:
-            parts = product_id.split('_')
-            separator = '_'
-        else:
-            parts = product_id.split('-')
-            separator = '-'
+        # 分割 Product ID（唯一格式：底線分隔）
+        # 允許尾端附加額外片段（例如去重後的 suffix: _dup9）
+        if '_' not in product_id:
+            raise ValueError(
+                f"Product ID 格式錯誤：只接受底線格式 'YYYYMMDD_machine_mold_lot'，但收到: {product_id}"
+            )
+
+        parts = product_id.split('_')
 
         if len(parts) < 4:
             raise ValueError(
-                f"Product ID 格式錯誤，應為 'YYYYMMDD-machine-mold-lot' 或 'YYYYMMDD_machine_mold_lot'，"
-                f"但收到: {product_id}"
+                f"Product ID 格式錯誤，應為 'YYYYMMDD_machine_mold_lot'，但收到: {product_id}"
             )
 
         # 解析：date (1) - machine (1) - mold (1+) - lot (1) [- suffix (optional)]
@@ -191,9 +188,9 @@ class ProductIDGenerator:
         
         lot_str = parts[lot_idx]
         
-        # 中間的部分組成模具號碼（可能包含分隔符，例如 238-2）
+        # 中間的部分組成模具號碼（模具本身可包含 '-'，不影響解析）
         if lot_idx > 2:
-            mold_no = separator.join(parts[2:lot_idx])
+            mold_no = "_".join(parts[2:lot_idx])
         else:
             mold_no = parts[2]
         
@@ -306,7 +303,7 @@ def generate_product_id(
         >>> from app.services.product_id_generator import generate_product_id
         >>> from datetime import date
         >>> generate_product_id(date(2025, 9, 2), "P24", "238-2", 301)
-        '20250902-P24-238-2-301'
+        '20250902_P24_238-2_301'
     """
     return product_id_generator.generate(
         production_date, machine_no, mold_no, production_lot
@@ -319,7 +316,7 @@ def parse_product_id(product_id: str) -> Dict[str, any]:
     
     Examples:
         >>> from app.services.product_id_generator import parse_product_id
-        >>> parse_product_id("20250902-P24-238-2-301")
+        >>> parse_product_id("20250902_P24_238-2_301")
         {'production_date': datetime.date(2025, 9, 2), 'machine_no': 'P24', ...}
     """
     return product_id_generator.parse(product_id)
