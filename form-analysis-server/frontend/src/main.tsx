@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import { ToastProvider } from './components/common/ToastContext.tsx'
+import './i18n'
 import './index.css'
 import './styles/figma.css'
 

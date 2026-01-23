@@ -116,7 +116,7 @@ export function FileUpload() {
 
   const importData = async (processId: string, fileId: string) => {
     try {
-      const response = await fetch('http://localhost:8000/api/import', {
+      const response = await fetch('/api/import', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -156,7 +156,7 @@ export function FileUpload() {
         )
       );
 
-      const response = await fetch('http://localhost:8000/api/upload', {
+      const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
       });

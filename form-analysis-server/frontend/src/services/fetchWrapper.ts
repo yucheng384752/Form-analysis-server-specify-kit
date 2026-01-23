@@ -1,5 +1,6 @@
 import { ensureTenantIdWithOptions, TENANT_STORAGE_KEY } from './tenant'
 import { getApiKeyHeaderName, getApiKeyValue } from './auth'
+import { getAdminApiKeyHeaderName } from './adminAuth'
 
 // Global fetch wrapper: auto-inject X-Tenant-Id for all /api* requests except /api/tenants.
 // This prevents accidental cross-tenant calls and removes per-call header boilerplate.
@@ -36,11 +37,13 @@ export function installGlobalFetchWrapper(): () => void {
       // We still allow attaching the regular API key when present.
       if (isTenantListPath || isAuthPath) {
         const mergedHeaders = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined))
-        if (apiKeyValue) {
+        const adminHeaderName = getAdminApiKeyHeaderName()
+        const hasAdminHeader = Boolean((mergedHeaders.get(adminHeaderName) || '').trim())
+        if (apiKeyValue && !hasAdminHeader) {
           mergedHeaders.set(apiKeyHeaderName, apiKeyValue)
         }
 
-        // If no auth headers exist, call as-is.
+        // If no regular API key exists, call as-is.
         if (!apiKeyValue) {
           return originalFetch(input as any, init)
         }
@@ -55,22 +58,28 @@ export function installGlobalFetchWrapper(): () => void {
       }
 
       const attemptFetch = async (forcedTenantId?: string) => {
-        const effectiveTenantId = forcedTenantId ?? tenantId
+        const mergedHeaders = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined))
+        const explicitTenantId = (mergedHeaders.get('X-Tenant-Id') || '').trim()
+        const effectiveTenantId = forcedTenantId ?? (explicitTenantId || tenantId)
 
         // Hard block tenant-scoped API calls when tenant is not explicitly selected.
         // This prevents silently using a default/guessed tenant.
-        if (!effectiveTenantId) {
+        // If API key auth is enabled server-side, tenant is bound to the API key,
+        // so it's safe to allow requests without X-Tenant-Id when an API key exists.
+        if (!effectiveTenantId && !apiKeyValue) {
           return new Response(
             JSON.stringify({
-              detail: '尚未選擇 Tenant（X-Tenant-Id）。請到「登入」頁籤選擇 Tenant；若尚未初始化，先用管理者金鑰解鎖「管理者」頁籤建立 Tenant。',
+              detail:
+                '尚未選擇區域（X-Tenant-Id）。請到「登入」頁籤選擇區域；若尚未初始化，先用管理者金鑰解鎖「管理者」頁籤建立區域。',
             }),
             { status: 400, headers: { 'Content-Type': 'application/json' } },
           )
         }
 
-        const mergedHeaders = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined))
-        // Always set/override for tenant-scoped /api calls.
-        mergedHeaders.set('X-Tenant-Id', effectiveTenantId)
+        // Set/override tenant header only when we actually have one.
+        if (effectiveTenantId) {
+          mergedHeaders.set('X-Tenant-Id', effectiveTenantId)
+        }
         if (apiKeyValue) {
           mergedHeaders.set(apiKeyHeaderName, apiKeyValue)
         }

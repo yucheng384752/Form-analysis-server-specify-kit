@@ -1,9 +1,17 @@
 // src/pages/RegisterPage.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type KeyboardEventHandler } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useToast } from '../components/common/ToastContext'
 import { clearApiKeyValue, getApiKeyValue, setApiKeyValue } from '../services/auth'
 import { clearTenantId, getTenantId, setTenantId } from '../services/tenant'
-import { clearAdminApiKeyValue, getAdminApiKeyHeaderName, setAdminApiKeyValue } from '../services/adminAuth'
+import { getTenantLabelById, writeTenantMap } from '../services/tenantMap'
+import {
+  clearAdminApiKeyValue,
+  clearAdminUnlockedInSession,
+  getAdminApiKeyHeaderName,
+  setAdminApiKeyValue,
+  setAdminUnlockedInSession,
+} from '../services/adminAuth'
 import './../styles/register-page.css'
 
 type TenantRow = {
@@ -23,6 +31,7 @@ type WhoAmI = {
 }
 
 export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void }) {
+  const { t } = useTranslation()
   const { showToast } = useToast()
 
   const maskKey = (raw: string) => {
@@ -51,6 +60,18 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
   const [tenantsAuthRequired, setTenantsAuthRequired] = useState<boolean | null>(null)
 
   const hasApiKey = useMemo(() => Boolean(storedApiKeyMasked), [storedApiKeyMasked])
+
+  const storedTenantLabel = useMemo(() => {
+    if (!storedTenantId) return ''
+
+    const fromList = tenants?.find((t) => String(t?.id || '') === storedTenantId)
+    if (fromList?.name || fromList?.code) {
+      const code = String(fromList?.code || '').trim()
+      return code || ''
+    }
+
+    return getTenantLabelById(storedTenantId)
+  }, [storedTenantId, tenants])
 
   // Auto refresh whoami when API key exists (for role-based UI)
   useEffect(() => {
@@ -114,6 +135,7 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
       }
       const data = (await res.json()) as TenantRow[]
       setTenants(Array.isArray(data) ? data : [])
+      if (Array.isArray(data)) writeTenantMap(data)
       setTenantsAuthRequired(false)
       showToast('success', `已取得 tenants：${Array.isArray(data) ? data.length : 0} 筆`)
     } catch {
@@ -133,18 +155,19 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
   const handleSetTenant = (id: string) => {
     const trimmed = String(id || '').trim()
     if (!trimmed) {
-      showToast('error', 'tenant id 不可為空')
+      showToast('error', '區域 ID 不可為空')
       return
     }
     setTenantId(trimmed)
     setStoredTenantIdState(trimmed)
-    showToast('success', `已設定 Tenant ID：${trimmed}`)
+    const label = getTenantLabelById(trimmed)
+    showToast('success', `已設定區域：${label || '（未知）'}`)
   }
 
   const handleClearTenant = () => {
     clearTenantId()
     setStoredTenantIdState('')
-    showToast('info', '已清除 Tenant ID（localStorage）')
+    showToast('info', '已清除區域 ID（localStorage）')
   }
 
   const handlePasswordLogin = async () => {
@@ -188,12 +211,26 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
       setStoredApiKeyMasked(maskKey(apiKey))
 
       setLoginPassword('')
-      showToast('success', '登入成功：已自動保存場域與權限')
+      showToast('success', '登入成功：已自動保存區域與權限')
     } catch {
       showToast('error', '登入失敗（網路或伺服器未啟動）')
     } finally {
       setLoginLoading(false)
     }
+  }
+
+  const handleLoginKeyDown: KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (loginLoading) return
+    void handlePasswordLogin()
+  }
+
+  const handleAdminKeyDown: KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (adminKeyLoading) return
+    void handleVerifyAdminKey()
   }
 
   const handleVerifyAdminKey = async () => {
@@ -217,11 +254,13 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
         const detail = (body as any)?.detail
         showToast('error', typeof detail === 'string' ? detail : '管理者金鑰無效')
         clearAdminApiKeyValue()
+        clearAdminUnlockedInSession()
         props.onAdminUnlocked?.(false)
         return
       }
 
       setAdminApiKeyValue(key)
+      setAdminUnlockedInSession(true)
       setAdminKeyDraft('')
       props.onAdminUnlocked?.(true)
       showToast('success', '管理者金鑰驗證成功：已解鎖「管理者」頁籤')
@@ -235,47 +274,50 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
   return (
     <div className="register-page">
       <section className="register-card">
-        <h2 className="register-title">登入</h2>
+        <h2 className="register-title">{t('register.title')}</h2>
 
         {!hasApiKey ? (
           <>
             <div className="register-form">
               <div className="register-row">
                 <label className="register-label" style={{ minWidth: 220, flex: 1 }}>
-                  場域代碼（可留空）
+                  {t('register.tenantCodeOptional')}
                   <input
                     className="register-input"
                     type="text"
-                    placeholder="例如：ut"
+                    placeholder={t('register.tenantCodePlaceholder')}
                     value={loginTenantCode}
                     onChange={(e) => setLoginTenantCode(e.target.value)}
+                    onKeyDown={handleLoginKeyDown}
                   />
                 </label>
                 <label className="register-label" style={{ minWidth: 220, flex: 1 }}>
-                  帳號
+                  {t('register.username')}
                   <input
                     className="register-input"
                     type="text"
-                    placeholder="請輸入帳號"
+                    placeholder={t('register.usernamePlaceholder')}
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
+                    onKeyDown={handleLoginKeyDown}
                   />
                 </label>
                 <label className="register-label" style={{ minWidth: 220, flex: 1 }}>
-                  密碼
+                  {t('register.password')}
                   <input
                     className="register-input"
                     type="password"
-                    placeholder="請輸入密碼"
+                    placeholder={t('register.passwordPlaceholder')}
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
+                    onKeyDown={handleLoginKeyDown}
                   />
                 </label>
               </div>
 
               <div className="register-actions">
                 <button className="btn-primary" disabled={loginLoading} onClick={handlePasswordLogin}>
-                  {loginLoading ? '登入中…' : '登入'}
+                  {loginLoading ? t('register.loggingIn') : t('register.login')}
                 </button>
               </div>
             </div>
@@ -284,24 +326,25 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
               className="register-details"
               open={false}
             >
-              <summary className="register-summary">提示</summary>
+              <summary className="register-summary">{t('register.tips')}</summary>
               <div className="register-hint">
-                需要建立第一個 Tenant / Tenant 管理者時，可在此驗證管理者金鑰，驗證成功後會顯示「管理者」頁籤。
+                {t('register.adminHint')}
               </div>
               <div className="register-form" style={{ marginTop: '0.75rem' }}>
                 <label className="register-label">
-                  管理者金鑰
+                  {t('register.adminKey')}
                   <input
                     className="register-input"
                     type="password"
-                    placeholder="請貼上金鑰"
+                    placeholder={t('register.adminKeyPlaceholder')}
                     value={adminKeyDraft}
                     onChange={(e) => setAdminKeyDraft(e.target.value)}
+                    onKeyDown={handleAdminKeyDown}
                   />
                 </label>
                 <div className="register-actions">
                   <button className="btn-secondary" disabled={adminKeyLoading} onClick={handleVerifyAdminKey}>
-                    {adminKeyLoading ? '驗證中…' : '驗證並解鎖管理者'}
+                    {adminKeyLoading ? t('register.verifying') : t('register.verifyAndUnlock')}
                   </button>
                 </div>
               </div>
@@ -311,61 +354,71 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
           <>
             <div className="register-row" style={{ marginTop: '0.75rem' }}>
               <div className="register-kv">
-                <div className="register-k">Tenant ID</div>
-                <div className="register-v">{storedTenantId ? <code>{storedTenantId}</code> : <span className="muted">（未保存）</span>}</div>
+                <div className="register-k">{t('register.tenantId')}</div>
+                <div className="register-v">
+                  {storedTenantId ? (
+                    <>
+                      <strong title={storedTenantId}>{storedTenantLabel || '（未知）'}</strong>
+                    </>
+                  ) : (
+                    <span className="muted">{t('register.tenantNotSaved')}</span>
+                  )}
+                </div>
               </div>
               <div className="register-kv">
-                <div className="register-k">角色</div>
+                <div className="register-k">{t('register.role')}</div>
                 <div className="register-v">
                   {whoami ? (
                     <code>{whoami.is_admin ? 'admin' : (whoami.actor_role || 'user')}</code>
                   ) : (
-                    <span className="muted">（讀取中…）</span>
+                    <span className="muted">{t('register.roleLoading')}</span>
                   )}
                 </div>
               </div>
               <div className="register-actions">
                 <button className="btn-secondary" disabled={diagLoading} onClick={handleFetchDiagnostics}>
-                  {diagLoading ? '讀取中…' : '更新身分'}
+                  {diagLoading ? t('common.loading') : t('register.updateIdentity')}
                 </button>
-                <button className="btn-secondary" onClick={handleClearApiKey}>登出（清除登入資訊）</button>
+                <button className="btn-secondary" onClick={handleClearApiKey}>{t('register.logout')}</button>
               </div>
             </div>
 
             <details className="register-details" open>
-              <summary className="register-summary">場域（Tenant）設定</summary>
+              <summary className="register-summary">{t('register.tenantSettings')}</summary>
               <div className="register-row">
                 <div className="register-kv">
-                  <div className="register-k">目前已選擇的場域（Tenant ID）</div>
-                  <div className="register-v">{storedTenantId ? <code>{storedTenantId}</code> : <span className="muted">（無）</span>}</div>
+                  <div className="register-k">{t('register.tenantSelected')}</div>
+                  <div className="register-v">{storedTenantId ? <span title={storedTenantId}>{storedTenantLabel || '（未知）'}</span> : <span className="muted">{t('register.none')}</span>}</div>
                 </div>
                 <div className="register-actions">
-                  <button className="btn-secondary" onClick={handleClearTenant}>清除 Tenant ID</button>
+                  <button className="btn-secondary" onClick={handleClearTenant}>{t('register.clearTenantId')}</button>
                 </div>
               </div>
 
               <div className="register-actions">
                 <button className="btn-secondary" disabled={loadingTenants} onClick={refreshTenants}>
-                  {loadingTenants ? '讀取中…' : '刷新 tenants 列表'}
+                  {loadingTenants ? t('common.loading') : t('register.refreshTenants')}
                 </button>
-                {tenantsAuthRequired === true && <span className="muted">（此環境需要 key 才能讀取 tenants）</span>}
+                {tenantsAuthRequired === true && <span className="muted">{t('register.tenantsNeedAuth')}</span>}
               </div>
 
               {tenants && (
                 <div className="register-tenants">
-                  <div className="register-tenants-title">tenants</div>
+                  <div className="register-tenants-title">{t('register.tenants')}</div>
                   {tenants.length === 0 ? (
-                    <div className="muted">（目前為空）</div>
+                    <div className="muted">{t('register.tenantsEmpty')}</div>
                   ) : (
                     <div className="register-tenants-grid">
-                      {tenants.map((t) => (
-                        <div key={t.id} className="register-tenant-item">
-                          <div className="register-tenant-id"><code>{t.id}</code></div>
+                      {tenants.map((tenant) => (
+                        <div key={tenant.id} className="register-tenant-item">
+                          <div className="register-tenant-id">
+                            <code title={tenant.id}>{getTenantLabelById(tenant.id) || '（未知）'}</code>
+                          </div>
                           <div className="register-tenant-meta muted">
-                            name={t.name ?? '-'} / code={t.code ?? '-'}
+                            name={tenant.name ?? '-'} / code={tenant.code ?? '-'}
                           </div>
                           <div className="register-actions">
-                            <button className="btn-secondary" onClick={() => handleSetTenant(t.id)}>使用此 Tenant</button>
+                            <button className="btn-secondary" onClick={() => handleSetTenant(tenant.id)}>{t('register.useTenant')}</button>
                           </div>
                         </div>
                       ))}
@@ -376,22 +429,23 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
             </details>
 
             <details className="register-details">
-              <summary className="register-summary">提示（管理者）</summary>
-              <div className="register-hint">如需初始化/管理 tenant 與使用者，請在此驗證管理者金鑰以解鎖「管理者」頁籤。</div>
+              <summary className="register-summary">{t('register.adminTips')}</summary>
+              <div className="register-hint">{t('register.adminTipsText')}</div>
               <div className="register-form" style={{ marginTop: '0.75rem' }}>
                 <label className="register-label">
-                  管理者金鑰
+                  {t('register.adminKey')}
                   <input
                     className="register-input"
                     type="password"
-                    placeholder="請貼上金鑰"
+                    placeholder={t('register.adminKeyPlaceholder')}
                     value={adminKeyDraft}
                     onChange={(e) => setAdminKeyDraft(e.target.value)}
+                    onKeyDown={handleAdminKeyDown}
                   />
                 </label>
                 <div className="register-actions">
                   <button className="btn-secondary" disabled={adminKeyLoading} onClick={handleVerifyAdminKey}>
-                    {adminKeyLoading ? '驗證中…' : '驗證並解鎖管理者'}
+                    {adminKeyLoading ? t('register.verifying') : t('register.verifyAndUnlock')}
                   </button>
                 </div>
               </div>

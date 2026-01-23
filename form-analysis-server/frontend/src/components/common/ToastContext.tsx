@@ -6,6 +6,7 @@ import {
   ReactNode,
   useCallback,
   useEffect,
+  useRef,
 } from "react";
 
 export type ToastType = "info" | "error" | "success";
@@ -14,28 +15,50 @@ export interface Toast {
   id: number;
   type: ToastType;
   message: string;
+  key?: string;
+}
+
+export interface ShowToastOptions {
+  key?: string;
+  durationMs?: number | null;
 }
 
 interface ToastContextValue {
   toasts: Toast[];
-  showToast: (type: ToastType, message: string) => void;
+  showToast: (type: ToastType, message: string, options?: ShowToastOptions) => void;
   removeToast: (id: number) => void;
+  clearToasts: () => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const counterRef = useRef(0);
 
   const removeToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const clearToasts = useCallback(() => {
+    setToasts([]);
+  }, []);
+
   const showToast = useCallback(
-    (type: ToastType, message: string) => {
-      const id = Date.now();
-      setToasts((prev) => [...prev, { id, type, message }]);
-      setTimeout(() => removeToast(id), 1500);
+    (type: ToastType, message: string, options?: ShowToastOptions) => {
+      const id = Date.now() * 1000 + (counterRef.current++ % 1000);
+      const key = typeof options?.key === 'string' && options.key ? options.key : undefined;
+      const durationMs = options?.durationMs ?? 1500;
+
+      setToasts((prev) => {
+        const filtered = key ? prev.filter((t) => t.key !== key) : prev;
+        const toast = key ? ({ id, type, message, key } as Toast) : ({ id, type, message } as Toast);
+        return [...filtered, toast];
+      });
+
+      if (durationMs !== null) {
+        setTimeout(() => removeToast(id), durationMs);
+      }
     },
     [removeToast]
   );
@@ -54,7 +77,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, [showToast])
 
   return (
-    <ToastContext.Provider value={{ toasts, showToast, removeToast }}>
+    <ToastContext.Provider value={{ toasts, showToast, removeToast, clearToasts }}>
       {children}
     </ToastContext.Provider>
   );

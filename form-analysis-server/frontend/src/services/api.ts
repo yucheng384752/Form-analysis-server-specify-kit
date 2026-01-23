@@ -167,7 +167,7 @@ export async function uploadFile<T = any>(
       const u = new URL(fullUrl, window.location.href);
       const tenantId = window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
       if (u.pathname.startsWith('/api') && !u.pathname.startsWith('/api/tenants') && !tenantId) {
-        reject(new Error('尚未選擇 Tenant（X-Tenant-Id）。請先到「登入」頁籤選擇 Tenant；若資料庫尚未初始化，先用管理者金鑰解鎖「管理者」頁籤建立 Tenant。'));
+        reject(new Error('尚未選擇區域（X-Tenant-Id）。請先到「登入」頁籤選擇區域；若資料庫尚未初始化，先用管理者金鑰解鎖「管理者」頁籤建立區域。'));
         xhr.abort();
         return;
       }

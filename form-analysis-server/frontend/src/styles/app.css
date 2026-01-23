@@ -24,6 +24,41 @@ body {
   margin-bottom: 1.5rem;
 }
 
+.app-lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 14px;
+}
+
+.app-lang-label {
+  opacity: 0.85;
+  color: #7b8794;
+}
+
+.app-lang-tabs {
+  display: inline-flex;
+  background-color: #eef2f7;
+  border-radius: 999px;
+  padding: 0.25rem;
+}
+
+.app-lang-tab {
+  border: none;
+  background: transparent;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: #7b8794;
+}
+
+.app-lang-tab.is-active {
+  background-color: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+}
+
 .app-title {
   margin: 0 0 0.25rem;
   font-size: 1.6rem;

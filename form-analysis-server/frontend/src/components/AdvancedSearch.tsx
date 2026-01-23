@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import './advanced-search.css';
 
 export interface AdvancedSearchParams {
@@ -27,6 +28,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   isExpanded,
   tenantId,
 }) => {
+  const { t } = useTranslation();
   // 批號
   const [lotNo, setLotNo] = useState('');
   
@@ -51,7 +53,6 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   const [machineOptions, setMachineOptions] = useState<string[]>([]);
   const [moldOptions, setMoldOptions] = useState<string[]>([]);
   const [specOptions, setSpecOptions] = useState<string[]>([]);
-  const [winderOptions, setWinderOptions] = useState<string[]>([]);
   const [materialOptions, setMaterialOptions] = useState<string[]>([]);
 
   // 載入選項
@@ -61,18 +62,16 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
         try {
           const headers: HeadersInit = tenantId ? { 'X-Tenant-Id': tenantId } : {};
           // 平行請求所有選項
-          const [machineRes, moldRes, specRes, winderRes, materialRes] = await Promise.all([
+          const [machineRes, moldRes, specRes, materialRes] = await Promise.all([
             fetch('/api/v2/query/options/machine_no', { headers }),
             fetch('/api/v2/query/options/mold_no', { headers }),
             fetch('/api/v2/query/options/specification', { headers }),
-            fetch('/api/v2/query/options/winder_number', { headers }),
             fetch('/api/v2/query/options/material', { headers })
           ]);
 
           if (machineRes.ok) setMachineOptions(await machineRes.json());
           if (moldRes.ok) setMoldOptions(await moldRes.json());
           if (specRes.ok) setSpecOptions(await specRes.json());
-          if (winderRes.ok) setWinderOptions(await winderRes.json());
           if (materialRes.ok) setMaterialOptions(await materialRes.json());
         } catch (error) {
           console.error('Failed to fetch search options:', error);
@@ -81,7 +80,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
       fetchOptions();
     }
-  }, [isExpanded]);
+  }, [isExpanded, tenantId]);
 
   // 驗證至少填寫一個條件
   const validateSearchParams = (): boolean => {
@@ -113,7 +112,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   // 處理搜尋
   const handleSearch = () => {
     if (!validateSearchParams()) {
-      alert('請至少填寫一個搜尋條件');
+      alert(t('query.advanced.validationAtLeastOne'));
       return;
     }
 
@@ -179,30 +178,36 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
   return (
     <div className="advanced-search">
-      {isExpanded && (
-        <div className="advanced-search-panel">
-          <div className="search-grid">
+      <div
+        id="advanced-search-panel"
+        className="advanced-search-panel"
+        data-expanded={isExpanded ? 'true' : 'false'}
+        aria-hidden={!isExpanded}
+      >
+        <div className="advanced-search-panel-inner">
+          <fieldset className="advanced-search-fieldset" disabled={!isExpanded}>
+            <div className="search-grid">
             {/* 批號 */}
             <div className="search-field">
-              <label htmlFor="adv-lot-no">批號</label>
+              <label htmlFor="adv-lot-no">{t('query.advanced.lotNo')}</label>
               <input
                 id="adv-lot-no"
                 type="text"
                 value={lotNo}
                 onChange={(e) => setLotNo(e.target.value)}
-                placeholder="輸入批號 (模糊搜尋)"
+                placeholder={t('query.advanced.lotNoPlaceholder')}
               />
             </div>
 
             {/* 生產日期起始 */}
             <div className="search-field date-field">
-              <label>生產日期 (起始)</label>
+              <label>{t('query.advanced.productionDateFrom')}</label>
               <div className="date-inputs">
                 <input
                   type="number"
                   value={dateFromYear}
                   onChange={(e) => setDateFromYear(e.target.value)}
-                  placeholder="年"
+                  placeholder={t('query.advanced.year')}
                   min="1900"
                   max="2100"
                   className="date-year"
@@ -212,7 +217,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                   type="number"
                   value={dateFromMonth}
                   onChange={(e) => setDateFromMonth(e.target.value)}
-                  placeholder="月"
+                  placeholder={t('query.advanced.month')}
                   min="1"
                   max="12"
                   className="date-month"
@@ -222,7 +227,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                   type="number"
                   value={dateFromDay}
                   onChange={(e) => setDateFromDay(e.target.value)}
-                  placeholder="日"
+                  placeholder={t('query.advanced.day')}
                   min="1"
                   max="31"
                   className="date-day"
@@ -232,13 +237,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
             {/* 生產日期結束 */}
             <div className="search-field date-field">
-              <label>生產日期 (結束)</label>
+              <label>{t('query.advanced.productionDateTo')}</label>
               <div className="date-inputs">
                 <input
                   type="number"
                   value={dateToYear}
                   onChange={(e) => setDateToYear(e.target.value)}
-                  placeholder="年"
+                  placeholder={t('query.advanced.year')}
                   min="1900"
                   max="2100"
                   className="date-year"
@@ -248,7 +253,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                   type="number"
                   value={dateToMonth}
                   onChange={(e) => setDateToMonth(e.target.value)}
-                  placeholder="月"
+                  placeholder={t('query.advanced.month')}
                   min="1"
                   max="12"
                   className="date-month"
@@ -258,7 +263,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                   type="number"
                   value={dateToDay}
                   onChange={(e) => setDateToDay(e.target.value)}
-                  placeholder="日"
+                  placeholder={t('query.advanced.day')}
                   min="1"
                   max="31"
                   className="date-day"
@@ -268,13 +273,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
             {/* 機台號碼 */}
             <div className="search-field">
-              <label htmlFor="adv-machine-no">機台號碼</label>
+              <label htmlFor="adv-machine-no">{t('query.advanced.machineNo')}</label>
               <input
                 id="adv-machine-no"
                 type="text"
                 value={machineNo}
                 onChange={(e) => setMachineNo(e.target.value)}
-                placeholder="輸入機台號碼 (模糊搜尋)"
+                placeholder={t('query.advanced.machineNoPlaceholder')}
                 list="machine-options"
               />
               <datalist id="machine-options">
@@ -286,13 +291,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
             {/* 下膠編號 (Bottom Tape) */}
             <div className="search-field">
-              <label htmlFor="adv-mold-no">下膠編號</label>
+              <label htmlFor="adv-mold-no">{t('query.advanced.moldNo')}</label>
               <input
                 id="adv-mold-no"
                 type="text"
                 value={moldNo}
                 onChange={(e) => setMoldNo(e.target.value)}
-                placeholder="輸入下膠編號 (模糊搜尋)"
+                placeholder={t('query.advanced.moldNoPlaceholder')}
                 list="mold-options"
               />
               <datalist id="mold-options">
@@ -304,25 +309,25 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
             {/* 產品編號 */}
             <div className="search-field">
-              <label htmlFor="adv-product-id">產品編號</label>
+              <label htmlFor="adv-product-id">{t('query.advanced.productId')}</label>
               <input
                 id="adv-product-id"
                 type="text"
                 value={productId}
                 onChange={(e) => setProductId(e.target.value)}
-                placeholder="輸入產品編號 (模糊搜尋)"
+                placeholder={t('query.advanced.productIdPlaceholder')}
               />
             </div>
 
             {/* 統一規格 (P1/P2/P3) */}
             <div className="search-field">
-              <label htmlFor="adv-specification">規格</label>
+              <label htmlFor="adv-specification">{t('query.advanced.specification')}</label>
               <input
                 id="adv-specification"
                 type="text"
                 value={specification}
                 onChange={(e) => setSpecification(e.target.value)}
-                placeholder="輸入規格 (P1/P2/P3 統一搜尋)"
+                placeholder={t('query.advanced.specificationPlaceholder')}
                 list="spec-options"
               />
               <datalist id="spec-options">
@@ -334,13 +339,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
             {/* 材料代號 (P1/P2) */}
             <div className="search-field">
-              <label htmlFor="adv-material">材料代號</label>
+              <label htmlFor="adv-material">{t('query.advanced.material')}</label>
               <input
                 id="adv-material"
                 type="text"
                 value={material}
                 onChange={(e) => setMaterial(e.target.value)}
-                placeholder="輸入材料代號 (P1/P2)"
+                placeholder={t('query.advanced.materialPlaceholder')}
                 list="material-options"
               />
               <datalist id="material-options">
@@ -350,59 +355,57 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
               </datalist>
             </div>
 
-            {/* Winder Number */}
+            {/* Winder Number（下拉 1~20） */}
             <div className="search-field">
-              <label htmlFor="adv-winder-number">Winder Number</label>
-              <input
+              <label htmlFor="adv-winder-number">{t('query.advanced.winderNumber')}</label>
+              <select
                 id="adv-winder-number"
-                type="text"
                 value={winderNumber}
                 onChange={(e) => setWinderNumber(e.target.value)}
-                placeholder="輸入 Winder Number"
-                list="winder-options"
-              />
-              <datalist id="winder-options">
-                {winderOptions.map((opt, idx) => (
-                  <option key={idx} value={opt} />
+              >
+                <option value="">{t('query.advanced.winderAll')}</option>
+                {Array.from({ length: 20 }, (_, i) => String(i + 1)).map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
                 ))}
-              </datalist>
+              </select>
             </div>
 
             {/* 資料類型 */}
             <div className="search-field">
-              <label htmlFor="adv-data-type">資料類型</label>
+              <label htmlFor="adv-data-type">{t('query.advanced.dataType')}</label>
               <select
                 id="adv-data-type"
                 value={dataType}
                 onChange={(e) => setDataType(e.target.value)}
               >
-                <option value="">全部</option>
+                <option value="">{t('query.advanced.dataTypeAll')}</option>
                 <option value="P1">P1</option>
                 <option value="P2">P2</option>
                 <option value="P3">P3</option>
               </select>
             </div>
-          </div>
+            </div>
 
-          {/* 操作按鈕 */}
-          <div className="search-actions">
-            <button 
-              className="btn-reset"
-              onClick={handleReset}
-              type="button"
-            >
-              重置
-            </button>
-            <button 
-              className="btn-search"
-              onClick={handleSearch}
-              type="button"
-            >
-              搜尋
-            </button>
-          </div>
+            {/* 操作按鈕 */}
+            <div className="search-actions">
+              <button
+                className="btn-reset"
+                onClick={handleReset}
+                type="button"
+              >
+                {t('query.advanced.reset')}
+              </button>
+              <button
+                className="btn-search"
+                onClick={handleSearch}
+                type="button"
+              >
+                {t('query.advanced.search')}
+              </button>
+            </div>
+          </fieldset>
         </div>
-      )}
+      </div>
     </div>
   );
 };

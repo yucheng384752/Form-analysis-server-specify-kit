@@ -1,4 +1,5 @@
 export const ADMIN_API_KEY_STORAGE_KEY = 'form_analysis_admin_api_key'
+export const ADMIN_UNLOCKED_SESSION_KEY = 'form_analysis_admin_unlocked'
 
 export function getAdminApiKeyHeaderName(): string {
   return 'X-Admin-API-Key'
@@ -32,4 +33,28 @@ export function clearAdminApiKeyValue(): void {
   } catch {
     // ignore
   }
+}
+
+export function isAdminUnlockedInSession(): boolean {
+  try {
+    return (window.sessionStorage.getItem(ADMIN_UNLOCKED_SESSION_KEY) || '') === '1'
+  } catch {
+    return false
+  }
+}
+
+export function setAdminUnlockedInSession(ok: boolean): void {
+  try {
+    if (!ok) {
+      window.sessionStorage.removeItem(ADMIN_UNLOCKED_SESSION_KEY)
+      return
+    }
+    window.sessionStorage.setItem(ADMIN_UNLOCKED_SESSION_KEY, '1')
+  } catch {
+    // ignore
+  }
+}
+
+export function clearAdminUnlockedInSession(): void {
+  setAdminUnlockedInSession(false)
 }

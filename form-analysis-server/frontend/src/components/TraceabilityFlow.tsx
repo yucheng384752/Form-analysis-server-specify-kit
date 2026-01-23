@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import '../styles/traceability-flow.css';
+import { Drawer, DrawerClose, DrawerContent, DrawerFooter, DrawerHeader, DrawerTitle, DrawerTrigger } from './ui/drawer';
 
 interface TraceabilityData {
   product_id: string;
@@ -94,7 +95,43 @@ export const TraceabilityFlow: React.FC<TraceabilityFlowProps> = ({ productId, p
           )}
           {type === 'P2' && (
             <>
-              <div className="trace-row"><label>捲收機號碼:</label> <span>{record.winder_number}</span></div>
+              <div className="trace-row">
+                <label>捲收機號碼:</label>
+                <Drawer>
+                  <DrawerTrigger
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid #d1d5db',
+                      borderRadius: 8,
+                      padding: '2px 10px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    點擊展開
+                  </DrawerTrigger>
+                  <DrawerContent onClick={(e) => e.stopPropagation()}>
+                    <DrawerHeader>
+                      <DrawerTitle>捲收機號碼</DrawerTitle>
+                    </DrawerHeader>
+                    <div style={{ padding: '0 16px 16px 16px', fontSize: 18 }}>
+                      {record.winder_number ?? '-'}
+                    </div>
+                    <DrawerFooter>
+                      <DrawerClose asChild>
+                        <button type="button" style={{
+                          borderRadius: 8,
+                          padding: '8px 12px',
+                          border: '1px solid #d1d5db',
+                          background: 'white',
+                          cursor: 'pointer',
+                        }}>關閉</button>
+                      </DrawerClose>
+                    </DrawerFooter>
+                  </DrawerContent>
+                </Drawer>
+              </div>
               <div className="trace-row"><label>半成品編號:</label> <span>{record.lot_no}</span></div>
             </>
           )}

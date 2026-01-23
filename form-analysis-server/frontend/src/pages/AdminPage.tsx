@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type KeyboardEventHandler } from 'react'
 import { useToast } from '../components/common/ToastContext'
 import {
   clearAdminApiKeyValue,
+  clearAdminUnlockedInSession,
   getAdminApiKeyHeaderName,
   getAdminApiKeyValue,
+  setAdminUnlockedInSession,
   setAdminApiKeyValue,
 } from '../services/adminAuth'
+import { setApiKeyValue } from '../services/auth'
 import { clearTenantId, ensureTenantIdWithOptions, getTenantId, setTenantId, TENANT_STORAGE_KEY } from '../services/tenant'
+import { getTenantLabelById, writeTenantMap } from '../services/tenantMap'
 import './../styles/admin-page.css'
 
 type TenantRow = {
@@ -52,11 +56,12 @@ function maskKey(raw: string) {
   return `${v.slice(0, 4)}…${v.slice(-4)}`
 }
 
-export function AdminPage() {
+export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?: () => void } = {}) {
   const { showToast } = useToast()
 
   const [adminKeyDraft, setAdminKeyDraft] = useState('')
   const [storedAdminKeyMasked, setStoredAdminKeyMasked] = useState(() => maskKey(getAdminApiKeyValue()))
+  const [adminKeySaving, setAdminKeySaving] = useState(false)
 
   const hasAdminKey = useMemo(() => Boolean(storedAdminKeyMasked), [storedAdminKeyMasked])
 
@@ -75,9 +80,34 @@ export function AdminPage() {
   const [createTenantDefault, setCreateTenantDefault] = useState(false)
   const [createTenantLoading, setCreateTenantLoading] = useState(false)
 
+  const storedTenantLabel = useMemo(() => {
+    if (!storedTenantId) return ''
+    const fromList = tenants?.find((t) => t?.id === storedTenantId)
+    if (fromList?.code) return fromList.code
+    return getTenantLabelById(storedTenantId)
+  }, [storedTenantId, tenants])
+
+  const whoamiTenantLabel = useMemo(() => {
+    const id = String(whoami?.tenant_id || '').trim()
+    if (!id) return ''
+    const fromList = tenants?.find((t) => t?.id === id)
+    if (fromList?.code) return fromList.code
+    return getTenantLabelById(id)
+  }, [whoami?.tenant_id, tenants])
+
+  const handleAdminKeyDraftKeyDown: KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (adminKeySaving) return
+    void handleSaveAdminKey()
+  }
+
   const [selectedTenantCode, setSelectedTenantCode] = useState<string>('')
   const [users, setUsers] = useState<TenantUserRow[] | null>(null)
   const [loadingUsers, setLoadingUsers] = useState(false)
+
+  const [moveUserTargets, setMoveUserTargets] = useState<Record<string, string>>({})
+  const [movingUserId, setMovingUserId] = useState<string | null>(null)
 
   const [createUsername, setCreateUsername] = useState('')
   const [createPassword, setCreatePassword] = useState('')
@@ -91,21 +121,51 @@ export function AdminPage() {
     return { [getAdminApiKeyHeaderName()]: k }
   }
 
-  const handleSaveAdminKey = () => {
+  const handleSaveAdminKey = async () => {
     const trimmed = adminKeyDraft.trim()
     if (!trimmed) {
       showToast('error', '請輸入管理者金鑰')
       return
     }
-    setAdminApiKeyValue(trimmed)
-    setAdminKeyDraft('')
-    setStoredAdminKeyMasked(maskKey(trimmed))
-    showToast('success', '已保存管理者金鑰（localStorage）')
+
+    setAdminKeySaving(true)
+    try {
+      // Verify by calling bootstrap-status (admin-only).
+      const res = await fetch('/api/auth/bootstrap-status', {
+        headers: {
+          [getAdminApiKeyHeaderName()]: trimmed,
+        },
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        const detail = (body as any)?.detail
+        showToast('error', typeof detail === 'string' ? detail : '管理者金鑰無效')
+        clearAdminApiKeyValue()
+        clearAdminUnlockedInSession()
+        props?.onAdminLocked?.()
+        setStoredAdminKeyMasked('')
+        return
+      }
+
+      setAdminApiKeyValue(trimmed)
+      setAdminUnlockedInSession(true)
+      props?.onAdminUnlocked?.()
+      setAdminKeyDraft('')
+      setStoredAdminKeyMasked(maskKey(trimmed))
+      showToast('success', '管理者金鑰驗證成功：已解鎖管理者模式')
+    } catch {
+      showToast('error', '管理者金鑰驗證失敗（網路或伺服器未啟動）')
+    } finally {
+      setAdminKeySaving(false)
+    }
   }
 
   const handleClearAdminKey = () => {
     clearAdminApiKeyValue()
+    clearAdminUnlockedInSession()
     setStoredAdminKeyMasked('')
+    props?.onAdminLocked?.()
     showToast('info', '已清除管理者金鑰（localStorage）')
   }
 
@@ -155,10 +215,10 @@ export function AdminPage() {
         setTenantId(id)
         setStoredTenantIdState(id)
       }
-      showToast('success', `已建立 Tenant：${String((body as any)?.code || '') || '（已建立）'}`)
+      showToast('success', `已建立區域：${String((body as any)?.code || '') || '（已建立）'}`)
       await refreshTenants()
     } catch {
-      showToast('error', '建立 Tenant 失敗（網路或伺服器未啟動）')
+      showToast('error', '建立區域失敗（網路或伺服器未啟動）')
     }
   }
 
@@ -166,11 +226,11 @@ export function AdminPage() {
     try {
       const id = await ensureTenantIdWithOptions({ notify: true, reason: 'bootstrap', allowAdminBootstrap: true })
       if (!id) {
-        showToast('error', '無法自動決定 tenant（可能存在多個 tenant 且沒有 default）')
+        showToast('error', '無法自動決定區域（可能存在多個區域且沒有預設）')
         return
       }
       setStoredTenantIdState(id)
-      showToast('success', `tenant 已就緒：${id}`)
+      showToast('success', `區域已就緒：${getTenantLabelById(id) || '（未知）'}`)
     } catch {
       showToast('error', '初始化 tenant 失敗')
     }
@@ -179,7 +239,40 @@ export function AdminPage() {
   const handleClearTenant = () => {
     clearTenantId()
     setStoredTenantIdState('')
-    showToast('info', '已清除 Tenant ID（localStorage）')
+    showToast('info', '已清除區域（localStorage）')
+  }
+
+  const handleSetCurrentTenant = async (tenant: TenantRow) => {
+    setTenantId(tenant.id)
+    setStoredTenantIdState(tenant.id)
+
+    if (!hasAdminKey) {
+      showToast('success', `已切換目前區域：${tenant.code} (${tenant.name})`)
+      return
+    }
+
+    try {
+      const res = await fetch('/api/auth/admin/tenant-api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAdminHeaders() },
+        body: JSON.stringify({ tenant_id: tenant.id }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        showToast(
+          'error',
+          typeof (body as any)?.detail === 'string' ? (body as any).detail : `取得 API key 失敗 (HTTP ${res.status})`,
+        )
+        return
+      }
+
+      const apiKey = String((body as any)?.api_key || '').trim()
+      if (apiKey) setApiKeyValue(apiKey)
+
+      showToast('success', `已切換區域：${tenant.code} (${tenant.name})，並取得可用 API key`)
+    } catch {
+      showToast('error', '切換區域失敗（網路或伺服器未啟動）')
+    }
   }
 
   const refreshTenants = async () => {
@@ -197,6 +290,7 @@ export function AdminPage() {
       }
       const rows = Array.isArray(body) ? (body as TenantRow[]) : []
       setTenants(rows)
+      writeTenantMap(rows)
       if (!selectedTenantCode && rows.length === 1) {
         setSelectedTenantCode(rows[0].code)
       }
@@ -231,11 +325,11 @@ export function AdminPage() {
     const name = createTenantName.trim()
     const code = createTenantCode.trim()
     if (!name) {
-      showToast('error', '請輸入 tenant name')
+      showToast('error', '請輸入區域名稱')
       return
     }
     if (!code) {
-      showToast('error', '請輸入 tenant code')
+      showToast('error', '請輸入區域代碼')
       return
     }
 
@@ -248,23 +342,23 @@ export function AdminPage() {
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `建立 tenant 失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `建立區域失敗 (HTTP ${res.status})`)
         return
       }
-      showToast('success', `已建立 tenant：${code}`)
+      showToast('success', `已建立區域：${code}`)
       setCreateTenantName('')
       setCreateTenantCode('')
       setCreateTenantDefault(false)
       await refreshTenants()
     } catch {
-      showToast('error', '建立 tenant 失敗（網路或伺服器未啟動）')
+      showToast('error', '建立區域失敗（網路或伺服器未啟動）')
     } finally {
       setCreateTenantLoading(false)
     }
   }
 
   const deleteTenant = async (tenant: TenantRow) => {
-    if (!confirm(`確定要刪除 tenant ${tenant.code}？\n（此操作為安全停用：is_active=false）`)) return
+    if (!confirm(`確定要刪除區域 ${tenant.code}？\n（此操作為安全停用：is_active=false）`)) return
     try {
       const res = await fetch(`/api/tenants/${tenant.id}`, {
         method: 'DELETE',
@@ -272,13 +366,13 @@ export function AdminPage() {
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `刪除 tenant 失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `刪除區域失敗 (HTTP ${res.status})`)
         return
       }
-      showToast('success', `已刪除（停用）tenant：${tenant.code}`)
+      showToast('success', `已刪除（停用）區域：${tenant.code}`)
       await refreshTenants()
     } catch {
-      showToast('error', '刪除 tenant 失敗（網路或伺服器未啟動）')
+      showToast('error', '刪除區域失敗（網路或伺服器未啟動）')
     }
   }
 
@@ -328,6 +422,45 @@ export function AdminPage() {
       await refreshUsers()
     } catch {
       showToast('error', '更新使用者失敗（網路或伺服器未啟動）')
+    }
+  }
+
+  const moveUserToTenant = async (user: TenantUserRow) => {
+    const targetCode = (moveUserTargets[user.id] || '').trim()
+    if (!targetCode) {
+      showToast('error', '請先選擇要綁定的 tenant')
+      return
+    }
+    if (targetCode === (user.tenant_code || '')) {
+      showToast('info', '使用者已在此 tenant，不需修改')
+      return
+    }
+
+    if (!confirm(`確定要將使用者 ${user.username} 改綁定到 tenant ${targetCode}？\n\n注意：會撤銷此使用者現有的登入 API key，需要重新登入。`)) return
+
+    setMovingUserId(user.id)
+    try {
+      const res = await fetch(`/api/auth/users/${user.id}/tenant`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAdminHeaders() },
+        body: JSON.stringify({ tenant_code: targetCode, revoke_api_keys: true }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `改綁定失敗 (HTTP ${res.status})`)
+        return
+      }
+      showToast('success', `已改綁定：${user.username} → ${targetCode}`)
+      setMoveUserTargets((prev) => {
+        const next = { ...prev }
+        delete next[user.id]
+        return next
+      })
+      await refreshUsers()
+    } catch {
+      showToast('error', '改綁定失敗（網路或伺服器未啟動）')
+    } finally {
+      setMovingUserId(null)
     }
   }
 
@@ -417,19 +550,20 @@ export function AdminPage() {
               className="register-input"
               value={adminKeyDraft}
               onChange={(e) => setAdminKeyDraft(e.target.value)}
+              onKeyDown={handleAdminKeyDraftKeyDown}
               placeholder="輸入 X-Admin-API-Key"
             />
           </label>
 
           <div className="register-actions">
-            <button className="btn btn-primary" onClick={handleSaveAdminKey}>
-              保存
+            <button className="btn btn-primary" onClick={handleSaveAdminKey} disabled={adminKeySaving}>
+              {adminKeySaving ? '驗證中…' : '保存'}
             </button>
-            <button className="btn" onClick={handleClearAdminKey}>
+            <button className="btn" onClick={handleClearAdminKey} disabled={adminKeySaving}>
               清除
             </button>
             <button className="btn" onClick={refreshDiagnostics} disabled={diagLoading}>
-              {diagLoading ? '檢查中…' : 'WhoAmI'}
+                      停用
             </button>
           </div>
 
@@ -445,7 +579,7 @@ export function AdminPage() {
               </div>
               <div className="admin-kv">
                 <span className="admin-k">tenant_id</span>
-                <span className="admin-v">{whoami.tenant_id || '—'}</span>
+                <span className="admin-v" title={whoami.tenant_id || ''}>{whoamiTenantLabel || '—'}</span>
               </div>
             </div>
           )}
@@ -470,25 +604,25 @@ export function AdminPage() {
           <details className="register-details" open>
             <summary className="register-summary">初始化（第一次／空資料庫）</summary>
             <p className="register-hint">
-              這裡提供建立/選擇 Tenant 的工具（會寫入 localStorage：{TENANT_STORAGE_KEY}）。
+              這裡提供建立/選擇區域的工具（會寫入 localStorage：{TENANT_STORAGE_KEY}）。
             </p>
 
             <div className="register-row">
               <div className="register-kv">
-                <div className="register-k">目前 Tenant ID</div>
-                <div className="register-v">{storedTenantId ? <code>{storedTenantId}</code> : <span className="muted">（未設定）</span>}</div>
+                <div className="register-k">目前區域</div>
+                <div className="register-v">{storedTenantId ? <code title={storedTenantId}>{storedTenantLabel || '（未知）'}</code> : <span className="muted">（未設定）</span>}</div>
               </div>
               <div className="register-actions">
                 <button className="btn" onClick={handleAutoInitTenant} disabled={!hasAdminKey} title={!hasAdminKey ? '請先設定管理者金鑰' : ''}>
-                  一鍵建立/選擇場域
+                  一鍵建立/選擇區域
                 </button>
-                <button className="btn" onClick={handleClearTenant}>清除 Tenant ID</button>
+                <button className="btn" onClick={handleClearTenant}>清除區域</button>
               </div>
             </div>
 
             <div className="register-actions">
               <button className="btn btn-primary" onClick={handleBootstrapFirstTenant} disabled={!hasAdminKey} title={!hasAdminKey ? '請先設定管理者金鑰' : ''}>
-                建立第一個 Tenant（bootstrap）
+                建立第一個區域（bootstrap）
               </button>
             </div>
           </details>
@@ -498,7 +632,7 @@ export function AdminPage() {
       <section className="register-card">
         <div className="admin-header-row">
           <div>
-            <h2 className="register-title">Tenant 管理</h2>
+            <h2 className="register-title">區域管理</h2>
             <p className="register-hint">需要管理者金鑰才能完整 CRUD（新增/編輯/停用/設預設）。</p>
           </div>
           <div className="admin-header-actions">
@@ -508,7 +642,7 @@ export function AdminPage() {
                 checked={showInactiveTenants}
                 onChange={(e) => setShowInactiveTenants(e.target.checked)}
               />
-              顯示停用 tenants
+              顯示停用區域
             </label>
             <button className="btn" onClick={refreshTenants} disabled={loadingTenants}>
               {loadingTenants ? '更新中…' : '重新整理'}
@@ -517,7 +651,7 @@ export function AdminPage() {
         </div>
 
         <details className="register-details">
-          <summary className="register-summary">新增 Tenant</summary>
+          <summary className="register-summary">新增區域</summary>
           <div className="admin-form-grid">
             <label className="register-label">
               name
@@ -541,7 +675,7 @@ export function AdminPage() {
           </div>
           <div className="register-actions">
             <button className="btn btn-primary" onClick={createTenant} disabled={!hasAdminKey || createTenantLoading}>
-              {createTenantLoading ? '建立中…' : '建立 Tenant'}
+              {createTenantLoading ? '建立中…' : '建立區域'}
             </button>
           </div>
         </details>
@@ -550,7 +684,7 @@ export function AdminPage() {
           <table className="admin-table">
             <thead>
               <tr>
-                <th>id</th>
+                <th>area</th>
                 <th>code</th>
                 <th>name</th>
                 <th>default</th>
@@ -561,7 +695,7 @@ export function AdminPage() {
             <tbody>
               {(tenants || []).map((t) => (
                 <tr key={t.id}>
-                  <td className="admin-mono">{t.id}</td>
+                  <td className="admin-mono"><span title={t.id}>{getTenantLabelById(t.id) || '（未知）'}</span></td>
                   <td>{t.code}</td>
                   <td>
                     <input
@@ -580,11 +714,15 @@ export function AdminPage() {
                     <span className={t.is_active ? 'pill pill-ok' : 'pill pill-off'}>{t.is_active ? '啟用' : '停用'}</span>
                   </td>
                   <td>
+                    <button className="btn btn-small" onClick={() => handleSetCurrentTenant(t)}>
+                      套用為目前區域
+                    </button>
                     <button
                       className="btn btn-small"
                       onClick={() => toggleTenantActive(t, !t.is_active)}
                       disabled={!hasAdminKey}
                       title={!hasAdminKey ? '請先設定管理者金鑰' : ''}
+                      style={{ marginLeft: 8 }}
                     >
                       {t.is_active ? '停用' : '啟用'}
                     </button>
@@ -683,6 +821,7 @@ export function AdminPage() {
             <thead>
               <tr>
                 <th>username</th>
+                <th>tenant</th>
                 <th>role</th>
                 <th>active</th>
                 <th>last_login</th>
@@ -701,6 +840,31 @@ export function AdminPage() {
                         if (v && v !== u.username) patchUser(u.id, { username: v })
                       }}
                     />
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span className="admin-mono">{u.tenant_code || '—'}</span>
+                      <select
+                        className="admin-inline-input"
+                        value={moveUserTargets[u.id] || ''}
+                        onChange={(e) =>
+                          setMoveUserTargets((prev) => ({
+                            ...prev,
+                            [u.id]: e.target.value,
+                          }))
+                        }
+                      >
+                        <option value="">改綁定到…</option>
+                        {(tenants || []).map((t) => (
+                          <option key={t.id} value={t.code}>
+                            {t.code} ({t.name})
+                          </option>
+                        ))}
+                      </select>
+                      <button className="btn btn-small" onClick={() => moveUserToTenant(u)} disabled={movingUserId === u.id}>
+                        {movingUserId === u.id ? '處理中…' : '改綁定'}
+                      </button>
+                    </div>
                   </td>
                   <td>
                     <select
@@ -728,14 +892,14 @@ export function AdminPage() {
                       {u.is_active ? '停用' : '啟用'}
                     </button>
                     <button className="btn btn-small" onClick={() => deleteUser(u)} style={{ marginLeft: 8 }}>
-                      刪除
+                      停用
                     </button>
                   </td>
                 </tr>
               ))}
               {!users?.length && (
                 <tr>
-                  <td colSpan={5} className="admin-empty">
+                  <td colSpan={6} className="admin-empty">
                     {users === null ? '尚未載入' : '沒有使用者'}
                   </td>
                 </tr>

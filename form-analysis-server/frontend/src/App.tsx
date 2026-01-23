@@ -1,21 +1,31 @@
 // src/App.tsx
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { UploadPage } from "./pages/UploadPage";
 import { QueryPage } from "./pages/QueryPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { AdminPage } from "./pages/AdminPage";
+import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { ToastContainer } from "./components/common/ToastContainer";
 import LogViewer from "./components/SimpleLogViewer";
 import "./styles/app.css";
 
-import { getAdminApiKeyValue } from "./services/adminAuth";
+import { getAdminApiKeyValue, isAdminUnlockedInSession } from "./services/adminAuth";
 
-type MainTab = "upload" | "query" | "register" | "admin" | "logs";
+type MainTab = "upload" | "query" | "analysis" | "register" | "admin" | "logs";
 
 function App() {
-  const [tab, setTab] = useState<MainTab>("upload");
+  const { t, i18n } = useTranslation();
+  const [tab, setTab] = useState<MainTab>("register");
 
-  const [adminUnlocked, setAdminUnlocked] = useState<boolean>(() => Boolean(getAdminApiKeyValue()));
+  const currentLang = useMemo(() => {
+    const raw = (i18n.resolvedLanguage || i18n.language || 'zh-TW').toLowerCase();
+    if (raw === 'zh-tw' || raw === 'zh_tw') return 'zh-TW';
+    if (raw.startsWith('zh')) return 'zh-TW';
+    return 'en';
+  }, [i18n.language, i18n.resolvedLanguage]);
+
+  const [adminUnlocked, setAdminUnlocked] = useState<boolean>(() => Boolean(getAdminApiKeyValue()) && isAdminUnlockedInSession());
   const canShowAdmin = useMemo(() => adminUnlocked, [adminUnlocked]);
 
   useEffect(() => {
@@ -28,34 +38,68 @@ function App() {
   return (
     <div className="app-root">
       <header className="app-header">
-        <h1 className="app-title">檔案上傳系統</h1>
-        <p className="app-subtitle">支援 CSV 檔案上傳、驗證與資料查詢</p>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px' }}>
+          <div>
+            <h1 className="app-title">{t('app.title')}</h1>
+            <p className="app-subtitle">{t('app.subtitle')}</p>
+          </div>
+
+          <div className="app-lang-switch" aria-label={t('language.label')}>
+            <span className="app-lang-label">{t('language.label')}</span>
+            <div className="app-lang-tabs" role="tablist" aria-label={t('language.label')}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={currentLang === 'zh-TW'}
+                className={`app-lang-tab ${currentLang === 'zh-TW' ? 'is-active' : ''}`}
+                onClick={() => i18n.changeLanguage('zh-TW')}
+              >
+                {t('language.zhTW')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={currentLang === 'en'}
+                className={`app-lang-tab ${currentLang === 'en' ? 'is-active' : ''}`}
+                onClick={() => i18n.changeLanguage('en')}
+              >
+                {t('language.en')}
+              </button>
+            </div>
+          </div>
+        </div>
 
         <div className="app-main-tabs">
           <button
             className={`app-main-tab ${tab === "register" ? "is-active" : ""}`}
             onClick={() => setTab("register")}
           >
-            登入
+            {t('tabs.register')}
           </button>
           <button
             className={`app-main-tab ${tab === "upload" ? "is-active" : ""}`}
             onClick={() => setTab("upload")}
           >
-            檔案上傳
+            {t('tabs.upload')}
           </button>
           <button
             className={`app-main-tab ${tab === "query" ? "is-active" : ""}`}
             onClick={() => setTab("query")}
           >
-            資料查詢
+            {t('tabs.query')}
+          </button>
+          <button
+            className={`app-main-tab ${tab === "analysis" ? "is-active" : ""}`}
+            onClick={() => setTab("analysis")}
+          >
+            {t('tabs.analysis')}
           </button>
           {canShowAdmin ? (
             <button
               className={`app-main-tab ${tab === "admin" ? "is-active" : ""}`}
               onClick={() => setTab("admin")}
             >
-              管理者
+              {t('tabs.admin')}
             </button>
           ) : null}
           {/* <button
@@ -80,8 +124,10 @@ function App() {
           <UploadPage />
         ) : tab === "query" ? (
           <QueryPage />
+        ) : tab === "analysis" ? (
+          <AnalyticsPage />
         ) : tab === "admin" ? (
-          <AdminPage />
+          <AdminPage onAdminLocked={() => setAdminUnlocked(false)} onAdminUnlocked={() => setAdminUnlocked(true)} />
         ) : (
           <LogViewer />
         )}

@@ -1,5 +1,6 @@
 // src/pages/QueryPage.tsx
 import React, { useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Modal } from "../components/common/Modal";
 import { AdvancedSearch, AdvancedSearchParams } from "../components/AdvancedSearch";
 import { EditRecordModal } from "../components/EditRecordModal";
@@ -134,6 +135,7 @@ const mergeP2RecordsForLotNo = (records: QueryRecord[], lotNo: string): QueryRec
 };
 
 export function QueryPage() {
+  const { t } = useTranslation();
   // 搜尋相關狀態
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchPerformed, setSearchPerformed] = useState(false);
@@ -431,6 +433,34 @@ export function QueryPage() {
     
     // 空字串處理
     return value === '' ? '-' : String(value);
+  };
+
+  const formatP2SlittingTimeValue = (rawValue: any, productionDate?: any): string => {
+    if (rawValue === null || rawValue === undefined) return '-';
+    if (productionDate && typeof rawValue === 'string') {
+      const v = rawValue.trim();
+      const timeOnly = /^\d{1,2}:\d{2}(:\d{2})?$/.test(v);
+      const hasLeadingDate =
+        /^\d{3}[\/-]\d{1,2}[\/-]\d{1,2}/.test(v) ||
+        /^\d{4}-\d{2}-\d{2}/.test(v);
+      if (timeOnly && !hasLeadingDate) {
+        return `${formatFieldValue('production_date', productionDate)} ${v}`;
+      }
+    }
+    return formatFieldValue('分條時間', rawValue);
+  };
+
+  const getP2SlittingTimeForSummary = (record: QueryRecord): string | null => {
+    const additional = (record.additional_data || {}) as any;
+    const rows = Array.isArray(additional.rows) ? (additional.rows as any[]) : [];
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue;
+      const rawValue = row['分條時間'] ?? row['slitting time'] ?? row['slitting_time'];
+      if (rawValue === null || rawValue === undefined || String(rawValue).trim() === '') continue;
+      const formatted = formatP2SlittingTimeValue(rawValue, record.production_date);
+      return formatted === '-' ? null : formatted;
+    }
+    return null;
   };
 
   // 搜尋記錄 (支援基本搜尋和進階搜尋)
@@ -1101,7 +1131,7 @@ export function QueryPage() {
                         style={{ cursor: 'pointer', userSelect: 'none' }}
                         title="點擊排序"
                       >
-                        winder_number
+                        winder
                         {sortState && sortState.column === '__winder_number__' && (
                           <span style={{ marginLeft: '4px' }}>
                             {sortState.direction === 'asc' ? '▲' : '▼'}
@@ -1128,7 +1158,13 @@ export function QueryPage() {
                   <tbody>
                     {displayRows.map((row: any, idx: number) => (
                       <tr key={idx}>
-                        <td>{getP2RowWinderNumber(row) ?? '-'}</td>
+                        <td>
+                          {(() => {
+                            const w = getP2RowWinderNumber(row)
+                            if (w == null) return '-'
+                            return String(w)
+                          })()}
+                        </td>
                         {p2Headers.map((header: string, vidx: number) => {
                           const rawValue = row?.[header];
 
@@ -1649,12 +1685,12 @@ export function QueryPage() {
       {/* 搜尋區域 */}
       <section className="query-search-section">
         <label className="query-search-label">
-          資料查詢
+          {t('query.title')}
           
           <div className="query-description">
-            <p><strong>批號查詢：</strong>輸入批號進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料</p>
-            <p><strong>產品編號查詢：</strong>直接輸入 Product ID 會顯示該筆的 P1/P2/P3 追溯結果</p>
-            <p><strong>進階搜尋：</strong>可依日期範圍、機台號碼、下膠編號、產品編號、P3規格等條件進行多條件組合搜尋</p>
+            <p><strong>{t('query.descLotTitle')}</strong>{t('query.descLot')}</p>
+            <p><strong>{t('query.descProductTitle')}</strong>{t('query.descProduct')}</p>
+            <p><strong>{t('query.descAdvancedTitle')}</strong>{t('query.descAdvanced')}</p>
           </div>
 
           <div className="query-search-input-wrapper autocomplete-wrapper">
@@ -1670,14 +1706,14 @@ export function QueryPage() {
                   fontSize: '14px',
                 }}
               >
-                尚未選擇 Tenant。請先到上方「登入」頁籤選擇場域；若尚未初始化，請先驗證管理者金鑰以解鎖「管理者」頁籤。
+                {t('query.noTenantWarning')}
               </div>
             )}
             <input
               ref={inputRef}
               type="text"
               className="query-search-input"
-              placeholder="輸入 Lot No(批號) 或 Product ID 查詢"
+              placeholder={t('query.searchPlaceholder')}
               value={searchKeyword}
               onChange={handleInputChange}
               onFocus={handleInputFocus}
@@ -1695,7 +1731,7 @@ export function QueryPage() {
             {showSuggestions && (
               <div ref={suggestionsRef} className="autocomplete-suggestions">
                 {suggestionLoading ? (
-                  <div className="suggestion-item loading">載入建議中...</div>
+                  <div className="suggestion-item loading">{t('query.suggestionLoading')}</div>
                 ) : suggestions.length > 0 ? (
                   suggestions.map((suggestion, index) => (
                     <div
@@ -1707,7 +1743,7 @@ export function QueryPage() {
                     </div>
                   ))
                 ) : (
-                  <div className="suggestion-item no-results">沒有找到相符的建議</div>
+                  <div className="suggestion-item no-results">{t('query.suggestionNoResults')}</div>
                 )}
               </div>
             )}
@@ -1717,7 +1753,7 @@ export function QueryPage() {
               onClick={handleSearch}
               disabled={loading || !tenantId}
             >
-              {loading ? "查詢中..." : "查詢"}
+              {loading ? t('query.searching') : t('query.search')}
             </button>
             
             {/* 清除按鈕 */}
@@ -1726,19 +1762,21 @@ export function QueryPage() {
                 className="btn-secondary" 
                 onClick={handleClear}
               >
-                清除
+                {t('common.clear')}
               </button>
             )}
             
             {/* 進階搜尋按鈕 */}
             <button 
-              className="advanced-search-toggle"
+              className={`btn-secondary advanced-search-toggle ${advancedSearchExpanded ? 'expanded' : ''}`}
               onClick={() => setAdvancedSearchExpanded(!advancedSearchExpanded)}
               type="button"
-              title="進階搜尋"
+              title={t('query.advancedSearch')}
+              aria-expanded={advancedSearchExpanded}
+              aria-controls="advanced-search-panel"
             >
               <span className={`toggle-icon ${advancedSearchExpanded ? 'expanded' : ''}`}>▶</span>
-              進階搜尋
+              {t('query.advancedSearch')}
             </button>
           </div>
           
@@ -1757,9 +1795,9 @@ export function QueryPage() {
         <section className="query-result-section" ref={traceSectionRef}>
           <div className="records-container">
             <div className="records-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3>{traceabilityData.product_id ? `追溯結果 - ${traceabilityData.product_id}` : '追溯結果'}</h3>
+              <h3>{traceabilityData.product_id ? `${t('query.traceResult')} - ${traceabilityData.product_id}` : t('query.traceResult')}</h3>
               <button className="btn-secondary" onClick={() => setTraceabilityData(null)}>
-                清除追溯結果
+                {t('query.clearTraceResult')}
               </button>
             </div>
 
@@ -1788,13 +1826,13 @@ export function QueryPage() {
               {traceActiveTab === 'P3' && (
                 (() => {
                   const rec = normalizeTraceRecord('P3', traceabilityData.p3);
-                  return rec ? renderP3Details(rec) : <p className="section-empty">查無資料</p>;
+                  return rec ? renderP3Details(rec) : <p className="section-empty">{t('common.noData')}</p>;
                 })()
               )}
               {traceActiveTab === 'P2' && (
                 (() => {
                   const rec = normalizeTraceRecord('P2', traceabilityData.p2);
-                  return rec ? renderP2Details(rec) : <p className="section-empty">查無資料</p>;
+                  return rec ? renderP2Details(rec) : <p className="section-empty">{t('common.noData')}</p>;
                 })()
               )}
               {traceActiveTab === 'P1' && (
@@ -1839,7 +1877,7 @@ export function QueryPage() {
                           <span className={`data-type-label ${record.data_type.toLowerCase()}`}>{record.data_type}</span>
                         </div>
                         <div className="single-record-card-meta">
-                          <div>生產日期：{formatFieldValue('production_date', record.production_date)}</div>
+                          <div>分條時間：{getP2SlittingTimeForSummary(record) ?? '-'}</div>
                           <div>建立時間：{new Date(record.created_at).toLocaleString('zh-TW', {
                             year: 'numeric',
                             month: '2-digit',

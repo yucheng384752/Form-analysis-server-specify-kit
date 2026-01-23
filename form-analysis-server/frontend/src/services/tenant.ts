@@ -85,10 +85,10 @@ export async function ensureTenantIdWithOptions(options?: EnsureTenantIdOptions)
   const notifyExpiredRecovered = (mode: 'reconnected' | 'recreated') => {
     if (!notify && !expiredDetected) return
     if (mode === 'recreated') {
-      emitToast('success', '偵測到租戶已重置，已自動重新建立租戶「UT」')
+      emitToast('success', '偵測到區域已重置，已自動重新建立區域「UT」')
       return
     }
-    emitToast('info', '偵測到租戶已重置，已自動重新連線')
+    emitToast('info', '偵測到區域已重置，已自動重新連線')
   }
   if (existing) {
     if (validatedTenantId === existing) return existing
@@ -121,7 +121,7 @@ export async function ensureTenantIdWithOptions(options?: EnsureTenantIdOptions)
           if (tenants.length > 1) {
             // Ambiguous; let caller/UI handle tenant selection.
             if (notify || reason === 'recovery') {
-              emitToast('error', '偵測到租戶已重置且存在多個租戶，請設定 default tenant 或手動指定租戶')
+              emitToast('error', '偵測到區域已重置且存在多個區域，請設定預設區域或手動指定區域')
             }
             return ''
           }
@@ -153,7 +153,7 @@ export async function ensureTenantIdWithOptions(options?: EnsureTenantIdOptions)
           const adminKey = getAdminApiKeyValue()
           if (!allowAdminBootstrap || !adminKey) {
             if (notify || reason === 'recovery') {
-              emitToast('error', '目前資料庫沒有任何場域（tenant）。請到「登入」頁籤驗證管理者金鑰以解鎖「管理者」，再使用「一鍵建立/選擇場域」或「建立場域」。')
+              emitToast('error', '目前資料庫沒有任何區域。請到「登入」頁籤驗證管理者金鑰以解鎖「管理者」，再使用「一鍵建立/選擇區域」或「建立區域」。')
             }
             return ''
           }
