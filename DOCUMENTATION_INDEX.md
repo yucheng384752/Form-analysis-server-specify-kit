@@ -13,21 +13,7 @@
 
 ## P1：開發指南（規格/設計/待辦）
 
-- [dev-guides/PROJECT_OVERVIEW.md](dev-guides/PROJECT_OVERVIEW.md)
-- [dev-guides/PRD.md](dev-guides/PRD.md)
-- [dev-guides/PRD2.md](dev-guides/PRD2.md)
-- [dev-guides/API_DESIGN_EXPLANATION.md](dev-guides/API_DESIGN_EXPLANATION.md)
-- [dev-guides/USER_UPLOAD_FLOW.md](dev-guides/USER_UPLOAD_FLOW.md)（使用者上傳流程：狀態機/UI 提示/驗證）
-- [dev-guides/USER_QUERY_FLOW.md](dev-guides/USER_QUERY_FLOW.md)（使用者查詢流程：UI 提示/驗證/追溯）
-- [dev-guides/NEW_FORM_ADAPTATION_GUIDE.md](dev-guides/NEW_FORM_ADAPTATION_GUIDE.md)
-- [dev-guides/LOGGING_GUIDE.md](dev-guides/LOGGING_GUIDE.md)
-- [dev-guides/FRONTEND_DATE_DISPLAY_GUIDE.md](dev-guides/FRONTEND_DATE_DISPLAY_GUIDE.md)
-- [dev-guides/IMPLEMENTATION_PLAN_V2.md](dev-guides/IMPLEMENTATION_PLAN_V2.md)
-- [dev-guides/IMPLEMENTATION_PLAN_V2_1.md](dev-guides/IMPLEMENTATION_PLAN_V2_1.md)
-- [dev-guides/STARTUP_SCRIPT_FEATURES.md](dev-guides/STARTUP_SCRIPT_FEATURES.md)
-- [dev-guides/RESTRUCTURE_PLAN.md](dev-guides/RESTRUCTURE_PLAN.md)
-- [dev-guides/TODO_IN_20251229.md](dev-guides/TODO_IN_20251229.md)
-- [dev-guides/TENANT_INIT_ADMIN_GUIDE.md](dev-guides/TENANT_INIT_ADMIN_GUIDE.md)（多租戶 header / admin key / Tenant & Users CRUD 摘要）
+- [dev-guides/DB_SCHEMA_DIAGRAM.md](dev-guides/DB_SCHEMA_DIAGRAM.md)（DB Schema Diagram (ERD) + Data Flow）
 
 ## P1：服務內文件（form-analysis-server 子專案）
 
