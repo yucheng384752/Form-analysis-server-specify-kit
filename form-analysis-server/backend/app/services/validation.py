@@ -7,8 +7,11 @@
 import re
 from datetime import datetime, date
 from typing import List, Dict, Any, Tuple, Optional
+from pathlib import Path
 import pandas as pd
 from pydantic import ValidationError
+
+from app.services.csv_field_mapper import CSVFieldMapper
 
 # 導入常數配置
 from app.config.constants import (
@@ -38,9 +41,6 @@ class FileValidationService:
     
     # 批號彈性格式：支援 7+2 或 7+2+任意後續 (例如 7+2+2, 7+2+2+3)
     LOT_NO_FLEXIBLE_PATTERN = re.compile(r'^(\d{7}_\d{2})(?:_.+)?$')
-    
-    # P1/P2檔案名稱中的批號擷取模式
-    P1_P2_PATTERN = re.compile(r'P[12]_(\d{7}_\d{2})')
     
     # P3檔案名稱檢測模式
     P3_PATTERN = re.compile(r'P3_')
@@ -140,25 +140,34 @@ class FileValidationService:
         # 新格式 P3 檔案會有 Machine NO, Mold NO, lot no 等欄位
         # 不再檢查必要欄位，允許任何欄位存在
     
-    def extract_lot_no_from_filename(self, filename: str) -> str:
+    def _extract_lot_no_from_row(self, row: pd.Series) -> Tuple[str, str]:
+        """從單列資料中找出 lot_no（回傳 lot_value, source_field）。"""
+        for field in CSVFieldMapper.LOT_NO_FIELD_NAMES:
+            if field in row.index:
+                v = row.get(field)
+                if pd.isna(v) or v is None:
+                    continue
+                s = str(v).strip()
+                if s:
+                    return s, field
+        return "", "lot_no"
+
+    def _infer_lot_no_from_filename(self, filename: str) -> str:
+        """從檔名推論 lot_no（備援）。
+
+        目標：支援常見命名如 P1_2507173_02.csv / P2_2507173_2_17.csv。
+        回傳值會先做 normalize_lot_no（7位數字_2位數字）。
         """
-        從檔案名稱中擷取lot_no (適用於P1/P2)
-        
-        Args:
-            filename: 檔案名稱
-            
-        Returns:
-            str: 擷取的lot_no，如果無法擷取則返回空字串
-        """
-        if not filename:
+        name = Path(filename or "").name
+        if not name:
             return ""
-        
-        # 嘗試從P1/P2檔案名稱中擷取
-        match = self.P1_P2_PATTERN.search(filename)
-        if match:
-            return match.group(1)
-        
-        return ""
+
+        stem = Path(name).stem
+        # Find 7-digit + '_' + 1~2-digit (and ignore any trailing segments)
+        m = re.search(r"(\d{7}_\d{1,2})(?:_.+)?$", stem)
+        if not m:
+            return ""
+        return self.normalize_lot_no(m.group(1))
     
     def extract_lot_no_from_p3_field(self, p3_no_value: Any) -> str:
         """
@@ -216,7 +225,7 @@ class FileValidationService:
         if m:
             head = m.group(1)
             tail = m.group(2).zfill(2)
-            return f"{head}-{tail}"
+            return f"{head}_{tail}"
 
         # 如果不符合任何格式，返回原值（讓後續驗證處理）
         return lot_no_str
@@ -506,8 +515,13 @@ class FileValidationService:
         # 判斷檔案類型
         is_p3_file = self.P3_PATTERN.search(filename) is not None
         
-        for index, row in df.iterrows():
-            row_index = int(index)  # pandas 索引轉為 int
+        for row_num, (index, row) in enumerate(df.iterrows()):
+            # pandas index may be int-like (RangeIndex) OR tuple (MultiIndex) depending on how the CSV was parsed.
+            # We only need a stable 0-based row number for error reporting.
+            try:
+                row_index = int(index)
+            except (TypeError, ValueError):
+                row_index = int(row_num)
             
             # 根據檔案類型驗證lot_no
             if is_p3_file:
@@ -543,14 +557,29 @@ class FileValidationService:
                                      f'批號格式錯誤，應為 7位數字_2位數字 格式（或 7位數字_2位數字_其他），實際值：{lot_no_value}')
                         row_has_error.add(row_index)
             else:
-                # P1/P2檔案：從檔案名稱擷取lot_no
-                extracted_lot_no = self.extract_lot_no_from_filename(filename)
-                if not extracted_lot_no:
-                    self.add_error(row_index, 'filename', 'INVALID_FORMAT', f'無法從檔案名稱擷取有效的批號，檔案名：{filename}')
-                    row_has_error.add(row_index)
-                elif not self.LOT_NO_PATTERN.match(extracted_lot_no):
-                    self.add_error(row_index, 'filename', 'INVALID_FORMAT', f'從檔案名稱擷取的批號格式錯誤，應為7位數字_2位數字格式，擷取值：{extracted_lot_no}')
-                    row_has_error.add(row_index)
+                # P1/P2 檔案：一律從內容欄位取得 lot_no（不再從檔名擷取）
+                lot_no_value, source_field = self._extract_lot_no_from_row(row)
+                if not lot_no_value:
+                    # 備援：從檔名推論 lot_no（僅 P1/P2）
+                    inferred_lot_no = self._infer_lot_no_from_filename(filename)
+                    if inferred_lot_no:
+                        lot_no_value = inferred_lot_no
+                        source_field = "filename"
+                    else:
+                        self.add_error(row_index, source_field, 'REQUIRED_FIELD', '批號不能為空')
+                        row_has_error.add(row_index)
+
+                if lot_no_value:
+                    # 正規化並驗證格式（7位數字_2位數字；允許後綴）
+                    normalized_lot_no = self.normalize_lot_no(lot_no_value)
+                    if not normalized_lot_no or not self.LOT_NO_PATTERN.match(normalized_lot_no):
+                        self.add_error(
+                            row_index,
+                            source_field,
+                            'INVALID_FORMAT',
+                            f'批號格式錯誤，應為 7位數字_2位數字 格式（或 7位數字_2位數字_其他），實際值：{lot_no_value}'
+                        )
+                        row_has_error.add(row_index)
             
             # 不再驗證product_name, quantity, production_date等欄位
         
