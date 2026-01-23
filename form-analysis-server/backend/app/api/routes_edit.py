@@ -7,7 +7,13 @@ from sqlalchemy.exc import NoResultFound
 
 from app.core.database import get_db
 from app.models import EditReason, RowEdit, P1Record, P2Record, P3Record
-from app.schemas.audit import EditReasonResponse, EditRecordRequest, RowEditResponse
+from app.schemas.audit import (
+    EditReasonResponse,
+    EditRecordRequest,
+    RowEditResponse,
+    EditReasonCreateRequest,
+    EditReasonUpdateRequest,
+)
 from app.services.audit_events import write_audit_event_best_effort
 
 router = APIRouter()
@@ -49,6 +55,133 @@ async def get_edit_reasons(
     result = await db.execute(query)
     reasons = result.scalars().all()
     return reasons
+
+
+@router.post("/reasons", response_model=EditReasonResponse)
+async def create_edit_reason(
+    payload: EditReasonCreateRequest,
+    tenant_id: Optional[UUID] = None,
+    http_request: Request = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create an edit reason for a tenant (minimal CRUD for usability)."""
+    resolved_tenant_id = tenant_id
+    if resolved_tenant_id is None and http_request is not None:
+        resolved_tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None) or getattr(
+            getattr(http_request, "state", None), "auth_tenant_id", None
+        )
+
+    if resolved_tenant_id is None:
+        raise HTTPException(status_code=422, detail="tenant_id is required (provide X-Tenant-Id header or tenant_id)")
+
+    existing = (
+        await db.execute(
+            select(EditReason).where(
+                EditReason.tenant_id == resolved_tenant_id,
+                EditReason.reason_code == payload.reason_code,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="reason_code already exists")
+
+    reason = EditReason(
+        tenant_id=resolved_tenant_id,
+        reason_code=payload.reason_code,
+        description=payload.description,
+        display_order=payload.display_order,
+        is_active=payload.is_active,
+    )
+    db.add(reason)
+    await db.commit()
+    await db.refresh(reason)
+    return reason
+
+
+@router.patch("/reasons/{reason_id}", response_model=EditReasonResponse)
+async def update_edit_reason(
+    reason_id: UUID,
+    payload: EditReasonUpdateRequest,
+    tenant_id: Optional[UUID] = None,
+    http_request: Request = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update an edit reason (description/order/active)."""
+    resolved_tenant_id = tenant_id
+    if resolved_tenant_id is None and http_request is not None:
+        resolved_tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None) or getattr(
+            getattr(http_request, "state", None), "auth_tenant_id", None
+        )
+
+    if resolved_tenant_id is None:
+        raise HTTPException(status_code=422, detail="tenant_id is required (provide X-Tenant-Id header or tenant_id)")
+
+    reason = (
+        await db.execute(
+            select(EditReason).where(
+                EditReason.id == reason_id,
+                EditReason.tenant_id == resolved_tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if reason is None:
+        raise HTTPException(status_code=404, detail="Edit reason not found")
+
+    if payload.description is not None:
+        reason.description = payload.description
+    if payload.display_order is not None:
+        reason.display_order = payload.display_order
+    if payload.is_active is not None:
+        reason.is_active = payload.is_active
+
+    await db.commit()
+    await db.refresh(reason)
+    return reason
+
+
+@router.get("/records/{table_code}/{record_id}/edits", response_model=List[RowEditResponse])
+async def list_record_edits(
+    table_code: str = Path(..., description="Table code (P1, P2, P3)"),
+    record_id: UUID = Path(..., description="Record ID"),
+    tenant_id: Optional[UUID] = None,
+    http_request: Request = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """List row_edits for a record (tenant scoped)."""
+    ModelClass = get_model_by_table_code(table_code)
+
+    resolved_tenant_id = tenant_id
+    if resolved_tenant_id is None and http_request is not None:
+        resolved_tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None) or getattr(
+            getattr(http_request, "state", None), "auth_tenant_id", None
+        )
+
+    if resolved_tenant_id is None:
+        raise HTTPException(status_code=422, detail="tenant_id is required (provide X-Tenant-Id header or tenant_id)")
+
+    record = (
+        await db.execute(
+            select(ModelClass).where(
+                ModelClass.id == record_id,
+                ModelClass.tenant_id == resolved_tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    edits = (
+        await db.execute(
+            select(RowEdit)
+            .where(
+                RowEdit.tenant_id == resolved_tenant_id,
+                RowEdit.table_code == table_code.upper(),
+                RowEdit.record_id == record_id,
+            )
+            .order_by(RowEdit.created_at.desc())
+        )
+    ).scalars().all()
+    return edits
 
 @router.patch("/records/{table_code}/{record_id}", response_model=Dict[str, Any])
 async def update_record(
@@ -114,9 +247,25 @@ async def update_record(
     current_extras = dict(getattr(record, "extras", {}))
     extras_changed = False
 
+    blocked_fields = {
+        "id",
+        "tenant_id",
+        "created_at",
+        "updated_at",
+        "actor_api_key_id",
+        "actor_label_snapshot",
+        "last_status_changed_at",
+        "last_status_actor_kind",
+        "last_status_actor_api_key_id",
+        "last_status_actor_label_snapshot",
+    }
+
     for key, value in payload.updates.items():
         if key == 'id':
             continue # Prevent ID update
+
+        if key in blocked_fields:
+            raise HTTPException(status_code=400, detail=f"Invalid field: {key}")
             
         if key in valid_columns:
             setattr(record, key, value)

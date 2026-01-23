@@ -17,6 +17,19 @@ class RecordUpdateRequest(BaseModel):
     reason_text: Optional[str] = Field(None, description="Custom reason text or snapshot of reason")
 
 
+class EditReasonCreateRequest(BaseModel):
+    reason_code: str = Field(..., min_length=1, max_length=50)
+    description: str = Field(..., min_length=1, max_length=255)
+    display_order: int = Field(0, ge=0)
+    is_active: bool = Field(True)
+
+
+class EditReasonUpdateRequest(BaseModel):
+    description: Optional[str] = Field(None, min_length=1, max_length=255)
+    display_order: Optional[int] = Field(None, ge=0)
+    is_active: Optional[bool] = None
+
+
 class EditRecordRequest(BaseModel):
     """Unified request body for inline edit.
 

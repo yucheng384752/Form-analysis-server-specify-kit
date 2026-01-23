@@ -125,3 +125,29 @@ async def test_edit_route_accepts_legacy_nested_request_shape(client_edit_actor,
     row_edit = result.scalars().first()
     assert row_edit is not None
     assert row_edit.created_by == "editor"
+
+
+@pytest.mark.asyncio
+async def test_edit_route_list_record_edits_history(client_edit_actor):
+    client, raw_key, tenant_id, record_id = client_edit_actor
+
+    resp = await client.patch(
+        f"/api/edit/records/P1/{record_id}",
+        headers={"X-API-Key": raw_key},
+        json={
+            "updates": {"extras": {"note": "changed"}},
+            "reason_id": None,
+            "reason_text": "history",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp_list = await client.get(
+        f"/api/edit/records/P1/{record_id}/edits",
+        headers={"X-API-Key": raw_key},
+    )
+    assert resp_list.status_code == 200, resp_list.text
+    edits = resp_list.json()
+    assert isinstance(edits, list)
+    assert edits, "Expected at least one row_edit"
+    assert edits[0]["created_by"] == "editor"

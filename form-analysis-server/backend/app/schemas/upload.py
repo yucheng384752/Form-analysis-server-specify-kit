@@ -68,3 +68,7 @@ class UpdateUploadContentRequest(BaseModel):
     """更新上傳工作內容請求模型（前端表格修正用）"""
 
     csv_text: str = Field(..., description="修改後的 CSV 純文字內容（含表頭）")
+
+    # Optional edit reason fields (for row_edits traceability)
+    reason_id: Optional[uuid.UUID] = Field(None, description="選擇的修改原因 ID（可選）")
+    reason_text: Optional[str] = Field(None, description="補充原因文字（可選）")
