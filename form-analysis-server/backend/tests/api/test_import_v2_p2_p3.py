@@ -49,8 +49,9 @@ async def test_import_p2_job(client, db_session_clean):
     await db_session_clean.commit()
     
     # Prepare CSV content
-    csv_content = "col1,col2\nval1,val2"
-    filename = "P2_Lot123_05.csv"
+    # P2 import requires lot_no from content; winder can be inferred from filename when absent in rows.
+    csv_content = "lot_no,col1,col2\n2507173_02,val1,val2"
+    filename = "P2_2507173_02_05.csv"
     
     files = [('files', (filename, csv_content.encode('utf-8'), 'text/csv'))]
     data = {'table_code': 'P2'}
@@ -75,8 +76,8 @@ async def test_import_p2_job(client, db_session_clean):
     assert job.status == ImportJobStatus.COMPLETED
     
     # 5. Verify P2Record
-    # Lot123_05 -> 12305
-    stmt = select(P2Record).where(P2Record.lot_no_norm == 12305)
+    # 2507173_02 -> 250717302
+    stmt = select(P2Record).where(P2Record.tenant_id == tenant.id, P2Record.lot_no_norm == 250717302)
     result = await db_session_clean.execute(stmt)
     record = result.scalar_one_or_none()
     
@@ -149,7 +150,7 @@ async def test_import_p3_job(client, db_session_clean):
     # Verify product_id
     # Date comes from filename (2507173 -> 20250717)
     # Lot comes from content (lot=301)
-    expected_product_id = "20250717-02-Mold123-301"
+    expected_product_id = "20250717_02_Mold123_301"
     assert record.product_id == expected_product_id
     
     # Cleanup

@@ -76,18 +76,18 @@ class TestValidationService:
         """測試標準批號正規化"""
         # 標準格式：已經是兩位數
         result = validation_service.normalize_lot_no("2507173_02_17")
-        assert result == "2507173-02"
+        assert result == "2507173_02"
     
     def test_normalize_lot_no_single_digit(self, validation_service):
         """測試單位數批號正規化"""
         # 單位數需要補零
         result = validation_service.normalize_lot_no("2507173_2_17")
-        assert result == "2507173-02"
+        assert result == "2507173_02"
     
     def test_normalize_lot_no_without_winder(self, validation_service):
         """測試無收卷機編號的批號"""
         result = validation_service.normalize_lot_no("2507173_02")
-        assert result == "2507173-02"
+        assert result == "2507173_02"
     
     def test_normalize_lot_no_empty(self, validation_service):
         """測試空批號"""
@@ -206,8 +206,18 @@ class TestCSVFieldMapper:
         """測試根據欄位偵測 P1"""
         columns = [
             "Actual Temp_C1(℃)", "Set Temp_C1(℃)", 
-            "Line Speed(M/min)", "Screw Pressure(psi)", 
+            "Line Speed(M/min)",
             "Extruder Speed(rpm)"
+        ]
+        result = mapper.detect_csv_type("unknown.csv", columns)
+        assert result == CSVType.P1
+
+    def test_detect_csv_type_by_columns_p1_without_screw_pressure(self, mapper):
+        """P1 不再要求 Screw Pressure(psi) 欄位"""
+        columns = [
+            "Actual Temp_C1(℃)",
+            "Set Temp_C1(℃)",
+            "Line Speed(M/min)",
         ]
         result = mapper.detect_csv_type("unknown.csv", columns)
         assert result == CSVType.P1

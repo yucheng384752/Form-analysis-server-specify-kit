@@ -160,8 +160,8 @@ async def test_validate_import_job(client, db_session):
     await db_session.commit()
     await db_session.refresh(tenant)
     
-    # Prepare CSV content (P1 validation should only verify LOT NO from filename)
-    csv_content = "Any,Other\n10.5,abc\nInvalid,def\n,ghi"
+    # Prepare CSV content (P1 validation should verify LOT NO from row content)
+    csv_content = "lot_no,Any,Other\n2503033_01,10.5,abc\n2503033_01,Invalid,def\n2503033_01,,ghi"
     
     files = [
         ('files', ('P1_2503033_01.csv', csv_content.encode('utf-8'), 'text/csv'))
@@ -189,7 +189,7 @@ async def test_validate_import_job(client, db_session):
     
     assert len(rows) == 3
     
-    # All rows valid as long as LOT NO is present in filename
+    # All rows valid as long as LOT NO is present in row content
     assert rows[0].is_valid is True
     assert rows[0].errors_json == []
     assert rows[1].is_valid is True
@@ -220,8 +220,8 @@ async def test_commit_import_job(client, db_session):
     await db_session.refresh(tenant)
     
     # Prepare CSV content
-    # P1_2503033_01.csv -> Lot No: 250303301
-    csv_content = "Line Speed(M/min),Screw Pressure(psi)\n10.5,100.2"
+    # lot_no is extracted from row content
+    csv_content = "lot_no,Line Speed(M/min),Screw Pressure(psi)\n2503033_01,10.5,100.2"
     
     files = [('files', ('P1_2503033_01.csv', csv_content.encode('utf-8'), 'text/csv'))]
     data = {'table_code': 'P1'}
@@ -270,10 +270,10 @@ async def test_get_import_job_errors(client, db_session):
     await db_session.commit()
     await db_session.refresh(tenant)
     
-    # Prepare CSV content; trigger errors by using an invalid filename (no LOT NO)
-    csv_content = "Any,Other\n,100.2"
-    
-    files = [('files', ('P1_error.csv', csv_content.encode('utf-8'), 'text/csv'))]
+    # Prepare CSV content; trigger errors by missing lot_no in content
+    csv_content = "lot_no,Any,Other\n,1,100.2"
+
+    files = [('files', ('P1_anyname.csv', csv_content.encode('utf-8'), 'text/csv'))]
     data = {'table_code': 'P1'}
     headers = {'X-Tenant-Id': str(tenant.id)}
     
