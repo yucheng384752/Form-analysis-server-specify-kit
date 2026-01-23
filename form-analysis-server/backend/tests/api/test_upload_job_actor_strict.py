@@ -73,7 +73,7 @@ async def test_upload_job_writes_tenant_and_actor_fields(client_upload_job_actor
         files={
             "file": (
                 "P1_1234567_01.csv",
-                b"a\n1\n",
+                b"lot_no\n1234567_01\n",
                 "text/csv",
             )
         },
