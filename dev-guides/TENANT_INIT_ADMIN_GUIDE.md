@@ -65,6 +65,14 @@
 - 前端**不允許**在 global fetch wrapper 裡自動注入 admin header
 - 只有在 Init/Admin 頁面，使用者主動貼 key 後，該頁面呼叫 API 時才會明確帶 `X-Admin-API-Key`
 
+### 最高級 admin（admin key）跨租戶
+
+當 request 同時滿足「有效 `X-Admin-API-Key`」時：
+
+- 可呼叫 admin-only 端點（Tenant / Users / Audit 等）
+- 且在 tenant-scoped 端點上，允許用 `X-Tenant-Id` 明確指定要操作/查詢哪個 tenant（跨租戶切換）
+  - 若未提供 `X-Tenant-Id`，則會依既有 tenant resolver 規則（預設/唯一 tenant）決定
+
 ---
 
 ## 後端端點摘要
@@ -103,6 +111,18 @@
 
 - `DELETE /api/auth/users/{user_id}`
   - 安全刪除（soft delete）：`is_active=false`
+
+- `PATCH /api/auth/users/{user_id}/tenant`
+  - 最高級 admin 專用：重新綁定 user 到另一個 tenant（可用 `tenant_id` 或 `tenant_code` 指定）
+  - 預設會撤銷該 user 的現有 API keys（強制重新登入）
+
+### Audit events
+
+- `GET /api/audit-events`
+  - tenant-scoped：只看目前 tenant
+
+- `GET /api/admin/audit-events`
+  - 最高級 admin 專用：可跨 tenant 查詢（可用 `tenant_id` 篩選）
 
 ---
 

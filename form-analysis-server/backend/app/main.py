@@ -225,6 +225,7 @@ async def api_key_auth_middleware(request: Request, call_next):
         bootstrap_prefixes = (
             "/api/tenants",
             "/api/auth/users",
+            "/api/auth/admin/tenant-api-keys",
             "/api/auth/whoami",
             "/api/auth/bootstrap-status",
         )

@@ -70,6 +70,29 @@ class UpdateUserRequest(BaseModel):
     is_active: Optional[bool] = None
 
 
+class RebindUserTenantRequest(BaseModel):
+    tenant_id: Optional[str] = Field(default=None, description="Target tenant UUID")
+    tenant_code: Optional[str] = Field(default=None, description="Target tenant code")
+    revoke_api_keys: bool = Field(default=True, description="Revoke existing active API keys for this user")
+
+
+class IssueTenantApiKeyRequest(BaseModel):
+    tenant_id: Optional[str] = Field(default=None, description="Target tenant UUID")
+    tenant_code: Optional[str] = Field(default=None, description="Target tenant code")
+    label: Optional[str] = Field(default=None, description="Key label; default is admin impersonation label")
+    revoke_existing_same_label: bool = Field(default=True, description="Rotate: revoke existing active keys with same label")
+
+
+class IssueTenantApiKeyResponse(BaseModel):
+    tenant_id: str
+    tenant_code: str
+    api_key: str
+    api_key_header: str
+    api_key_label: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class WhoAmIResponse(BaseModel):
     is_admin: bool
     tenant_id: Optional[str] = None
@@ -423,6 +446,209 @@ async def delete_user(
     )
 
 
+@router.patch("/users/{user_id}/tenant", response_model=TenantUserResponse)
+async def rebind_user_tenant(
+    user_id: UUID,
+    request: Request,
+    payload: RebindUserTenantRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rebind a user to another tenant.
+
+    Safety:
+    - Admin API key only (highest admin).
+    - Enforces (tenant_id, username) uniqueness in the target tenant.
+    - By default revokes existing active API keys owned by this user.
+    """
+
+    if not _is_admin_key(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required")
+
+    tenant_id_raw = (payload.tenant_id or "").strip() or None
+    tenant_code_raw = (payload.tenant_code or "").strip() or None
+    if not tenant_id_raw and not tenant_code_raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="tenant_id or tenant_code is required")
+
+    target_tenant: Tenant | None = None
+    if tenant_id_raw:
+        try:
+            target_uuid = UUID(tenant_id_raw)
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tenant_id") from exc
+        target_tenant = (await db.execute(select(Tenant).where(Tenant.id == target_uuid))).scalar_one_or_none()
+    else:
+        target_tenant = (
+            await db.execute(
+                select(Tenant).where(
+                    Tenant.code == tenant_code_raw,
+                    Tenant.is_active == True,
+                )
+            )
+        ).scalar_one_or_none()
+
+    if not target_tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target tenant not found")
+
+    row = (
+        await db.execute(
+            select(TenantUser, Tenant.code)
+            .join(Tenant, Tenant.id == TenantUser.tenant_id)
+            .where(TenantUser.id == user_id)
+        )
+    ).first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user, _current_code = row
+
+    if user.tenant_id == target_tenant.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is already bound to this tenant")
+
+    conflict = (
+        await db.execute(
+            select(TenantUser).where(
+                TenantUser.tenant_id == target_tenant.id,
+                TenantUser.username == user.username,
+                TenantUser.id != user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if conflict:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Target tenant already has a user with the same username (rename first)",
+        )
+
+    user.tenant_id = target_tenant.id
+
+    if bool(payload.revoke_api_keys):
+        await db.execute(
+            update(TenantApiKey)
+            .where(
+                TenantApiKey.user_id == user.id,
+                TenantApiKey.is_active == True,
+            )
+            .values(is_active=False, revoked_at=func.now())
+        )
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Rebind violates uniqueness constraints")
+
+    created_at = None
+    last_login_at = None
+    try:
+        created_at = user.created_at.isoformat() if getattr(user, "created_at", None) else None
+    except Exception:
+        created_at = None
+    try:
+        last_login_at = user.last_login_at.isoformat() if getattr(user, "last_login_at", None) else None
+    except Exception:
+        last_login_at = None
+
+    return TenantUserResponse(
+        id=str(user.id),
+        tenant_id=str(user.tenant_id),
+        tenant_code=str(target_tenant.code),
+        username=str(user.username),
+        role=str(user.role),
+        is_active=bool(user.is_active),
+        created_at=created_at,
+        last_login_at=last_login_at,
+    )
+
+
+@router.post("/admin/tenant-api-keys", response_model=IssueTenantApiKeyResponse)
+async def issue_tenant_api_key(
+    request: Request,
+    payload: IssueTenantApiKeyRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Issue (or rotate) a tenant API key for admin tenant switching.
+
+    Security:
+    - Admin API key only (highest admin).
+    - Returns a raw API key token; treat it as a session token.
+    """
+
+    if not _is_admin_key(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required")
+
+    settings = get_settings()
+
+    tenant_id_raw = (payload.tenant_id or "").strip() or None
+    tenant_code_raw = (payload.tenant_code or "").strip() or None
+
+    tenant: Tenant | None = None
+    if tenant_id_raw:
+        try:
+            tenant_uuid = UUID(tenant_id_raw)
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tenant_id") from exc
+        tenant = (
+            await db.execute(
+                select(Tenant).where(
+                    Tenant.id == tenant_uuid,
+                    Tenant.is_active == True,
+                )
+            )
+        ).scalar_one_or_none()
+    elif tenant_code_raw:
+        tenant = (
+            await db.execute(
+                select(Tenant).where(
+                    Tenant.code == tenant_code_raw,
+                    Tenant.is_active == True,
+                )
+            )
+        ).scalar_one_or_none()
+    else:
+        tenants = (await db.execute(select(Tenant).where(Tenant.is_active == True))).scalars().all()
+        if len(tenants) != 1:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="tenant_id or tenant_code required when multiple tenants exist")
+        tenant = tenants[0]
+
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target tenant not found")
+
+    label = (payload.label or "").strip() or f"admin:impersonation:{tenant.code}"
+
+    if bool(payload.revoke_existing_same_label):
+        await db.execute(
+            update(TenantApiKey)
+            .where(
+                TenantApiKey.tenant_id == tenant.id,
+                TenantApiKey.label == label,
+                TenantApiKey.is_active == True,
+            )
+            .values(is_active=False, revoked_at=func.now())
+        )
+
+    raw_key = generate_api_key()
+    key_hash = hash_api_key(raw_key=raw_key, secret_key=settings.secret_key)
+
+    api_key_row = TenantApiKey(
+        tenant_id=tenant.id,
+        key_hash=key_hash,
+        label=label,
+        is_active=True,
+        user_id=None,
+    )
+    db.add(api_key_row)
+    await db.commit()
+
+    header_name = getattr(settings, "auth_api_key_header", "X-API-Key")
+    return IssueTenantApiKeyResponse(
+        tenant_id=str(tenant.id),
+        tenant_code=str(tenant.code),
+        api_key=raw_key,
+        api_key_header=header_name,
+        api_key_label=label,
+    )
+
+
 @router.post("/login", response_model=LoginResponse)
 async def login(
     payload: LoginRequest = Body(...),
@@ -443,14 +669,31 @@ async def login(
 
     tenant: Tenant | None = None
     if tenant_code:
-        tenant = (await db.execute(select(Tenant).where(Tenant.code == tenant_code, Tenant.is_active == True))).scalar_one_or_none()
+        tenant = (
+            await db.execute(select(Tenant).where(Tenant.code == tenant_code, Tenant.is_active == True))
+        ).scalar_one_or_none()
         if not tenant:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown tenant_code")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown area_code")
     else:
-        tenants = (await db.execute(select(Tenant).where(Tenant.is_active == True))).scalars().all()
-        if len(tenants) != 1:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="tenant_code required when multiple tenants exist")
-        tenant = tenants[0]
+        # If tenant_code is omitted, prefer the configured default tenant.
+        # This keeps login UX simple for the common "default area" flow.
+        tenant = (
+            await db.execute(
+                select(Tenant)
+                .where(Tenant.is_active == True, Tenant.is_default == True)
+                .order_by(Tenant.id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+        if not tenant:
+            tenants = (await db.execute(select(Tenant).where(Tenant.is_active == True))).scalars().all()
+            if len(tenants) != 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="area_code required when multiple areas exist",
+                )
+            tenant = tenants[0]
 
     username = payload.username.strip()
     user = (

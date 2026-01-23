@@ -23,10 +23,21 @@ async def get_current_tenant(
          - Otherwise, raise 400 error requiring explicit tenant ID.
     """
     if request is not None:
-        auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
-        if auth_tenant_id:
+        state = getattr(request, "state", None)
+        auth_tenant_id = getattr(state, "auth_tenant_id", None)
+        is_admin = bool(getattr(state, "is_admin", False))
+        if auth_tenant_id and not is_admin:
             # When auth is enabled, tenant is bound to the API key.
             tenant = await resolve_tenant_or_raise(db=db, x_tenant_id=str(auth_tenant_id))
+            request.state.tenant_id = tenant.id
+            request.state.tenant_code = tenant.code
+            return tenant
+
+        if auth_tenant_id and is_admin:
+            # Highest admin: allow explicit override via X-Tenant-Id.
+            # If override header is not provided, fall back to the bound tenant.
+            effective_tenant_id = x_tenant_id or str(auth_tenant_id)
+            tenant = await resolve_tenant_or_raise(db=db, x_tenant_id=str(effective_tenant_id))
             request.state.tenant_id = tenant.id
             request.state.tenant_code = tenant.code
             return tenant
