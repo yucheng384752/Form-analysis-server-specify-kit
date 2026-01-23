@@ -43,8 +43,8 @@ async def _create_tenant(db_session_clean) -> Tenant:
 async def test_traceability_product_fallback_p3_record_includes_items_rows(client, db_session_clean):
     tenant = await _create_tenant(db_session_clean)
 
-    # Use a valid product_id format (supports '-' separator).
-    product_id = "20250902-P24-238-2-301"
+    # Use the canonical product_id format (underscore-delimited).
+    product_id = "20250902_P24_238-2_301"
     lot_no_raw = "2507173_02"
 
     p3_record = P3Record(
