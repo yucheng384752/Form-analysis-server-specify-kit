@@ -8,10 +8,11 @@ import io
 import csv
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.upload_job import UploadJob
 from app.models.upload_error import UploadError
@@ -128,6 +129,16 @@ async def export_errors_csv(
     Raises:
         HTTPException: 當找不到指定工作時拋出 404 錯誤
     """
+
+    if get_settings().multi_tenant_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "detail": "Legacy error report endpoint is disabled in multi-tenant mode.",
+                "hint": "Use v2 import pipeline errors: GET /api/v2/import/jobs/{id}/errors.",
+                "error_code": "LEGACY_EXPORT_DISABLED",
+            },
+        )
     
     # 1. 查詢上傳工作是否存在
     job_stmt = select(UploadJob).where(UploadJob.process_id == process_id)

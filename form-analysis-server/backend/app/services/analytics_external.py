@@ -276,7 +276,12 @@ def _filter_df(df: pd.DataFrame, *, start_date: str | None, end_date: str | None
             if present:
                 mask_pid = pd.Series(False, index=out.index)
                 for c in present:
-                    mask_pid |= out[c].astype(str).eq(pid)
+                    s = out[c].astype(str).str.strip()
+                    mask_pid |= s.eq(pid)
+                    # Some P3 Produce_No. values in merged CSV include a "_dupN" suffix.
+                    # If the user provides the base product id (without _dup), include those rows too.
+                    if _is_p3_produce_no_product_id(pid):
+                        mask_pid |= s.str.startswith(pid + "_dup")
                 out = out.loc[mask_pid]
 
     return out

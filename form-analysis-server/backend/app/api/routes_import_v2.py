@@ -198,16 +198,35 @@ async def create_import_job(
             file_hash = sha256_hash.hexdigest()
             
             # Check for duplicates (L2-3)
-            dup_stmt = select(ImportFile).where(
-                ImportFile.tenant_id == current_tenant.id,
-                ImportFile.table_id == table_registry.id,
-                ImportFile.file_hash == file_hash
+            dup_stmt = (
+                select(ImportFile, ImportJob)
+                .join(ImportJob, ImportJob.id == ImportFile.job_id)
+                .where(
+                    ImportFile.tenant_id == current_tenant.id,
+                    ImportFile.table_id == table_registry.id,
+                    ImportFile.file_hash == file_hash,
+                )
+                .order_by(ImportFile.created_at.desc())
+                .limit(1)
             )
             dup_result = await db.execute(dup_stmt)
-            if (not allow_duplicate) and dup_result.scalars().first():
+            dup_row = dup_result.first()
+            if (not allow_duplicate) and dup_row:
+                dup_file, dup_job = dup_row
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Duplicate file detected: {file.filename}"
+                    detail={
+                        "detail": "File content is duplicate (same SHA-256).",
+                        "filename": file.filename,
+                        "file_hash": file_hash,
+                        "duplicate_of": {
+                            "job_id": str(dup_job.id),
+                            "batch_id": dup_job.batch_id,
+                            "uploaded_filename": dup_file.filename,
+                        },
+                        "hint": "If you intended to re-import, create a NEW job with allow_duplicate=true (or change file content).",
+                        "error_code": "DUPLICATE_FILE_CONTENT",
+                    },
                 )
 
             # Create ImportFile record

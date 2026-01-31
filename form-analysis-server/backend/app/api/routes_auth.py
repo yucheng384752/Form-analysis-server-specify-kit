@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+import time
 from typing import Optional
 from uuid import UUID
 
@@ -16,6 +18,7 @@ from app.core.password import hash_password, verify_password
 from app.models.core.tenant import Tenant
 from app.models.core.tenant_api_key import TenantApiKey
 from app.models.core.tenant_user import TenantUser
+from app.services.audit_events import write_audit_event_best_effort
 
 router = APIRouter()
 
@@ -31,6 +34,7 @@ class LoginResponse(BaseModel):
     tenant_code: str
     api_key: str
     api_key_header: str
+    must_change_password: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -60,6 +64,7 @@ class TenantUserResponse(BaseModel):
     username: str
     role: str
     is_active: bool
+    must_change_password: bool = False
     created_at: Optional[str] = None
     last_login_at: Optional[str] = None
 
@@ -99,6 +104,7 @@ class WhoAmIResponse(BaseModel):
     actor_user_id: Optional[str] = None
     actor_role: Optional[str] = None
     api_key_label: Optional[str] = None
+    must_change_password: bool = False
 
 
 def _is_admin_key(request: Request) -> bool:
@@ -107,6 +113,25 @@ def _is_admin_key(request: Request) -> bool:
     admin_keys = getattr(settings, "admin_api_keys", set())
     provided = request.headers.get(admin_header)
     return bool(provided and provided.strip() in admin_keys)
+
+
+def _is_tenant_privileged(actor_role: Optional[str], auth_tenant_id) -> bool:
+    # Tenant-scoped privileged roles (day-to-day operations).
+    # NOTE: 'admin' here is a tenant role, not the break-glass admin API key.
+    return bool(auth_tenant_id and actor_role in {"admin", "manager"})
+
+
+async def _count_other_active_privileged_users(db: AsyncSession, tenant_id, exclude_user_id: UUID) -> int:
+    stmt = (
+        select(func.count(TenantUser.id))
+        .where(
+            TenantUser.tenant_id == tenant_id,
+            TenantUser.is_active == True,
+            TenantUser.role.in_(["admin", "manager"]),
+            TenantUser.id != exclude_user_id,
+        )
+    )
+    return int((await db.execute(stmt)).scalar_one() or 0)
 
 
 @router.get("/whoami", response_model=WhoAmIResponse)
@@ -118,7 +143,47 @@ async def whoami(request: Request):
         actor_user_id=str(getattr(state, "actor_user_id", "")) or None,
         actor_role=getattr(state, "actor_role", None),
         api_key_label=getattr(state, "auth_api_key_label", None),
+        must_change_password=bool(getattr(state, "must_change_password", False)),
     )
+
+
+class ChangeMyPasswordRequest(BaseModel):
+    old_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=8, max_length=200, description="Minimum 8 characters")
+
+
+class ResetUserPasswordRequest(BaseModel):
+    # If omitted, server will generate a temporary password.
+    new_password: Optional[str] = Field(default=None, min_length=8, max_length=200)
+
+
+class ResetUserPasswordResponse(BaseModel):
+    user_id: str
+    username: str
+    must_change_password: bool
+    temporary_password: Optional[str] = None
+
+
+_PW_CHANGE_FAIL_WINDOW_SECONDS = 60.0
+_PW_CHANGE_FAIL_MAX = 10
+_pw_change_failures_by_user: dict[str, list[float]] = {}
+
+
+def _check_password_change_throttle(*, user_id: str) -> None:
+    now = time.monotonic()
+    window_start = now - _PW_CHANGE_FAIL_WINDOW_SECONDS
+    recent = [t for t in _pw_change_failures_by_user.get(user_id, []) if t >= window_start]
+    if len(recent) >= _PW_CHANGE_FAIL_MAX:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed attempts")
+    _pw_change_failures_by_user[user_id] = recent
+
+
+def _record_password_change_failure(*, user_id: str) -> None:
+    now = time.monotonic()
+    window_start = now - _PW_CHANGE_FAIL_WINDOW_SECONDS
+    recent = [t for t in _pw_change_failures_by_user.get(user_id, []) if t >= window_start]
+    recent.append(now)
+    _pw_change_failures_by_user[user_id] = recent
 
 
 class BootstrapStatusResponse(BaseModel):
@@ -129,11 +194,20 @@ class BootstrapStatusResponse(BaseModel):
     admin_api_key_header: str
     admin_keys_configured: bool
 
+    bootstrap_manager_enabled: bool = False
+    bootstrap_manager_configured: bool = False
+
 
 @router.get("/bootstrap-status", response_model=BootstrapStatusResponse)
 async def bootstrap_status():
     settings = get_settings()
     admin_keys = getattr(settings, "admin_api_keys", set())
+
+    manager_enabled = bool(getattr(settings, "bootstrap_manager_enabled", False))
+    manager_username = (getattr(settings, "bootstrap_manager_username", "") or "").strip()
+    manager_password = (getattr(settings, "bootstrap_manager_password", "") or "").strip()
+    manager_configured = bool(manager_username and manager_password)
+
     return BootstrapStatusResponse(
         auth_mode=str(getattr(settings, "auth_mode", "off")),
         auth_api_key_header=str(getattr(settings, "auth_api_key_header", "X-API-Key")),
@@ -141,6 +215,90 @@ async def bootstrap_status():
         auth_exempt_paths=list(getattr(settings, "auth_exempt_paths", ["/healthz"])),
         admin_api_key_header=str(getattr(settings, "admin_api_key_header", "X-Admin-API-Key")),
         admin_keys_configured=bool(isinstance(admin_keys, set) and len(admin_keys) > 0),
+        bootstrap_manager_enabled=manager_enabled,
+        bootstrap_manager_configured=manager_configured,
+    )
+
+
+class BootstrapManagerStatusResponse(BaseModel):
+    enabled: bool
+    configured: bool
+    tenant_code: Optional[str] = None
+    username: Optional[str] = None
+    exists: bool
+    role: Optional[str] = None
+
+
+@router.get("/bootstrap/manager-status", response_model=BootstrapManagerStatusResponse)
+async def bootstrap_manager_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Inspect bootstrap manager config + existence.
+
+    Requires X-Admin-API-Key.
+    """
+
+    if not _is_admin_key(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required")
+
+    settings = get_settings()
+    enabled = bool(getattr(settings, "bootstrap_manager_enabled", False))
+    username = (getattr(settings, "bootstrap_manager_username", "") or "").strip() or None
+    tenant_code = (getattr(settings, "bootstrap_manager_tenant_code", "") or "").strip() or None
+    configured = bool(username and (getattr(settings, "bootstrap_manager_password", "") or "").strip())
+
+    if not enabled or not configured or not username:
+        return BootstrapManagerStatusResponse(
+            enabled=enabled,
+            configured=configured,
+            tenant_code=tenant_code,
+            username=username,
+            exists=False,
+            role=None,
+        )
+
+    tenant: Tenant | None = None
+    if tenant_code:
+        tenant = (
+            await db.execute(select(Tenant).where(Tenant.code == tenant_code, Tenant.is_active == True))
+        ).scalar_one_or_none()
+    else:
+        tenants = (await db.execute(select(Tenant).where(Tenant.is_active == True))).scalars().all()
+        if len(tenants) == 1:
+            tenant = tenants[0]
+        else:
+            tenant = (
+                await db.execute(select(Tenant).where(Tenant.is_default == True, Tenant.is_active == True))
+            ).scalar_one_or_none()
+
+    if not tenant:
+        return BootstrapManagerStatusResponse(
+            enabled=enabled,
+            configured=configured,
+            tenant_code=tenant_code,
+            username=username,
+            exists=False,
+            role=None,
+        )
+
+    user = (
+        await db.execute(
+            select(TenantUser).where(
+                TenantUser.tenant_id == tenant.id,
+                TenantUser.username == username,
+                TenantUser.is_active == True,
+            )
+        )
+    ).scalar_one_or_none()
+
+    return BootstrapManagerStatusResponse(
+        enabled=enabled,
+        configured=configured,
+        tenant_code=str(getattr(tenant, "code", "")) or tenant_code,
+        username=username,
+        exists=bool(user),
+        role=(str(user.role) if user else None),
     )
 
 
@@ -154,17 +312,23 @@ async def create_user(
 
     Allowed callers:
     - Break-glass bootstrap: valid ADMIN_API_KEYS (X-Admin-API-Key), can target any tenant by tenant_code.
-    - Day-to-day: authenticated API key whose linked user has role=admin, can only create users in its own tenant.
+    - Day-to-day: authenticated API key whose linked user has role=admin/manager, can only create users in its own tenant.
     """
 
     is_admin_key = _is_admin_key(request)
 
     actor_role = getattr(getattr(request, "state", None), "actor_role", None)
     auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
-    is_tenant_admin = bool(actor_role == "admin" and auth_tenant_id)
+    is_tenant_privileged = _is_tenant_privileged(actor_role, auth_tenant_id)
 
-    if not is_admin_key and not is_tenant_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    if not is_admin_key and not is_tenant_privileged:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin/manager privileges required")
+
+    # Managers may not mint tenant 'admin' users.
+    if not is_admin_key and actor_role == "manager":
+        requested_role = (payload.role or "").strip() or "user"
+        if requested_role == "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager cannot create admin users")
 
     tenant: Tenant | None = None
     if is_admin_key:
@@ -179,7 +343,7 @@ async def create_user(
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="tenant_code required when multiple tenants exist")
             tenant = tenants[0]
     else:
-        # role=admin via API key: tenant is bound by middleware
+        # role=admin/manager via API key: tenant is bound by middleware
         tenant = (await db.execute(select(Tenant).where(Tenant.id == auth_tenant_id, Tenant.is_active == True))).scalar_one_or_none()
         if not tenant:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown tenant")
@@ -226,20 +390,20 @@ async def list_users(
 
     Allowed callers:
     - Break-glass bootstrap: valid ADMIN_API_KEYS (X-Admin-API-Key), can list across tenants.
-    - Day-to-day: authenticated API key whose linked user has role=admin, lists only its own tenant.
+    - Day-to-day: authenticated API key whose linked user has role=admin/manager, lists only its own tenant.
     """
 
     is_admin_key = _is_admin_key(request)
     actor_role = getattr(getattr(request, "state", None), "actor_role", None)
     auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
-    is_tenant_admin = bool(actor_role == "admin" and auth_tenant_id)
+    is_tenant_privileged = _is_tenant_privileged(actor_role, auth_tenant_id)
 
-    if not is_admin_key and not is_tenant_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    if not is_admin_key and not is_tenant_privileged:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin/manager privileges required")
 
     stmt = select(TenantUser, Tenant.code).join(Tenant, Tenant.id == TenantUser.tenant_id)
 
-    if is_tenant_admin:
+    if is_tenant_privileged:
         stmt = stmt.where(TenantUser.tenant_id == auth_tenant_id)
     else:
         # Admin key: optional filters.
@@ -279,6 +443,7 @@ async def list_users(
                 username=str(user.username),
                 role=str(user.role),
                 is_active=bool(user.is_active),
+                must_change_password=bool(getattr(user, "must_change_password", False)),
                 created_at=created_at,
                 last_login_at=last_login_at,
             )
@@ -302,10 +467,10 @@ async def update_user(
     is_admin_key = _is_admin_key(request)
     actor_role = getattr(getattr(request, "state", None), "actor_role", None)
     auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
-    is_tenant_admin = bool(actor_role == "admin" and auth_tenant_id)
+    is_tenant_privileged = _is_tenant_privileged(actor_role, auth_tenant_id)
 
-    if not is_admin_key and not is_tenant_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    if not is_admin_key and not is_tenant_privileged:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin/manager privileges required")
 
     row = (
         await db.execute(
@@ -317,8 +482,18 @@ async def update_user(
 
     user, t_code = row
 
-    if is_tenant_admin and user.tenant_id != auth_tenant_id:
+    orig_role = str(getattr(user, "role", ""))
+    orig_is_active = bool(getattr(user, "is_active", False))
+
+    if is_tenant_privileged and user.tenant_id != auth_tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot manage users in another tenant")
+
+    # Managers may not manage tenant admins, and may not assign role=admin.
+    if not is_admin_key and actor_role == "manager":
+        if str(user.role).strip() == "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager cannot manage admin users")
+        if payload.role is not None and (payload.role.strip() or "user") == "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager cannot assign admin role")
 
     did_change = False
 
@@ -353,6 +528,16 @@ async def update_user(
             user.is_active = bool(payload.is_active)
             did_change = True
 
+    # Prevent lockout: do not allow removing the last active privileged user
+    # via tenant-scoped calls. Break-glass admin key can override.
+    if not is_admin_key:
+        before_privileged = bool(orig_is_active) and orig_role.strip() in {"admin", "manager"}
+        after_privileged = bool(user.is_active) and str(user.role).strip() in {"admin", "manager"}
+        if before_privileged and not after_privileged:
+            other_count = await _count_other_active_privileged_users(db, user.tenant_id, user.id)
+            if other_count <= 0:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot remove the last admin/manager user in this tenant")
+
     if not did_change:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No changes provided")
 
@@ -380,6 +565,7 @@ async def update_user(
         username=str(user.username),
         role=str(user.role),
         is_active=bool(user.is_active),
+        must_change_password=bool(getattr(user, "must_change_password", False)),
         created_at=created_at,
         last_login_at=last_login_at,
     )
@@ -399,10 +585,10 @@ async def delete_user(
     is_admin_key = _is_admin_key(request)
     actor_role = getattr(getattr(request, "state", None), "actor_role", None)
     auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
-    is_tenant_admin = bool(actor_role == "admin" and auth_tenant_id)
+    is_tenant_privileged = _is_tenant_privileged(actor_role, auth_tenant_id)
 
-    if not is_admin_key and not is_tenant_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    if not is_admin_key and not is_tenant_privileged:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin/manager privileges required")
 
     row = (
         await db.execute(
@@ -414,8 +600,20 @@ async def delete_user(
 
     user, t_code = row
 
-    if is_tenant_admin and user.tenant_id != auth_tenant_id:
+    if is_tenant_privileged and user.tenant_id != auth_tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot manage users in another tenant")
+
+    # Managers may not manage tenant admins.
+    if not is_admin_key and actor_role == "manager" and str(user.role).strip() == "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager cannot manage admin users")
+
+    # Prevent lockout: do not allow deactivating the last active privileged user.
+    if not is_admin_key:
+        before_privileged = bool(user.is_active) and str(user.role).strip() in {"admin", "manager"}
+        if before_privileged:
+            other_count = await _count_other_active_privileged_users(db, user.tenant_id, user.id)
+            if other_count <= 0:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot remove the last admin/manager user in this tenant")
 
     if bool(user.is_active):
         user.is_active = False
@@ -441,6 +639,7 @@ async def delete_user(
         username=str(user.username),
         role=str(user.role),
         is_active=bool(user.is_active),
+        must_change_password=bool(getattr(user, "must_change_password", False)),
         created_at=created_at,
         last_login_at=last_login_at,
     )
@@ -555,6 +754,7 @@ async def rebind_user_tenant(
         username=str(user.username),
         role=str(user.role),
         is_active=bool(user.is_active),
+        must_change_password=bool(getattr(user, "must_change_password", False)),
         created_at=created_at,
         last_login_at=last_login_at,
     )
@@ -745,4 +945,176 @@ async def login(
         tenant_code=str(tenant.code),
         api_key=raw_key,
         api_key_header=header_name,
+        must_change_password=bool(getattr(user, "must_change_password", False)),
+    )
+
+
+@router.post("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_my_password(
+    request: Request,
+    payload: ChangeMyPasswordRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """User self-service password change.
+
+    Requirements:
+    - Must be authenticated with an API key that is linked to a tenant_user.
+    - Must provide the old password.
+    - Clears must_change_password flag.
+    """
+
+    state = getattr(request, "state", None)
+    auth_tenant_id = getattr(state, "auth_tenant_id", None)
+    actor_user_id = getattr(state, "actor_user_id", None)
+    auth_api_key_id = getattr(state, "auth_api_key_id", None)
+
+    if not auth_tenant_id or not actor_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User authentication required")
+
+    user = (
+        await db.execute(
+            select(TenantUser).where(
+                TenantUser.id == actor_user_id,
+                TenantUser.tenant_id == auth_tenant_id,
+                TenantUser.is_active == True,
+            )
+        )
+    ).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    actor_user_id_str = str(user.id)
+    _check_password_change_throttle(user_id=actor_user_id_str)
+
+    if payload.old_password == payload.new_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be different")
+
+    if not verify_password(payload.old_password, user.password_hash):
+        _record_password_change_failure(user_id=actor_user_id_str)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid old password")
+
+    user.password_hash = hash_password(payload.new_password)
+    user.must_change_password = False
+
+    # Revoke other active keys for this user (keep the current key if possible).
+    stmt = (
+        update(TenantApiKey)
+        .where(
+            TenantApiKey.user_id == user.id,
+            TenantApiKey.is_active == True,
+        )
+        .values(is_active=False, revoked_at=func.now())
+    )
+    if auth_api_key_id:
+        stmt = stmt.where(TenantApiKey.id != auth_api_key_id)
+    await db.execute(stmt)
+
+    await db.commit()
+
+    await write_audit_event_best_effort(
+        tenant_id=user.tenant_id,
+        actor_api_key_id=getattr(state, "auth_api_key_id", None),
+        actor_label_snapshot=getattr(state, "auth_api_key_label", None),
+        request_id=getattr(state, "request_id", None),
+        method=request.method,
+        path=request.url.path,
+        status_code=204,
+        action="auth.password.change",
+        metadata={"target_user_id": str(user.id)},
+        client_host=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    return None
+
+
+@router.post("/users/{user_id}/password-reset", response_model=ResetUserPasswordResponse)
+async def reset_user_password(
+    user_id: UUID,
+    request: Request,
+    payload: ResetUserPasswordRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin/manager reset another user's password.
+
+    Behavior:
+    - Requires tenant-scoped admin/manager API key OR break-glass admin API key.
+    - Revokes all active API keys for the target user.
+    - Sets must_change_password=True.
+    - Returns a generated temporary password if new_password is omitted.
+    """
+
+    state = getattr(request, "state", None)
+    is_admin_key = _is_admin_key(request)
+    actor_role = getattr(state, "actor_role", None)
+    auth_tenant_id = getattr(state, "auth_tenant_id", None)
+    is_tenant_privileged = _is_tenant_privileged(actor_role, auth_tenant_id)
+
+    if not is_admin_key and not is_tenant_privileged:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin/manager privileges required")
+
+    if not is_admin_key and not getattr(state, "actor_user_id", None):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User authentication required")
+
+    target = (
+        await db.execute(
+            select(TenantUser).where(
+                TenantUser.id == user_id,
+                TenantUser.is_active == True,
+            )
+        )
+    ).scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Tenant-scoped callers may only manage their own tenant.
+    if is_tenant_privileged and target.tenant_id != auth_tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot manage users in another tenant")
+
+    # Prevent bypass: self reset should use /me/password.
+    if getattr(state, "actor_user_id", None) and str(getattr(state, "actor_user_id")) == str(target.id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Use /api/auth/me/password")
+
+    # Managers may not manage tenant admins.
+    if not is_admin_key and actor_role == "manager" and str(target.role).strip() == "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager cannot manage admin users")
+
+    new_password = (payload.new_password or "").strip() or None
+    generated = False
+    if not new_password:
+        # Ensure >= 8 chars, URL-safe.
+        new_password = secrets.token_urlsafe(12)
+        generated = True
+
+    target.password_hash = hash_password(new_password)
+    target.must_change_password = True
+
+    # Force logout: revoke all active keys for the target user.
+    await db.execute(
+        update(TenantApiKey)
+        .where(TenantApiKey.user_id == target.id, TenantApiKey.is_active == True)
+        .values(is_active=False, revoked_at=func.now())
+    )
+
+    await db.commit()
+
+    await write_audit_event_best_effort(
+        tenant_id=target.tenant_id,
+        actor_api_key_id=getattr(state, "auth_api_key_id", None),
+        actor_label_snapshot=getattr(state, "auth_api_key_label", None),
+        request_id=getattr(state, "request_id", None),
+        method=request.method,
+        path=request.url.path,
+        status_code=200,
+        action="auth.password.reset",
+        metadata={"target_user_id": str(target.id), "generated": generated},
+        client_host=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    return ResetUserPasswordResponse(
+        user_id=str(target.id),
+        username=str(target.username),
+        must_change_password=True,
+        temporary_password=new_password if generated else None,
     )

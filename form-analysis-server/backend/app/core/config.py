@@ -96,6 +96,15 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")
     reload: bool = Field(default=False, description="Enable auto-reload (development)")
     environment: str = Field(default="production", description="Application environment")
+
+    # Multi-tenant mode
+    # When enabled, legacy import endpoints (/api/upload, /api/errors.csv, /api/import)
+    # are disabled to prevent data from landing only in legacy tables.
+    multi_tenant_enabled: bool = Field(
+        default=False,
+        description="Enable multi-tenant mode; disables legacy import endpoints",
+        alias="MULTI_TENANT_ENABLED",
+    )
     
     # Security settings
     secret_key: str = Field(
@@ -143,6 +152,41 @@ class Settings(BaseSettings):
         default="X-Admin-API-Key",
         description="Header name for admin API key",
         alias="ADMIN_API_KEY_HEADER",
+    )
+
+    # -----------------------------
+    # Bootstrap Manager User (optional)
+    # -----------------------------
+    # For first-time startup, you may want the server to auto-create a tenant manager.
+    # This is best-effort and will never block startup.
+    bootstrap_manager_enabled: bool = Field(
+        default=False,
+        description="Enable bootstrapping a manager user on startup",
+        alias="BOOTSTRAP_MANAGER_ENABLED",
+    )
+
+    bootstrap_manager_tenant_code: str = Field(
+        default="",
+        description="Tenant code for the bootstrap manager user (optional)",
+        alias="BOOTSTRAP_MANAGER_TENANT_CODE",
+    )
+
+    bootstrap_manager_username: str = Field(
+        default="",
+        description="Username for the bootstrap manager user",
+        alias="BOOTSTRAP_MANAGER_USERNAME",
+    )
+
+    bootstrap_manager_password: str = Field(
+        default="",
+        description="Password for the bootstrap manager user",
+        alias="BOOTSTRAP_MANAGER_PASSWORD",
+    )
+
+    bootstrap_manager_must_change_password: bool = Field(
+        default=False,
+        description="Force password change for the bootstrap manager user after first login",
+        alias="BOOTSTRAP_MANAGER_MUST_CHANGE_PASSWORD",
     )
 
     @property

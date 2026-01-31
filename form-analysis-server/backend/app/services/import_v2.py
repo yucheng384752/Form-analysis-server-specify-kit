@@ -1,4 +1,5 @@
 import csv
+import json
 import re
 import uuid
 from datetime import datetime, timezone
@@ -88,6 +89,97 @@ class ImportService:
         if len(parts) >= 2 and len(parts[0]) >= 6 and len(parts[1]) <= 2:
             return f"{parts[0]}_{parts[1].zfill(2)}"
         return s
+
+    def _row_signature_for_dedupe(self, row: Dict[str, Any]) -> str:
+        """Compute a stable signature for a parsed CSV row.
+
+        This is an *exact-match* dedupe helper (after light normalization), used to
+        avoid double-counting when multiple files contain mostly the same rows.
+        """
+        if not isinstance(row, dict):
+            return ""
+
+        normalized: Dict[str, Any] = {}
+        for k, v in row.items():
+            key = str(k).strip()
+            if key == "":
+                continue
+            if v is None:
+                normalized[key] = None
+                continue
+            s = str(v).strip()
+            normalized[key] = s
+
+        # JSON canonicalization: stable order, stable separators.
+        return json.dumps(normalized, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+    def _dedupe_rows_exact(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        seen: set[str] = set()
+        out: List[Dict[str, Any]] = []
+        for r in rows or []:
+            if not isinstance(r, dict):
+                continue
+            sig = self._row_signature_for_dedupe(r)
+            if not sig:
+                continue
+            if sig in seen:
+                continue
+            seen.add(sig)
+            out.append(r)
+        return out
+
+    def _is_empty_value(self, v: Any) -> bool:
+        if v is None:
+            return True
+        if isinstance(v, str) and v.strip() == "":
+            return True
+        return False
+
+    def _normalize_value_for_compare(self, v: Any) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
+
+    def _row_completeness_score(self, row: Dict[str, Any]) -> int:
+        if not isinstance(row, dict):
+            return 0
+        return sum(1 for v in row.values() if not self._is_empty_value(v))
+
+    def _merge_rows_prefer_complete(self, rows: List[Dict[str, Any]]) -> tuple[Optional[Dict[str, Any]], int]:
+        """Merge multiple parsed rows into one.
+
+        Used for "mostly same" cases: same business key (P1: lot; P2: lot+winder)
+        but rows differ by a few fields.
+
+        Strategy (conservative):
+        - Pick the most complete row as base.
+        - Fill missing/empty fields from other rows.
+        - If both sides have non-empty but different values, keep base and count a conflict.
+        """
+        material_rows = [r for r in (rows or []) if isinstance(r, dict)]
+        if not material_rows:
+            return None, 0
+
+        material_rows.sort(key=self._row_completeness_score, reverse=True)
+        merged: Dict[str, Any] = dict(material_rows[0])
+        conflicts = 0
+
+        for r in material_rows[1:]:
+            for k, v in r.items():
+                if k not in merged or self._is_empty_value(merged.get(k)):
+                    if not self._is_empty_value(v):
+                        merged[k] = v
+                    continue
+
+                if self._is_empty_value(v):
+                    continue
+
+                a = self._normalize_value_for_compare(merged.get(k))
+                b = self._normalize_value_for_compare(v)
+                if a != b:
+                    conflicts += 1
+
+        return merged, conflicts
 
     async def parse_job(
         self,
@@ -262,23 +354,24 @@ class ImportService:
             job.error_summary = {"error": str(e)}
             await self.db.commit()
 
-            await write_audit_event_best_effort(
-                tenant_id=job.tenant_id,
-                actor_api_key_id=actor_api_key_id,
-                actor_label_snapshot=actor_label_snapshot,
-                request_id=None,
-                method="INTERNAL",
-                path=f"/internal/v2/import/jobs/{job.id}/status",
-                status_code=0,
-                action="import.job.status",
-                metadata={
-                    "job_id": str(job.id),
-                    "from_status": getattr(prev_status, "name", str(prev_status)),
-                    "to_status": getattr(job.status, "name", str(job.status)),
-                    "actor_kind": actor_kind,
-                    "error": str(e)[:200],
-                },
-            )
+            if job:
+                await write_audit_event_best_effort(
+                    tenant_id=job.tenant_id,
+                    actor_api_key_id=actor_api_key_id,
+                    actor_label_snapshot=actor_label_snapshot,
+                    request_id=None,
+                    method="INTERNAL",
+                    path=f"/internal/v2/import/jobs/{job.id}/status",
+                    status_code=0,
+                    action="import.job.status",
+                    metadata={
+                        "job_id": str(job.id),
+                        "from_status": getattr(prev_status, "name", str(prev_status)),
+                        "to_status": getattr(job.status, "name", str(job.status)),
+                        "actor_kind": actor_kind,
+                        "error": str(e)[:200],
+                    },
+                )
             raise e
 
     async def validate_job(
@@ -489,6 +582,14 @@ class ImportService:
         logger.info(f"Commit job {job_id}: Table code {table.table_code}, Files: {len(job.files)}")
 
         try:
+            # Collect per-key rows across files in the *same job* for dedupe/merge.
+            # This helps when users upload split files or mostly-identical files.
+            p1_rows_by_lot_norm: Dict[int, List[Dict[str, Any]]] = {}
+            p1_lot_raw_by_norm: Dict[int, str] = {}
+
+            p2_rows_by_key: Dict[tuple[int, int], List[Dict[str, Any]]] = {}
+            p2_lot_raw_by_norm: Dict[int, str] = {}
+
             # Process by file
             for file_record in job.files:
                 logger.info(f"Processing file {file_record.filename} (ID: {file_record.id})")
@@ -512,30 +613,11 @@ class ImportService:
 
                     lot_no_raw = self._extract_file_lot_no_raw_or_raise(row_data, table_code="P1")
                     lot_no_norm = normalize_lot_no(lot_no_raw)
-                    
-                    # Check existence
-                    existing_stmt = select(P1Record).where(
-                        P1Record.tenant_id == job.tenant_id,
-                        P1Record.lot_no_norm == lot_no_norm
+                    p1_lot_raw_by_norm.setdefault(lot_no_norm, lot_no_raw)
+                    p1_rows_by_lot_norm.setdefault(lot_no_norm, []).extend(
+                        [r for r in row_data if isinstance(r, dict)]
                     )
-                    existing_result = await self.db.execute(existing_stmt)
-                    existing_record = existing_result.scalar_one_or_none()
-                    
-                    if existing_record:
-                        # Update
-                        existing_record.extras = {"rows": row_data}
-                        existing_record.updated_at = func.now()
-                    else:
-                        # Create
-                        new_record = P1Record(
-                            id=uuid.uuid4(),
-                            tenant_id=job.tenant_id,
-                            lot_no_raw=lot_no_raw,
-                            lot_no_norm=lot_no_norm,
-                            schema_version_id=job.schema_version_id,
-                            extras={"rows": row_data}
-                        )
-                        self.db.add(new_record)
+                    continue
                 
                 elif table.table_code == "P2":
                     from app.models.p2_record import P2Record
@@ -543,6 +625,8 @@ class ImportService:
 
                     lot_no_raw = self._extract_file_lot_no_raw_or_raise(row_data, table_code="P2")
                     lot_no_norm = normalize_lot_no(lot_no_raw)
+
+                    p2_lot_raw_by_norm.setdefault(lot_no_norm, lot_no_raw)
                     
                     # P2 匯入：
                     # - 支援「單檔單一 winder」（例如檔名含 _05 或內容只有一列）
@@ -583,67 +667,11 @@ class ImportService:
                     for winder_num, winder_rows in rows_by_winder.items():
                         if not winder_rows:
                             continue
-
-                        existing_stmt = select(P2Record).where(
-                            P2Record.tenant_id == job.tenant_id,
-                            P2Record.lot_no_norm == lot_no_norm,
-                            P2Record.winder_number == int(winder_num),
+                        key = (lot_no_norm, int(winder_num))
+                        p2_rows_by_key.setdefault(key, []).extend(
+                            [r for r in winder_rows if isinstance(r, dict)]
                         )
-                        existing_result = await self.db.execute(existing_stmt)
-                        p2_record = existing_result.scalar_one_or_none()
-
-                        if not p2_record:
-                            p2_record = P2Record(
-                                id=uuid.uuid4(),
-                                tenant_id=job.tenant_id,
-                                lot_no_raw=lot_no_raw,
-                                lot_no_norm=lot_no_norm,
-                                schema_version_id=job.schema_version_id,
-                                winder_number=int(winder_num),
-                                extras={"rows": winder_rows},
-                            )
-                            self.db.add(p2_record)
-                            await self.db.flush()  # Get ID
-                        else:
-                            p2_record.extras = {"rows": winder_rows}
-                            p2_record.updated_at = func.now()
-
-                        # Delete existing items for this record (if re-importing)
-                        await self.db.execute(
-                            delete(P2ItemV2).where(P2ItemV2.p2_record_id == p2_record.id)
-                        )
-                        await self.db.flush()
-
-                        # Create one P2ItemV2 per winder (take the first row as the representative payload)
-                        row = winder_rows[0]
-                        p2_item = P2ItemV2(
-                            id=uuid.uuid4(),
-                            p2_record_id=p2_record.id,
-                            tenant_id=job.tenant_id,
-                            winder_number=int(winder_num),
-                            row_data=row,
-                        )
-
-                        for field in [
-                            'sheet_width',
-                            'thickness1',
-                            'thickness2',
-                            'thickness3',
-                            'thickness4',
-                            'thickness5',
-                            'thickness6',
-                            'thickness7',
-                            'appearance',
-                            'rough_edge',
-                            'slitting_result',
-                        ]:
-                            if field in row and row[field]:
-                                try:
-                                    setattr(p2_item, field, float(row[field]))
-                                except (ValueError, TypeError):
-                                    pass
-
-                        self.db.add(p2_item)
+                    continue
 
                 elif table.table_code == "P3":
                     from app.models.p3_record import P3Record
@@ -838,6 +866,119 @@ class ImportService:
                                 row_data=row
                             )
                             self.db.add(p3_item)
+
+            # Apply merged + deduped rows to DB (P1/P2).
+            if table.table_code == "P1":
+                from app.models.p1_record import P1Record
+
+                for lot_no_norm, rows_for_lot in p1_rows_by_lot_norm.items():
+                    lot_no_raw = p1_lot_raw_by_norm.get(lot_no_norm) or str(lot_no_norm)
+                    # Business-key merge: one lot -> one merged row (but keep list wrapper for compatibility)
+                    deduped_rows = self._dedupe_rows_exact(rows_for_lot)
+                    merged_row, conflict_count = self._merge_rows_prefer_complete(deduped_rows)
+                    if conflict_count:
+                        logger.info(
+                            f"P1 dedupe merge conflicts (tenant={job.tenant_id}, lot_no_norm={lot_no_norm}): {conflict_count}"
+                        )
+                    merged_rows = [merged_row] if merged_row else []
+
+                    existing_stmt = select(P1Record).where(
+                        P1Record.tenant_id == job.tenant_id,
+                        P1Record.lot_no_norm == lot_no_norm,
+                    )
+                    existing_result = await self.db.execute(existing_stmt)
+                    existing_record = existing_result.scalar_one_or_none()
+
+                    if existing_record:
+                        existing_record.lot_no_raw = lot_no_raw
+                        existing_record.extras = {"rows": merged_rows}
+                        existing_record.updated_at = func.now()
+                    else:
+                        self.db.add(
+                            P1Record(
+                                id=uuid.uuid4(),
+                                tenant_id=job.tenant_id,
+                                lot_no_raw=lot_no_raw,
+                                lot_no_norm=lot_no_norm,
+                                schema_version_id=job.schema_version_id,
+                                extras={"rows": merged_rows},
+                            )
+                        )
+
+            if table.table_code == "P2":
+                from app.models.p2_record import P2Record
+                from app.models.p2_item_v2 import P2ItemV2
+
+                for (lot_no_norm, winder_num), rows_for_key in p2_rows_by_key.items():
+                    lot_no_raw = p2_lot_raw_by_norm.get(lot_no_norm) or str(lot_no_norm)
+                    # Business-key merge: one (lot,winder) -> one merged row (but keep list wrapper)
+                    deduped_rows = self._dedupe_rows_exact(rows_for_key)
+                    merged_row, conflict_count = self._merge_rows_prefer_complete(deduped_rows)
+                    if conflict_count:
+                        logger.info(
+                            f"P2 dedupe merge conflicts (tenant={job.tenant_id}, lot_no_norm={lot_no_norm}, winder={winder_num}): {conflict_count}"
+                        )
+                    merged_rows = [merged_row] if merged_row else []
+                    if not merged_rows:
+                        continue
+
+                    existing_stmt = select(P2Record).where(
+                        P2Record.tenant_id == job.tenant_id,
+                        P2Record.lot_no_norm == lot_no_norm,
+                        P2Record.winder_number == int(winder_num),
+                    )
+                    existing_result = await self.db.execute(existing_stmt)
+                    p2_record = existing_result.scalar_one_or_none()
+
+                    if not p2_record:
+                        p2_record = P2Record(
+                            id=uuid.uuid4(),
+                            tenant_id=job.tenant_id,
+                            lot_no_raw=lot_no_raw,
+                            lot_no_norm=lot_no_norm,
+                            schema_version_id=job.schema_version_id,
+                            winder_number=int(winder_num),
+                            extras={"rows": merged_rows},
+                        )
+                        self.db.add(p2_record)
+                        await self.db.flush()
+                    else:
+                        p2_record.lot_no_raw = lot_no_raw
+                        p2_record.extras = {"rows": merged_rows}
+                        p2_record.updated_at = func.now()
+
+                    await self.db.execute(delete(P2ItemV2).where(P2ItemV2.p2_record_id == p2_record.id))
+                    await self.db.flush()
+
+                    row = merged_rows[0]
+                    p2_item = P2ItemV2(
+                        id=uuid.uuid4(),
+                        p2_record_id=p2_record.id,
+                        tenant_id=job.tenant_id,
+                        winder_number=int(winder_num),
+                        row_data=row,
+                    )
+
+                    for field in [
+                        'sheet_width',
+                        'thickness1',
+                        'thickness2',
+                        'thickness3',
+                        'thickness4',
+                        'thickness5',
+                        'thickness6',
+                        'thickness7',
+                        'appearance',
+                        'rough_edge',
+                        'slitting_result',
+                    ]:
+                        if field in row and row[field]:
+                            try:
+                                setattr(p2_item, field, float(row[field]))
+                            except (ValueError, TypeError):
+                                pass
+
+                    self.db.add(p2_item)
                 
             self._touch_status(
                 job,
@@ -868,16 +1009,26 @@ class ImportService:
             
         except Exception as e:
             logger.exception(f"Error committing job {job_id}: {e}")
-            prev_status = job.status
-            self._touch_status(
-                job,
-                ImportJobStatus.FAILED,
-                actor_api_key_id=actor_api_key_id,
-                actor_label_snapshot=actor_label_snapshot,
-                actor_kind=actor_kind,
-            )
-            job.error_summary = {"error": str(e)}
-            await self.db.commit()
+            # Ensure no partial writes are committed.
+            await self.db.rollback()
+
+            # Re-fetch the job in a clean transaction, then mark FAILED.
+            stmt = select(ImportJob).where(ImportJob.id == job_id)
+            result = await self.db.execute(stmt)
+            job = result.scalar_one_or_none()
+            if job:
+                prev_status = job.status
+                self._touch_status(
+                    job,
+                    ImportJobStatus.FAILED,
+                    actor_api_key_id=actor_api_key_id,
+                    actor_label_snapshot=actor_label_snapshot,
+                    actor_kind=actor_kind,
+                )
+                job.error_summary = {"error": str(e)}
+                await self.db.commit()
+            else:
+                prev_status = None
 
             await write_audit_event_best_effort(
                 tenant_id=job.tenant_id,

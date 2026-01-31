@@ -199,11 +199,55 @@ LIMIT 20;
 
 ## API 端點
 
-### 檔案上傳
+### v2 匯入（推薦）
+
+v2 流程：建立匯入 job（上傳檔案→背景 parse/validate）→ poll 狀態 → 若 READY 則 commit。
+
+> 注意：v2 端點通常需要 `X-Tenant-Id`。
+
+**POST** `/api/v2/import/jobs`
+
+```bash
+curl -X POST "http://localhost:8000/api/v2/import/jobs" \
+  -H "X-Tenant-Id: <TENANT_ID>" \
+  -F "table_code=P1" \
+  -F "allow_duplicate=false" \
+  -F "files=@your-file.csv;type=text/csv"
+```
+
+**GET** `/api/v2/import/jobs/{id}`
+
+```bash
+curl -X GET "http://localhost:8000/api/v2/import/jobs/<JOB_ID>" \
+  -H "X-Tenant-Id: <TENANT_ID>"
+```
+
+**GET** `/api/v2/import/jobs/{id}/errors`
+
+```bash
+curl -X GET "http://localhost:8000/api/v2/import/jobs/<JOB_ID>/errors" \
+  -H "X-Tenant-Id: <TENANT_ID>"
+```
+
+**POST** `/api/v2/import/jobs/{id}/commit`
+
+```bash
+curl -X POST "http://localhost:8000/api/v2/import/jobs/<JOB_ID>/commit" \
+  -H "X-Tenant-Id: <TENANT_ID>"
+```
+
+### （Deprecated）檔案上傳
 
 **POST** `/api/upload`
 
-上傳 CSV 或 Excel 檔案進行驗證。
+上傳 CSV 或 Excel 檔案進行驗證（舊流程/相容性保留）。
+
+> ⚠️ Deprecated：僅供歷史/相容性用途，請勿用於新開發或新腳本。
+> - UI 的 CSV 主流程已於 2026-01-31 切換為 v2 import jobs。
+> - multi-tenant 模式下，此類 legacy endpoints 會回 410。
+
+<details>
+  <summary>（Deprecated）Legacy curl 範例（僅供回溯/相容性；請勿複製到新腳本）</summary>
 
 ```bash
 curl -X POST "http://localhost:8000/api/upload" \
@@ -231,11 +275,16 @@ curl -X POST "http://localhost:8000/api/upload" \
 }
 ```
 
-### 查詢上傳狀態
+</details>
+
+### （Deprecated）查詢上傳狀態
 
 **GET** `/api/upload/{process_id}/status`
 
 查詢上傳工作的處理狀態。
+
+<details>
+  <summary>（Deprecated）Legacy curl 範例（僅供回溯/相容性）</summary>
 
 ```bash
 curl -X GET "http://localhost:8000/api/upload/550e8400-e29b-41d4-a716-446655440000/status"
@@ -251,11 +300,16 @@ curl -X GET "http://localhost:8000/api/upload/550e8400-e29b-41d4-a716-4466554400
 }
 ```
 
-### 查詢驗證結果
+</details>
+
+### （Deprecated）查詢驗證結果
 
 **GET** `/api/validate`
 
 查詢詳細的驗證結果和錯誤列表（支援分頁）。
+
+<details>
+  <summary>（Deprecated）Legacy curl 範例（僅供回溯/相容性）</summary>
 
 ```bash
 # 基本查詢
@@ -264,6 +318,8 @@ curl -X GET "http://localhost:8000/api/validate?process_id=550e8400-e29b-41d4-a7
 # 分頁查詢
 curl -X GET "http://localhost:8000/api/validate?process_id=550e8400-e29b-41d4-a716-446655440000&page=2&page_size=10"
 ```
+
+</details>
 
 **回應範例：**
 ```json
@@ -297,17 +353,24 @@ curl -X GET "http://localhost:8000/api/validate?process_id=550e8400-e29b-41d4-a7
 }
 ```
 
-### 匯入驗證通過的資料
+### （Deprecated）匯入驗證通過的資料
 
 **POST** `/api/import`
 
 將驗證通過的有效資料匯入到系統中。
 
+> ⚠️ Deprecated：僅供相容性用途；新流程請用 `POST /api/v2/import/jobs/{id}/commit`。
+
+<details>
+  <summary>（Deprecated）Legacy curl 範例（僅供回溯/相容性）</summary>
+
 ```bash
 curl -X POST "http://localhost:8000/api/import" \
-     -H "Content-Type: application/json" \
-     -d '{"process_id": "550e8400-e29b-41d4-a716-446655440000"}'
+  -H "Content-Type: application/json" \
+  -d '{"process_id": "550e8400-e29b-41d4-a716-446655440000"}'
 ```
+
+</details>
 
 **回應範例：**
 ```json
@@ -320,19 +383,21 @@ curl -X POST "http://localhost:8000/api/import" \
 }
 ```
 
-### 匯出錯誤資料 CSV
+### （Deprecated）匯出錯誤資料 CSV
 
 **GET** `/api/errors.csv`
 
 下載驗證錯誤的詳細清單 CSV 檔案。
 
+<details>
+  <summary>（Deprecated）Legacy curl 範例（僅供回溯/相容性）</summary>
+
 ```bash
 # 下載錯誤 CSV 檔案
 curl -o errors.csv "http://localhost:8000/api/errors.csv?process_id=550e8400-e29b-41d4-a716-446655440000"
-
-# 使用 wget 下載
-wget -O errors.csv "http://localhost:8000/api/errors.csv?process_id=550e8400-e29b-41d4-a716-446655440000"
 ```
+
+</details>
 
 **CSV 檔案內容範例：**
 ```csv
@@ -373,6 +438,9 @@ row_index,field,error_code,message
 | `OUT_OF_RANGE` | 超出允許範圍 | 產品名稱長度不可超過100字元 |
 
 ## 完整工作流程
+
+> 注意：以下 sequence diagram 描述的是 **legacy 流程（deprecated）**。
+> 推薦請改用 v2 import jobs：`POST /api/v2/import/jobs` → `GET /api/v2/import/jobs/{id}` → `POST /api/v2/import/jobs/{id}/commit`。
 
 ```mermaid
 sequenceDiagram

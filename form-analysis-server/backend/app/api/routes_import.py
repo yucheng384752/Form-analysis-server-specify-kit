@@ -30,6 +30,7 @@ from app.schemas.import_data import (
 from app.services.validation import file_validation_service
 from app.services.production_date_extractor import production_date_extractor
 from app.utils.normalization import NormalizationError, normalize_lot_no
+from app.core.config import get_settings
 
 # 獲取日誌記錄器
 logger = get_logger(__name__)
@@ -372,6 +373,16 @@ async def import_data(
     """
     
     start_time = time.time()
+
+    if get_settings().multi_tenant_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "detail": "Legacy import endpoint is disabled in multi-tenant mode.",
+                "hint": "Use v2 import pipeline: POST /api/v2/import/jobs then POST /api/v2/import/jobs/{id}/commit.",
+                "error_code": "LEGACY_IMPORT_DISABLED",
+            },
+        )
     
     logger.info("開始資料匯入", process_id=str(request.process_id))
     

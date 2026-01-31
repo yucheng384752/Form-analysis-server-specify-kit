@@ -720,6 +720,16 @@ async def upload_file(
     start_time = time.time()
     
     logger.info("檔案上傳開始", filename=file.filename if file else None)
+
+    if get_settings().multi_tenant_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "detail": "Legacy upload endpoint is disabled in multi-tenant mode.",
+                "hint": "Use v2 import pipeline: POST /api/v2/import/jobs.",
+                "error_code": "LEGACY_UPLOAD_DISABLED",
+            },
+        )
     
     try:
         # 1. 檢查檔案是否存在

@@ -111,6 +111,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         await db.commit()
             except Exception as e:
                 print(f" Warning: failed to seed default tenant: {e}")
+
+            # 3) Optional: bootstrap a manager user (for first-time setup)
+            try:
+                from app.core.bootstrap import bootstrap_manager_user_if_configured
+
+                res = await bootstrap_manager_user_if_configured(
+                    async_session_factory=async_session_factory,
+                    settings=settings,
+                )
+                if res.attempted:
+                    if res.created:
+                        print(
+                            f" Bootstrap manager user created: tenant={res.tenant_code} username={res.username}"
+                        )
+                    else:
+                        print(
+                            f" Bootstrap manager user skipped: reason={res.reason} tenant={res.tenant_code} username={res.username}"
+                        )
+            except Exception as e:
+                print(f" Warning: failed to bootstrap manager user: {e}")
     except Exception as e:
         print(f" Warning: failed to run startup seed: {e}")
     
@@ -228,6 +248,7 @@ async def api_key_auth_middleware(request: Request, call_next):
             "/api/auth/admin/tenant-api-keys",
             "/api/auth/whoami",
             "/api/auth/bootstrap-status",
+            "/api/auth/bootstrap/manager-status",
         )
         if is_admin and any(path.startswith(p) for p in bootstrap_prefixes):
             return await call_next(request)
@@ -279,6 +300,7 @@ async def api_key_auth_middleware(request: Request, call_next):
         # Optional: resolve actor user & role for RBAC-style checks.
         request.state.actor_user_id = None
         request.state.actor_role = None
+        request.state.must_change_password = False
         try:
             if getattr(api_key, "user_id", None):
                 actor = (
@@ -293,10 +315,12 @@ async def api_key_auth_middleware(request: Request, call_next):
                 if actor:
                     request.state.actor_user_id = actor.id
                     request.state.actor_role = actor.role
+                    request.state.must_change_password = bool(getattr(actor, "must_change_password", False))
         except Exception:
             # Best-effort: do not block request if actor resolution fails.
             request.state.actor_user_id = None
             request.state.actor_role = None
+            request.state.must_change_password = False
 
         # Best-effort last_used update (do not block request).
         try:
@@ -304,6 +328,26 @@ async def api_key_auth_middleware(request: Request, call_next):
             await db.commit()
         except Exception:
             await db.rollback()
+
+    # Enforce forced password change after reset/temporary password.
+    # Allow only a minimal set of endpoints until the user changes their password.
+    try:
+        must_change = bool(getattr(getattr(request, "state", None), "must_change_password", False))
+        if must_change:
+            path = request.url.path
+            allowed_prefixes = (
+                "/api/auth/me/password",
+                "/api/auth/whoami",
+                "/api/auth/bootstrap-status",
+            )
+            if not any(path.startswith(p) for p in allowed_prefixes):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Password change required"},
+                )
+    except Exception:
+        # Best-effort: do not block request due to enforcement logic errors.
+        pass
 
     return await call_next(request)
 

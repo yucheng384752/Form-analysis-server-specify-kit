@@ -18,6 +18,8 @@ class TenantUser(Base):
     username: Mapped[str] = mapped_column(String(100), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+
     role: Mapped[str] = mapped_column(String(30), nullable=False, default="user")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

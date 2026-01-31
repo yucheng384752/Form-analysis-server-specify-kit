@@ -9,6 +9,7 @@ from app.models.core.tenant import Tenant
 from app.models.core.schema_registry import TableRegistry
 from app.core.config import get_settings
 from app.models.p1_record import P1Record
+from app.models.p2_record import P2Record
 
 settings = get_settings()
 
@@ -252,6 +253,110 @@ async def test_commit_import_job(client, db_session):
     record = result.scalar_one_or_none()
     
     assert record is not None
+
+
+@pytest.mark.asyncio
+async def test_commit_import_job_p1_business_key_merge(client, db_session):
+    tenant = Tenant(name="Test Tenant P1 Merge", code=f"test_tenant_p1_merge_{uuid.uuid4()}", is_default=True)
+    db_session.add(tenant)
+
+    stmt = select(TableRegistry).where(TableRegistry.table_code == "P1")
+    result = await db_session.execute(stmt)
+    table = result.scalar_one_or_none()
+    if not table:
+        table = TableRegistry(table_code="P1", display_name="P1 Records")
+        db_session.add(table)
+
+    await db_session.commit()
+    await db_session.refresh(tenant)
+
+    csv_1 = "lot_no,product_name\n2503033_01,ProdA"
+    csv_2 = "lot_no,material_code\n2503033_01,MatX"
+
+    files = [
+        ('files', ('P1_2503033_01_part1.csv', csv_1.encode('utf-8'), 'text/csv')),
+        ('files', ('P1_2503033_01_part2.csv', csv_2.encode('utf-8'), 'text/csv')),
+    ]
+    data = {'table_code': 'P1'}
+    headers = {'X-Tenant-Id': str(tenant.id)}
+
+    response = await client.post("/api/v2/import/jobs", files=files, data=data, headers=headers)
+    assert response.status_code == 201, response.text
+    job_id = response.json()["id"]
+
+    service = ImportService(db_session)
+    await service.parse_job(uuid.UUID(job_id))
+    await service.validate_job(uuid.UUID(job_id))
+
+    response = await client.post(f"/api/v2/import/jobs/{job_id}/commit", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "COMPLETED"
+
+    stmt = select(P1Record).where(P1Record.tenant_id == tenant.id, P1Record.lot_no_norm == 250303301)
+    result = await db_session.execute(stmt)
+    record = result.scalar_one_or_none()
+
+    assert record is not None
+    assert record.extras is not None
+    assert "rows" in record.extras
+    assert len(record.extras["rows"]) == 1
+    row = record.extras["rows"][0]
+    assert row.get("product_name") == "ProdA"
+    assert row.get("material_code") == "MatX"
+
+
+@pytest.mark.asyncio
+async def test_commit_import_job_p2_business_key_merge(client, db_session):
+    tenant = Tenant(name="Test Tenant P2 Merge", code=f"test_tenant_p2_merge_{uuid.uuid4()}", is_default=True)
+    db_session.add(tenant)
+
+    stmt = select(TableRegistry).where(TableRegistry.table_code == "P2")
+    result = await db_session.execute(stmt)
+    table = result.scalar_one_or_none()
+    if not table:
+        table = TableRegistry(table_code="P2", display_name="P2 Records")
+        db_session.add(table)
+
+    await db_session.commit()
+    await db_session.refresh(tenant)
+
+    csv_1 = "lot_no,winder_number,sheet_width\n2503033_01,5,100"
+    csv_2 = "lot_no,winder_number,appearance\n2503033_01,5,OK"
+
+    files = [
+        ('files', ('P2_2503033_01_part1.csv', csv_1.encode('utf-8'), 'text/csv')),
+        ('files', ('P2_2503033_01_part2.csv', csv_2.encode('utf-8'), 'text/csv')),
+    ]
+    data = {'table_code': 'P2'}
+    headers = {'X-Tenant-Id': str(tenant.id)}
+
+    response = await client.post("/api/v2/import/jobs", files=files, data=data, headers=headers)
+    assert response.status_code == 201, response.text
+    job_id = response.json()["id"]
+
+    service = ImportService(db_session)
+    await service.parse_job(uuid.UUID(job_id))
+    await service.validate_job(uuid.UUID(job_id))
+
+    response = await client.post(f"/api/v2/import/jobs/{job_id}/commit", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "COMPLETED"
+
+    stmt = select(P2Record).where(
+        P2Record.tenant_id == tenant.id,
+        P2Record.lot_no_norm == 250303301,
+        P2Record.winder_number == 5,
+    )
+    result = await db_session.execute(stmt)
+    record = result.scalar_one_or_none()
+
+    assert record is not None
+    assert record.extras is not None
+    assert "rows" in record.extras
+    assert len(record.extras["rows"]) == 1
+    row = record.extras["rows"][0]
+    assert row.get("sheet_width") == "100"
+    assert row.get("appearance") == "OK"
 
 @pytest.mark.asyncio
 async def test_get_import_job_errors(client, db_session):
