@@ -28,9 +28,10 @@ type WhoAmI = {
   actor_user_id?: string | null
   actor_role?: string | null
   api_key_label?: string | null
+  must_change_password?: boolean
 }
 
-export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void }) {
+export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void; onWhoamiChanged?: (whoami: WhoAmI | null) => void }) {
   const { t } = useTranslation()
   const { showToast } = useToast()
 
@@ -49,11 +50,19 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
   const [loginPassword, setLoginPassword] = useState('')
   const [loginLoading, setLoginLoading] = useState(false)
 
+  const [pwOld, setPwOld] = useState('')
+  const [pwNew, setPwNew] = useState('')
+  const [pwChanging, setPwChanging] = useState(false)
+
   const [adminKeyDraft, setAdminKeyDraft] = useState('')
   const [adminKeyLoading, setAdminKeyLoading] = useState(false)
 
   const [whoami, setWhoami] = useState<WhoAmI | null>(null)
   const [diagLoading, setDiagLoading] = useState(false)
+
+  useEffect(() => {
+    props?.onWhoamiChanged?.(whoami)
+  }, [whoami, props?.onWhoamiChanged])
 
   const [storedTenantId, setStoredTenantIdState] = useState(() => getTenantId())
   const [storedApiKeyMasked, setStoredApiKeyMasked] = useState(() => maskKey(getApiKeyValue()))
@@ -104,13 +113,13 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
       const res = await fetch('/api/auth/whoami')
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', '自檢失敗：請確認後端可連線，並已登入')
+        showToast('error', t('register.toast.diagFailedNeedLogin'))
         return
       }
       setWhoami(body as WhoAmI)
-      showToast('success', '已更新自檢資訊')
+      showToast('success', t('register.toast.diagUpdated'))
     } catch {
-      showToast('error', '自檢失敗（網路或伺服器未啟動）')
+      showToast('error', t('register.toast.diagFailedNetwork'))
     } finally {
       setDiagLoading(false)
     }
@@ -124,12 +133,15 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
         const body = await res.json().catch(() => ({}))
         const detail = (body as any)?.detail
         if (res.status === 401) {
-          showToast('error', '後端已啟用權限驗證：請先登入（或由管理者完成初始化）')
+          showToast('error', t('register.toast.authEnabledNeedLogin'))
           setTenantsAuthRequired(true)
           setTenants(null)
           return
         }
-        showToast('error', typeof detail === 'string' ? detail : `取得 tenants 失敗 (HTTP ${res.status})`)
+        showToast(
+          'error',
+          typeof detail === 'string' ? detail : t('register.toast.fetchTenantsFailedHttp', { status: res.status }),
+        )
         setTenants(null)
         return
       }
@@ -137,9 +149,9 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
       setTenants(Array.isArray(data) ? data : [])
       if (Array.isArray(data)) writeTenantMap(data)
       setTenantsAuthRequired(false)
-      showToast('success', `已取得 tenants：${Array.isArray(data) ? data.length : 0} 筆`)
+      showToast('success', t('register.toast.fetchTenantsOk', { count: Array.isArray(data) ? data.length : 0 }))
     } catch {
-      showToast('error', '取得 tenants 失敗（網路或伺服器未啟動）')
+      showToast('error', t('register.toast.fetchTenantsFailedNetwork'))
       setTenants(null)
     } finally {
       setLoadingTenants(false)
@@ -149,25 +161,26 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
   const handleClearApiKey = () => {
     clearApiKeyValue()
     setStoredApiKeyMasked('')
-    showToast('info', '已清除權限憑證（localStorage）')
+    setWhoami(null)
+    showToast('info', t('register.toast.clearedCredentials'))
   }
 
   const handleSetTenant = (id: string) => {
     const trimmed = String(id || '').trim()
     if (!trimmed) {
-      showToast('error', '區域 ID 不可為空')
+      showToast('error', t('register.toast.tenantIdEmpty'))
       return
     }
     setTenantId(trimmed)
     setStoredTenantIdState(trimmed)
     const label = getTenantLabelById(trimmed)
-    showToast('success', `已設定區域：${label || '（未知）'}`)
+    showToast('success', t('register.toast.tenantSet', { label: label || t('common.unknown') }))
   }
 
   const handleClearTenant = () => {
     clearTenantId()
     setStoredTenantIdState('')
-    showToast('info', '已清除區域 ID（localStorage）')
+    showToast('info', t('register.toast.tenantCleared'))
   }
 
   const handlePasswordLogin = async () => {
@@ -175,11 +188,11 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
     const password = loginPassword
     const tenantCode = loginTenantCode.trim()
     if (!username) {
-      showToast('error', '請輸入帳號')
+      showToast('error', t('register.toast.usernameRequired'))
       return
     }
     if (!password) {
-      showToast('error', '請輸入密碼')
+      showToast('error', t('register.toast.passwordRequired'))
       return
     }
 
@@ -193,14 +206,14 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
       const body = await res.json().catch(() => ({}))
       const detail = (body as any)?.detail
       if (!res.ok) {
-        showToast('error', typeof detail === 'string' ? detail : `登入失敗 (HTTP ${res.status})`)
+        showToast('error', typeof detail === 'string' ? detail : t('register.toast.loginFailedHttp', { status: res.status }))
         return
       }
 
       const tenantId = String((body as any)?.tenant_id || '')
       const apiKey = String((body as any)?.api_key || '')
       if (!tenantId || !apiKey) {
-        showToast('error', '登入成功但回傳格式不完整')
+        showToast('error', t('register.toast.loginResponseIncomplete'))
         return
       }
 
@@ -210,12 +223,54 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
       setApiKeyValue(apiKey)
       setStoredApiKeyMasked(maskKey(apiKey))
 
+      // Force refresh whoami for role-based UI when login changes identity.
+      setWhoami(null)
+
       setLoginPassword('')
-      showToast('success', '登入成功：已自動保存區域與權限')
+      showToast('success', t('register.toast.loginSuccessSaved'))
     } catch {
-      showToast('error', '登入失敗（網路或伺服器未啟動）')
+      showToast('error', t('register.toast.loginFailedNetwork'))
     } finally {
       setLoginLoading(false)
+    }
+  }
+
+  const handleChangeMyPassword = async () => {
+    const old_password = pwOld
+    const new_password = pwNew
+
+    if (!old_password) {
+      showToast('error', t('register.toast.passwordOldRequired', '請輸入舊密碼'))
+      return
+    }
+    if (!new_password || new_password.length < 8) {
+      showToast('error', t('register.toast.passwordNewMin8', '新密碼至少 8 碼'))
+      return
+    }
+
+    setPwChanging(true)
+    try {
+      const res = await fetch('/api/auth/me/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_password, new_password }),
+      })
+
+      if (res.status !== 204) {
+        const body = await res.json().catch(() => ({}))
+        const detail = (body as any)?.detail
+        showToast('error', typeof detail === 'string' ? detail : t('register.toast.passwordChangeFailed', '變更密碼失敗'))
+        return
+      }
+
+      setPwOld('')
+      setPwNew('')
+      showToast('success', t('register.toast.passwordChangeOk', '已更新密碼'))
+      await handleFetchDiagnostics()
+    } catch {
+      showToast('error', t('register.toast.passwordChangeFailedNetwork', '變更密碼失敗（網路或伺服器未啟動）'))
+    } finally {
+      setPwChanging(false)
     }
   }
 
@@ -236,7 +291,7 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
   const handleVerifyAdminKey = async () => {
     const key = adminKeyDraft.trim()
     if (!key) {
-      showToast('error', '請輸入管理者金鑰')
+      showToast('error', t('register.toast.adminKeyRequired'))
       return
     }
 
@@ -252,7 +307,7 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         const detail = (body as any)?.detail
-        showToast('error', typeof detail === 'string' ? detail : '管理者金鑰無效')
+        showToast('error', typeof detail === 'string' ? detail : t('register.toast.adminKeyInvalid'))
         clearAdminApiKeyValue()
         clearAdminUnlockedInSession()
         props.onAdminUnlocked?.(false)
@@ -263,9 +318,9 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
       setAdminUnlockedInSession(true)
       setAdminKeyDraft('')
       props.onAdminUnlocked?.(true)
-      showToast('success', '管理者金鑰驗證成功：已解鎖「管理者」頁籤')
+      showToast('success', t('register.toast.adminKeyVerifySuccessUnlockTab'))
     } catch {
-      showToast('error', '管理者金鑰驗證失敗（網路或伺服器未啟動）')
+      showToast('error', t('register.toast.adminKeyVerifyFailedNetwork'))
     } finally {
       setAdminKeyLoading(false)
     }
@@ -273,6 +328,25 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
 
   return (
     <div className="register-page">
+      {whoami?.must_change_password ? (
+        <div
+          style={{
+            margin: '12px 0',
+            padding: '12px 14px',
+            borderRadius: 10,
+            border: '1px solid rgba(255, 165, 0, 0.35)',
+            background: 'rgba(255, 165, 0, 0.12)',
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>{t('register.password.mustChangeTitle', '需要變更密碼')}</div>
+          <div style={{ opacity: 0.9 }}>
+            {t(
+              'register.password.mustChangeHint',
+              '你的密碼已被重設，請先到「使用者管理」或「管理者頁」變更密碼後再使用其他功能。',
+            )}
+          </div>
+        </div>
+      ) : null}
       <section className="register-card">
         <h2 className="register-title">{t('register.title')}</h2>
 
@@ -358,7 +432,7 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
                 <div className="register-v">
                   {storedTenantId ? (
                     <>
-                      <strong title={storedTenantId}>{storedTenantLabel || '（未知）'}</strong>
+                      <strong title={storedTenantId}>{storedTenantLabel || t('common.unknown')}</strong>
                     </>
                   ) : (
                     <span className="muted">{t('register.tenantNotSaved')}</span>
@@ -388,7 +462,7 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
               <div className="register-row">
                 <div className="register-kv">
                   <div className="register-k">{t('register.tenantSelected')}</div>
-                  <div className="register-v">{storedTenantId ? <span title={storedTenantId}>{storedTenantLabel || '（未知）'}</span> : <span className="muted">{t('register.none')}</span>}</div>
+                  <div className="register-v">{storedTenantId ? <span title={storedTenantId}>{storedTenantLabel || t('common.unknown')}</span> : <span className="muted">{t('register.none')}</span>}</div>
                 </div>
                 <div className="register-actions">
                   <button className="btn-secondary" onClick={handleClearTenant}>{t('register.clearTenantId')}</button>
@@ -412,7 +486,7 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
                       {tenants.map((tenant) => (
                         <div key={tenant.id} className="register-tenant-item">
                           <div className="register-tenant-id">
-                            <code title={tenant.id}>{getTenantLabelById(tenant.id) || '（未知）'}</code>
+                            <code title={tenant.id}>{getTenantLabelById(tenant.id) || t('common.unknown')}</code>
                           </div>
                           <div className="register-tenant-meta muted">
                             name={tenant.name ?? '-'} / code={tenant.code ?? '-'}
@@ -454,6 +528,44 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void })
         )}
 
       </section>
+
+      {hasApiKey ? (
+        <section className="register-card" style={{ marginTop: 16 }}>
+          <h2 className="register-title">{t('register.password.title', '變更密碼')}</h2>
+          <div className="register-hint">{t('register.password.hint', '需要提供舊密碼；成功後會撤銷其他登入金鑰。')}</div>
+
+          <div className="register-form" style={{ marginTop: '0.75rem' }}>
+            <div className="register-row">
+              <label className="register-label" style={{ minWidth: 220, flex: 1 }}>
+                {t('register.password.old', '舊密碼')}
+                <input
+                  className="register-input"
+                  type="password"
+                  placeholder={t('register.password.oldPlaceholder', '輸入目前密碼')}
+                  value={pwOld}
+                  onChange={(e) => setPwOld(e.target.value)}
+                />
+              </label>
+              <label className="register-label" style={{ minWidth: 220, flex: 1 }}>
+                {t('register.password.new', '新密碼')}
+                <input
+                  className="register-input"
+                  type="password"
+                  placeholder={t('register.password.newPlaceholder', '至少 8 碼')}
+                  value={pwNew}
+                  onChange={(e) => setPwNew(e.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="register-actions">
+              <button className="btn-primary" disabled={pwChanging} onClick={() => void handleChangeMyPassword()}>
+                {pwChanging ? t('register.password.changing', '更新中…') : t('register.password.change', '更新密碼')}
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
     </div>
   )
 }

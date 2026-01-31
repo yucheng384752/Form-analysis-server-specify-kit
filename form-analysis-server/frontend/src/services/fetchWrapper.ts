@@ -1,6 +1,7 @@
 import { ensureTenantIdWithOptions, TENANT_STORAGE_KEY } from './tenant'
 import { getApiKeyHeaderName, getApiKeyValue } from './auth'
 import { getAdminApiKeyHeaderName } from './adminAuth'
+import i18n from '../i18n'
 
 // Global fetch wrapper: auto-inject X-Tenant-Id for all /api* requests except /api/tenants.
 // This prevents accidental cross-tenant calls and removes per-call header boilerplate.
@@ -70,7 +71,7 @@ export function installGlobalFetchWrapper(): () => void {
           return new Response(
             JSON.stringify({
               detail:
-                '尚未選擇區域（X-Tenant-Id）。請到「登入」頁籤選擇區域；若尚未初始化，先用管理者金鑰解鎖「管理者」頁籤建立區域。',
+                i18n.t('errors.noTenantSelected'),
             }),
             { status: 400, headers: { 'Content-Type': 'application/json' } },
           )

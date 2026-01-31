@@ -1,5 +1,5 @@
 # Frontend Dockerfile for React + Vite Application
-FROM node:20-alpine as base
+FROM node:20-alpine AS base
 
 # Set working directory
 WORKDIR /app
@@ -7,17 +7,17 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production --silent && npm cache clean --force
+# NOTE: Do not run `npm ci --only=production` in the base stage.
+# The dev/build stages install dependencies explicitly; the production image is nginx-only.
 
 # Development stage
-FROM base as development
+FROM base AS development
 
 # Install curl for health checks
 RUN apk add --no-cache curl
 
 # Install all dependencies (including dev)
-RUN npm ci --silent
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -37,10 +37,10 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
 # Production build stage
-FROM base as build
+FROM base AS build
 
 # Install all dependencies
-RUN npm ci --silent
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -49,7 +49,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine as production
+FROM nginx:alpine AS production
 
 # Copy custom nginx config
 COPY nginx.conf /etc/nginx/nginx.conf

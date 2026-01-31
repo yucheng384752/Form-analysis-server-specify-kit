@@ -26,7 +26,7 @@ export interface UploadedFile {
   type: FileType;
   lotNo: string;
   status: "uploaded" | "validating" | "validated" | "importing" | "imported";
-  jobBackend: "import_v2" | "upload_job" | "pdf";
+  jobBackend: "import_v2" | "pdf";
   uploadProgress: number;
   validateProgress: number;
   importProgress: number;
@@ -215,8 +215,11 @@ export function UploadPage() {
       headers: buildTenantHeaders(),
     });
     if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: '取得 PDF 轉檔狀態失敗' }));
-      const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || '取得 PDF 轉檔狀態失敗');
+      const errorData = await res.json().catch(() => ({ detail: t('upload.errors.fetchPdfConvertStatusFailed') }));
+      const message =
+        typeof errorData.detail === 'string'
+          ? errorData.detail
+          : (errorData.detail?.detail || t('upload.errors.fetchPdfConvertStatusFailed'));
       throw new Error(message);
     }
     return res.json();
@@ -227,8 +230,11 @@ export function UploadPage() {
       headers: buildTenantHeaders(),
     });
     if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: '取得 CSV 轉檔輸出失敗' }));
-      const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || '取得 CSV 轉檔輸出失敗');
+      const errorData = await res.json().catch(() => ({ detail: t('upload.errors.fetchCsvOutputsFailed') }));
+      const message =
+        typeof errorData.detail === 'string'
+          ? errorData.detail
+          : (errorData.detail?.detail || t('upload.errors.fetchCsvOutputsFailed'));
       throw new Error(message);
     }
     return res.json();
@@ -239,38 +245,11 @@ export function UploadPage() {
       headers: buildTenantHeaders(),
     });
     if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: '取得匯入狀態失敗' }));
-      const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || '取得匯入狀態失敗');
-      throw new Error(message);
-    }
-    return res.json();
-  };
-
-  const validateUploadJob = async (processId: string) => {
-    const res = await fetch(`/api/upload/${processId}/validate`, {
-      method: 'POST',
-      headers: buildTenantHeaders(),
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: '驗證失敗' }));
-      const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || '驗證失敗');
-      throw new Error(message);
-    }
-    return res.json();
-  };
-
-  const importUploadJob = async (processId: string) => {
-    const res = await fetch('/api/import', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...buildTenantHeaders(),
-      },
-      body: JSON.stringify({ process_id: processId }),
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: '匯入失敗' }));
-      const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || '匯入失敗');
+      const errorData = await res.json().catch(() => ({ detail: t('upload.errors.fetchImportStatusFailed') }));
+      const message =
+        typeof errorData.detail === 'string'
+          ? errorData.detail
+          : (errorData.detail?.detail || t('upload.errors.fetchImportStatusFailed'));
       throw new Error(message);
     }
     return res.json();
@@ -283,18 +262,18 @@ export function UploadPage() {
     Array.from(fileList).forEach((file) => {
       const lowerName = file.name.toLowerCase();
       if (!lowerName.endsWith(".csv") && !lowerName.endsWith(".pdf")) {
-        showToast("error", "僅支援 csv 或 pdf 檔案類型");
+        showToast('error', t('upload.toast.onlyCsvOrPdf'));
         return;
       }
       
       // 檢查是否重複上傳
       if (files.some(f => f.name === file.name) || newFiles.some(f => f.name === file.name)) {
-        showToast("info", `檔案 ${file.name} 已存在列表中，略過上傳`);
+        showToast('info', t('upload.toast.fileAlreadyExists', { fileName: file.name }));
         return;
       }
 
       if (file.size > MAX_SIZE_BYTES) {
-        showToast("error", "檔案大小超過 10MB 限制");
+        showToast('error', t('upload.toast.fileTooLarge', { maxSizeMb: (MAX_SIZE_BYTES / 1024 / 1024).toFixed(0) }));
         return;
       }
       const type = detectFileType(file.name);
@@ -330,7 +309,7 @@ export function UploadPage() {
 
     if (newFiles.length) {
       setFiles((prev) => [...prev, ...newFiles]);
-      showToast("success", `已加入 ${newFiles.length} 個檔案`);
+      showToast('success', t('upload.toast.filesAdded', { count: newFiles.length }));
     }
   };
 
@@ -358,53 +337,7 @@ export function UploadPage() {
 
   const handleValidate = async (fileId: string, options?: { silentToast?: boolean }): Promise<ValidateOutcome> => {
     const target = filesRef.current.find((f) => f.id === fileId);
-    if (!target) return { outcome: 'failed', message: '找不到檔案' };
-
-    // Legacy upload_job validation path (used by PDF→CSV ingest)
-    if (target.type !== 'PDF' && target.jobBackend === 'upload_job') {
-      if (!target.processId) return { outcome: 'failed', message: '缺少 process_id' };
-
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.id === fileId ? { ...f, status: 'validating', validateProgress: 10 } : f
-        )
-      );
-
-      try {
-        const result = await validateUploadJob(target.processId);
-        const sampleErrors = result.sample_errors || [];
-
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === fileId
-              ? {
-                  ...f,
-                  status: 'validated',
-                  validateProgress: 100,
-                  isValidated: true,
-                  validationErrors: sampleErrors,
-                  hasUnsavedChanges: false,
-                }
-              : f
-          )
-        );
-
-        if (!options?.silentToast) {
-          if (Array.isArray(sampleErrors) && sampleErrors.length > 0) {
-            showToast('error', `${target.name} 驗證完成：有錯誤，請修正後再匯入`);
-            return { outcome: 'errors', totalRows: Number(result.total_rows || 0), errorCount: Number(result.invalid_rows || sampleErrors.length || 0) };
-          }
-          showToast('success', `${target.name} 驗證通過`);
-        }
-
-        return { outcome: 'passed', totalRows: Number(result.total_rows || 0) };
-      } catch (e: any) {
-        const msg = e?.message || '驗證失敗';
-        setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, status: 'uploaded', validateProgress: 0 } : f)));
-        if (!options?.silentToast) showToast('error', msg);
-        return { outcome: 'failed', message: msg };
-      }
-    }
+    if (!target) return { outcome: 'failed', message: t('upload.errors.fileNotFound') };
 
     if (target.type === 'PDF') {
       setFiles((prev) =>
@@ -424,8 +357,8 @@ export function UploadPage() {
         });
 
         if (!res.ok) {
-          const errorData = await res.json().catch(() => ({ detail: 'PDF 上傳失敗' }));
-          const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || 'PDF 上傳失敗');
+          const errorData = await res.json().catch(() => ({ detail: t('upload.errors.pdfUploadFailed') }));
+          const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || t('upload.errors.pdfUploadFailed'));
           throw new Error(message);
         }
 
@@ -452,21 +385,21 @@ export function UploadPage() {
           )
         );
 
-        if (!options?.silentToast) showToast('success', 'PDF 已上傳（可開始 PDF→CSV 轉檔）');
+        if (!options?.silentToast) showToast('success', t('upload.toast.pdfUploadedReadyToConvert'));
         return { outcome: 'passed', totalRows: 0 };
       } catch (e: any) {
         setFiles((prev) =>
           prev.map((f) => (f.id === fileId ? { ...f, status: 'uploaded', validateProgress: 0 } : f))
         );
-        const msg = e?.message || 'PDF 上傳失敗';
+        const msg = e?.message || t('upload.errors.pdfUploadFailed');
         if (!options?.silentToast) showToast('error', msg);
         return { outcome: 'failed', message: msg };
       }
     }
 
     if (!EDIT_ENABLED && target.hasUnsavedChanges) {
-      if (!options?.silentToast) showToast("info", "此版本不提供編輯，請修正 CSV 後重新上傳");
-      return { outcome: 'failed', message: '此版本不提供編輯，請修正 CSV 後重新上傳' };
+      if (!options?.silentToast) showToast("info", t('upload.editDisabledNotice'));
+      return { outcome: 'failed', message: t('upload.editDisabledNotice') };
     }
     
     // 允許重複驗證，特別是有錯誤的檔案
@@ -510,8 +443,8 @@ export function UploadPage() {
       });
 
       if (!createJobResponse.ok) {
-        const errorData = await createJobResponse.json().catch(() => ({ detail: '上傳失敗' }));
-        const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || '檔案上傳失敗');
+        const errorData = await createJobResponse.json().catch(() => ({ detail: t('upload.errors.uploadFailed') }));
+        const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || t('upload.errors.uploadFailed'));
         throw new Error(message);
       }
 
@@ -575,11 +508,11 @@ export function UploadPage() {
       }
 
       if (!lastJob || (lastJob.status !== 'READY' && lastJob.status !== 'FAILED')) {
-        throw new Error('驗證逾時，請稍後再試或重新驗證');
+        throw new Error(t('upload.errors.validationTimeout'));
       }
 
       if (lastJob.status === 'FAILED') {
-        const message = lastJob.error_summary?.error || '驗證失敗';
+        const message = lastJob.error_summary?.error || t('upload.errors.validateFailed');
         setFiles((prev) =>
           prev.map((f) =>
             f.id === fileId
@@ -592,7 +525,7 @@ export function UploadPage() {
               : f
           )
         );
-        if (!options?.silentToast) showToast('error', `${target.name} 驗證失敗：${message}`);
+        if (!options?.silentToast) showToast('error', t('upload.toast.validationFailedWithMessage', { fileName: target.name, message }));
         return { outcome: 'failed', message };
       }
 
@@ -636,10 +569,7 @@ export function UploadPage() {
         );
 
         if (!options?.silentToast) {
-          showToast(
-            'error',
-            `${target.name} 驗證完成：共 ${totalRows} 行，無效 ${errorCount} 行。此版本不提供編輯，請修正 CSV 後重新上傳。`
-          );
+          showToast('error', t('upload.toast.validationDoneWithInvalidRowsNoEdit', { fileName: target.name, totalRows, errorCount }));
         }
 
         return { outcome: 'errors', totalRows, errorCount };
@@ -659,14 +589,14 @@ export function UploadPage() {
           )
         );
 
-        if (!options?.silentToast) showToast('success', `${target.name} 驗證通過：共 ${totalRows} 行全部有效`);
+        if (!options?.silentToast) showToast('success', t('upload.toast.validationPassedAllRows', { fileName: target.name, totalRows }));
 
         return { outcome: 'passed', totalRows };
       }
       
     } catch (err) {
-      console.error('驗證錯誤:', err);
-      const errorMessage = err instanceof Error ? err.message : '驗證過程發生錯誤';
+      console.error('Validation error:', err);
+      const errorMessage = err instanceof Error ? err.message : t('upload.errors.validationProcessError');
       if (!options?.silentToast) showToast("error", errorMessage);
       
       setFiles((prev) =>
@@ -685,12 +615,12 @@ export function UploadPage() {
     const currentFiles = filesRef.current;
     const targets = currentFiles.filter(fileEligibleForValidate);
     if (targets.length === 0) {
-      showToast('info', '沒有需要驗證的檔案');
+      showToast('info', t('upload.batchValidate.toast.noEligible'));
       return;
     }
 
     setIsValidatingAll(true);
-    showToast('info', `開始一鍵驗證：共 ${targets.length} 個檔案`, { key: 'validateAll', durationMs: null });
+    showToast('info', t('upload.batchValidate.toast.start', { count: targets.length }), { key: 'validateAll', durationMs: null });
 
     let okCount = 0;
     let errorCount = 0;
@@ -698,7 +628,7 @@ export function UploadPage() {
 
     for (let i = 0; i < targets.length; i++) {
       const f = targets[i];
-      showToast('info', `一鍵驗證中：${i + 1}/${targets.length}（${f.name}）`, { key: 'validateAll', durationMs: null });
+      showToast('info', t('upload.batchValidate.toast.progress', { current: i + 1, total: targets.length, fileName: f.name }), { key: 'validateAll', durationMs: null });
       const result = await handleValidate(f.id, { silentToast: true });
       if (result.outcome === 'passed') okCount += 1;
       else if (result.outcome === 'errors') errorCount += 1;
@@ -707,11 +637,11 @@ export function UploadPage() {
 
     setIsValidatingAll(false);
     if (failCount > 0) {
-      showToast('error', `一鍵驗證完成：通過 ${okCount}、有錯誤 ${errorCount}、失敗 ${failCount}`, { key: 'validateAll', durationMs: 2500 });
+      showToast('error', t('upload.batchValidate.toast.doneWithFailures', { ok: okCount, errors: errorCount, failed: failCount }), { key: 'validateAll', durationMs: 2500 });
     } else if (errorCount > 0) {
-      showToast('error', `一鍵驗證完成：通過 ${okCount}、有錯誤 ${errorCount}`, { key: 'validateAll', durationMs: 2500 });
+      showToast('error', t('upload.batchValidate.toast.doneWithErrors', { ok: okCount, errors: errorCount }), { key: 'validateAll', durationMs: 2500 });
     } else {
-      showToast('success', `一鍵驗證完成：全部通過（${okCount}）`, { key: 'validateAll', durationMs: 2500 });
+      showToast('success', t('upload.batchValidate.toast.doneAllPassed', { ok: okCount }), { key: 'validateAll', durationMs: 2500 });
     }
   };
 
@@ -720,7 +650,7 @@ export function UploadPage() {
     if (!target) return;
     if (target.type !== 'PDF') return;
     if (!target.processId) {
-      showToast('error', '找不到 process_id，請先上傳 PDF');
+      showToast('error', t('upload.toast.missingProcessIdUploadPdf'));
       return;
     }
 
@@ -743,8 +673,11 @@ export function UploadPage() {
         headers: buildTenantHeaders(),
       });
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ detail: '觸發 PDF 轉檔失敗' }));
-        const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || '觸發 PDF 轉檔失敗');
+        const errorData = await res.json().catch(() => ({ detail: t('upload.errors.triggerPdfConvertFailed') }));
+        const message =
+          typeof errorData.detail === 'string'
+            ? errorData.detail
+            : (errorData.detail?.detail || t('upload.errors.triggerPdfConvertFailed'));
         throw new Error(message);
       }
 
@@ -787,7 +720,8 @@ export function UploadPage() {
                       ? 'queued'
                       : 'not_started',
                   pdfConvertProgress: progress,
-                  pdfConvertError: status === 'FAILED' ? (errorText || 'PDF 轉檔失敗') : undefined,
+                  pdfConvertError:
+                    status === 'FAILED' ? (errorText || t('upload.toast.pdfConvertFailed')) : undefined,
                 }
               : f
           )
@@ -795,7 +729,7 @@ export function UploadPage() {
 
         if (status === 'COMPLETED') {
           try {
-            showToast('info', 'PDF 轉檔完成，正在取得 CSV 轉檔輸出…', { key: `pdfIngest:${target.processId}`, durationMs: null });
+            showToast('info', t('upload.toast.pdfConvertFetchingCsv'), { key: `pdfIngest:${target.processId}`, durationMs: null });
             const outputsResp = await fetchPdfConvertedCsvOutputs(target.processId);
             const outputs = Array.isArray(outputsResp) ? outputsResp : (outputsResp?.outputs || []);
 
@@ -846,24 +780,32 @@ export function UploadPage() {
                 const withoutPdf = prev.filter((f) => f.id !== fileId);
                 return [...withoutPdf, ...newCsvFiles];
               });
-              showToast('success', `PDF 轉檔完成，已取得 ${newCsvFiles.length} 份 CSV（請先檢視/修正，再點驗證）`, { key: `pdfIngest:${target.processId}`, durationMs: 2500 });
+              showToast(
+                'success',
+                t('upload.toast.pdfConvertGotCsv', { count: newCsvFiles.length }),
+                { key: `pdfIngest:${target.processId}`, durationMs: 2500 }
+              );
             } else {
-              showToast('info', 'PDF 轉檔完成，但沒有產生可用的 CSV', { key: `pdfIngest:${target.processId}`, durationMs: 2500 });
+              showToast('info', t('upload.toast.pdfConvertNoCsv'), { key: `pdfIngest:${target.processId}`, durationMs: 2500 });
             }
           } catch (e: any) {
-            showToast('error', e?.message || 'PDF 轉檔完成但建立 CSV 驗證工作失敗', { key: `pdfIngest:${target.processId}`, durationMs: 3000 });
+            showToast(
+              'error',
+              e?.message || t('upload.toast.pdfConvertCreateCsvJobFailed'),
+              { key: `pdfIngest:${target.processId}`, durationMs: 3000 }
+            );
           }
           return;
         }
         if (status === 'FAILED') {
-          showToast('error', errorText || 'PDF 轉檔失敗');
+          showToast('error', errorText || t('upload.toast.pdfConvertFailed'));
           return;
         }
 
         await new Promise((r) => setTimeout(r, 1000));
       }
 
-      showToast('info', 'PDF 轉檔仍在處理中，可稍後再查看狀態');
+      showToast('info', t('upload.toast.pdfConvertStillProcessing'));
     } catch (e: any) {
       setFiles((prev) =>
         prev.map((f) =>
@@ -872,12 +814,12 @@ export function UploadPage() {
                 ...f,
                 pdfConvertStatus: 'failed',
                 pdfConvertProgress: 100,
-                pdfConvertError: e?.message || 'PDF 轉檔失敗',
+                pdfConvertError: e?.message || t('upload.toast.pdfConvertFailed'),
               }
             : f
         )
       );
-      showToast('error', e?.message || 'PDF 轉檔失敗');
+      showToast('error', e?.message || t('upload.toast.pdfConvertFailed'));
     }
   };
 
@@ -916,93 +858,42 @@ export function UploadPage() {
 
   const handleSaveChanges = async (fileId: string) => {
     if (!EDIT_ENABLED) {
-      showToast("info", "此版本上傳流程不提供編輯，請修正 CSV 後重新上傳");
+      showToast("info", t('upload.editDisabledNotice'));
       return;
     }
     const target = files.find((f) => f.id === fileId);
     if (!target || !target.csvData || !target.hasUnsavedChanges) return;
 
+    if (target.jobBackend !== 'import_v2') {
+      showToast('error', t('upload.errors.saveError'));
+      return;
+    }
+
     // v2：目前沒有「更新既有 job 檔案內容」的後端 API。
     // 這裡把修改套用到前端 File（作為下一次驗證上傳的來源），並重置 jobId。
-    if (target.jobBackend === 'import_v2') {
-      const csv_text = buildCsvText(target.csvData);
-      const updatedFile = new File([csv_text], target.name, { type: 'text/csv' });
+    const csv_text = buildCsvText(target.csvData);
+    const updatedFile = new File([csv_text], target.name, { type: 'text/csv' });
 
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.id === fileId
-            ? {
-                ...f,
-                file: updatedFile,
-                size: updatedFile.size,
-                hasUnsavedChanges: false,
-                status: 'uploaded',
-                validateProgress: 0,
-                importProgress: 0,
-                processId: undefined,
-                isValidated: false,
-                validationErrors: undefined,
-              }
-            : f
-        )
-      );
+    setFiles((prev) =>
+      prev.map((f) =>
+        f.id === fileId
+          ? {
+              ...f,
+              file: updatedFile,
+              size: updatedFile.size,
+              hasUnsavedChanges: false,
+              status: 'uploaded',
+              validateProgress: 0,
+              importProgress: 0,
+              processId: undefined,
+              isValidated: false,
+              validationErrors: undefined,
+            }
+          : f
+      )
+    );
 
-      showToast('success', '修改已套用（尚未上傳），請重新驗證');
-      return;
-    }
-
-    if (!target.processId) {
-      showToast("error", "缺少 process_id，請先驗證檔案後再儲存修改");
-      return;
-    }
-
-    try {
-      const csv_text = buildCsvText(target.csvData);
-
-      const res = await fetch(`/api/upload/${target.processId}/content`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...buildTenantHeaders(),
-        },
-        body: JSON.stringify({ csv_text }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ detail: '儲存失敗' }));
-        const errorMessage = typeof errorData.detail === 'string'
-          ? errorData.detail
-          : errorData.detail?.detail || '儲存失敗';
-        throw new Error(errorMessage);
-      }
-
-      const result = await res.json();
-      
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.id === fileId
-            ? {
-                ...f,
-                hasUnsavedChanges: false,
-                isValidated: true,
-                status: "validated",
-                // 後端只回 sample_errors（前10筆），但足夠用來決定是否可匯入
-                validationErrors: result.sample_errors || [],
-              }
-            : f
-        )
-      );
-
-      if (result.invalid_rows && result.invalid_rows > 0) {
-        showToast("info", `修改已儲存，但仍有 ${result.invalid_rows} 行無效，請繼續修正`);
-      } else {
-        showToast("success", "修改已儲存，且驗證通過");
-      }
-    } catch (err) {
-      console.error('儲存錯誤:', err);
-      const errorMessage = err instanceof Error ? err.message : '儲存修改時發生錯誤';
-      showToast("error", errorMessage);
-    }
+    showToast('success', t('upload.toast.changesAppliedRevalidate'));
   };
 
   const handleToggleExpand = (fileId: string) => {
@@ -1031,11 +922,11 @@ export function UploadPage() {
       const unvalidatedFiles = files.filter(f => f.status === "uploaded");
       
       if (filesWithErrors.length > 0) {
-        showToast("error", `有 ${filesWithErrors.length} 個檔案包含驗證錯誤，請修正後再匯入`);
+        showToast("error", t('upload.batchImport.title.hasErrors', { count: filesWithErrors.length }));
       } else if (unvalidatedFiles.length > 0) {
-        showToast("error", `有 ${unvalidatedFiles.length} 個檔案尚未驗證，請先驗證檔案`);
+        showToast("error", t('upload.batchImport.title.notValidated', { count: unvalidatedFiles.length }));
       } else {
-        showToast("error", "沒有已驗證的檔案可供匯入");
+        showToast("error", t('upload.batchImport.title.noValidated'));
       }
       return;
     }
@@ -1067,11 +958,11 @@ export function UploadPage() {
     
     if (validatedFiles.length === 0) {
       if (filesWithErrors.length > 0) {
-        showToast("error", `有 ${filesWithErrors.length} 個檔案包含驗證錯誤，請修正後再匯入`);
+        showToast("error", t('upload.batchImport.title.hasErrors', { count: filesWithErrors.length }));
       } else if (unvalidatedFiles.length > 0) {
-        showToast("error", `有 ${unvalidatedFiles.length} 個檔案尚未驗證，請先驗證檔案`);
+        showToast("error", t('upload.batchImport.title.notValidated', { count: unvalidatedFiles.length }));
       } else {
-        showToast("error", "沒有已驗證的檔案可供匯入");
+        showToast("error", t('upload.batchImport.title.noValidated'));
       }
       return;
     }
@@ -1080,12 +971,14 @@ export function UploadPage() {
     const isSingleFile = totalFiles === 1;
     
     if (!isSingleFile && filesWithErrors.length > 0) {
-      showToast("info", `多檔上傳：已跳過 ${filesWithErrors.length} 個有錯誤的檔案，只匯入 ${validatedFiles.length} 個有效檔案`);
+      showToast("info", t('upload.batchImport.info.multiUploadSkipErrors', { errorCount: filesWithErrors.length, validCount: validatedFiles.length }));
     }
 
     showToast(
       "info",
-      isSingleFile ? "開始匯入檔案..." : `開始批次匯入 ${validatedFiles.length} 個檔案...`,
+      isSingleFile
+        ? t('upload.batchImport.toast.startSingle')
+        : t('upload.batchImport.toast.startBatch', { count: validatedFiles.length }),
       { key: 'import', durationMs: null }
     );
 
@@ -1102,7 +995,7 @@ export function UploadPage() {
       let totalImported = 0;
       
       for (const [index, file] of validatedFiles.entries()) {
-        showToast('info', `匯入中：${index + 1}/${validatedFiles.length}（${file.name}）`, { key: 'import', durationMs: null });
+        showToast('info', t('upload.batchImport.toast.progress', { current: index + 1, total: validatedFiles.length, fileName: file.name }), { key: 'import', durationMs: null });
         const progress = Math.round((index / validatedFiles.length) * 80) + 10;
         
         setFiles(prev => 
@@ -1114,40 +1007,34 @@ export function UploadPage() {
         );
 
         const jobId = file.processId as string;
-        if (file.jobBackend === 'upload_job') {
-          const imported = await importUploadJob(jobId);
-          totalImported += Number(imported?.total_rows || 0);
-          setFiles(prev => prev.map(f => f.id === file.id ? { ...f, importProgress: 100 } : f));
-        } else {
-          const commitResponse = await fetch(`/api/v2/import/jobs/${jobId}/commit`, {
-            method: 'POST',
-            headers: buildTenantHeaders(),
-          });
+        const commitResponse = await fetch(`/api/v2/import/jobs/${jobId}/commit`, {
+          method: 'POST',
+          headers: buildTenantHeaders(),
+        });
 
-          if (!commitResponse.ok) {
-            const errorData = await commitResponse.json().catch(() => ({ detail: '匯入失敗' }));
-            const errorMessage = typeof errorData.detail === 'string'
-              ? errorData.detail
-              : errorData.detail?.detail || '匯入失敗';
-            throw new Error(`檔案 ${file.name} 匯入失敗: ${errorMessage}`);
-          }
-
-          // 輪詢到 COMPLETED / FAILED
-          let committedJob = await commitResponse.json();
-          for (let i = 0; i < 300; i++) {
-            await sleep(1000);
-            committedJob = await fetchImportJob(jobId);
-            setFiles(prev => prev.map(f => f.id === file.id ? { ...f, importProgress: toImportProgress(committedJob.status) } : f));
-            if (committedJob.status === 'COMPLETED' || committedJob.status === 'FAILED') break;
-          }
-
-          if (committedJob.status !== 'COMPLETED') {
-            const message = committedJob.error_summary?.error || '匯入失敗';
-            throw new Error(`檔案 ${file.name} 匯入失敗: ${message}`);
-          }
-
-          totalImported += Number(committedJob.total_rows || 0);
+        if (!commitResponse.ok) {
+          const errorData = await commitResponse.json().catch(() => ({ detail: t('upload.errors.importFailed') }));
+          const errorMessage = typeof errorData.detail === 'string'
+            ? errorData.detail
+            : errorData.detail?.detail || t('upload.errors.importFailed');
+          throw new Error(t('upload.batchImport.error.fileImportFailed', { fileName: file.name, errorMessage }));
         }
+
+        // 輪詢到 COMPLETED / FAILED
+        let committedJob = await commitResponse.json();
+        for (let i = 0; i < 300; i++) {
+          await sleep(1000);
+          committedJob = await fetchImportJob(jobId);
+          setFiles(prev => prev.map(f => f.id === file.id ? { ...f, importProgress: toImportProgress(committedJob.status) } : f));
+          if (committedJob.status === 'COMPLETED' || committedJob.status === 'FAILED') break;
+        }
+
+        if (committedJob.status !== 'COMPLETED') {
+          const message = committedJob.error_summary?.error || t('upload.errors.importFailed');
+          throw new Error(t('upload.batchImport.error.fileImportFailed', { fileName: file.name, errorMessage: message }));
+        }
+
+        totalImported += Number(committedJob.total_rows || 0);
 
         setFiles(prev => 
           prev.map(f => 
@@ -1160,7 +1047,9 @@ export function UploadPage() {
       
       showToast(
         "success",
-        `${isSingleFile ? '檔案' : '批次'}匯入完成！共匯入 ${validatedFiles.length} 個檔案，總計 ${totalImported} 筆資料`,
+        isSingleFile
+          ? t('upload.batchImport.toast.completedSingle', { fileCount: validatedFiles.length, rowCount: totalImported })
+          : t('upload.batchImport.toast.completedBatch', { fileCount: validatedFiles.length, rowCount: totalImported }),
         { key: 'import', durationMs: 2500 }
       );
       
@@ -1176,26 +1065,15 @@ export function UploadPage() {
         setFiles(remainingFiles);
         
         if (remainingFiles.length > 0) {
-          const errorCount = remainingFiles.filter(f => 
-            f.validationErrors && f.validationErrors.length > 0
-          ).length;
-          const unvalidatedCount = remainingFiles.filter(f => f.status === "uploaded").length;
-          
-          let message = `已匯入檔案已移除，剩餘 ${remainingFiles.length} 個檔案：`;
-          if (errorCount > 0) message += ` ${errorCount} 個需修正錯誤`;
-          if (unvalidatedCount > 0) {
-            if (errorCount > 0) message += "，";
-            message += ` ${unvalidatedCount} 個待驗證`;
-          }
-          showToast("info", message);
+          showToast("info", t('upload.batchImport.toast.remainingFiles', { count: remainingFiles.length }));
         } else {
-          showToast("info", "所有檔案處理完成，可以繼續上傳新檔案");
+          showToast("info", t('upload.batchImport.toast.allDone'));
         }
       }, 2000);
       
     } catch (err) {
-      console.error('批次匯入錯誤:', err);
-      const errorMessage = err instanceof Error ? err.message : '批次匯入時發生錯誤';
+      console.error('Batch import error:', err);
+      const errorMessage = err instanceof Error ? err.message : t('upload.batchImport.error.generic');
       showToast("error", errorMessage, { key: 'import', durationMs: 4000 });
       
       // 重置匯入狀態
@@ -1216,11 +1094,11 @@ export function UploadPage() {
 
     const target = files.find((f) => f.id === id);
     if (!target || !target.processId) {
-      showToast("error", "找不到檔案或缺少 job_id");
+      showToast('error', t('upload.toast.missingFileOrJobId'));
       return;
     }
 
-    showToast("info", `開始匯入：${target.name}`, { key: 'import', durationMs: null });
+    showToast('info', t('upload.toast.importStarting', { fileName: target.name }), { key: 'import', durationMs: null });
 
     setFiles((prev) =>
       prev.map((f) =>
@@ -1232,14 +1110,10 @@ export function UploadPage() {
 
     try {
       const jobId = target.processId as string;
-      if (target.jobBackend === 'upload_job') {
-        await importUploadJob(jobId);
-        setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, importProgress: 100 } : f)));
-      } else {
-        const commitResponse = await fetch(`/api/v2/import/jobs/${jobId}/commit`, {
-          method: 'POST',
-          headers: buildTenantHeaders(),
-        });
+      const commitResponse = await fetch(`/api/v2/import/jobs/${jobId}/commit`, {
+        method: 'POST',
+        headers: buildTenantHeaders(),
+      });
 
         setFiles((prev) =>
           prev.map((f) =>
@@ -1247,29 +1121,28 @@ export function UploadPage() {
           )
         );
 
-        if (!commitResponse.ok) {
-          const errorData = await commitResponse.json().catch(() => ({ detail: '匯入失敗' }));
-          const errorMessage = typeof errorData.detail === 'string' 
-            ? errorData.detail 
-            : errorData.detail?.detail || '資料匯入失敗';
-          throw new Error(errorMessage);
-        }
+      if (!commitResponse.ok) {
+        const errorData = await commitResponse.json().catch(() => ({ detail: t('upload.errors.importFailed') }));
+        const errorMessage = typeof errorData.detail === 'string' 
+          ? errorData.detail 
+          : errorData.detail?.detail || t('upload.errors.importFailed');
+        throw new Error(errorMessage);
+      }
 
-        // 輪詢到 COMPLETED / FAILED
-        let committedJob = await commitResponse.json();
-        for (let i = 0; i < 300; i++) {
-          await sleep(1000);
-          committedJob = await fetchImportJob(jobId);
-          setFiles((prev) =>
-            prev.map((f) => (f.id === id ? { ...f, importProgress: toImportProgress(committedJob.status) } : f))
-          );
-          if (committedJob.status === 'COMPLETED' || committedJob.status === 'FAILED') break;
-        }
+      // 輪詢到 COMPLETED / FAILED
+      let committedJob = await commitResponse.json();
+      for (let i = 0; i < 300; i++) {
+        await sleep(1000);
+        committedJob = await fetchImportJob(jobId);
+        setFiles((prev) =>
+          prev.map((f) => (f.id === id ? { ...f, importProgress: toImportProgress(committedJob.status) } : f))
+        );
+        if (committedJob.status === 'COMPLETED' || committedJob.status === 'FAILED') break;
+      }
 
-        if (committedJob.status !== 'COMPLETED') {
-          const message = committedJob.error_summary?.error || '資料匯入失敗';
-          throw new Error(message);
-        }
+      if (committedJob.status !== 'COMPLETED') {
+        const message = committedJob.error_summary?.error || t('upload.errors.importFailed');
+        throw new Error(message);
       }
 
       setFiles((prev) =>
@@ -1280,7 +1153,7 @@ export function UploadPage() {
         )
       );
 
-      showToast("success", `${target.name} 匯入完成`, { key: 'import', durationMs: 2500 });
+      showToast('success', t('upload.toast.importCompleted', { fileName: target.name }), { key: 'import', durationMs: 2500 });
       
       // 延遲後根據檔案數量決定行為
       setTimeout(() => {
@@ -1290,19 +1163,19 @@ export function UploadPage() {
         
         // 如果原本只有一個檔案，重置整個頁面
         if (currentFiles.length === 1) {
-          showToast("info", "頁面已重置，可以繼續上傳新檔案");
+          showToast('info', t('upload.toast.pageResetContinueUpload'));
           setFiles([]);
         } 
         // 如果有多個檔案，只移除已匯入的檔案
         else {
-          showToast("info", `已移除匯入檔案，剩餘 ${remainingFiles.length} 個檔案`);
+          showToast('info', t('upload.batchImport.toast.remainingFiles', { count: remainingFiles.length }));
           setFiles(remainingFiles);
         }
       }, 2000);
       
     } catch (err) {
-      console.error('匯入錯誤:', err);
-      const errorMessage = err instanceof Error ? err.message : '匯入時發生錯誤';
+      console.error('Import error:', err);
+      const errorMessage = err instanceof Error ? err.message : t('upload.errors.importError');
       showToast("error", errorMessage, { key: 'import', durationMs: 4000 });
       
       setFiles((prev) =>
@@ -1336,7 +1209,7 @@ export function UploadPage() {
             color: '#92400e',
             fontSize: '14px'
           }}>
-            此版本上傳流程不提供編輯；如需修正請修改 CSV 後重新上傳。
+            {t('upload.editDisabledNotice')}
           </div>
         )}
         <div className="section-header">
@@ -1350,10 +1223,10 @@ export function UploadPage() {
 
                 let title = '';
                 if (disabled) {
-                  if (eligibleCount === 0) title = '沒有需要驗證的檔案';
-                  else title = '目前有檔案在驗證/匯入中';
+                  if (eligibleCount === 0) title = t('upload.batchValidate.title.noEligible');
+                  else title = t('upload.batchValidate.title.busy');
                 } else {
-                  title = `一鍵驗證 ${eligibleCount} 個檔案`;
+                  title = t('upload.batchValidate.title.ready', { count: eligibleCount });
                 }
 
                 return (
@@ -1364,7 +1237,9 @@ export function UploadPage() {
                     title={title}
                     style={{ marginRight: '10px' }}
                   >
-                    {isValidatingAll ? '一鍵驗證中...' : `一鍵驗證 (${eligibleCount})`}
+                    {isValidatingAll
+                      ? t('upload.batchValidate.buttonLabelBusy')
+                      : t('upload.batchValidate.buttonLabel', { count: eligibleCount })}
                   </button>
                 );
               })()}
@@ -1374,19 +1249,19 @@ export function UploadPage() {
                 const filesWithErrors = validatedFiles.filter(f => f.validationErrors && f.validationErrors.length > 0);
                 const isDisabled = validFilesWithoutErrors.length === 0;
                 
-                let buttonText = `批次匯入全部 (${validFilesWithoutErrors.length})`;
+                let buttonText = t('upload.batchImport.buttonLabel', { count: validFilesWithoutErrors.length });
                 let buttonTitle = "";
                 
                 if (isDisabled) {
                   if (filesWithErrors.length > 0) {
-                    buttonTitle = `有 ${filesWithErrors.length} 個檔案包含驗證錯誤，請修正後再匯入`;
+                    buttonTitle = t('upload.batchImport.title.hasErrors', { count: filesWithErrors.length });
                   } else {
-                    buttonTitle = "沒有已驗證的檔案可供匯入";
+                    buttonTitle = t('upload.batchImport.title.noValidated');
                   }
                 } else {
-                  buttonTitle = `批次匯入 ${validFilesWithoutErrors.length} 個有效檔案`;
+                  buttonTitle = t('upload.batchImport.title.ready', { validCount: validFilesWithoutErrors.length });
                   if (filesWithErrors.length > 0) {
-                    buttonTitle += `（將跳過 ${filesWithErrors.length} 個有錯誤的檔案）`;
+                    buttonTitle += ` ${t('upload.batchImport.title.skipErrorsSuffix', { errorCount: filesWithErrors.length })}`;
                   }
                 }
                 
@@ -1400,7 +1275,7 @@ export function UploadPage() {
                     {buttonText}
                     {filesWithErrors.length > 0 && (
                       <span style={{ color: '#f59e0b', marginLeft: '8px' }}>
-                         {filesWithErrors.length} 個錯誤
+                         {t('upload.batchImport.errorBadge', { count: filesWithErrors.length })}
                       </span>
                     )}
                   </button>
@@ -1441,20 +1316,20 @@ export function UploadPage() {
 
       <Modal
         open={confirmTargetId !== null}
-        title=" 是否確認上傳"
+        title={t('upload.importConfirm.title')}
         onClose={() => setConfirmTargetId(null)}
         onConfirm={performImport}
-        confirmText="確認匯入"
+        confirmText={t('upload.importConfirm.confirmText')}
       >
-        <p>匯入資料庫中後，資料將無法直接還原，請再次確認內容是否正確。</p>
+        <p>{t('upload.importConfirm.body')}</p>
       </Modal>
 
       <Modal
         open={showBatchImportConfirm}
-        title=" 是否確認批次匯入"
+        title={t('upload.batchImport.confirm.title')}
         onClose={() => setShowBatchImportConfirm(false)}
         onConfirm={performBatchImport}
-        confirmText="確認批次匯入"
+        confirmText={t('upload.batchImport.confirm.confirmText')}
       >
         {(() => {
           const validFilesWithoutErrors = files.filter(f => 
@@ -1471,10 +1346,10 @@ export function UploadPage() {
           return (
             <div>
               <p style={{ marginBottom: '12px' }}>
-                即將批次匯入 <strong style={{ color: '#059669' }}>{validFilesWithoutErrors.length}</strong> 個已驗證的檔案到資料庫。
+                {t('upload.batchImport.confirm.summary', { count: validFilesWithoutErrors.length })}
               </p>
               <p style={{ marginBottom: '12px', color: '#dc2626', fontWeight: 'bold' }}>
-                匯入後資料將無法直接還原，請再次確認所有檔案內容是否正確。
+                {t('upload.batchImport.confirm.warning')}
               </p>
               {filesWithErrors.length > 0 && (
                 <p style={{ 
@@ -1485,12 +1360,12 @@ export function UploadPage() {
                   color: '#7f1d1d',
                   fontSize: '14px'
                 }}>
-                   注意：有 {filesWithErrors.length} 個檔案因包含錯誤將被跳過
+                   {t('upload.batchImport.confirm.skipNotice', { count: filesWithErrors.length })}
                 </p>
               )}
               {validFilesWithoutErrors.length > 0 && (
                 <div style={{ marginTop: '12px' }}>
-                  <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>待匯入檔案：</p>
+                  <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>{t('upload.batchImport.confirm.pendingListTitle')}</p>
                   <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px' }}>
                     {validFilesWithoutErrors.map(f => (
                       <li key={f.id} style={{ marginBottom: '4px' }}>
@@ -1639,7 +1514,7 @@ function UploadedFileCard({
                   cursor: 'pointer',
                   textDecoration: 'underline'
                 }}
-                title={`發現 ${file.validationErrors.length} 個驗證錯誤，點擊展開查看詳情`}
+                title={t('upload.tooltips.validationErrorsExpand', { count: file.validationErrors.length })}
                 onClick={() => {
                   if (!file.expanded) {
                     onToggleExpand();
@@ -1653,7 +1528,7 @@ function UploadedFileCard({
                   }, 100);
                 }}
               >
-                 {file.validationErrors.length} 個錯誤
+                 {t('upload.validationErrors.count', { count: file.validationErrors.length })}
               </span>
             )}
             {file.isValidated && !hasValidationErrors && (
@@ -1673,11 +1548,11 @@ function UploadedFileCard({
           </div>
           <div className="uploaded-card__meta">
             <span>{(file.size / 1024).toFixed(1)} KB</span>
-            {file.lotNo && <span>Lot No: {file.lotNo}</span>}
+            {file.lotNo && <span>{t('upload.lotNoLabel')}: {file.lotNo}</span>}
           </div>
         </div>
         <div className="uploaded-card__actions">
-          <button className="icon-button" onClick={onRemove} title="移除">
+          <button className="icon-button" onClick={onRemove} title={t('upload.actions.remove')}>
             ✕
           </button>
         </div>
@@ -1699,14 +1574,14 @@ function UploadedFileCard({
         </div>
 
         {file.status === "validating" && (
-          <ProgressBar value={file.validateProgress} label="驗證進度" />
+          <ProgressBar value={file.validateProgress} label={t('upload.progress.validation')} />
         )}
         {file.status === "importing" && (
-          <ProgressBar value={file.importProgress} label="匯入進度" />
+          <ProgressBar value={file.importProgress} label={t('upload.progress.import')} />
         )}
 
         {isPdf && file.isValidated && (file.pdfConvertStatus === 'queued' || file.pdfConvertStatus === 'uploading' || file.pdfConvertStatus === 'processing') && (
-          <ProgressBar value={file.pdfConvertProgress ?? 0} label="PDF→CSV 轉檔進度" />
+          <ProgressBar value={file.pdfConvertProgress ?? 0} label={t('upload.progress.pdfConvert')} />
         )}
 
         <div className="uploaded-card__buttons">
@@ -1718,16 +1593,16 @@ function UploadedFileCard({
             disabled={disabledValidate}
             title={
               file.status === "validating" 
-                ? "驗證中..." 
+                ? t('upload.tooltips.validating')
                 : file.status === "importing"
-                ? "匯入中..."
+                ? t('upload.tooltips.importing')
                 : isPdf
-                ? "上傳 PDF（僅保存，不轉檔/不匯入）"
+                ? t('upload.tooltips.pdfUploadOnly')
                 : hasValidationErrors
-                ? "發現驗證錯誤，點擊重新驗證"
+                ? t('upload.tooltips.revalidateHasErrors')
                 : file.isValidated && !hasValidationErrors
-                ? "驗證通過，點擊可重新驗證"
-                : "點擊驗證檔案"
+                ? t('upload.tooltips.revalidatePassed')
+                : t('upload.tooltips.validate')
             }
           >
             {file.status === "validating" 
@@ -1757,8 +1632,8 @@ function UploadedFileCard({
               }
               title={
                 file.pdfConvertStatus === 'completed'
-                  ? '已完成轉檔'
-                  : '開始將 PDF 轉成 CSV（非同步）'
+                  ? t('upload.tooltips.pdfConvertDone')
+                  : t('upload.tooltips.pdfConvertStartAsync')
               }
             >
               {file.pdfConvertStatus === 'completed'
@@ -1778,12 +1653,12 @@ function UploadedFileCard({
               disabled={disabledSave}
               title={
                 !EDIT_ENABLED
-                  ? "此版本不提供編輯，請修正 CSV 後重新上傳"
+                  ? t('upload.editDisabledNotice')
                   : !file.csvData
-                  ? "請先驗證檔案"
+                  ? t('upload.tooltips.validateBeforeEdit')
                   : !file.hasUnsavedChanges
-                  ? "沒有未儲存的變更"
-                  : "儲存修改"
+                  ? t('upload.tooltips.noUnsavedChanges')
+                  : t('upload.tooltips.saveChanges')
               }
             >
               {t('upload.actions.saveChanges')}
@@ -1795,7 +1670,7 @@ function UploadedFileCard({
             <button
               className="btn-primary"
               onClick={() => onImport(file.id)}
-              title="匯入此檔案到資料庫"
+              title={t('upload.tooltips.importToDb')}
             >
               {t('upload.actions.importFile')}
             </button>
@@ -1865,6 +1740,8 @@ interface CsvEditorProps {
 }
 
 function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
+  const { t } = useTranslation();
+
   // 創建錯誤映射表，以便快速查找特定行/列的錯誤
   const errorMap = new Map<string, ValidationError>();
   if (file.validationErrors) {
@@ -1904,13 +1781,17 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
     <div className="csv-editor">
       <div className="csv-editor__header">
         <span>
-          {EDIT_ENABLED ? 'CSV 內容編輯' : 'CSV 內容預覽'} - {file.name}（共 {csv.rows.length} 行，{csv.headers.length}{" "}
-          個欄位）
+          {t('upload.csvEditor.header', {
+            title: EDIT_ENABLED ? t('upload.csvEditor.titleEdit') : t('upload.csvEditor.titlePreview'),
+            fileName: file.name,
+            rowCount: csv.rows.length,
+            colCount: csv.headers.length,
+          })}
         </span>
         {file.validationErrors && file.validationErrors.length > 0 && (
           <div className="csv-editor__error-summary">
             <span style={{ color: '#dc2626', fontWeight: 'bold' }}>
-              發現 {file.validationErrors.length} 個驗證錯誤
+              {t('upload.csvEditor.errorSummary', { count: file.validationErrors.length })}
             </span>
           </div>
         )}
@@ -1950,7 +1831,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                           width: `${csv.colWidths[cIdx] ?? 160}px`,
                           position: 'relative'
                         }}
-                        title={hasError ? `錯誤：${cellError.message}` : ''}
+                        title={hasError ? t('upload.csvEditor.cellErrorTitle', { message: cellError.message }) : ''}
                       >
                         <input
                           className={`csv-editor__cell-input ${hasError ? 'csv-editor__cell-input--error' : ''}`}
@@ -1984,7 +1865,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                               justifyContent: 'center',
                               cursor: 'help'
                             }}
-                            title={`錯誤程式碼: ${cellError.error_code}\n${cellError.message}`}
+                              title={`${t('upload.csvEditor.errorCodeLabel', { code: cellError.error_code })}\n${cellError.message}`}
                           >
                             !
                           </div>
@@ -2002,16 +1883,16 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
       <div className="csv-editor__hint">
         <p style={{ margin: '0 0 4px 0', fontSize: '0.75rem', color: '#6b7280' }}>
           {EDIT_ENABLED
-            ? '提示：點擊任意儲存格即可直接編輯內容'
-            : '提示：此版本不提供編輯；如需修正請修改 CSV 後重新上傳'}
+            ? t('upload.csvEditor.hintEdit')
+            : t('upload.csvEditor.hintPreview')}
         </p>
         {file.validationErrors && file.validationErrors.length > 0 ? (
           <p style={{ margin: '0', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>
-             紅色高亮的單元格表示有驗證錯誤，將滑鼠懸停查看詳情。請修正 CSV 後重新上傳再驗證。
+            {t('upload.csvEditor.hintHasErrors')}
           </p>
         ) : (
           <p style={{ margin: '0', fontSize: '0.75rem', color: '#059669', fontWeight: 'bold' }}>
-             所有資料驗證通過，可以匯入資料庫
+            {t('upload.csvEditor.hintAllValid')}
           </p>
         )}
       </div>
@@ -2027,7 +1908,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
           boxShadow: '0 2px 4px rgba(220, 38, 38, 0.1)'
         }}>
           <h4 style={{ color: '#dc2626', marginBottom: '12px', fontSize: '16px', fontWeight: 'bold' }}>
-             驗證錯誤詳情 ({file.validationErrors.length} 個錯誤)
+            {t('upload.csvEditor.errorDetailsTitle', { count: file.validationErrors.length })}
           </h4>
           <div className="error-list" style={{ maxHeight: '300px', overflowY: 'auto' }}>
             {[...file.validationErrors]
@@ -2054,10 +1935,10 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                 }}
               >
                 <div style={{ color: '#dc2626', fontWeight: 'bold' }}>
-                  第 {error.row_index + 1} 行 • {error.field} 欄位
+                  {t('upload.csvEditor.errorRowField', { row: error.row_index + 1, field: error.field })}
                 </div>
                 <div style={{ color: '#7f1d1d', marginTop: '4px' }}>
-                  錯誤程式碼: {error.error_code}
+                  {t('upload.csvEditor.errorCodeLabel', { code: error.error_code })}
                 </div>
                 <div style={{ color: '#374151', marginTop: '4px' }}>
                   {error.message}
@@ -2066,7 +1947,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
             ))}
             {file.validationErrors.length > 10 && (
               <div style={{ color: '#6b7280', fontStyle: 'italic', textAlign: 'center', padding: '8px' }}>
-                ...還有 {file.validationErrors.length - 10} 個錯誤（請修正上述錯誤後重新驗證）
+                {t('upload.csvEditor.moreErrorsHint', { count: file.validationErrors.length - 10 })}
               </div>
             )}
           </div>

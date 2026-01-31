@@ -5,6 +5,7 @@ import {
   clearAdminUnlockedInSession,
   getAdminApiKeyHeaderName,
   getAdminApiKeyValue,
+  isAdminUnlockedInSession,
   setAdminUnlockedInSession,
   setAdminApiKeyValue,
 } from '../services/adminAuth'
@@ -63,6 +64,8 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
   const [storedAdminKeyMasked, setStoredAdminKeyMasked] = useState(() => maskKey(getAdminApiKeyValue()))
   const [adminKeySaving, setAdminKeySaving] = useState(false)
 
+  const [adminUnlocked, setAdminUnlocked] = useState(() => isAdminUnlockedInSession())
+
   const hasAdminKey = useMemo(() => Boolean(storedAdminKeyMasked), [storedAdminKeyMasked])
 
   const [whoami, setWhoami] = useState<WhoAmI | null>(null)
@@ -79,6 +82,10 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
   const [createTenantCode, setCreateTenantCode] = useState('')
   const [createTenantDefault, setCreateTenantDefault] = useState(false)
   const [createTenantLoading, setCreateTenantLoading] = useState(false)
+
+  const hasAnyActiveTenant = useMemo(() => {
+    return (tenants || []).some((t) => Boolean(t?.is_active))
+  }, [tenants])
 
   const storedTenantLabel = useMemo(() => {
     if (!storedTenantId) return ''
@@ -111,11 +118,11 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
 
   const [createUsername, setCreateUsername] = useState('')
   const [createPassword, setCreatePassword] = useState('')
-  const [createRole, setCreateRole] = useState<'user' | 'admin'>('user')
+  const [createRole, setCreateRole] = useState<'user' | 'manager' | 'admin'>('user')
   const [creatingUser, setCreatingUser] = useState(false)
 
   const getAdminHeaders = () => {
-    if (!hasAdminKey) return {}
+    if (!hasAdminKey || !adminUnlocked) return {}
     const k = getAdminApiKeyValue()
     if (!k) return {}
     return { [getAdminApiKeyHeaderName()]: k }
@@ -150,10 +157,12 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
 
       setAdminApiKeyValue(trimmed)
       setAdminUnlockedInSession(true)
+      setAdminUnlocked(true)
       props?.onAdminUnlocked?.()
       setAdminKeyDraft('')
       setStoredAdminKeyMasked(maskKey(trimmed))
       showToast('success', '管理者金鑰驗證成功：已解鎖管理者模式')
+      void refreshDiagnostics()
     } catch {
       showToast('error', '管理者金鑰驗證失敗（網路或伺服器未啟動）')
     } finally {
@@ -164,9 +173,18 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
   const handleClearAdminKey = () => {
     clearAdminApiKeyValue()
     clearAdminUnlockedInSession()
+    setAdminUnlocked(false)
     setStoredAdminKeyMasked('')
     props?.onAdminLocked?.()
     showToast('info', '已清除管理者金鑰（localStorage）')
+  }
+
+  const handleDisableAdminMode = () => {
+    // Disable only for this browser tab session. Keep the stored key.
+    clearAdminUnlockedInSession()
+    setAdminUnlocked(false)
+    props?.onAdminLocked?.()
+    showToast('info', '已停用管理者模式（本次 session）')
   }
 
   const refreshDiagnostics = async () => {
@@ -541,6 +559,10 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
             <div className="register-k">目前管理者金鑰</div>
             <div className="register-v">{storedAdminKeyMasked || '（未設定）'}</div>
           </div>
+          <div className="register-kv">
+            <div className="register-k">管理者模式狀態</div>
+            <div className="register-v">{adminUnlocked ? <span className="pill pill-ok">已啟用</span> : <span className="pill pill-off">已停用</span>}</div>
+          </div>
         </div>
 
         <div className="register-form">
@@ -562,44 +584,60 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
             <button className="btn" onClick={handleClearAdminKey} disabled={adminKeySaving}>
               清除
             </button>
-            <button className="btn" onClick={refreshDiagnostics} disabled={diagLoading}>
-                      停用
+            <button className="btn" onClick={handleDisableAdminMode} disabled={adminKeySaving || !adminUnlocked}>
+              停用
             </button>
           </div>
 
-          {whoami && (
-            <div className="admin-kv-block">
-              <div className="admin-kv">
-                <span className="admin-k">is_admin</span>
-                <span className="admin-v">{String(whoami.is_admin)}</span>
-              </div>
-              <div className="admin-kv">
-                <span className="admin-k">actor_role</span>
-                <span className="admin-v">{whoami.actor_role || '—'}</span>
-              </div>
-              <div className="admin-kv">
-                <span className="admin-k">tenant_id</span>
-                <span className="admin-v" title={whoami.tenant_id || ''}>{whoamiTenantLabel || '—'}</span>
-              </div>
+          <details className="register-details" open>
+            <summary className="register-summary">自檢（WhoAmI / Bootstrap Status）</summary>
+            <div className="register-actions">
+              <button className="btn" onClick={refreshDiagnostics} disabled={diagLoading}>
+                {diagLoading ? '更新中…' : '更新自檢資訊'}
+              </button>
             </div>
-          )}
 
-          {bootstrapStatus && (
-            <div className="admin-kv-block">
-              <div className="admin-kv">
-                <span className="admin-k">auth_mode</span>
-                <span className="admin-v">{bootstrapStatus.auth_mode}</span>
+            {whoami && storedTenantId && String(whoami.tenant_id || '') && String(whoami.tenant_id || '') !== storedTenantId ? (
+              <p className="register-hint" style={{ color: '#b45309' }}>
+                提醒：目前 localStorage 的區域為 <code>{storedTenantLabel || '（未知）'}</code>，但 whoami 回報的 tenant 為 <code>{whoamiTenantLabel || '—'}</code>。
+                若要同步，請到下方「區域管理」點「套用為目前區域」。
+              </p>
+            ) : null}
+
+            {whoami && (
+              <div className="admin-kv-block">
+                <div className="admin-kv">
+                  <span className="admin-k">is_admin</span>
+                  <span className="admin-v">{String(whoami.is_admin)}</span>
+                </div>
+                <div className="admin-kv">
+                  <span className="admin-k">actor_role</span>
+                  <span className="admin-v">{whoami.actor_role || '—'}</span>
+                </div>
+                <div className="admin-kv">
+                  <span className="admin-k">tenant_id</span>
+                  <span className="admin-v" title={whoami.tenant_id || ''}>{whoamiTenantLabel || '—'}</span>
+                </div>
               </div>
-              <div className="admin-kv">
-                <span className="admin-k">admin_header</span>
-                <span className="admin-v">{bootstrapStatus.admin_api_key_header}</span>
+            )}
+
+            {bootstrapStatus && (
+              <div className="admin-kv-block">
+                <div className="admin-kv">
+                  <span className="admin-k">auth_mode</span>
+                  <span className="admin-v">{bootstrapStatus.auth_mode}</span>
+                </div>
+                <div className="admin-kv">
+                  <span className="admin-k">admin_header</span>
+                  <span className="admin-v">{bootstrapStatus.admin_api_key_header}</span>
+                </div>
+                <div className="admin-kv">
+                  <span className="admin-k">admin_keys_configured</span>
+                  <span className="admin-v">{String(bootstrapStatus.admin_keys_configured)}</span>
+                </div>
               </div>
-              <div className="admin-kv">
-                <span className="admin-k">admin_keys_configured</span>
-                <span className="admin-v">{String(bootstrapStatus.admin_keys_configured)}</span>
-              </div>
-            </div>
-          )}
+            )}
+          </details>
 
           <details className="register-details" open>
             <summary className="register-summary">初始化（第一次／空資料庫）</summary>
@@ -620,11 +658,15 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
               </div>
             </div>
 
-            <div className="register-actions">
-              <button className="btn btn-primary" onClick={handleBootstrapFirstTenant} disabled={!hasAdminKey} title={!hasAdminKey ? '請先設定管理者金鑰' : ''}>
-                建立第一個區域（bootstrap）
-              </button>
-            </div>
+            {!hasAnyActiveTenant ? (
+              <div className="register-actions">
+                <button className="btn btn-primary" onClick={handleBootstrapFirstTenant} disabled={!hasAdminKey} title={!hasAdminKey ? '請先設定管理者金鑰' : ''}>
+                  建立第一個區域（bootstrap）
+                </button>
+              </div>
+            ) : (
+              <p className="register-hint">已偵測到有效區域，此 bootstrap 按鈕已隱藏（避免誤建）。</p>
+            )}
           </details>
         </div>
       </section>
@@ -805,6 +847,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
               role
               <select className="register-input" value={createRole} onChange={(e) => setCreateRole(e.target.value as any)}>
                 <option value="user">user</option>
+                <option value="manager">manager</option>
                 <option value="admin">admin</option>
               </select>
             </label>
@@ -876,6 +919,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
                       }}
                     >
                       <option value="user">user</option>
+                      <option value="manager">manager</option>
                       <option value="admin">admin</option>
                     </select>
                   </td>

@@ -7,8 +7,10 @@ import './index.css'
 import './styles/figma.css'
 
 import { installGlobalFetchWrapper } from './services/fetchWrapper'
+import { initA11yFromStorage } from './services/a11y'
 
 installGlobalFetchWrapper()
+initA11yFromStorage()
 
 // Render the React application
 ReactDOM.createRoot(document.getElementById('root')!).render(

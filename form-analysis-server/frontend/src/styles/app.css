@@ -31,6 +31,28 @@ body {
   font-size: 14px;
 }
 
+.app-a11y {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 14px;
+}
+
+.app-a11y-label {
+  opacity: 0.85;
+  color: #7b8794;
+}
+
+.app-a11y-select {
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  padding: 0 0.8rem;
+  font-size: 0.85rem;
+  color: #111827;
+}
+
 .app-lang-label {
   opacity: 0.85;
   color: #7b8794;

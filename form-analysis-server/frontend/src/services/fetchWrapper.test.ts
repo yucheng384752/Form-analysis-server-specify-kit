@@ -44,7 +44,7 @@ describe('installGlobalFetchWrapper (registration -> tenant header)', () => {
 
     const restore = installGlobalFetchWrapper()
 
-    const res = await window.fetch('/api/upload')
+    const res = await window.fetch('/api/v2/import/jobs')
     expect(res.status).toBe(400)
     expect(originalFetch).not.toHaveBeenCalled()
 
@@ -91,7 +91,7 @@ describe('installGlobalFetchWrapper (registration -> tenant header)', () => {
         return makeJsonResponse(201, { id: 'tenant-ut' })
       }
 
-      if (url.pathname === '/api/upload' && (!init?.method || init.method === 'GET')) {
+      if (url.pathname === '/api/v2/import/jobs' && (!init?.method || init.method === 'GET')) {
         // This call should carry the tenant header after registration/bootstrap.
         const effectiveHeaders = input instanceof Request ? (input as Request).headers : headers
         expect(effectiveHeaders.get('X-Tenant-Id')).toBe('tenant-ut')
@@ -115,13 +115,13 @@ describe('installGlobalFetchWrapper (registration -> tenant header)', () => {
     expect(window.localStorage.getItem(TENANT_STORAGE_KEY)).toBe('tenant-ut')
 
     // Subsequent API calls should automatically include tenant header.
-    await window.fetch('/api/upload')
+    await window.fetch('/api/v2/import/jobs')
 
     restore()
 
-    // sanity: originalFetch was used for /api/tenants twice + /api/upload once.
+    // sanity: originalFetch was used for /api/tenants twice + v2 import jobs once.
     const paths = calls.map((c) => c.url)
     expect(paths).toContain('/api/tenants')
-    expect(paths).toContain('/api/upload')
+    expect(paths).toContain('/api/v2/import/jobs')
   })
 })

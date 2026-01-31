@@ -1,5 +1,6 @@
 // src/components/common/Modal.tsx
 import { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 interface ModalProps {
   open: boolean;
@@ -7,6 +8,8 @@ interface ModalProps {
   onClose: () => void;
   onConfirm?: () => void;
   confirmText?: string;
+  cancelText?: string;
+  hideFooter?: boolean;
   children: ReactNode;
   maxWidth?: string;
 }
@@ -16,26 +19,34 @@ export function Modal({
   title,
   onClose,
   onConfirm,
-  confirmText = "確認",
+  confirmText,
+  cancelText,
+  hideFooter = false,
   children,
   maxWidth,
 }: ModalProps) {
+  const { t } = useTranslation();
+  const resolvedCancelText = cancelText ?? t("common.cancel");
+  const resolvedConfirmText = confirmText ?? t("common.ok");
+
   if (!open) return null;
   return (
     <div className="modal-backdrop">
       <div className="modal-card" style={maxWidth ? { maxWidth } : undefined}>
         {title && <h3 className="modal-title">{title}</h3>}
         <div className="modal-body">{children}</div>
-        <div className="modal-footer">
-          <button className="btn-secondary" onClick={onClose}>
-            取消
-          </button>
-          {onConfirm && (
-            <button className="btn-primary" onClick={onConfirm}>
-              {confirmText}
+        {!hideFooter && (
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>
+              {resolvedCancelText}
             </button>
-          )}
-        </div>
+            {onConfirm && (
+              <button className="btn-primary" onClick={onConfirm}>
+                {resolvedConfirmText}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal } from './common/Modal';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { useToast } from './common/ToastContext';
 
 interface EditReason {
   id: string;
@@ -28,6 +30,8 @@ export const EditRecordModal: React.FC<EditRecordModalProps> = ({
   onSave,
   tenantId
 }) => {
+  const { t } = useTranslation();
+  const { showToast } = useToast();
   const [reasons, setReasons] = useState<EditReason[]>([]);
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [customReason, setCustomReason] = useState('');
@@ -67,7 +71,7 @@ export const EditRecordModal: React.FC<EditRecordModalProps> = ({
 
   const handleSave = async () => {
     if (!selectedReason) {
-      alert("Please select a reason");
+      showToast('error', t('editRecord.errors.selectReason'));
       return;
     }
 
@@ -92,11 +96,12 @@ export const EditRecordModal: React.FC<EditRecordModalProps> = ({
         onClose();
       } else {
         const err = await res.json();
-        alert(`Update failed: ${err.detail}`);
+        const detail = typeof err?.detail === 'string' ? err.detail : '';
+        showToast('error', detail ? t('editRecord.errors.updateFailedWithDetail', { detail }) : t('editRecord.errors.updateFailed'));
       }
     } catch (error) {
       console.error("Update error", error);
-      alert("Update failed");
+      showToast('error', t('editRecord.errors.updateFailed'));
     } finally {
       setLoading(false);
     }
@@ -105,7 +110,13 @@ export const EditRecordModal: React.FC<EditRecordModalProps> = ({
   if (!record) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title={`Edit ${type} Record`}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('editRecord.title', { type })}
+      cancelText={t('common.cancel')}
+      hideFooter
+    >
       <div className="space-y-4 p-4">
         {/* Fields */}
         {Object.keys(formData).map(key => (
@@ -121,11 +132,11 @@ export const EditRecordModal: React.FC<EditRecordModalProps> = ({
 
         {/* Reason */}
         <div className="grid grid-cols-4 items-center gap-4 border-t pt-4">
-          <Label className="text-right">Reason</Label>
+          <Label className="text-right">{t('editRecord.reason')}</Label>
           <div className="col-span-3">
             <Select value={selectedReason} onValueChange={setSelectedReason}>
               <SelectTrigger>
-                <SelectValue placeholder="Select reason" />
+                <SelectValue placeholder={t('editRecord.selectReason')} />
               </SelectTrigger>
               <SelectContent>
                 {reasons.map(r => (
@@ -138,10 +149,10 @@ export const EditRecordModal: React.FC<EditRecordModalProps> = ({
 
         {selectedReason && reasons.find(r => r.id === selectedReason)?.reason_code === 'OTHER' && (
            <div className="grid grid-cols-4 items-center gap-4">
-             <Label className="text-right">Note</Label>
+             <Label className="text-right">{t('editRecord.note')}</Label>
              <Input 
                className="col-span-3"
-               placeholder="Specify reason"
+               placeholder={t('editRecord.notePlaceholder')}
                value={customReason}
                onChange={e => setCustomReason(e.target.value)}
              />
@@ -149,9 +160,9 @@ export const EditRecordModal: React.FC<EditRecordModalProps> = ({
         )}
 
         <div className="flex justify-end gap-2 mt-4">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
           <Button onClick={handleSave} disabled={loading}>
-            {loading ? 'Saving...' : 'Save Changes'}
+            {loading ? t('editRecord.saving') : t('editRecord.save')}
           </Button>
         </div>
       </div>

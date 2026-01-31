@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,8 @@ interface LogViewerProps {
 }
 
 const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
+  const { t } = useTranslation();
+
   // State management
   const [logFiles, setLogFiles] = useState<Record<string, LogFile>>({});
   const [selectedLogType, setSelectedLogType] = useState<string>('app');
@@ -70,9 +73,9 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
         setSelectedLogType(firstFile);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '載入日誌檔案失敗');
+      setError(err instanceof Error ? err.message : t('logViewer.errors.loadFilesFailed'));
     }
-  }, [selectedLogType]);
+  }, [selectedLogType, t]);
 
   /**
    * 載入日誌內容
@@ -104,11 +107,11 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
         hasMore: response.pagination.has_more,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '載入日誌失敗');
+      setError(err instanceof Error ? err.message : t('logViewer.errors.loadLogsFailed'));
     } finally {
       setLoading(false);
     }
-  }, [selectedLogType, logFiles, filters]);
+  }, [selectedLogType, logFiles, filters, t]);
 
   /**
    * 載入更多日誌
@@ -147,11 +150,11 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
       
       setSearchResults(response.results);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '搜尋失敗');
+      setError(err instanceof Error ? err.message : t('logViewer.errors.searchFailed'));
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, selectedLogType, loadLogs]);
+  }, [searchQuery, selectedLogType, loadLogs, t]);
 
   /**
    * 載入統計資訊
@@ -161,7 +164,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
       const statsData = await logService.getLogStats();
       setStats(statsData);
     } catch (err) {
-      console.error('載入統計失敗:', err);
+      console.error('Failed to load log stats:', err);
     }
   }, []);
 
@@ -169,7 +172,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
    * 清理舊日誌
    */
   const cleanupLogs = useCallback(async () => {
-    if (!window.confirm('確定要清理所有舊的日誌備份檔案嗎？')) {
+    if (!window.confirm(t('logViewer.confirm.cleanup'))) {
       return;
     }
 
@@ -178,13 +181,13 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
       await logService.cleanupOldLogs();
       await loadLogFiles();
       await loadStats();
-      alert('日誌清理完成');
+      alert(t('logViewer.alert.cleanupDone'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : '清理失敗');
+      setError(err instanceof Error ? err.message : t('logViewer.errors.cleanupFailed'));
     } finally {
       setLoading(false);
     }
-  }, [loadLogFiles, loadStats]);
+  }, [loadLogFiles, loadStats, t]);
 
   /**
    * 下載日誌檔案
@@ -193,9 +196,9 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
     try {
       await logService.downloadLogFile(logType);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '下載失敗');
+      setError(err instanceof Error ? err.message : t('logViewer.errors.downloadFailed'));
     }
-  }, []);
+  }, [t]);
 
   // Effects
   useEffect(() => {
@@ -259,7 +262,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
               <div className="mt-2 text-xs text-gray-600">
                 <details>
                   <summary className="cursor-pointer hover:text-gray-800">
-                    額外資料 ({Object.keys(entry.extra_data).length} 項)
+                    {t('logViewer.extraDataSummary', { count: Object.keys(entry.extra_data).length })}
                   </summary>
                   <pre className="mt-1 p-2 bg-gray-100 rounded text-xs overflow-x-auto">
                     {JSON.stringify(entry.extra_data, null, 2)}
@@ -278,8 +281,8 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">日誌管理</h1>
-          <p className="text-gray-600 mt-1">查看、搜尋和管理系統日誌</p>
+          <h1 className="text-3xl font-bold text-gray-900">{t('logViewer.title')}</h1>
+          <p className="text-gray-600 mt-1">{t('logViewer.subtitle')}</p>
         </div>
         
         <div className="flex gap-2">
@@ -294,7 +297,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
             disabled={loading}
           >
             {/* <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> */}
-            重新整理
+            {t('logViewer.refresh')}
           </Button>
           
           <Button
@@ -304,7 +307,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
             disabled={loading}
           >
             {/* <Trash2 className="w-4 h-4 mr-2" /> */}
-            清理舊日誌
+            {t('logViewer.cleanupOld')}
           </Button>
         </div>
       </div>
@@ -319,9 +322,9 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
 
       <Tabs defaultValue="logs" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="logs">日誌查看</TabsTrigger>
+          <TabsTrigger value="logs">{t('logViewer.tabs.logs')}</TabsTrigger>
           {/* Fixme: 需要修改一些icon或是顯示的方式，讓"最近活動"以及其他的卡片可以操作 */}
-          {/* <TabsTrigger value="stats">統計資訊</TabsTrigger> */}
+          {/* <TabsTrigger value="stats">{t('logViewer.tabs.stats')}</TabsTrigger> */}
         </TabsList>
 
         {/* Logs Tab */}
@@ -329,16 +332,16 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
           {/* Controls */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">日誌控制</CardTitle>
+              <CardTitle className="text-lg">{t('logViewer.controls.title')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Log file selection */}
               <div className="flex gap-4 items-end">
                 <div className="flex-1">
-                  <label className="text-sm font-medium mb-2 block">日誌檔案</label>
+                  <label className="text-sm font-medium mb-2 block">{t('logViewer.controls.logFile')}</label>
                   <Select value={selectedLogType} onValueChange={setSelectedLogType}>
                     <SelectTrigger>
-                      <SelectValue placeholder="選擇日誌檔案" />
+                      <SelectValue placeholder={t('logViewer.controls.selectLogFile')} />
                     </SelectTrigger>
                     <SelectContent>
                       {Object.entries(logFiles).map(([key, file]) => (
@@ -357,23 +360,23 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
                   disabled={!selectedLogType || loading}
                 >
                   {/* <Download className="w-4 h-4 mr-2" /> */}
-                  下載
+                  {t('logViewer.controls.download')}
                 </Button>
               </div>
 
               {/* Filters */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <label className="text-sm font-medium mb-2 block">日誌級別</label>
+                  <label className="text-sm font-medium mb-2 block">{t('logViewer.filters.level')}</label>
                   <Select 
                     value={filters.level || ''} 
                     onValueChange={(value: string) => setFilters(prev => ({ ...prev, level: value || undefined }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="全部級別" />
+                      <SelectValue placeholder={t('logViewer.filters.levelAll')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">全部級別</SelectItem>
+                      <SelectItem value="">{t('logViewer.filters.levelAll')}</SelectItem>
                       <SelectItem value="DEBUG">DEBUG</SelectItem>
                       <SelectItem value="INFO">INFO</SelectItem>
                       <SelectItem value="WARNING">WARNING</SelectItem>
@@ -384,26 +387,26 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
                 </div>
                 
                 <div>
-                  <label className="text-sm font-medium mb-2 block">時間範圍</label>
+                  <label className="text-sm font-medium mb-2 block">{t('logViewer.filters.timeRange')}</label>
                   <Select 
                     value={filters.hours?.toString() || ''} 
                     onValueChange={(value: string) => setFilters(prev => ({ ...prev, hours: value ? parseInt(value) : undefined }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="選擇時間範圍" />
+                      <SelectValue placeholder={t('logViewer.filters.selectTimeRange')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1">最近 1 小時</SelectItem>
-                      <SelectItem value="6">最近 6 小時</SelectItem>
-                      <SelectItem value="24">最近 24 小時</SelectItem>
-                      <SelectItem value="168">最近 1 週</SelectItem>
-                      <SelectItem value="">全部時間</SelectItem>
+                      <SelectItem value="1">{t('logViewer.filters.lastHours', { hours: 1 })}</SelectItem>
+                      <SelectItem value="6">{t('logViewer.filters.lastHours', { hours: 6 })}</SelectItem>
+                      <SelectItem value="24">{t('logViewer.filters.lastHours', { hours: 24 })}</SelectItem>
+                      <SelectItem value="168">{t('logViewer.filters.lastWeek')}</SelectItem>
+                      <SelectItem value="">{t('logViewer.filters.allTime')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 
                 <div>
-                  <label className="text-sm font-medium mb-2 block">顯示數量</label>
+                  <label className="text-sm font-medium mb-2 block">{t('logViewer.filters.displayCount')}</label>
                   <Select 
                     value={filters.limit?.toString() || '100'} 
                     onValueChange={(value: string) => setFilters(prev => ({ ...prev, limit: parseInt(value) }))}
@@ -412,10 +415,10 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="50">50 條</SelectItem>
-                      <SelectItem value="100">100 條</SelectItem>
-                      <SelectItem value="200">200 條</SelectItem>
-                      <SelectItem value="500">500 條</SelectItem>
+                      <SelectItem value="50">{t('logViewer.filters.rows', { count: 50 })}</SelectItem>
+                      <SelectItem value="100">{t('logViewer.filters.rows', { count: 100 })}</SelectItem>
+                      <SelectItem value="200">{t('logViewer.filters.rows', { count: 200 })}</SelectItem>
+                      <SelectItem value="500">{t('logViewer.filters.rows', { count: 500 })}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -425,7 +428,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
               <div className="flex gap-2">
                 <div className="flex-1">
                   <Input
-                    placeholder="搜尋日誌內容..."
+                    placeholder={t('logViewer.search.placeholder')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && searchLogs()}
@@ -433,7 +436,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
                 </div>
                 <Button onClick={searchLogs} disabled={loading}>
                   <Search className="w-4 h-4 mr-2" />
-                  搜尋
+                  {t('logViewer.search.search')}
                 </Button>
                 {isSearchMode && (
                   <Button 
@@ -445,7 +448,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
                     }}
                   >
                     <X className="w-4 h-4 mr-2" />
-                    清除
+                    {t('common.clear')}
                   </Button>
                 )}
               </div>
@@ -454,12 +457,12 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
               <div className="flex justify-between text-sm text-gray-600">
                 <span>
                   {isSearchMode 
-                    ? `搜尋結果: ${searchResults.length} 條`
-                    : `顯示: ${logs.length} / ${pagination.total} 條日誌`
+                    ? t('logViewer.status.searchResults', { count: searchResults.length })
+                    : t('logViewer.status.showing', { shown: logs.length, total: pagination.total })
                   }
                 </span>
                 <span>
-                  檔案: {selectedLogType} 
+                  {t('logViewer.status.file', { file: selectedLogType })}
                   {logFiles[selectedLogType] && ` (${logService.formatFileSize(logFiles[selectedLogType].size)})`}
                 </span>
               </div>
@@ -471,15 +474,15 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="w-5 h-5" />
-                日誌內容
-                {isSearchMode && <Badge variant="secondary">搜尋模式</Badge>}
+                {t('logViewer.content.title')}
+                {isSearchMode && <Badge variant="secondary">{t('logViewer.content.searchMode')}</Badge>}
               </CardTitle>
             </CardHeader>
             <CardContent>
               {loading && logs.length === 0 ? (
                 <div className="text-center py-8">
                   <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-gray-400" />
-                  <p className="text-gray-600">載入中...</p>
+                  <p className="text-gray-600">{t('logViewer.loading')}</p>
                 </div>
               ) : (
                 <ScrollArea className="h-[600px]">
@@ -498,7 +501,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
                           {loading ? (
                             <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                           ) : (
-                            '載入更多'
+                            t('logViewer.loadMore')
                           )}
                         </Button>
                       </div>
@@ -507,7 +510,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
                     {(isSearchMode ? searchResults : logs).length === 0 && !loading && (
                       <div className="text-center py-8 text-gray-500">
                         <Info className="w-8 h-8 mx-auto mb-2" />
-                        <p>{isSearchMode ? '沒有找到匹配的日誌' : '沒有日誌資料'}</p>
+                        <p>{isSearchMode ? t('logViewer.empty.searchNone') : t('logViewer.empty.noLogs')}</p>
                       </div>
                     )}
                   </div>
@@ -524,9 +527,9 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
               {/* File Stats */}
               <Card>
                 <CardHeader>
-                  <CardTitle>檔案資訊</CardTitle>
+                  <CardTitle>{t('logViewer.stats.fileInfo')}</CardTitle>
                   <CardDescription>
-                    總大小: {logService.formatFileSize(stats.total_size)}
+                    {t('logViewer.stats.totalSize', { size: logService.formatFileSize(stats.total_size) })}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -546,7 +549,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
               {/* Level Distribution */}
               <Card>
                 <CardHeader>
-                  <CardTitle>日誌級別分佈</CardTitle>
+                  <CardTitle>{t('logViewer.stats.levelDistribution')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
@@ -571,7 +574,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
               {/* API Usage */}
               <Card>
                 <CardHeader>
-                  <CardTitle>API 使用統計</CardTitle>
+                  <CardTitle>{t('logViewer.stats.apiUsage')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
@@ -588,8 +591,8 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
               {/* Recent Activity */}
               <Card>
                 <CardHeader>
-                  <CardTitle>最近活動</CardTitle>
-                  <CardDescription>最新的系統活動記錄</CardDescription>
+                  <CardTitle>{t('logViewer.stats.recentActivity')}</CardTitle>
+                  <CardDescription>{t('logViewer.stats.recentActivityDesc')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">

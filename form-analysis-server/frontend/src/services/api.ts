@@ -4,6 +4,7 @@
 
 import { TENANT_STORAGE_KEY } from './tenant';
 import { getApiKeyHeaderName, getApiKeyValue } from './auth'
+import i18n from '../i18n'
 
 interface RequestOptions {
   url: string;
@@ -63,7 +64,7 @@ export async function apiRequest<T = any>(options: RequestOptions): Promise<T> {
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {
       // 網路錯誤
-      throw new Error('網路連接失敗，請檢查網路連接或服務器狀態');
+      throw new Error(i18n.t('errors.networkConnectionFailed'));
     }
     throw error;
   }
@@ -152,11 +153,11 @@ export async function uploadFile<T = any>(
     });
 
     xhr.addEventListener('error', () => {
-      reject(new Error('網路錯誤，上傳失敗'));
+      reject(new Error(i18n.t('errors.uploadNetworkFailed')));
     });
 
     xhr.addEventListener('abort', () => {
-      reject(new Error('上傳已取消'));
+      reject(new Error(i18n.t('errors.uploadCanceled')));
     });
 
     const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
@@ -167,7 +168,7 @@ export async function uploadFile<T = any>(
       const u = new URL(fullUrl, window.location.href);
       const tenantId = window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
       if (u.pathname.startsWith('/api') && !u.pathname.startsWith('/api/tenants') && !tenantId) {
-        reject(new Error('尚未選擇區域（X-Tenant-Id）。請先到「登入」頁籤選擇區域；若資料庫尚未初始化，先用管理者金鑰解鎖「管理者」頁籤建立區域。'));
+        reject(new Error(i18n.t('errors.noTenantSelected')));
         xhr.abort();
         return;
       }

@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useToast } from './common/ToastContext';
 import './advanced-search.css';
 
 export interface AdvancedSearchParams {
   lot_no?: string;
   production_date_from?: string;
   production_date_to?: string;
-  machine_no?: string;
-  mold_no?: string;
+  machine_no?: string[];
+  mold_no?: string[];
   product_id?: string;
-  specification?: string;  // 統一規格搜尋 (P1/P2/P3)
-  material?: string;       // 材料代號 (P1/P2)
+  specification?: string[];  // 統一規格搜尋 (P1/P2/P3)
+  material?: string[];       // 材料代號 (P1/P2)
+  // 厚度篩選（整數輸入，單位 0.01mm；例如 30 表示 0.30mm）
+  thickness_min?: string;
+  thickness_max?: string;
   winder_number?: string;  // Winder Number
   data_type?: string;
 }
@@ -29,6 +33,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   tenantId,
 }) => {
   const { t } = useTranslation();
+  const { showToast } = useToast();
   // 批號
   const [lotNo, setLotNo] = useState('');
   
@@ -41,11 +46,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   const [dateToDay, setDateToDay] = useState('');
   
   // 其他搜尋條件
-  const [machineNo, setMachineNo] = useState('');
-  const [moldNo, setMoldNo] = useState('');
+  const [machineNos, setMachineNos] = useState<string[]>([]);
+  const [moldNos, setMoldNos] = useState<string[]>([]);
   const [productId, setProductId] = useState('');
-  const [specification, setSpecification] = useState('');  // 統一規格
-  const [material, setMaterial] = useState('');            // 材料代號
+  const [specifications, setSpecifications] = useState<string[]>([]);  // 統一規格
+  const [materials, setMaterials] = useState<string[]>([]);            // 材料代號
+  const [thicknessMin, setThicknessMin] = useState('');
+  const [thicknessMax, setThicknessMax] = useState('');
   const [winderNumber, setWinderNumber] = useState('');   // Winder Number
   const [dataType, setDataType] = useState('');
 
@@ -88,11 +95,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
       lotNo.trim() ||
       dateFromYear || dateFromMonth || dateFromDay ||
       dateToYear || dateToMonth || dateToDay ||
-      machineNo.trim() ||
-      moldNo.trim() ||
+      machineNos.length > 0 ||
+      moldNos.length > 0 ||
       productId.trim() ||
-      specification.trim() ||
-      material.trim() ||
+      specifications.length > 0 ||
+      materials.length > 0 ||
+      thicknessMin.trim() ||
+      thicknessMax.trim() ||
       winderNumber.trim() ||
       dataType
     );
@@ -112,7 +121,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   // 處理搜尋
   const handleSearch = () => {
     if (!validateSearchParams()) {
-      alert(t('query.advanced.validationAtLeastOne'));
+      showToast('error', t('query.advanced.validationAtLeastOne'));
       return;
     }
 
@@ -146,11 +155,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     }
     
     // 其他欄位僅去除前後空白，後端已支援不分大小寫搜尋 (ilike)
-    if (machineNo.trim()) params.machine_no = machineNo.trim();
-    if (moldNo.trim()) params.mold_no = moldNo.trim();
+    if (machineNos.length) params.machine_no = machineNos;
+    if (moldNos.length) params.mold_no = moldNos;
     if (productId.trim()) params.product_id = productId.trim();
-    if (specification.trim()) params.specification = specification.trim();
-    if (material.trim()) params.material = material.trim();
+    if (specifications.length) params.specification = specifications;
+    if (materials.length) params.material = materials;
+    if (thicknessMin.trim()) params.thickness_min = thicknessMin.trim();
+    if (thicknessMax.trim()) params.thickness_max = thicknessMax.trim();
     if (winderNumber.trim()) params.winder_number = winderNumber.trim();
     if (dataType) params.data_type = dataType;
 
@@ -166,11 +177,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     setDateToYear('');
     setDateToMonth('');
     setDateToDay('');
-    setMachineNo('');
-    setMoldNo('');
+    setMachineNos([]);
+    setMoldNos([]);
     setProductId('');
-    setSpecification('');
-    setMaterial('');
+    setSpecifications([]);
+    setMaterials([]);
+    setThicknessMin('');
+    setThicknessMax('');
     setWinderNumber('');
     setDataType('');
     onReset();
@@ -274,37 +287,31 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
             {/* 機台號碼 */}
             <div className="search-field">
               <label htmlFor="adv-machine-no">{t('query.advanced.machineNo')}</label>
-              <input
+              <select
                 id="adv-machine-no"
-                type="text"
-                value={machineNo}
-                onChange={(e) => setMachineNo(e.target.value)}
-                placeholder={t('query.advanced.machineNoPlaceholder')}
-                list="machine-options"
-              />
-              <datalist id="machine-options">
+                multiple
+                value={machineNos}
+                onChange={(e) => setMachineNos(Array.from(e.target.selectedOptions, (o) => o.value))}
+              >
                 {machineOptions.map((opt, idx) => (
-                  <option key={idx} value={opt} />
+                  <option key={idx} value={opt}>{opt}</option>
                 ))}
-              </datalist>
+              </select>
             </div>
 
             {/* 下膠編號 (Bottom Tape) */}
             <div className="search-field">
               <label htmlFor="adv-mold-no">{t('query.advanced.moldNo')}</label>
-              <input
+              <select
                 id="adv-mold-no"
-                type="text"
-                value={moldNo}
-                onChange={(e) => setMoldNo(e.target.value)}
-                placeholder={t('query.advanced.moldNoPlaceholder')}
-                list="mold-options"
-              />
-              <datalist id="mold-options">
+                multiple
+                value={moldNos}
+                onChange={(e) => setMoldNos(Array.from(e.target.selectedOptions, (o) => o.value))}
+              >
                 {moldOptions.map((opt, idx) => (
-                  <option key={idx} value={opt} />
+                  <option key={idx} value={opt}>{opt}</option>
                 ))}
-              </datalist>
+              </select>
             </div>
 
             {/* 產品編號 */}
@@ -322,37 +329,56 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
             {/* 統一規格 (P1/P2/P3) */}
             <div className="search-field">
               <label htmlFor="adv-specification">{t('query.advanced.specification')}</label>
-              <input
+              <select
                 id="adv-specification"
-                type="text"
-                value={specification}
-                onChange={(e) => setSpecification(e.target.value)}
-                placeholder={t('query.advanced.specificationPlaceholder')}
-                list="spec-options"
-              />
-              <datalist id="spec-options">
+                multiple
+                value={specifications}
+                onChange={(e) => setSpecifications(Array.from(e.target.selectedOptions, (o) => o.value))}
+              >
                 {specOptions.map((opt, idx) => (
-                  <option key={idx} value={opt} />
+                  <option key={idx} value={opt}>{opt}</option>
                 ))}
-              </datalist>
+              </select>
             </div>
 
             {/* 材料代號 (P1/P2) */}
             <div className="search-field">
               <label htmlFor="adv-material">{t('query.advanced.material')}</label>
-              <input
+              <select
                 id="adv-material"
-                type="text"
-                value={material}
-                onChange={(e) => setMaterial(e.target.value)}
-                placeholder={t('query.advanced.materialPlaceholder')}
-                list="material-options"
-              />
-              <datalist id="material-options">
+                multiple
+                value={materials}
+                onChange={(e) => setMaterials(Array.from(e.target.selectedOptions, (o) => o.value))}
+              >
                 {materialOptions.map((opt, idx) => (
-                  <option key={idx} value={opt} />
+                  <option key={idx} value={opt}>{opt}</option>
                 ))}
-              </datalist>
+              </select>
+            </div>
+
+            {/* 厚度篩選（整數輸入，單位 0.01mm） */}
+            <div className="search-field">
+              <label htmlFor="adv-thickness-min">{t('query.advanced.thicknessMin')}</label>
+              <input
+                id="adv-thickness-min"
+                type="number"
+                value={thicknessMin}
+                onChange={(e) => setThicknessMin(e.target.value)}
+                placeholder={t('query.advanced.thicknessMinPlaceholder')}
+                min="0"
+              />
+            </div>
+
+            <div className="search-field">
+              <label htmlFor="adv-thickness-max">{t('query.advanced.thicknessMax')}</label>
+              <input
+                id="adv-thickness-max"
+                type="number"
+                value={thicknessMax}
+                onChange={(e) => setThicknessMax(e.target.value)}
+                placeholder={t('query.advanced.thicknessMaxPlaceholder')}
+                min="0"
+              />
             </div>
 
             {/* Winder Number（下拉 1~20） */}

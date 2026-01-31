@@ -5,18 +5,22 @@ import { UploadPage } from "./pages/UploadPage";
 import { QueryPage } from "./pages/QueryPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { AdminPage } from "./pages/AdminPage";
+import { ManagerPage } from "./pages/ManagerPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { ToastContainer } from "./components/common/ToastContainer";
 import LogViewer from "./components/SimpleLogViewer";
 import "./styles/app.css";
 
 import { getAdminApiKeyValue, isAdminUnlockedInSession } from "./services/adminAuth";
+import { getFontScaleId, setFontScaleId, type FontScaleId } from "./services/a11y";
 
-type MainTab = "upload" | "query" | "analysis" | "register" | "admin" | "logs";
+type MainTab = "upload" | "query" | "analysis" | "register" | "manager" | "admin" | "logs";
 
 function App() {
   const { t, i18n } = useTranslation();
   const [tab, setTab] = useState<MainTab>("register");
+
+  const [fontScale, setFontScale] = useState<FontScaleId>(() => getFontScaleId());
 
   const currentLang = useMemo(() => {
     const raw = (i18n.resolvedLanguage || i18n.language || 'zh-TW').toLowerCase();
@@ -28,12 +32,25 @@ function App() {
   const [adminUnlocked, setAdminUnlocked] = useState<boolean>(() => Boolean(getAdminApiKeyValue()) && isAdminUnlockedInSession());
   const canShowAdmin = useMemo(() => adminUnlocked, [adminUnlocked]);
 
+  const [actorRole, setActorRole] = useState<string | null>(null);
+  const canShowManager = useMemo(() => {
+    const r = String(actorRole || '').trim();
+    return r === 'admin' || r === 'manager';
+  }, [actorRole]);
+
   useEffect(() => {
     // If admin key is cleared, force-exit admin tab.
     if (!canShowAdmin && tab === "admin") {
       setTab("register");
     }
   }, [canShowAdmin, tab]);
+
+  useEffect(() => {
+    // If role is not privileged, force-exit manager tab.
+    if (!canShowManager && tab === "manager") {
+      setTab("register");
+    }
+  }, [canShowManager, tab]);
 
   return (
     <div className="app-root">
@@ -67,6 +84,23 @@ function App() {
               </button>
             </div>
           </div>
+
+          <div className="app-a11y" aria-label={t('a11y.fontSize.label')}>
+            <span className="app-a11y-label">{t('a11y.fontSize.label')}</span>
+            <select
+              className="app-a11y-select"
+              value={fontScale}
+              onChange={(e) => {
+                const next = (e.target.value || 'md') as FontScaleId
+                setFontScale(next)
+                setFontScaleId(next)
+              }}
+            >
+              <option value="sm">{t('a11y.fontSize.small')}</option>
+              <option value="md">{t('a11y.fontSize.medium')}</option>
+              <option value="lg">{t('a11y.fontSize.large')}</option>
+            </select>
+          </div>
         </div>
 
         <div className="app-main-tabs">
@@ -94,6 +128,14 @@ function App() {
           >
             {t('tabs.analysis')}
           </button>
+          {canShowManager ? (
+            <button
+              className={`app-main-tab ${tab === "manager" ? "is-active" : ""}`}
+              onClick={() => setTab("manager")}
+            >
+              {t('tabs.manager')}
+            </button>
+          ) : null}
           {canShowAdmin ? (
             <button
               className={`app-main-tab ${tab === "admin" ? "is-active" : ""}`}
@@ -119,13 +161,18 @@ function App() {
 
       <main className="app-main">
         {tab === "register" ? (
-          <RegisterPage onAdminUnlocked={(ok) => setAdminUnlocked(Boolean(ok))} />
+          <RegisterPage
+            onAdminUnlocked={(ok) => setAdminUnlocked(Boolean(ok))}
+            onWhoamiChanged={(w) => setActorRole(w?.actor_role ?? null)}
+          />
         ) : tab === "upload" ? (
           <UploadPage />
         ) : tab === "query" ? (
           <QueryPage />
         ) : tab === "analysis" ? (
           <AnalyticsPage />
+        ) : tab === "manager" ? (
+          <ManagerPage />
         ) : tab === "admin" ? (
           <AdminPage onAdminLocked={() => setAdminUnlocked(false)} onAdminUnlocked={() => setAdminUnlocked(true)} />
         ) : (

@@ -4,6 +4,7 @@
  */
 
 import { apiRequest } from './api';
+import i18n from '../i18n'
 
 export interface LogEntry {
   line_number: number;
@@ -199,7 +200,7 @@ class LogService {
       document.body.removeChild(a);
     } catch (error) {
       console.error('Download failed:', error);
-      throw new Error('下載日誌檔案失敗');
+      throw new Error(i18n.t('logService.downloadFailed'));
     }
   }
 

@@ -4,6 +4,7 @@ const API_BASE_URL = (import.meta.env?.VITE_API_URL as string) || ''
 
 import { getAdminApiKeyValue } from './adminAuth'
 import { getAdminApiKeyHeaderName } from './adminAuth'
+import i18n from '../i18n'
 
 type TenantRow = {
   id: string
@@ -85,10 +86,10 @@ export async function ensureTenantIdWithOptions(options?: EnsureTenantIdOptions)
   const notifyExpiredRecovered = (mode: 'reconnected' | 'recreated') => {
     if (!notify && !expiredDetected) return
     if (mode === 'recreated') {
-      emitToast('success', '偵測到區域已重置，已自動重新建立區域「UT」')
+      emitToast('success', i18n.t('tenant.toast.resetRecreated', { code: 'UT' }))
       return
     }
-    emitToast('info', '偵測到區域已重置，已自動重新連線')
+    emitToast('info', i18n.t('tenant.toast.resetReconnected'))
   }
   if (existing) {
     if (validatedTenantId === existing) return existing
@@ -121,7 +122,7 @@ export async function ensureTenantIdWithOptions(options?: EnsureTenantIdOptions)
           if (tenants.length > 1) {
             // Ambiguous; let caller/UI handle tenant selection.
             if (notify || reason === 'recovery') {
-              emitToast('error', '偵測到區域已重置且存在多個區域，請設定預設區域或手動指定區域')
+              emitToast('error', i18n.t('tenant.toast.resetMultipleTenants'))
             }
             return ''
           }
@@ -153,7 +154,7 @@ export async function ensureTenantIdWithOptions(options?: EnsureTenantIdOptions)
           const adminKey = getAdminApiKeyValue()
           if (!allowAdminBootstrap || !adminKey) {
             if (notify || reason === 'recovery') {
-              emitToast('error', '目前資料庫沒有任何區域。請到「登入」頁籤驗證管理者金鑰以解鎖「管理者」，再使用「一鍵建立/選擇區域」或「建立區域」。')
+              emitToast('error', i18n.t('tenant.toast.noTenantsNeedAdmin'))
             }
             return ''
           }

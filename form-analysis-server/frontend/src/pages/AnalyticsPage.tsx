@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEventHandler } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DayPicker, type DateRange } from 'react-day-picker'
-import { endOfMonth, endOfWeek, endOfYear, format, startOfMonth, startOfWeek, startOfYear } from 'date-fns'
+import { endOfMonth, endOfWeek, format, startOfMonth, startOfWeek } from 'date-fns'
 import { enUS, zhTW } from 'date-fns/locale'
-import { ResponsiveContainer, Pie, PieChart, Cell, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { ResponsiveContainer, Pie, PieChart, Cell, Tooltip, Legend, ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid } from 'recharts'
 import { getTenantId } from '../services/tenant'
 import { getTenantLabelById, writeTenantMap } from '../services/tenantMap'
 import { Drawer, DrawerContent } from '../components/ui/drawer'
@@ -64,7 +64,51 @@ type TenantRow = {
   code?: string
 }
 
-type RangeMode = 'day' | 'week' | 'month' | 'halfYear' | 'year' | 'custom'
+const UT_FEATURE_PCT_DEMO: ReadonlyArray<{ name: string; pct: number }> = [
+  { name: 'Thickness diff', pct: 16.66666666666669 },
+  { name: 'Semi-finished impedance', pct: 16.666666666666686 },
+  { name: 'Board Width(mm)', pct: 16.666666666666675 },
+  { name: 'Thicknessss Low(μm)', pct: 16.666666666666664 },
+  { name: 'Thicknessss High(μm)', pct: 16.666666666666657 },
+  { name: 'Rubber wheel gasket thickness (in)', pct: 16.66666666666663 },
+  { name: 'Heat gun temperature', pct: 8.758818145756964e-31 },
+  { name: 'Slitting speed', pct: 2.0941660441376297e-31 },
+  { name: 'Rubber wheel gasket thickness (out)', pct: 1.4956287073050555e-31 },
+  { name: 'Rewind torque', pct: 5.235325593684113e-32 },
+  { name: 'rough edge', pct: 0.0 },
+  { name: 'Appearance', pct: 0.0 },
+]
+
+// Date granularity: min = week, max = half-year.
+type RangeMode = 'week' | 'month' | 'quarter' | 'halfYear' | 'custom'
+
+const MIN_RANGE_DAYS = 7
+const MAX_RANGE_DAYS = 184 // approx half-year
+
+function addDays(date: Date, days: number): Date {
+  const d = new Date(date)
+  d.setDate(d.getDate() + days)
+  return d
+}
+
+function clampCustomRange(from: Date, to: Date): { start: Date; end: Date } {
+  const start = new Date(from)
+  const end = new Date(to)
+
+  // Normalize order
+  if (end.getTime() < start.getTime()) {
+    return clampCustomRange(end, start)
+  }
+
+  const diffDays = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
+  if (diffDays < MIN_RANGE_DAYS) {
+    return { start, end: addDays(start, MIN_RANGE_DAYS - 1) }
+  }
+  if (diffDays > MAX_RANGE_DAYS) {
+    return { start, end: addDays(start, MAX_RANGE_DAYS - 1) }
+  }
+  return { start, end }
+}
 
 function toYmd(date: Date): string {
   return format(date, 'yyyy-MM-dd')
@@ -79,10 +123,18 @@ function getHalfYearBounds(date: Date): { start: Date; end: Date } {
   return { start: new Date(year, 6, 1), end: new Date(year + 1, 0, 0) }
 }
 
+function getQuarterBounds(date: Date): { start: Date; end: Date } {
+  const year = date.getFullYear()
+  const month = date.getMonth() // 0-11
+  const quarterStartMonth = Math.floor(month / 3) * 3
+  return {
+    start: new Date(year, quarterStartMonth, 1),
+    end: new Date(year, quarterStartMonth + 3, 0),
+  }
+}
+
 function getModeBounds(mode: Exclude<RangeMode, 'custom'>, anchor: Date): { start: Date; end: Date } {
   switch (mode) {
-    case 'day':
-      return { start: anchor, end: anchor }
     case 'week':
       return {
         start: startOfWeek(anchor, { weekStartsOn: 1 }),
@@ -90,11 +142,36 @@ function getModeBounds(mode: Exclude<RangeMode, 'custom'>, anchor: Date): { star
       }
     case 'month':
       return { start: startOfMonth(anchor), end: endOfMonth(anchor) }
+    case 'quarter':
+      return getQuarterBounds(anchor)
     case 'halfYear':
       return getHalfYearBounds(anchor)
-    case 'year':
-      return { start: startOfYear(anchor), end: endOfYear(anchor) }
   }
+}
+
+function getIsoWeekYear(date: Date): number {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  const day = d.getUTCDay() || 7
+  d.setUTCDate(d.getUTCDate() + 4 - day)
+  return d.getUTCFullYear()
+}
+
+function getIsoWeekNumber(date: Date): number {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  const day = d.getUTCDay() || 7
+  d.setUTCDate(d.getUTCDate() + 4 - day)
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+  const diffDays = Math.floor((d.getTime() - yearStart.getTime()) / (24 * 60 * 60 * 1000)) + 1
+  return Math.ceil(diffDays / 7)
+}
+
+function isoWeekStartDate(weekYear: number, weekNumber: number): Date {
+  const safeWeek = Math.max(1, Math.min(53, Math.floor(weekNumber || 1)))
+  const simple = new Date(Date.UTC(weekYear, 0, 1 + (safeWeek - 1) * 7))
+  const dow = simple.getUTCDay() || 7
+  const mondayUtc = new Date(simple)
+  mondayUtc.setUTCDate(simple.getUTCDate() - dow + 1)
+  return new Date(mondayUtc.getUTCFullYear(), mondayUtc.getUTCMonth(), mondayUtc.getUTCDate())
 }
 
 function parseCounts(node: RatioNode | undefined): { ok: number; ng: number; total: number } {
@@ -147,12 +224,33 @@ function pct(n: number, d: number): number {
   return Math.round((n / d) * 1000) / 10
 }
 
+function round3(n: number): number {
+  return Math.round(n * 1000) / 1000
+}
+
+function toCumsumSeries(items: ReadonlyArray<{ name: string; pct: number }>): Array<{ name: string; pct: number; cumPct: number }> {
+  let cum = 0
+  return items.map((x) => {
+    const pct3 = round3(x.pct)
+    cum = Math.min(100, round3(cum + pct3))
+    return { name: x.name, pct: pct3, cumPct: cum }
+  })
+}
+
 export function AnalyticsPage() {
   const { t, i18n } = useTranslation()
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [rangeMode, setRangeMode] = useState<RangeMode>('day')
-  const [anchorDate, setAnchorDate] = useState<Date | undefined>(undefined)
+  const [startDate, setStartDate] = useState(() => {
+    const anchor = new Date()
+    const bounds = getModeBounds('month', anchor)
+    return toYmd(bounds.start)
+  })
+  const [endDate, setEndDate] = useState(() => {
+    const anchor = new Date()
+    const bounds = getModeBounds('month', anchor)
+    return toYmd(bounds.end)
+  })
+  const [rangeMode, setRangeMode] = useState<RangeMode>('month')
+  const [anchorDate, setAnchorDate] = useState<Date | undefined>(() => new Date())
   const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined)
   const [isCompactCalendar, setIsCompactCalendar] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -176,6 +274,50 @@ export function AnalyticsPage() {
   const [ngRecords, setNgRecords] = useState<QueryRecordLite[]>([])
   const [ngLoading, setNgLoading] = useState(false)
   const [ngError, setNgError] = useState('')
+  const [ngWinderNumber, setNgWinderNumber] = useState<number | null>(null)
+
+  const ngFeaturePctEntries = useMemo(() => {
+    const aggregate = new Map<string, { sum: number; count: number }>()
+    for (const r of ngRecords) {
+      const additional = r.additional_data as any
+      const featurePctObjRaw =
+        (additional && typeof additional === 'object'
+          ? (additional.feature_pct ??
+              additional.featurePct ??
+              additional.feature_importance?.feature_pct ??
+              additional.featureImportance?.feature_pct)
+          : null) as unknown
+
+      if (!isPlainObject(featurePctObjRaw)) continue
+      for (const [name, v] of Object.entries(featurePctObjRaw)) {
+        if (typeof v !== 'number' || !Number.isFinite(v)) continue
+        const prev = aggregate.get(name)
+        if (prev) prev.sum += v, prev.count += 1
+        else aggregate.set(name, { sum: v, count: 1 })
+      }
+    }
+
+    return Array.from(aggregate.entries())
+      .map(([name, { sum, count }]) => ({ name, pct: count ? sum / count : 0 }))
+      .filter((x) => Number.isFinite(x.pct) && x.pct > 0)
+      .sort((a, b) => b.pct - a.pct)
+  }, [ngRecords])
+
+  const ngFeaturePctChartData = useMemo(() => {
+    const top = ngFeaturePctEntries.slice(0, 10)
+    return toCumsumSeries(top)
+  }, [ngFeaturePctEntries])
+
+  const utFeaturePctChartData = useMemo(() => {
+    const sorted = [...UT_FEATURE_PCT_DEMO].sort((a, b) => b.pct - a.pct)
+    return toCumsumSeries(sorted)
+  }, [])
+
+  const ngFeaturePctChartHeight = useMemo(() => {
+    const count = Math.min(10, ngFeaturePctEntries.length)
+    // For horizontal bars, reserve space for long X-axis labels.
+    return Math.max(360, 220 + count * 4)
+  }, [ngFeaturePctEntries.length])
 
   const autoRunArmedRef = useRef(false)
   const autoRunTimerRef = useRef<number | null>(null)
@@ -302,15 +444,7 @@ export function AnalyticsPage() {
     setEndDate(toYmd(end))
   }
 
-  const clearDateFilter = () => {
-    autoRunArmedRef.current = true
-    setStartDate('')
-    setEndDate('')
-    setAnchorDate(undefined)
-    setCustomRange(undefined)
-  }
-
-  const handleSelectAnchor = (date: Date | undefined) => {
+  const applyAnchorForMode = (mode: Exclude<RangeMode, 'custom'>, date: Date | undefined) => {
     autoRunArmedRef.current = true
     setAnchorDate(date)
     if (!date) {
@@ -318,8 +452,16 @@ export function AnalyticsPage() {
       setEndDate('')
       return
     }
-    const bounds = getModeBounds(rangeMode === 'custom' ? 'day' : rangeMode, date)
+    const bounds = getModeBounds(mode, date)
     applyComputedRange(bounds.start, bounds.end)
+  }
+
+  const clearDateFilter = () => {
+    autoRunArmedRef.current = true
+    setStartDate('')
+    setEndDate('')
+    setAnchorDate(undefined)
+    setCustomRange(undefined)
   }
 
   const handleSelectCustomRange = (range: DateRange | undefined) => {
@@ -331,10 +473,13 @@ export function AnalyticsPage() {
       return
     }
     if (!range.to) {
-      applyComputedRange(range.from, range.from)
+      // Min granularity is week: if only one day is picked, expand to the week.
+      const bounds = getModeBounds('week', range.from)
+      applyComputedRange(bounds.start, bounds.end)
       return
     }
-    applyComputedRange(range.from, range.to)
+    const clamped = clampCustomRange(range.from, range.to)
+    applyComputedRange(clamped.start, clamped.end)
   }
 
   const handleRangeModeChange = (mode: RangeMode) => {
@@ -351,10 +496,11 @@ export function AnalyticsPage() {
     }
 
     setCustomRange(undefined)
-    if (anchorDate) {
-      const bounds = getModeBounds(mode, anchorDate)
-      applyComputedRange(bounds.start, bounds.end)
+    if (!anchorDate && !startDate && !endDate) {
+      return
     }
+    const nextAnchor = anchorDate ?? new Date()
+    applyAnchorForMode(mode, nextAnchor)
   }
 
   const handleToggleStation = (key: keyof StationSelection) => {
@@ -476,7 +622,7 @@ export function AnalyticsPage() {
         setAnalysisResult(normalized)
         setRan(true)
       } catch (e) {
-        setParseError(`分析請求失敗：${String(e)}`)
+        setParseError(t('analytics.analyzeFailedWithDetail', { detail: String(e) }))
         setAnalysisResult(null)
         setRan(false)
       } finally {
@@ -595,15 +741,10 @@ export function AnalyticsPage() {
     return false
   }, [rowHasNg])
 
-  const fetchNgRecords = useCallback(async () => {
+  const fetchNgRecords = useCallback(async (opts?: { winderNumber?: number | null }) => {
     setNgError('')
     setNgLoading(true)
     try {
-      const baseParams = new URLSearchParams({ page: '1', page_size: '200' })
-      if (startDate) baseParams.set('production_date_from', startDate)
-      if (endDate) baseParams.set('production_date_to', endDate)
-      if (productIdCommitted) baseParams.set('product_id', productIdCommitted)
-
       const wantedTypes: DataType[] = stations.all
         ? ['P2', 'P3']
         : ([stations.p2 ? 'P2' : null, stations.p3 ? 'P3' : null].filter(Boolean) as DataType[])
@@ -616,10 +757,37 @@ export function AnalyticsPage() {
 
       const results = await Promise.all(
         wantedTypes.map(async (dt) => {
-          const params = new URLSearchParams(baseParams)
-          params.set('data_type', dt)
-          const res = await fetch(`/api/v2/query/records/advanced?${params.toString()}`, {
-            headers: { ...buildTenantHeaders() },
+          const filters: Array<{ field: string; op: string; value: any }> = []
+
+          if (startDate && endDate) {
+            if (startDate === endDate) {
+              filters.push({ field: 'production_date', op: 'eq', value: startDate })
+            } else {
+              filters.push({ field: 'production_date', op: 'between', value: [startDate, endDate] })
+            }
+          } else if (startDate) {
+            filters.push({ field: 'production_date', op: 'eq', value: startDate })
+          } else if (endDate) {
+            filters.push({ field: 'production_date', op: 'eq', value: endDate })
+          }
+
+          if (productIdCommitted) {
+            filters.push({ field: 'product_id', op: 'contains', value: productIdCommitted })
+          }
+
+          if (opts?.winderNumber) {
+            filters.push({ field: 'winder_number', op: 'eq', value: String(opts.winderNumber) })
+          }
+
+          const res = await fetch(`/api/v2/query/records/dynamic`, {
+            method: 'POST',
+            headers: { ...buildTenantHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data_type: dt,
+              filters,
+              page: 1,
+              page_size: 200,
+            }),
           })
           if (!res.ok) {
             const text = await res.text().catch(() => '')
@@ -643,16 +811,19 @@ export function AnalyticsPage() {
     }
   }, [buildTenantHeaders, endDate, productIdCommitted, recordHasNg, startDate, stations, t])
 
-  const enterNgMode = useCallback(() => {
+  const enterNgMode = useCallback((opts?: { winderNumber?: number | null }) => {
     autoRunArmedRef.current = true
     setNgMode(true)
-    void fetchNgRecords()
+    const nextWinder = opts?.winderNumber ?? null
+    setNgWinderNumber(nextWinder)
+    void fetchNgRecords({ winderNumber: nextWinder })
   }, [fetchNgRecords])
 
   const exitNgMode = useCallback(() => {
     setNgMode(false)
     setNgRecords([])
     setNgError('')
+    setNgWinderNumber(null)
   }, [])
 
   useEffect(() => {
@@ -708,25 +879,18 @@ export function AnalyticsPage() {
             <div className="analytics-date-block-top">
               <div>
                 <div className="analytics-filter-title">{t('analytics.dateRangeMode')}</div>
-                <div className="analytics-range-tabs">
-                  <button type="button" className={`analytics-range-tab ${rangeMode === 'day' ? 'is-active' : ''}`} onClick={() => handleRangeModeChange('day')}>
-                    {t('analytics.modeDay')}
-                  </button>
-                  <button type="button" className={`analytics-range-tab ${rangeMode === 'week' ? 'is-active' : ''}`} onClick={() => handleRangeModeChange('week')}>
-                    {t('analytics.modeWeek')}
-                  </button>
-                  <button type="button" className={`analytics-range-tab ${rangeMode === 'month' ? 'is-active' : ''}`} onClick={() => handleRangeModeChange('month')}>
-                    {t('analytics.modeMonth')}
-                  </button>
-                  <button type="button" className={`analytics-range-tab ${rangeMode === 'halfYear' ? 'is-active' : ''}`} onClick={() => handleRangeModeChange('halfYear')}>
-                    {t('analytics.modeHalfYear')}
-                  </button>
-                  <button type="button" className={`analytics-range-tab ${rangeMode === 'year' ? 'is-active' : ''}`} onClick={() => handleRangeModeChange('year')}>
-                    {t('analytics.modeYear')}
-                  </button>
-                  <button type="button" className={`analytics-range-tab ${rangeMode === 'custom' ? 'is-active' : ''}`} onClick={() => handleRangeModeChange('custom')}>
-                    {t('analytics.modeCustom')}
-                  </button>
+                <div className="analytics-date-mode">
+                  <select
+                    className="register-input analytics-date-select"
+                    value={rangeMode}
+                    onChange={(e) => handleRangeModeChange(e.target.value as RangeMode)}
+                  >
+                    <option value="week">{t('analytics.modeWeek')}</option>
+                    <option value="month">{t('analytics.modeMonth')}</option>
+                    <option value="quarter">{t('analytics.modeQuarter')}</option>
+                    <option value="halfYear">{t('analytics.modeHalfYear')}</option>
+                    <option value="custom">{t('analytics.modeCustom')}</option>
+                  </select>
                 </div>
                 <div className="analytics-date-preview">{t('analytics.rangePreview', { start: startDate || '-', end: endDate || '-' })}</div>
               </div>
@@ -738,7 +902,7 @@ export function AnalyticsPage() {
             </div>
 
             <div className="analytics-date-picker">
-              <div className="analytics-filter-title">{rangeMode === 'custom' ? t('analytics.pickRange') : t('analytics.pickDate')}</div>
+              <div className="analytics-filter-title">{rangeMode === 'custom' ? t('analytics.pickRange') : t('analytics.pickPreset')}</div>
               {rangeMode === 'custom' ? (
                 <DayPicker
                   mode="range"
@@ -750,14 +914,235 @@ export function AnalyticsPage() {
                   weekStartsOn={1}
                 />
               ) : (
-                <DayPicker
-                  mode="single"
-                  selected={anchorDate}
-                  onSelect={handleSelectAnchor}
-                  showOutsideDays
-                  locale={pickerLocale}
-                  weekStartsOn={1}
-                />
+                (() => {
+                  const today = new Date()
+                  const hasAnchor = Boolean(anchorDate)
+                  const anchor = anchorDate ?? today
+
+                  const baseYear = anchor.getFullYear()
+                  const years = Array.from({ length: 9 }, (_, i) => baseYear - 4 + i)
+
+                  const month = anchor.getMonth() + 1
+                  const quarter = Math.floor(anchor.getMonth() / 3) + 1
+                  const half = anchor.getMonth() < 6 ? 1 : 2
+
+                  const isoWeekYear = getIsoWeekYear(anchor)
+                  const isoWeek = getIsoWeekNumber(anchor)
+
+                  if (rangeMode === 'month') {
+                    const yearValue = hasAnchor ? String(baseYear) : ''
+                    const monthValue = hasAnchor ? String(month) : ''
+                    return (
+                      <div className="analytics-date-presets">
+                        <label className="analytics-date-label">
+                          {t('analytics.yearLabel')}
+                          <select
+                            className="register-input analytics-date-select"
+                            value={yearValue}
+                            onChange={(e) => {
+                              if (!e.target.value) {
+                                applyAnchorForMode('month', undefined)
+                                return
+                              }
+                              const y = Number(e.target.value)
+                              if (!Number.isFinite(y)) return
+                              applyAnchorForMode('month', new Date(y, month - 1, 1))
+                            }}
+                          >
+                            {!hasAnchor ? <option value="">-</option> : null}
+                            {years.map((y) => (
+                              <option key={y} value={String(y)}>
+                                {y}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="analytics-date-label">
+                          {t('analytics.monthLabel')}
+                          <select
+                            className="register-input analytics-date-select"
+                            value={monthValue}
+                            onChange={(e) => {
+                              if (!e.target.value) {
+                                applyAnchorForMode('month', undefined)
+                                return
+                              }
+                              const m = Number(e.target.value)
+                              if (!Number.isFinite(m)) return
+                              applyAnchorForMode('month', new Date(baseYear, Math.max(1, Math.min(12, m)) - 1, 1))
+                            }}
+                          >
+                            {!hasAnchor ? <option value="">-</option> : null}
+                            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                              <option key={m} value={String(m)}>
+                                {m}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    )
+                  }
+
+                  if (rangeMode === 'quarter') {
+                    const yearValue = hasAnchor ? String(baseYear) : ''
+                    const quarterValue = hasAnchor ? String(quarter) : ''
+                    return (
+                      <div className="analytics-date-presets">
+                        <label className="analytics-date-label">
+                          {t('analytics.yearLabel')}
+                          <select
+                            className="register-input analytics-date-select"
+                            value={yearValue}
+                            onChange={(e) => {
+                              if (!e.target.value) {
+                                applyAnchorForMode('quarter', undefined)
+                                return
+                              }
+                              const y = Number(e.target.value)
+                              if (!Number.isFinite(y)) return
+                              applyAnchorForMode('quarter', new Date(y, (quarter - 1) * 3, 1))
+                            }}
+                          >
+                            {!hasAnchor ? <option value="">-</option> : null}
+                            {years.map((y) => (
+                              <option key={y} value={String(y)}>
+                                {y}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="analytics-date-label">
+                          {t('analytics.quarterLabel')}
+                          <select
+                            className="register-input analytics-date-select"
+                            value={quarterValue}
+                            onChange={(e) => {
+                              if (!e.target.value) {
+                                applyAnchorForMode('quarter', undefined)
+                                return
+                              }
+                              const q = Number(e.target.value)
+                              if (!Number.isFinite(q)) return
+                              const qq = Math.max(1, Math.min(4, q))
+                              applyAnchorForMode('quarter', new Date(baseYear, (qq - 1) * 3, 1))
+                            }}
+                          >
+                            {!hasAnchor ? <option value="">-</option> : null}
+                            {[1, 2, 3, 4].map((q) => (
+                              <option key={q} value={String(q)}>
+                                Q{q}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    )
+                  }
+
+                  if (rangeMode === 'halfYear') {
+                    const yearValue = hasAnchor ? String(baseYear) : ''
+                    const halfValue = hasAnchor ? String(half) : ''
+                    return (
+                      <div className="analytics-date-presets">
+                        <label className="analytics-date-label">
+                          {t('analytics.yearLabel')}
+                          <select
+                            className="register-input analytics-date-select"
+                            value={yearValue}
+                            onChange={(e) => {
+                              if (!e.target.value) {
+                                applyAnchorForMode('halfYear', undefined)
+                                return
+                              }
+                              const y = Number(e.target.value)
+                              if (!Number.isFinite(y)) return
+                              applyAnchorForMode('halfYear', new Date(y, half === 1 ? 0 : 6, 1))
+                            }}
+                          >
+                            {!hasAnchor ? <option value="">-</option> : null}
+                            {years.map((y) => (
+                              <option key={y} value={String(y)}>
+                                {y}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="analytics-date-label">
+                          {t('analytics.halfYearLabel')}
+                          <select
+                            className="register-input analytics-date-select"
+                            value={halfValue}
+                            onChange={(e) => {
+                              if (!e.target.value) {
+                                applyAnchorForMode('halfYear', undefined)
+                                return
+                              }
+                              const h = Number(e.target.value)
+                              if (!Number.isFinite(h)) return
+                              const hh = Math.max(1, Math.min(2, h))
+                              applyAnchorForMode('halfYear', new Date(baseYear, hh === 1 ? 0 : 6, 1))
+                            }}
+                          >
+                            {!hasAnchor ? <option value="">-</option> : null}
+                            <option value="1">{t('analytics.halfYearH1')}</option>
+                            <option value="2">{t('analytics.halfYearH2')}</option>
+                          </select>
+                        </label>
+                      </div>
+                    )
+                  }
+
+                  // week
+                  const yearValue = hasAnchor ? String(isoWeekYear) : ''
+                  const weekValue = hasAnchor ? String(isoWeek) : ''
+                  return (
+                    <div className="analytics-date-presets">
+                      <label className="analytics-date-label">
+                        {t('analytics.yearLabel')}
+                        <select
+                          className="register-input analytics-date-select"
+                          value={yearValue}
+                          onChange={(e) => {
+                            if (!e.target.value) {
+                              applyAnchorForMode('week', undefined)
+                              return
+                            }
+                            const y = Number(e.target.value)
+                            if (!Number.isFinite(y)) return
+                            applyAnchorForMode('week', isoWeekStartDate(y, isoWeek))
+                          }}
+                        >
+                          {!hasAnchor ? <option value="">-</option> : null}
+                          {Array.from({ length: 9 }, (_, i) => isoWeekYear - 4 + i).map((y) => (
+                            <option key={y} value={String(y)}>
+                              {y}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="analytics-date-label">
+                        {t('analytics.weekNumberLabel')}
+                        <input
+                          className="register-input analytics-date-input"
+                          type="number"
+                          min={1}
+                          max={53}
+                          value={weekValue}
+                          onChange={(e) => {
+                            if (!e.target.value) {
+                              applyAnchorForMode('week', undefined)
+                              return
+                            }
+                            const w = Number(e.target.value)
+                            if (!Number.isFinite(w)) return
+                            applyAnchorForMode('week', isoWeekStartDate(isoWeekYear, w))
+                          }}
+                        />
+                      </label>
+                    </div>
+                  )
+                })()
               )}
             </div>
           </div>
@@ -862,16 +1247,107 @@ export function AnalyticsPage() {
 
       {ngMode ? (
         <>
-          <div className="analytics-section-header">{t('analytics.ngOnlyTitle')}</div>
+          <div className="analytics-section-header">{t('analytics.ngOnlyTitle')}{ngWinderNumber ? ` · W${ngWinderNumber}` : ''}</div>
 
           <section className="analytics-card">
             <div className="analytics-actions" style={{ justifyContent: 'space-between', marginTop: 0 }}>
               <button type="button" className="btn-secondary" onClick={exitNgMode}>
                 {t('analytics.backToAnalysis')}
               </button>
-              <button type="button" className="btn-primary" onClick={() => void fetchNgRecords()} disabled={ngLoading}>
-                {ngLoading ? t('analytics.loading') : t('analytics.refresh')}
-              </button>
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {ngWinderNumber ? (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setNgWinderNumber(null)
+                      void fetchNgRecords({ winderNumber: null })
+                    }}
+                    disabled={ngLoading}
+                  >
+                    {t('common.clear')}
+                  </button>
+                ) : null}
+
+                <button type="button" className="btn-primary" onClick={() => void fetchNgRecords({ winderNumber: ngWinderNumber })} disabled={ngLoading}>
+                  {ngLoading ? t('analytics.loading') : t('analytics.refresh')}
+                </button>
+              </div>
+            </div>
+
+            {ngFeaturePctEntries.length > 0 ? (
+              <div className="analytics-ng-feature-chart" aria-label={t('analytics.featurePct.title')}>
+                <div className="analytics-ng-feature-chart-title">{t('analytics.featurePct.title')}</div>
+                <div className="analytics-ng-feature-chart-body" style={{ height: ngFeaturePctChartHeight }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart
+                      data={ngFeaturePctChartData}
+                      margin={{ top: 8, right: 16, bottom: 80, left: 12 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        type="category"
+                        dataKey="name"
+                        interval={0}
+                        angle={-35}
+                        height={80}
+                        textAnchor="end"
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                      <Tooltip
+                        formatter={(value, name) => {
+                          const n = typeof value === 'number' ? value : Number(value)
+                          const label = name === 'cumPct' ? '累積' : '占比'
+                          if (!Number.isFinite(n)) return [String(value), label]
+                          return [`${round3(n).toFixed(3)}%`, label]
+                        }}
+                      />
+                      <Legend />
+                      <Bar dataKey="pct" name="占比" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                      <Line dataKey="cumPct" name="累積" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="analytics-ng-extra">
+              <div className="analytics-ng-feature-chart" aria-label={t('analytics.featurePct.title')}>
+                <div className="analytics-ng-feature-chart-title">{t('analytics.featurePct.title')}（UT）</div>
+                <div className="analytics-ng-feature-chart-body" style={{ height: 380 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart
+                      data={utFeaturePctChartData}
+                      margin={{ top: 8, right: 16, bottom: 90, left: 12 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        type="category"
+                        dataKey="name"
+                        interval={0}
+                        angle={-35}
+                        height={90}
+                        textAnchor="end"
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                      <Tooltip
+                        formatter={(value, name) => {
+                          const n = typeof value === 'number' ? value : Number(value)
+                          const label = name === 'cumPct' ? '累積' : '占比'
+                          if (!Number.isFinite(n)) return [String(value), label]
+                          return [`${round3(n).toFixed(3)}%`, label]
+                        }}
+                      />
+                      <Legend />
+                      <Bar dataKey="pct" name="占比" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
+                      <Line dataKey="cumPct" name="累積" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </div>
 
             {ngError ? <div className="analytics-error">{ngError}</div> : null}
@@ -897,6 +1373,22 @@ export function AnalyticsPage() {
                     <summary>{t('analytics.viewDetails')}</summary>
                     {(() => {
                       const additional = r.additional_data as any
+                      const featurePctObjRaw =
+                        (additional && typeof additional === 'object'
+                          ? (additional.feature_pct ??
+                              additional.featurePct ??
+                              additional.feature_importance?.feature_pct ??
+                              additional.featureImportance?.feature_pct)
+                          : null) as unknown
+
+                      const featurePctObj = isPlainObject(featurePctObjRaw) ? (featurePctObjRaw as Record<string, unknown>) : null
+                      const featurePctEntries = featurePctObj
+                        ? Object.entries(featurePctObj)
+                            .filter(([, v]) => typeof v === 'number' && Number.isFinite(v as number))
+                            .map(([name, v]) => ({ name, pct: Number(v) }))
+                            .sort((a, b) => b.pct - a.pct)
+                        : []
+
                       const rows: unknown[] = Array.isArray(additional?.rows) ? additional.rows : []
                       if (rows.length === 0) {
                         return <div className="analytics-empty">{t('common.noData')}</div>
@@ -912,6 +1404,51 @@ export function AnalyticsPage() {
                       }
                       return (
                         <div className="analytics-ng-details">
+                          {featurePctEntries.length > 0 ? (
+                            <div
+                              className="analytics-ng-feature-pct"
+                              style={{
+                                border: '1px solid #e5e7eb',
+                                borderRadius: 10,
+                                padding: '12px 12px',
+                                marginBottom: 12,
+                                background: '#fafafa',
+                              }}
+                            >
+                              <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                                {t('analytics.featurePct.title')}
+                              </div>
+                              <div
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                                  gap: 8,
+                                }}
+                              >
+                                {featurePctEntries.slice(0, 12).map((x) => (
+                                  <div key={x.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <div style={{ flex: '1 1 auto', minWidth: 0 }} title={x.name}>
+                                      <div style={{ fontSize: '0.92rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {x.name}
+                                      </div>
+                                      <div style={{ height: 6, background: '#e5e7eb', borderRadius: 999, overflow: 'hidden', marginTop: 4 }}>
+                                        <div
+                                          style={{
+                                            height: '100%',
+                                            width: `${Math.max(0, Math.min(100, x.pct))}%`,
+                                            background: '#2563eb',
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div style={{ width: 62, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                      {t('analytics.featurePct.percent', { percent: x.pct.toFixed(2) })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
                           <div className="analytics-ng-details-meta muted">
                             Rows: {rows.length} · NG: {ngCount}
                           </div>
@@ -998,6 +1535,7 @@ export function AnalyticsPage() {
             {categoryCards.length > 0 ? (
               categoryCards.map((cat) => {
                 const title = cat.category
+                const isWinderCategory = /winder/i.test(String(title))
                 return (
                   <div key={cat.category} style={{ marginBottom: '1.5rem' }}>
                     <div className="analytics-card-title">{title}</div>
@@ -1011,7 +1549,7 @@ export function AnalyticsPage() {
                           <div key={`${cat.category}:${item.key}`}>
                             <div className="analytics-card-title">{item.key}</div>
                             <div className="muted" style={{ fontSize: '0.9rem' }}>
-                              生產品：{item.total} / 不良品：{item.ng}（{pct(item.ng, item.total)}%）
+                              {t('analytics.summary.productionNg', { total: item.total, ng: item.ng, percent: pct(item.ng, item.total) })}
                             </div>
                             <div className="analytics-chart-wrap">
                               <ResponsiveContainer>
@@ -1023,7 +1561,13 @@ export function AnalyticsPage() {
                                   <Bar
                                     dataKey="value"
                                     onClick={(data: any) => {
-                                      if (data?.payload?.name === 'NG') enterNgMode()
+                                      if (data?.payload?.name !== 'NG') return
+                                      if (isWinderCategory) {
+                                        const w = parseInt(String(item.key), 10)
+                                        enterNgMode({ winderNumber: Number.isFinite(w) ? w : null })
+                                        return
+                                      }
+                                      enterNgMode()
                                     }}
                                   >
                                     {barData.map((entry, idx) => (
