@@ -1,5 +1,9 @@
 # LEGACY API 盤點（非 /api/v2）
 
+> 注意：本文件是「盤點/移除規劃」用途，不是 API 教學。
+> 新匯入主流程請一律以 v2 import jobs（`/api/v2/import/jobs`）為準；multi-tenant 下 legacy import 端點會回 410。
+> 參考：`dev-guides/IMPORT_STRATEGY.md`、`dev-guides/LEGACY_DEPRECATION_PLAN.md`。
+
 目標：
 - 列出目前仍「存活」的非 `/api/v2/*` 端點（含 router/檔案位置/用途/前端呼叫點）。
 - 產出 migration / 移除清單，避免長期維持兩套行為分岔。
@@ -82,8 +86,7 @@
   - `PUT /api/upload/{process_id}/content`（前端修正後回寫+重驗）
   - `POST /api/upload/{process_id}/validate`（重驗）
 - 前端呼叫：
-  - `frontend/src/hooks/useUpload.ts`
-  - `frontend/src/services/fetchWrapper.test.ts`（測試）
+  - UploadPage 的 PDF 流程仍使用 `/api/upload/pdf*`；CSV 匯入主流程已改走 v2 import jobs
 - Migration 建議：
   - **中期**：把「上傳→驗證→入庫」主流程統一成 `/api/v2/import/*` 的 job 模型；Upload v1 僅保留為「上傳暫存/轉檔」或逐步併入 v2。
 
@@ -117,7 +120,7 @@
 
 ## Frontend 呼叫點（摘要）
 
-- Upload：`frontend/src/hooks/useUpload.ts` → `/api/upload/files`, `/api/upload/confirm`
+- Upload：CSV 主流程走 `/api/v2/import/jobs*`；PDF 流程走 `/api/upload/pdf*`
 - Edit：`frontend/src/components/EditRecordModal.tsx` → `/api/edit/*`
 - Logs：`frontend/src/services/logService.ts` → `/api/logs/*`
 - Tenants/Auth：`frontend/src/services/tenant.ts`, `frontend/src/pages/AdminPage.tsx`
@@ -129,7 +132,7 @@
 
 - `form-analysis-server/backend/app/api/routes_query_backup.py`：目前未掛載於 app，但檔案內容疑似損壞/重複，建議移除或移到 `dev-docs/` 當作歷史備份。
 - `form-analysis-server/frontend/src/pages/QueryPage_backup.tsx`：疑似備份檔；建議封存或移除，避免後續誤用。
-- `form-analysis-server/frontend/src/components/FileUpload.tsx`：目前未被引用；已移除硬編碼 base URL，但仍建議封存或刪除。
+- `form-analysis-server/frontend/src/components/FileUpload.tsx`：目前未被引用；已改為停用 placeholder（避免誤用 legacy 流程）；仍可考慮封存或刪除。
 
 ---
 

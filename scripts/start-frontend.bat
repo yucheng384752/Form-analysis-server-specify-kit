@@ -25,11 +25,19 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Compose v1/v2 偵測
+set "DOCKER_COMPOSE=docker-compose"
 docker-compose --version >nul 2>&1
 if errorlevel 1 (
-    echo docker-compose 不可用，請確認 Docker Compose 已安裝
-    pause
-    exit /b 1
+    docker compose --version >nul 2>&1
+    if errorlevel 1 (
+        echo Docker Compose 未安裝或不可用
+        echo   請確認 Docker Desktop 已安裝 compose plugin 或已安裝 docker-compose
+        pause
+        exit /b 1
+    ) else (
+        set "DOCKER_COMPOSE=docker compose"
+    )
 )
 
 set "HOST_FE_PORT=18003"
@@ -41,13 +49,18 @@ if exist "%SERVER_PATH%\.env" (
 
 echo [1/1] 啟動 frontend...
 cd /d "%SERVER_PATH%"
-docker-compose up -d frontend
+%DOCKER_COMPOSE% up -d --build frontend
 if errorlevel 1 (
     echo 啟動失敗，請查看日誌：
     echo   monitor_frontend.bat
     pause
     exit /b 1
 )
+
+echo.
+echo     檢查前端依賴（node_modules volume）...
+docker exec form_analysis_frontend sh -lc "test -f node_modules/.package-lock.json || npm ci --silent" >nul 2>&1
+%DOCKER_COMPOSE% restart frontend >nul 2>&1
 
 echo.
 echo 完成

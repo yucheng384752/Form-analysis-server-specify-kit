@@ -117,11 +117,11 @@
         * `UPLOADED` → `PARSING` → `VALIDATING` → (`FAILED` | `READY`) → `COMMITTING` → (`COMPLETED` | `FAILED`)
         * 任何 `COMMITTING` 之前都允許 `CANCELLED`
     *   **API（補齊）**：
-        * [x] `POST /api/import/jobs`：建立 Job（多檔）
-        * [x] `GET /api/import/jobs/{id}`：查狀態/進度/統計
-        * [x] `GET /api/import/jobs/{id}/errors`：錯誤列分頁（只回 error rows）
-        * `POST /api/import/jobs/{id}/cancel`：進庫前取消
-        * [x] `POST /api/import/jobs/{id}/commit`：手動觸發 commit（若採自動 commit，則標示為 internal/可保留）
+        * [x] `POST /api/v2/import/jobs`：建立 Job（多檔）
+        * [x] `GET /api/v2/import/jobs/{id}`：查狀態/進度/統計
+        * [x] `GET /api/v2/import/jobs/{id}/errors`：錯誤列分頁（只回 error rows）
+        * `POST /api/v2/import/jobs/{id}/cancel`：進庫前取消
+        * [x] `POST /api/v2/import/jobs/{id}/commit`：手動觸發 commit（若採自動 commit，則標示為 internal/可保留）
     *   **Progress**：至少提供 `progress 0-100` 與 `error_count`
 *   **測試策略**：
     *   建 job → 狀態正確更新、progress 變化合理。
@@ -129,7 +129,7 @@
 
 ### L2-2 Batch Upload API（多檔 + 混批規則）
 *   **實作內容**：
-    *   `POST /api/import/jobs` 接受 `files: List[UploadFile]`。
+    *   `POST /api/v2/import/jobs` 接受 `files: List[UploadFile]`。
     *   **混批規則（同一 job 必須一致）**：
         1) 同 `tenant_id`（由 tenant resolver 或 UI 選擇）
         2) 同 `format`（csv/xlsx/pdf 不混）
@@ -245,8 +245,8 @@
 * `UploadPage`：選 table_code + format（同批次限制）
 * `UploadDropzone`（react-dropzone）：多檔上傳
 * `JobList` / `JobCard`：顯示 status/progress/error_count
-* `CancelJobButton`：呼叫 `POST /api/import/jobs/{id}/cancel`
-* `JobErrorTable`：呼叫 `GET /api/import/jobs/{id}/errors`，只顯示錯誤列（可展開顯示 field/code/message）
+* `CancelJobButton`：呼叫 `POST /api/v2/import/jobs/{id}/cancel`
+* `JobErrorTable`：呼叫 `GET /api/v2/import/jobs/{id}/errors`，只顯示錯誤列（可展開顯示 field/code/message）
 
 ### FE-3 PDF 轉檔（下載 / 套用）
 * `PdfUploadToggle`：切換上傳 CSV vs PDF

@@ -13,6 +13,14 @@ param(
     [switch]$Help
 )
 
+# Ensure consistent UTF-8 output (avoid mojibake in terminals).
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {
+    # best-effort
+}
+
 if ($Help) {
     Write-Host @"
 Form Analysis - Docker 一鍵啟動與驗證腳本
@@ -79,22 +87,84 @@ try {
     exit 1
 }
 
+# Ensure we always run from the directory that contains docker-compose.yml.
+try {
+    Set-Location $PSScriptRoot
+} catch {
+    Write-Error "無法切換到腳本目錄：$PSScriptRoot"
+    exit 1
+}
+
+# Ensure .env exists for docker compose variable substitution.
+if (-not (Test-Path ".env") -and (Test-Path ".env.example")) {
+    try {
+        Copy-Item ".env.example" ".env" -Force
+        Write-Info "偵測到未設定環境檔，已建立 .env（由 .env.example 複製）"
+    } catch {
+        Write-Warning "建立 .env 失敗，將改用系統環境變數（錯誤：$_）"
+    }
+}
+
+function Initialize-DockerCompose {
+    # Prefer Docker Compose v2 plugin (docker compose). Fallback to docker-compose.
+    try {
+        docker compose version | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $script:ComposeCommand = "docker"
+            $script:ComposeBaseArgs = @("compose")
+            return
+        }
+    } catch {
+        # ignore
+    }
+
+    if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+        $script:ComposeCommand = "docker-compose"
+        $script:ComposeBaseArgs = @()
+        return
+    }
+
+    Write-Error "找不到 Docker Compose。請確認 Docker Desktop 已安裝 compose plugin 或已安裝 docker-compose。"
+    exit 1
+}
+
+function Invoke-Compose {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$ComposeArgs,
+        [switch]$ShowOutput
+    )
+
+    # IMPORTANT: Pass args as an array to avoid PowerShell treating -d/-v as common parameters.
+    if ($ShowOutput) {
+        & $script:ComposeCommand @($script:ComposeBaseArgs + $ComposeArgs)
+    } else {
+        & $script:ComposeCommand @($script:ComposeBaseArgs + $ComposeArgs) *> $null
+    }
+    return $LASTEXITCODE
+}
+
+Initialize-DockerCompose
+
+Write-Info ("使用 Docker Compose: {0} {1}" -f $script:ComposeCommand, (($script:ComposeBaseArgs -join ' ')))
+
 # 停止現有容器
 Write-Info "停止現有容器..."
 if ($ResetDb) {
     Write-Warning "ResetDb=true：將移除 Docker volumes，資料庫資料會被清空"
-    docker compose down -v --remove-orphans 2>$null
+    $null = Invoke-Compose @("down", "-v", "--remove-orphans") 2>$null
 } else {
     # Default: keep volumes to preserve DB data
-    docker compose down --remove-orphans 2>$null
+    $null = Invoke-Compose @("down", "--remove-orphans") 2>$null
 }
 
 # 啟動服務
 Write-Info "啟動所有服務..."
-docker compose up -d
+$composeUpExit = Invoke-Compose @("up", "-d", "--build")
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "服務啟動失敗"
+if ($composeUpExit -ne 0) {
+    Write-Error ("服務啟動失敗（docker compose exit code: {0}）" -f $composeUpExit)
+    try { Invoke-Compose @("ps") -ShowOutput } catch {}
     exit 1
 }
 
@@ -108,8 +178,8 @@ $retryCount = 0
 
 while ($retryCount -lt $maxRetries) {
     try {
-        $result = docker compose exec -T db pg_isready -U app 2>$null
-        if ($LASTEXITCODE -eq 0) {
+        $dbReadyExit = Invoke-Compose @("exec", "-T", "db", "pg_isready", "-U", "app") 2>$null
+        if ($dbReadyExit -eq 0) {
             Write-Success "資料庫已就緒"
             break
         }
@@ -122,7 +192,7 @@ while ($retryCount -lt $maxRetries) {
 
 if ($retryCount -eq $maxRetries) {
     Write-Error "資料庫啟動超時"
-    docker compose logs db
+    Invoke-Compose @("logs", "db") -ShowOutput
     exit 1
 }
 
@@ -154,15 +224,31 @@ while ($retryCount -lt $maxRetries) {
 
 if ($retryCount -eq $maxRetries) {
     Write-Error "後端 API 啟動超時"
-    docker compose logs backend
+    Invoke-Compose @("logs", "backend") -ShowOutput
     exit 1
 }
 
+# 前端容器會 mount /app/node_modules 為 volume，可能覆蓋 image build 階段的依賴。
+# 若 node_modules volume 是空的，frontend 可能會直接起不來，因此先補齊依賴再等健康。
+Write-Info "檢查前端依賴（node_modules volume）..."
+try {
+    docker exec form_analysis_frontend sh -lc "test -f node_modules/.package-lock.json || npm ci --silent" | Out-Null
+} catch {
+    try {
+        $null = Invoke-Compose @("run", "--rm", "--no-deps", "frontend", "sh", "-lc", "test -f node_modules/.package-lock.json || npm ci --silent")
+    } catch {
+        Write-Warning "無法自動補齊前端依賴；若前端啟動失敗，請查看 logs frontend 或執行 docker compose down -v"
+    }
+}
+
+try { Invoke-Compose @("restart", "frontend") | Out-Null } catch {}
+
 # 等待前端就緒
 Write-Info "等待前端就緒..."
+$frontendMaxRetries = 60
 $retryCount = 0
 
-while ($retryCount -lt $maxRetries) {
+while ($retryCount -lt $frontendMaxRetries) {
     try {
         if ($useCurl) {
             curl.exe -f http://localhost:18003 -o $null -s 2>$null
@@ -184,9 +270,9 @@ while ($retryCount -lt $maxRetries) {
     Start-Sleep 2
 }
 
-if ($retryCount -eq $maxRetries) {
+if ($retryCount -eq $frontendMaxRetries) {
     Write-Error "前端啟動超時"
-    docker compose logs frontend
+    Invoke-Compose @("logs", "frontend") -ShowOutput
     exit 1
 }
 
@@ -197,7 +283,7 @@ Write-Host ""
 if (-not $SkipTests) {
     # 驗證健康檢查
     Write-ColorOutput Blue @"
-🩺 健康檢查驗證
+健康檢查驗證
 ==================
 "@
 
@@ -292,7 +378,7 @@ lot_no,product_name,quantity,production_date
     if ($authEnabled) {
         Write-Info "偵測到 API key auth 已啟用，bootstrap 測試用 API key..."
         try {
-            $bootstrapOut = docker compose exec -T backend python scripts/bootstrap_tenant_api_key.py --tenant-code default --label docker-quick-start --force
+            $bootstrapOut = Invoke-Compose @("exec", "-T", "backend", "python", "scripts/bootstrap_tenant_api_key.py", "--tenant-code", "default", "--label", "docker-quick-start", "--force")
             $lines = ($bootstrapOut -split "`r?`n") | Where-Object { $_.Trim().Length -gt 0 }
             $markerIndex = $lines.IndexOf("SAVE THIS KEY NOW (shown once):")
             if ($markerIndex -ge 0 -and ($markerIndex + 1) -lt $lines.Count) {
@@ -427,21 +513,21 @@ Write-ColorOutput Blue @"
  容器狀態
 ===========
 "@
-docker compose ps
+Invoke-Compose @("ps") -ShowOutput
 
 Write-Host ""
 Write-Success " 一鍵啟動與驗證完成！"
 Write-Host ""
 Write-Host "使用以下命令查看日誌："
-Write-Host "  docker compose logs -f backend    # 後端日誌"
-Write-Host "  docker compose logs -f frontend   # 前端日誌"
-Write-Host "  docker compose logs -f db         # 資料庫日誌"
+Write-Host "  docker compose logs -f backend    # 後端日誌（或 docker-compose logs -f backend）"
+Write-Host "  docker compose logs -f frontend   # 前端日誌（或 docker-compose logs -f frontend）"
+Write-Host "  docker compose logs -f db         # 資料庫日誌（或 docker-compose logs -f db）"
 Write-Host ""
 Write-Host "停止服務："
-Write-Host "  docker compose down"
+Write-Host "  docker compose down              # （或 docker-compose down）"
 Write-Host ""
 Write-Host "停止並清理資料："
-Write-Host "  docker compose down -v"
+Write-Host "  docker compose down -v           # （或 docker-compose down -v）"
 Write-Host ""
 
 # 自動打開瀏覽器（可選）

@@ -1,15 +1,65 @@
 # 使用者上傳流程（Upload / Validate / Import）
 
+> 注意：本文件以 **v2 import jobs** 為主流程（UploadPage 的 CSV 主流程已於 **2026-01-31** 切換）。
+> - legacy import endpoints（例如 `/api/upload`、`/api/import`）屬 **Deprecated / 最低相容性**，僅保留在附錄供理解歷史現況。
+> - **multi-tenant 模式會直接拒絕 legacy（410）**，避免 split-brain。
+> - 推薦流程：`/api/v2/import/jobs` → poll → `/commit`。
+>
+> 參考：
+> - dev-guides/LEGACY_DEPRECATION_PLAN.md
+> - dev-guides/IMPORT_STRATEGY.md
+
 本文件描述「使用者在前端上傳 CSV → 驗證 → 修正 → 匯入」的端到端流程，並補充系統內兩套狀態機：
 
-- **Legacy 上傳/匯入（目前 UploadPage UI 使用）**：`/api/upload`、`/api/upload/{process_id}/content`、`/api/import`
-- **V2 批次匯入（後端 Import Job 引擎 / scripts 使用）**：`/api/v2/import/jobs`、`/api/v2/import/jobs/{id}/commit`
+- **V2 上傳/驗證/匯入（現況主流程；UploadPage 使用）**：`/api/v2/import/jobs`、`/api/v2/import/jobs/{id}/errors`、`/api/v2/import/jobs/{id}/commit`
+- **Legacy 上傳/匯入（附錄/歷史流程）**：`/api/upload`、`/api/upload/{process_id}/content`、`/api/import`
 
 > 文件目的：讓前後端在「狀態機變化」「UI 提示」「驗證與重試策略」有一致語言。
 
 ---
 
-## 1) 使用者視角流程（目前前端 UploadPage.tsx）
+## 0) V2 推薦流程（最小示例）
+
+> 這是「新的主流程」：`POST /api/v2/import/jobs` → poll `READY/FAILED` → `POST /commit` 或 `GET /errors`。
+
+```bash
+# 建立匯入 job（以 P1 為例）
+curl -X POST "http://localhost:18002/api/v2/import/jobs" \
+  -H "X-Tenant-Id: <TENANT_ID>" \
+  -H "X-API-Key: <YOUR_API_KEY>" \
+  -F "table_code=P1" \
+  -F "allow_duplicate=false" \
+  -F "files=@P1_2503033_01.csv;type=text/csv"
+
+# poll 狀態直到 READY / FAILED
+curl -H "X-Tenant-Id: <TENANT_ID>" -H "X-API-Key: <YOUR_API_KEY>" \
+  "http://localhost:18002/api/v2/import/jobs/<JOB_ID>"
+
+# READY 後提交 commit
+curl -X POST -H "X-Tenant-Id: <TENANT_ID>" -H "X-API-Key: <YOUR_API_KEY>" \
+  "http://localhost:18002/api/v2/import/jobs/<JOB_ID>/commit"
+```
+
+---
+
+## 1) 使用者視角流程（現況：UploadPage CSV → v2 import jobs）
+
+> 本章節描述目前 UploadPage（CSV）行為；PDF 流程仍走 `/api/upload/pdf*`。
+
+1. 使用者在「上傳頁」選擇 CSV 檔案（可多檔）
+2. 使用者按「驗證」：前端 `POST /api/v2/import/jobs`（multipart：`table_code` + `files[]`）
+3. 後端背景 parse + validate；前端輪詢 `GET /api/v2/import/jobs/{id}` 直到 `READY` / `FAILED`
+4. 若有錯誤：前端 `GET /api/v2/import/jobs/{id}/errors` 取得錯誤列並顯示
+5. 使用者在表格修正後按「重新驗證」：前端會以**目前畫面 CSV 內容**重新建立檔案並重走步驟 2（建立新 job）
+6. 驗證通過（READY 且錯誤數 0）後使用者按「匯入」或「批次匯入」：前端 `POST /api/v2/import/jobs/{id}/commit`
+
+> 註：v2 的 commit 為主寫入路徑（v2-only write）。legacy `/api/import` 僅相容保留。
+
+---
+
+## 附錄 A) 使用者視角流程（歷史：舊版 UploadPage legacy）
+
+> ⚠️ 注意：本章節是「歷史 legacy 流程」，不作為新開發/新腳本的教學範例。
 
 ### 1.1 流程概覽
 
@@ -52,7 +102,7 @@ stateDiagram-v2
 
 ---
 
-## 2) 後端 API 與資料流（Legacy UI 對應）
+## 附錄 B) 後端 API 與資料流（Legacy UI 對應）
 
 ### 2.1 檔案上傳與驗證：`POST /api/upload`
 
@@ -101,7 +151,7 @@ stateDiagram-v2
 
 ---
 
-## 3) V2 批次匯入狀態機（ImportJobStatus，供 scripts / 未來 UI 使用）
+## 2) V2 批次匯入狀態機（ImportJobStatus，供 scripts / UI 使用）
 
 V2 匯入工作（`import_jobs`）狀態（`ImportJobStatus`）：
 
@@ -135,9 +185,9 @@ stateDiagram-v2
 
 ---
 
-## 4) 驗證過程（建議驗證清單）
+## 3) 驗證過程（建議驗證清單）
 
-### 4.1 UI 驗證（建議操作）
+### 3.1 UI 驗證（建議操作）
 
 1. 進入 Upload 頁，選擇 1~3 個 CSV
 2. 應看到 toast：`已加入 N 個檔案`
@@ -150,11 +200,11 @@ stateDiagram-v2
 5. 點「匯入」或「批次匯入」
    - 成功：toast 顯示匯入筆數，已匯入檔案會從列表移除
 
-### 4.2 API 驗證（不用開 UI）
+### 3.2 API 驗證（不用開 UI）
 
-- 驗證：`POST /api/upload`（multipart）
-- 查驗證結果（完整錯誤分頁）：`GET /api/validate?process_id=...`
-- 重驗證：`PUT /api/upload/{process_id}/content`
-- 匯入：`POST /api/import`
+- 建立 job：`POST /api/v2/import/jobs`（multipart）
+- 查狀態：`GET /api/v2/import/jobs/{id}`
+- 查錯誤：`GET /api/v2/import/jobs/{id}/errors`
+- commit：`POST /api/v2/import/jobs/{id}/commit`
 
 若要回歸測試，可參考 form-analysis-server 內的 PowerShell 測試腳本（例如 `test-api.ps1` 系列）。

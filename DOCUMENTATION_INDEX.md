@@ -14,6 +14,8 @@
 ## P1：開發指南（規格/設計/待辦）
 
 - [dev-guides/DB_SCHEMA_DIAGRAM.md](dev-guides/DB_SCHEMA_DIAGRAM.md)（DB Schema Diagram (ERD) + Data Flow）
+- [dev-guides/V2_IMPORT_JOBS_GUIDE.md](dev-guides/V2_IMPORT_JOBS_GUIDE.md)（v2 匯入主流程：create→poll→commit/errors）
+- [dev-guides/LEGACY_DEPRECATION_PLAN.md](dev-guides/LEGACY_DEPRECATION_PLAN.md)（P1/LEGACY：legacy endpoints 淘汰清單與時程）
 
 ## P1：服務內文件（form-analysis-server 子專案）
 

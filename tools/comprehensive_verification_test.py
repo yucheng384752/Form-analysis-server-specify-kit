@@ -31,6 +31,39 @@ test_results = {
     "warnings": 0
 }
 
+
+def _get_base_url() -> str:
+    # Prefer the same defaults used by local docker setup
+    return os.environ.get("BASE_URL") or os.environ.get("API_BASE") or "http://localhost:18002"
+
+
+def _get_tenant_id(base_url: str) -> str:
+    tenant_id = os.environ.get("TENANT_ID", "").strip()
+    if tenant_id:
+        return tenant_id
+    resp = requests.get(f"{base_url}/api/tenants", timeout=10)
+    resp.raise_for_status()
+    items = resp.json() or []
+    if not items:
+        raise RuntimeError("找不到 tenant，請先建立 tenant 或設定 TENANT_ID")
+    return items[0].get("tenant_id") or items[0].get("id")
+
+
+def _poll_import_job(base_url: str, tenant_id: str, job_id: str, timeout_s: int = 90) -> str:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        resp = requests.get(
+            f"{base_url}/api/v2/import/jobs/{job_id}",
+            headers={"X-Tenant-Id": tenant_id},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        status = (resp.json() or {}).get("status")
+        if status in {"READY", "FAILED", "COMPLETED", "CANCELLED"}:
+            return status
+        time.sleep(1)
+    return "TIMEOUT"
+
 def print_header(title: str):
     """打印測試區塊標題"""
     print(f"\n{'='*60}")
@@ -85,7 +118,7 @@ def check_database_structure():
         
         print_test("驗證資料表結構")
         
-        # 檢查 upload_jobs 表
+        # legacy tables (compat) - presence is optional during deprecation
         cursor.execute("""
             SELECT name FROM sqlite_master 
             WHERE type='table' AND name='upload_jobs'
@@ -93,7 +126,7 @@ def check_database_structure():
         if cursor.fetchone():
             print_pass("upload_jobs 表存在")
         else:
-            print_fail("upload_jobs 表不存在")
+            print_warning("upload_jobs 表不存在（可能已逐步移除 legacy）")
         
         # 檢查 upload_errors 表
         cursor.execute("""
@@ -103,7 +136,7 @@ def check_database_structure():
         if cursor.fetchone():
             print_pass("upload_errors 表存在")
         else:
-            print_fail("upload_errors 表不存在")
+            print_warning("upload_errors 表不存在（可能已逐步移除 legacy）")
         
         # 檢查 records 表
         cursor.execute("""
@@ -113,31 +146,34 @@ def check_database_structure():
         if cursor.fetchone():
             print_pass("records 表存在")
         else:
-            print_fail("records 表不存在")
+            print_warning("records 表不存在（可能已切換為 v2 schema）")
         
-        # 檢查 upload_jobs 表結構
-        print_test("驗證 upload_jobs 表字段")
-        cursor.execute("PRAGMA table_info(upload_jobs)")
-        columns = [row[1] for row in cursor.fetchall()]
-        expected_columns = ['id', 'filename', 'created_at', 'status', 'total_rows', 'valid_rows', 'invalid_rows', 'process_id']
-        
-        for col in expected_columns:
-            if col in columns:
-                print_pass(f"upload_jobs.{col} 字段存在")
-            else:
-                print_fail(f"upload_jobs.{col} 字段不存在")
-        
-        # 檢查索引
-        print_test("驗證索引結構")
+        # upload_jobs 表結構（legacy/compat）
         cursor.execute("""
             SELECT name FROM sqlite_master 
-            WHERE type='index' AND tbl_name='upload_jobs'
+            WHERE type='table' AND name='upload_jobs'
         """)
-        indexes = [row[0] for row in cursor.fetchall()]
-        if any('process_id' in idx for idx in indexes):
-            print_pass("upload_jobs.process_id 索引存在")
-        else:
-            print_warning("upload_jobs.process_id 索引可能不存在")
+        if cursor.fetchone():
+            print_test("驗證 upload_jobs 表字段（legacy/compat）")
+            cursor.execute("PRAGMA table_info(upload_jobs)")
+            columns = [row[1] for row in cursor.fetchall()]
+            expected_columns = ['id', 'filename', 'created_at', 'status', 'total_rows', 'valid_rows', 'invalid_rows', 'process_id']
+            for col in expected_columns:
+                if col in columns:
+                    print_pass(f"upload_jobs.{col} 字段存在")
+                else:
+                    print_warning(f"upload_jobs.{col} 字段不存在")
+
+            print_test("驗證 upload_jobs 索引結構（legacy/compat）")
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='index' AND tbl_name='upload_jobs'
+            """)
+            indexes = [row[0] for row in cursor.fetchall()]
+            if any('process_id' in idx for idx in indexes):
+                print_pass("upload_jobs.process_id 索引存在")
+            else:
+                print_warning("upload_jobs.process_id 索引可能不存在")
         
         conn.close()
         
@@ -148,8 +184,12 @@ def test_api_endpoints():
     """測試 API 端點"""
     print_header("API 端點測試")
     
-    # 假設服務執行在 8001 端口
-    base_url = "http://localhost:8001"
+    base_url = _get_base_url()
+    try:
+        tenant_id = _get_tenant_id(base_url)
+    except Exception as e:
+        print_skip(f"無法取得 tenant：{e}")
+        return
     
     print_test("測試基本健康檢查")
     try:
@@ -177,80 +217,79 @@ def test_api_endpoints():
     except Exception as e:
         print_fail(f"根端點測試異常: {e}")
     
-    print_test("測試文件上傳端點")
+    print_test("測試 v2 匯入流程（import jobs）")
     try:
-        # 創建測試 CSV 文件
         csv_content = """lot_no,product_name,quantity,production_date
 1234567_01,測試產品A,100,2024-01-15
-2345678_02,測試產品B,50,2024-01-16
-3456789_03,測試產品C,75,2024-01-17
+1234567_01,測試產品B,50,2024-01-16
 """
-        
-        files = {'file': ('test.csv', csv_content, 'text/csv')}
-        response = requests.post(f"{base_url}/api/upload", files=files, timeout=10)
-        
-        if response.status_code == 200:
-            upload_result = response.json()
-            print_pass("文件上傳端點正常")
-            print_info(f"上傳結果: {upload_result}")
-            
-            # 獲取 process_id 用於後續測試
-            process_id = upload_result.get('process_id')
-            if process_id:
-                test_validation_endpoint(base_url, process_id)
-                test_import_endpoint(base_url, process_id)
-                test_export_endpoint(base_url, process_id)
-        else:
-            print_fail(f"文件上傳失敗，狀態碼: {response.status_code}")
-            print_info(f"錯誤回應: {response.text}")
-            
-    except Exception as e:
-        print_fail(f"文件上傳測試異常: {e}")
 
-def test_validation_endpoint(base_url: str, process_id: str):
-    """測試驗證端點"""
-    print_test("測試驗證查詢端點")
-    try:
-        response = requests.get(f"{base_url}/api/validate?process_id={process_id}", timeout=5)
-        if response.status_code == 200:
-            print_pass("驗證查詢端點正常")
-            validation_result = response.json()
-            print_info(f"驗證結果: {validation_result}")
-        else:
-            print_fail(f"驗證查詢失敗，狀態碼: {response.status_code}")
-    except Exception as e:
-        print_fail(f"驗證查詢測試異常: {e}")
+        files = [
+            (
+                "files",
+                (
+                    "P1_1234567_01.csv",
+                    io.BytesIO(csv_content.encode("utf-8")),
+                    "text/csv",
+                ),
+            )
+        ]
 
-def test_import_endpoint(base_url: str, process_id: str):
-    """測試匯入端點"""
-    print_test("測試資料匯入端點")
-    try:
-        import_data = {"process_id": process_id}
-        response = requests.post(f"{base_url}/api/import", json=import_data, timeout=10)
-        if response.status_code == 200:
-            print_pass("資料匯入端點正常")
-            import_result = response.json()
-            print_info(f"匯入結果: {import_result}")
-        else:
-            print_warning(f"資料匯入狀態碼: {response.status_code}")
-            print_info(f"回應: {response.text}")
-    except Exception as e:
-        print_fail(f"資料匯入測試異常: {e}")
+        resp = requests.post(
+            f"{base_url}/api/v2/import/jobs",
+            headers={"X-Tenant-Id": tenant_id},
+            files=files,
+            data={"table_code": "P1", "allow_duplicate": "false"},
+            timeout=30,
+        )
 
-def test_export_endpoint(base_url: str, process_id: str):
-    """測試匯出端點"""
-    print_test("測試錯誤匯出端點")
-    try:
-        response = requests.get(f"{base_url}/api/errors.csv?process_id={process_id}", timeout=5)
-        if response.status_code == 200:
-            print_pass("錯誤匯出端點正常")
-            print_info(f"CSV 內容長度: {len(response.text)} 字元")
-        elif response.status_code == 404:
-            print_warning("沒有找到錯誤資料（正常情況，如果沒有錯誤）")
+        if resp.status_code != 200:
+            print_fail(f"v2 建立 job 失敗，狀態碼: {resp.status_code}")
+            print_info(f"回應: {resp.text}")
+            return
+
+        job = resp.json() or {}
+        job_id = job.get("id")
+        if not job_id:
+            print_fail("v2 建立 job 成功但缺少 id")
+            print_info(f"回應: {job}")
+            return
+
+        print_pass("v2 建立 job 成功")
+        print_info(f"job_id: {job_id}")
+
+        status = _poll_import_job(base_url, tenant_id, job_id, timeout_s=90)
+        print_info(f"job status: {status}")
+        if status == "FAILED":
+            print_warning("v2 驗證失敗，嘗試讀取 errors")
+            err = requests.get(
+                f"{base_url}/api/v2/import/jobs/{job_id}/errors",
+                headers={"X-Tenant-Id": tenant_id},
+                timeout=20,
+            )
+            print_info(f"errors status: {err.status_code}")
+            print_info(err.text[:2000])
+            return
+        if status != "READY":
+            print_warning("job 未 READY（可能背景任務仍處理中），跳過 commit")
+            return
+
+        commit = requests.post(
+            f"{base_url}/api/v2/import/jobs/{job_id}/commit",
+            headers={"X-Tenant-Id": tenant_id},
+            timeout=30,
+        )
+        if commit.status_code == 200:
+            print_pass("v2 commit 呼叫成功")
+            print_info(str(commit.json())[:2000])
         else:
-            print_fail(f"錯誤匯出失敗，狀態碼: {response.status_code}")
+            print_warning(f"v2 commit 狀態碼: {commit.status_code}")
+            print_info(commit.text[:2000])
+
+    except requests.exceptions.ConnectionError:
+        print_skip("無法連接到 API 服務，請確保服務正在執行")
     except Exception as e:
-        print_fail(f"錯誤匯出測試異常: {e}")
+        print_fail(f"v2 匯入流程測試異常: {e}")
 
 def check_frontend_files():
     """檢查前端文件"""

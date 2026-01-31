@@ -25,11 +25,19 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Compose v1/v2 偵測
+set "DOCKER_COMPOSE=docker-compose"
 docker-compose --version >nul 2>&1
 if errorlevel 1 (
-    echo docker-compose 不可用，請確認 Docker Compose 已安裝
-    pause
-    exit /b 1
+    docker compose --version >nul 2>&1
+    if errorlevel 1 (
+        echo Docker Compose 未安裝或不可用
+        echo   請確認 Docker Desktop 已安裝 compose plugin 或已安裝 docker-compose
+        pause
+        exit /b 1
+    ) else (
+        set "DOCKER_COMPOSE=docker compose"
+    )
 )
 
 set "HOST_API_PORT=18002"
@@ -41,7 +49,7 @@ if exist "%SERVER_PATH%\.env" (
 
 echo [1/2] 啟動 db + backend...
 cd /d "%SERVER_PATH%"
-docker-compose up -d db backend
+%DOCKER_COMPOSE% up -d --build db backend
 if errorlevel 1 (
     echo 啟動失敗，請查看日誌：
     echo   monitor_backend.bat

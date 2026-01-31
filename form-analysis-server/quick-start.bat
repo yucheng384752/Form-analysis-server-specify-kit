@@ -1,295 +1,37 @@
 @echo off
-REM Form Analysis - Docker 一鍵啟動與驗證腳本 (Windows)
-REM 
-REM 此腳本將：
-REM 1. 啟動所有服務
-REM 2. 等待服務就緒
-REM 3. 驗證健康檢查
-REM 4. 模擬完整的上傳和驗證流程
-REM 5. 提供前端訪問資訊
+setlocal
 
-setlocal enabledelayedexpansion
+REM NOTE: This .bat is an ASCII launcher to avoid cmd.exe encoding issues.
+REM The real logic lives in quick-start.ps1.
 
-REM Optional arg: --reset-db will remove Docker volumes (DANGEROUS: clears DB data)
-set "RESET_DB=false"
-if /I "%~1"=="--reset-db" set "RESET_DB=true"
+set "PS_ARGS="
 
-echo  Form Analysis - Docker 一鍵啟動與驗證
-echo ========================================
+:parse
+if "%~1"=="" goto run
 
-REM 檢查 Docker 是否執行
-docker info >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Docker 未執行，請先啟動 Docker
-    pause
-    exit /b 1
+if /I "%~1"=="--reset-db" (
+	set "PS_ARGS=%PS_ARGS% -ResetDb"
+	shift
+	goto parse
 )
 
-REM 檢查 curl 是否可用
-curl --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] curl 未安裝，請先安裝 curl
-    echo 可以從 https://curl.se/download.html 下載
-    pause
-    exit /b 1
+if /I "%~1"=="--skip-tests" (
+	set "PS_ARGS=%PS_ARGS% -SkipTests"
+	shift
+	goto parse
 )
 
-echo [INFO] 停止現有容器...
-if /I "!RESET_DB!"=="true" (
-    echo [WARNING] --reset-db：將移除 Docker volumes，資料庫資料會被清空
-    docker compose down -v --remove-orphans
-) else (
-    REM Default: keep volumes to preserve DB data
-    docker compose down --remove-orphans
+if /I "%~1"=="--help" (
+	set "PS_ARGS=%PS_ARGS% -Help"
+	shift
+	goto parse
 )
 
-echo [INFO] 啟動所有服務...
-docker compose up -d
+REM Pass-through any other args
+set "PS_ARGS=%PS_ARGS% %~1"
+shift
+goto parse
 
-echo [INFO] 等待服務啟動...
-timeout /t 10 /nobreak >nul
-
-REM 等待資料庫就緒
-echo [INFO] 等待資料庫就緒...
-set RETRY_COUNT=0
-set MAX_RETRIES=30
-
-:wait_db
-if !RETRY_COUNT! geq !MAX_RETRIES! (
-    echo [ERROR] 資料庫啟動超時
-    docker compose logs db
-    pause
-    exit /b 1
-)
-
-docker compose exec -T db pg_isready -U app >nul 2>&1
-if errorlevel 1 (
-    set /a RETRY_COUNT+=1
-    echo|set /p="."
-    timeout /t 2 /nobreak >nul
-    goto wait_db
-)
-
-echo.
-echo [SUCCESS] 資料庫已就緒
-
-REM 等待後端 API 就緒
-echo [INFO] 等待後端 API 就緒...
-set RETRY_COUNT=0
-
-:wait_api
-if !RETRY_COUNT! geq !MAX_RETRIES! (
-    echo [ERROR] 後端 API 啟動超時
-    docker compose logs backend
-    pause
-    exit /b 1
-)
-
-curl -f http://localhost:18002/healthz >nul 2>&1
-if errorlevel 1 (
-    set /a RETRY_COUNT+=1
-    echo|set /p="."
-    timeout /t 2 /nobreak >nul
-    goto wait_api
-)
-
-echo.
-echo [SUCCESS] 後端 API 已就緒
-
-REM 等待前端就緒
-echo [INFO] 等待前端就緒...
-set RETRY_COUNT=0
-
-:wait_frontend
-if !RETRY_COUNT! geq !MAX_RETRIES! (
-    echo [ERROR] 前端啟動超時
-    docker compose logs frontend
-    pause
-    exit /b 1
-)
-
-curl -f http://localhost:18003 >nul 2>&1
-if errorlevel 1 (
-    set /a RETRY_COUNT+=1
-    echo|set /p="."
-    timeout /t 2 /nobreak >nul
-    goto wait_frontend
-)
-
-echo.
-echo [SUCCESS] 前端已就緒
-echo.
-echo [SUCCESS] 所有服務已啟動完成！
-echo.
-
-REM 若 Docker 預設啟用 AUTH_MODE=api_key，/api/* 會要求 X-API-Key。
-REM 這裡用 /api/tenants 測試是否需要 key；若需要，bootstrap 一把測試用 key。
-set "API_KEY="
-for /f "usebackq delims=" %%H in (`curl -s -o NUL -w "%%{http_code}" http://localhost:18002/api/tenants`) do set "TENANTS_CODE=%%H"
-if /I "%TENANTS_CODE%"=="401" (
-    echo [INFO] 偵測到 API key auth 已啟用，bootstrap 測試用 API key...
-    set "BOOTSTRAP_OUT=%TEMP%\bootstrap_api_key_out.txt"
-    docker compose exec -T backend python scripts/bootstrap_tenant_api_key.py --tenant-code default --label docker-quick-start --force > "%BOOTSTRAP_OUT%"
-    if errorlevel 1 (
-        echo [ERROR] bootstrap API key 失敗
-        type "%BOOTSTRAP_OUT%"
-        pause
-        exit /b 1
-    )
-
-    set "FOUND_MARKER=0"
-    for /f "usebackq delims=" %%L in ("%BOOTSTRAP_OUT%") do (
-        if "!FOUND_MARKER!"=="2" if not defined API_KEY (
-            set "API_KEY=%%L"
-            set "FOUND_MARKER=0"
-        )
-        echo %%L | findstr /c:"SAVE THIS KEY NOW (shown once):" >nul
-        if not errorlevel 1 set "FOUND_MARKER=2"
-    )
-
-    REM If parsing failed, fallback to last non-empty line
-    if not defined API_KEY (
-        for /f "usebackq delims=" %%L in ("%BOOTSTRAP_OUT%") do (
-            if not "%%L"=="" set "API_KEY=%%L"
-        )
-    )
-
-    if defined API_KEY (
-        echo [SUCCESS] 已建立/取得測試用 API key（請在註冊頁貼上）：%API_KEY%
-    ) else (
-        echo [ERROR] bootstrap API key 失敗：無法解析輸出
-        type "%BOOTSTRAP_OUT%"
-        pause
-        exit /b 1
-    )
-)
-
-REM 嘗試取得 tenant id（多租戶模式下 /api/* 需要 X-Tenant-Id）
-set "TENANT_ID=%TENANT_ID%"
-if not defined TENANT_ID (
-    set "TENANTS_JSON=%TEMP%\tenants_out.json"
-    if defined API_KEY (
-        curl -s -H "X-API-Key: %API_KEY%" http://localhost:18002/api/tenants > "%TENANTS_JSON%"
-    ) else (
-        curl -s http://localhost:18002/api/tenants > "%TENANTS_JSON%"
-    )
-
-    for /f "usebackq tokens=4 delims=\"" %%T in (`type "%TENANTS_JSON%" ^| findstr /c:"\"tenant_id\""`) do (
-        if not defined TENANT_ID set "TENANT_ID=%%T"
-    )
-    if not defined TENANT_ID (
-        for /f "usebackq tokens=4 delims=\"" %%T in (`type "%TENANTS_JSON%" ^| findstr /c:"\"id\""`) do (
-            if not defined TENANT_ID set "TENANT_ID=%%T"
-        )
-    )
-    del "%TENANTS_JSON%" >nul 2>&1
-)
-
-if defined TENANT_ID (
-    echo [SUCCESS] 使用 tenant: %TENANT_ID%
-) else (
-    echo [WARNING] 無法自動取得 tenant id（/api/* 可能需要 X-Tenant-Id）
-)
-
-REM 驗證健康檢查
-echo 🩺 健康檢查驗證
-echo ==================
-
-echo [INFO] 測試基本健康檢查...
-curl -f http://localhost:18002/healthz
-if errorlevel 1 (
-    echo [ERROR] 基本健康檢查失敗
-    pause
-    exit /b 1
-)
-echo [SUCCESS] 基本健康檢查通過
-
-echo.
-echo [INFO] 測試詳細健康檢查...
-curl -f http://localhost:18002/healthz/detailed >nul 2>&1
-if errorlevel 1 (
-    echo [WARNING] 詳細健康檢查失敗（可能尚未實現）
-) else (
-    echo [SUCCESS] 詳細健康檢查通過
-)
-
-echo.
-
-REM 模擬上傳與驗證流程
-echo  模擬上傳與驗證流程
-echo =======================
-
-REM 創建測試 CSV 文件
-set TEMP_CSV=%TEMP%\test_upload.csv
-echo lot_no,product_name,quantity,production_date > %TEMP_CSV%
-echo 1234567_01,測試產品A,100,2024-01-15 >> %TEMP_CSV%
-echo 2345678_02,測試產品B,50,2024-01-16 >> %TEMP_CSV%
-echo 3456789_03,測試產品C,75,2024-01-17 >> %TEMP_CSV%
-echo 4567890_04,測試產品D,200,2024-01-18 >> %TEMP_CSV%
-echo 5678901_05,測試產品E,125,2024-01-19 >> %TEMP_CSV%
-
-echo [INFO] 測試檔案上傳（5 列測試資料）...
-
-REM 使用 curl 上傳文件
-if defined API_KEY (
-    if defined TENANT_ID (
-        curl -s -H "X-API-Key: %API_KEY%" -H "X-Tenant-Id: %TENANT_ID%" -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
-    ) else (
-        curl -s -H "X-API-Key: %API_KEY%" -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
-    )
-) else (
-    if defined TENANT_ID (
-        curl -s -H "X-Tenant-Id: %TENANT_ID%" -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
-    ) else (
-        curl -s -X POST -F "file=@%TEMP_CSV%" http://localhost:18002/api/upload > %TEMP%\upload_response.json
-    )
-)
-
-echo 上傳回應:
-type %TEMP%\upload_response.json
-
-REM 簡單解析 file_id（需要 jq 或手動解析）
-REM 這裡使用簡化方法，實際使用中建議安裝 jq
-echo [SUCCESS] 檔案上傳測試完成
-
-REM 清理臨時文件
-del %TEMP_CSV% >nul 2>&1
-del %TEMP%\upload_response.json >nul 2>&1
-
-echo.
-echo  前端訪問資訊
-echo ================
-echo [SUCCESS] 前端應用已啟動: http://localhost:18003
-echo [SUCCESS] 後端 API 文件: http://localhost:18002/docs
-echo [SUCCESS] 後端 API Redoc: http://localhost:18002/redoc
-
-echo.
-echo  環境配置說明
-echo ================
-echo • API Base URL: 在 .env 文件中配置 VITE_API_URL
-echo • 檔案大小限制: 在 .env 文件中配置 VITE_MAX_FILE_SIZE
-echo • CORS 設定: 在 .env 文件中配置 CORS_ORIGINS
-echo.
-echo  vite.config.ts 代理設定已配置 /api 路徑到後端
-echo.
-
-echo  容器狀態
-echo ===========
-docker compose ps
-
-echo.
-echo [SUCCESS]  一鍵啟動與驗證完成！
-echo.
-echo 使用以下命令查看日誌：
-echo   docker compose logs -f backend    # 後端日誌
-echo   docker compose logs -f frontend   # 前端日誌
-echo   docker compose logs -f db         # 資料庫日誌
-echo.
-echo 停止服務：
-echo   docker compose down
-echo.
-echo 停止並清理資料：
-echo   docker compose down -v
-echo.
-
-pause
+:run
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0quick-start.ps1" %PS_ARGS%
+exit /b %errorlevel%

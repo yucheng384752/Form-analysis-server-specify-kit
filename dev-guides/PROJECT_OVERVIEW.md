@@ -232,7 +232,7 @@ docker-compose down -v --remove-orphans
 - **uploaded_files** - 上傳檔案記錄
 - **upload_audit** - 上傳審計日誌
 
-詳細的資料庫 Schema 請參考：[API 文檔](http://localhost:8000/docs)
+詳細的資料庫 Schema 請參考：[API 文檔](http://localhost:18002/docs)
 
 ##  安全性設定
 
@@ -248,34 +248,38 @@ docker-compose down -v --remove-orphans
 ### 上傳檔案
 
 ```bash
-curl -X POST "http://localhost:8000/api/upload" \
-  -H "Content-Type: multipart/form-data" \
-  -F "file=@your_file.csv"
+curl -X POST "http://localhost:18002/api/v2/import/jobs" \
+  -H "X-Tenant-Id: <TENANT_ID>" \
+  -F "table_code=P1" \
+  -F "allow_duplicate=false" \
+  -F "files=@your_file.csv;type=text/csv"
 ```
 
 **範例回應:**
 ```json
 {
-  "file_id": "abc123def456",
-  "filename": "your_file.csv",
-  "status": "validated",
-  "message": "File uploaded and validated successfully"
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "QUEUED",
+  "table_code": "P1",
+  "files": [{"filename": "your_file.csv"}]
 }
 ```
 
 ### 查詢 Lot 資料
 
 ```bash
-curl -X GET "http://localhost:8000/api/view/lots?limit=10"
+curl -X GET "http://localhost:18002/api/v2/query/lots?page=1&page_size=10" \
+  -H "X-Tenant-Id: <TENANT_ID>"
 ```
 
 ### 取得 P1 記錄
 
 ```bash
-curl -X GET "http://localhost:8000/api/phase1/2503033_03"
+curl -X GET "http://localhost:18002/api/v2/query/trace/2503033_03" \
+  -H "X-Tenant-Id: <TENANT_ID>"
 ```
 
-更多 API 範例請參考：[Swagger 文檔](http://localhost:8000/docs)
+更多 API 範例請參考：[Swagger 文檔](http://localhost:18002/docs)
 
 ##  故障排除
 

@@ -211,11 +211,13 @@ export default defineConfig({
 | `/api/v2/import/jobs/{id}` | GET | 查詢匯入任務狀態 |
 | `/api/v2/import/jobs/{id}/errors` | GET | 查詢驗證錯誤 |
 | `/api/v2/import/jobs/{id}/commit` | POST | 提交匯入（寫入 v2 tables） |
-| `/api/upload` | POST | （舊流程/相容性保留）檔案上傳與驗證 |
-| `/api/errors.csv` | GET | （舊流程/相容性保留）下載錯誤報告 |
-| `/api/import` | POST | （舊流程/相容性保留）確認資料匯入 |
+| `/api/upload` | POST | （Deprecated）舊版檔案上傳與驗證；**multi-tenant 會 410** |
+| `/api/errors.csv` | GET | （Deprecated）舊版下載錯誤報告；**multi-tenant 會 410** |
+| `/api/import` | POST | （Deprecated）舊版確認匯入；**multi-tenant 會 410** |
 | `/healthz` | GET | 基本健康檢查 |
 | `/healthz/detailed` | GET | 詳細健康檢查 |
+
+> 註：標示為（Deprecated）的端點僅供相容性/歷史用途；新開發與 UI 主流程請以 v2 import jobs 為準（UploadPage 的 CSV 主流程已於 2026-01-31 切換為 v2）。
 
 ## 常見問題
 

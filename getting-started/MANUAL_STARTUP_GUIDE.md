@@ -54,13 +54,13 @@ npm run dev
 ### 測試 API：
 1. 訪問 http://localhost:8000/docs
 2. 測試 `/healthz` 端點
-3. 測試 `/api/upload` 端點
+3. 測試 v2 匯入端點：`POST /api/v2/import/jobs`
 
 ##  系統狀態檢查
 
 執行驗證腳本：
 ```powershell
-python comprehensive_verification_test.py
+python tools\comprehensive_verification_test.py
 ```
 
 這將檢查：

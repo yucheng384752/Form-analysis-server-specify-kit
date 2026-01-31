@@ -1,5 +1,9 @@
 # 檔案上傳功能測試報告
 
+> ⚠️ 歷史/Deprecated 文件：本報告（2025-11）是針對舊版 `/api/upload` 流程的測試紀錄，僅供問題回溯與相容性參考。
+> - 新開發/新腳本請改用 v2 import jobs（create → poll → errors → commit）。
+> - 參考文件：[dev-guides/USER_UPLOAD_FLOW.md](../../dev-guides/USER_UPLOAD_FLOW.md)
+
 ## 問題診斷結果 
 
 ### 原始問題

@@ -8,6 +8,10 @@
 
 > 圖表使用 Mermaid。若你的 Markdown 預覽不支援 Mermaid，請改用 GitHub / VS Code Mermaid 外掛預覽。
 
+> 注意：本文件的「上傳」流程圖主要以 legacy UploadPage（`/api/upload*` + `/api/import`）為基礎，僅供理解歷史現況（UploadPage 的 CSV 主流程已於 2026-01-31 切換為 v2 import jobs；圖尚未全面更新）。
+> 新的匯入主流程請以 v2 import jobs（`/api/v2/import/jobs`）為準；multi-tenant 模式下 legacy import 端點會回 410。
+> 參考：`dev-guides/IMPORT_STRATEGY.md`、`dev-guides/LEGACY_DEPRECATION_PLAN.md`。
+
 ---
 
 ## 0) 全域前置（共同規則）
@@ -143,6 +147,10 @@ flowchart LR
 
 > 對應文件：dev-guides/USER_UPLOAD_FLOW.md
 
+> 注意：以下流程圖以「現況主流程」為準（UploadPage CSV 已於 2026-01-31 切換為 v2 import jobs）。
+> - PDF 流程仍走 `/api/upload/pdf*`。
+> - legacy `/api/upload`、`/api/import` 僅供相容性/回溯，請勿用於新腳本。
+
 ### 2.1 上傳端到端流程（含錯誤修正迴圈）
 
 ```mermaid
@@ -152,29 +160,28 @@ flowchart TD
   P -- 是 --> F[選擇 CSV 檔案(可多檔)]
 
   F --> V[按「驗證」
-POST /api/upload (multipart)]
+POST /api/v2/import/jobs (multipart)]
   V --> R{驗證結果}
 
-  R -- 驗證通過 --> OK[status=VALIDATED
+  R -- 驗證通過 --> OK[status=READY
 顯示可匯入狀態] --> IM[按「匯入」
-POST /api/import {process_id}]
+POST /api/v2/import/jobs/{job_id}/commit]
   IM --> IMR{匯入成功?}
-  IMR -- 是 --> DONE([匯入完成 status=IMPORTED])
+  IMR -- 是 --> DONE([匯入完成 status=COMPLETED])
   IMR -- 否 --> IME[顯示匯入錯誤] --> OK
 
   R -- 驗證有錯誤 --> ERR[顯示 sample_errors
 展開 CSV 表格供修正] --> EDIT[使用者修改表格內容]
-  EDIT --> SAVE[按「儲存修改」
-PUT /api/upload/{process_id}/content]
+  EDIT --> SAVE[按「重新驗證」
+POST /api/v2/import/jobs (new job)]
   SAVE --> R2{重新驗證結果}
   R2 -- 仍有錯誤 --> ERR
   R2 -- 通過 --> OK
 
   R -- 驗證失敗(422/其他) --> E1[顯示錯誤 toast] --> S
 
-  note1[[後端狀態機（legacy upload_jobs）：
-PENDING -> VALIDATED -> IMPORTED
-VALIDATED 下可重複 PUT content 重新驗證]]
+  note1[[後端狀態機（v2 import jobs）：
+UPLOADED -> PARSING -> VALIDATING -> (READY|FAILED) -> COMMITTING -> (COMPLETED|FAILED)]]
   DONE --- note1
 ```
 
@@ -211,33 +218,32 @@ flowchart LR
     U3[點「驗證」]
     U4{是否有錯誤?}
     U5[在表格修正內容]
-    U6[點「儲存修改」]
+    U6[點「重新驗證」]
     U7[點「匯入」]
     U8[看到匯入結果]
   end
 
   subgraph F[前端]
     F1[前端基本檢查\n副檔名/大小/重複檔名]
-    F2[POST /api/upload\n(multipart)]
-    F3[顯示 sample_errors\n展開可編輯表格]
-    F4[PUT /api/upload/{process_id}/content\n(帶 csv_text)]
-    F5[POST /api/import\n{process_id}]
+    F2[POST /api/v2/import/jobs\n(multipart：table_code + files[])]
+    F3[GET /api/v2/import/jobs/{job_id}/errors\n顯示錯誤列 + 展開可編輯表格]
+    F4[重新驗證：以目前畫面 CSV 內容重建檔案\n再呼叫 POST /api/v2/import/jobs（new job）]
+    F5[POST /api/v2/import/jobs/{job_id}/commit]
     F6[toast + 更新檔案狀態]
   end
 
   subgraph B[後端]
-    B1[建立 upload_jobs\n保存 file_content]
-    B2[執行驗證\n寫入 upload_errors]
-    B3[回傳 process_id + 統計 + sample_errors]
-    B4[寫回 file_content\n清舊錯誤並重新驗證]
-    B5[匯入：解析 CSV\n寫入 records/明細表]
-    B6[更新 upload_jobs.status\nVALIDATED/IMPORTED]
+    B1[建立 import_jobs\n保存檔案到暫存目錄]
+    B2[背景 parse+validate\n寫入 staging_rows/errors]
+    B3[回傳 job_id + 統計 + status]
+    B5[commit：整批交易寫入\nrecords/items_v2 等正式表]
+    B6[更新 import_jobs.status\nREADY/COMMITTING/COMPLETED/FAILED]
   end
 
   U1 --> U2 --> F1
   F1 --> U3 --> F2 --> B1 --> B2 --> B6 --> B3 --> F6
   F6 --> U4
-  U4 -- 有錯誤 --> F3 --> U5 --> U6 --> F4 --> B4 --> B6 --> B3 --> F6 --> U4
+  U4 -- 有錯誤 --> F3 --> U5 --> U6 --> F4 --> F2
   U4 -- 無錯誤 --> U7 --> F5 --> B5 --> B6 --> F6 --> U8
 ```
 
