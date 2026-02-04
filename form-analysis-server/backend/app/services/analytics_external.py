@@ -4,12 +4,12 @@ import json
 import os
 import re
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Literal
 
 import pandas as pd
-
 
 StationCode = Literal["P2", "P3", "ALL"]
 
@@ -103,7 +103,9 @@ def _flatten_unique(items: Iterable[str]) -> list[str]:
     return out
 
 
-def _station_codes_from_request(stations: list[StationCode]) -> list[Literal["P2", "P3"]]:
+def _station_codes_from_request(
+    stations: list[StationCode],
+) -> list[Literal["P2", "P3"]]:
     if not stations:
         return ["P2"]
     if "ALL" in stations:
@@ -180,6 +182,13 @@ def _parse_date_to_yyyymmdd(value: Any) -> int | None:
     if not s:
         return None
 
+    # Handle float-like strings that come from CSV dtype inference.
+    # Example: "20250901.0" should be treated as "20250901".
+    if "." in s:
+        left, right = s.split(".", 1)
+        if left.strip().isdigit() and (not right or set(right.strip()) <= {"0"}):
+            s = left.strip()
+
     # Examples in merged CSV:
     # - "250717" (YYMMDD)
     # - "20250807_16_00" (YYYYMMDD_..)
@@ -246,10 +255,102 @@ def _pick_date_column(df: pd.DataFrame) -> str | None:
     return best_col if best_count > 0 else None
 
 
-def _filter_df(df: pd.DataFrame, *, start_date: str | None, end_date: str | None, product_id: str | None) -> pd.DataFrame:
+def _pick_date_column_for_station(
+    df: pd.DataFrame, station: Literal["P2", "P3"]
+) -> str | None:
+    """Pick the most appropriate date column for a station.
+
+    Business rule:
+    - P3 should prefer production-date-like columns when present and parsable.
+    - P2 should prefer slitting-date-like columns when present and parsable.
+    """
+
+    def _best_from_candidates(candidates: list[str]) -> tuple[str | None, int]:
+        best_col: str | None = None
+        best_count = 0
+        for c in candidates:
+            if c not in df.columns:
+                continue
+            parsed = df[c].map(_parse_date_to_yyyymmdd)
+            count = int(parsed.notna().sum())
+            if count > best_count:
+                best_col = c
+                best_count = count
+        return best_col, best_count
+
+    production_like = [
+        "Production Date",
+        "Production Date_x",
+        "Production Date_y",
+    ]
+    slitting_like = [
+        "Slitting date",
+    ]
+
+    if station == "P3":
+        prod_col, prod_count = _best_from_candidates(production_like)
+        if prod_col and prod_count > 0:
+            return prod_col
+        slit_col, slit_count = _best_from_candidates(slitting_like)
+        return slit_col if slit_col and slit_count > 0 else None
+
+    # P2
+    slit_col, slit_count = _best_from_candidates(slitting_like)
+    if slit_col and slit_count > 0:
+        return slit_col
+    prod_col, prod_count = _best_from_candidates(production_like)
+    return prod_col if prod_col and prod_count > 0 else None
+
+
+def _normalize_binary_target(value: Any) -> str:
+    """Normalize common binary target representations to string "0"/"1"."""
+
+    if isinstance(value, bool):
+        return "1" if value else "0"
+
+    if isinstance(value, (int, float)):
+        if value == 0 or value == 0.0:
+            return "0"
+        if value == 1 or value == 1.0:
+            return "1"
+
+    s = str(value).strip()
+    if not s:
+        return s
+
+    upper = s.upper()
+    if upper in {"OK", "PASS", "TRUE", "Y", "YES", "1"}:
+        return "1"
+    if upper in {"NG", "FAIL", "FALSE", "N", "NO", "0"}:
+        return "0"
+
+    # Handle float-ish strings like "1.0" or "0.0".
+    try:
+        f = float(s)
+    except ValueError:
+        return s
+    if f == 0.0:
+        return "0"
+    if f == 1.0:
+        return "1"
+    return s
+
+
+def _filter_df(
+    df: pd.DataFrame,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    product_id: str | None,
+    station: Literal["P2", "P3"] | None = None,
+) -> pd.DataFrame:
     out = df
 
-    date_col = _pick_date_column(out)
+    date_col = (
+        _pick_date_column_for_station(out, station)
+        if station
+        else _pick_date_column(out)
+    )
     start_i = _parse_ymd_to_yyyymmdd(start_date) if start_date else None
     end_i = _parse_ymd_to_yyyymmdd(end_date) if end_date else None
 
@@ -287,7 +388,9 @@ def _filter_df(df: pd.DataFrame, *, start_date: str | None, end_date: str | None
     return out
 
 
-def _extract_station_config(config: dict[str, Any], station: Literal["P2", "P3"]) -> tuple[str, list[str]]:
+def _extract_station_config(
+    config: dict[str, Any], station: Literal["P2", "P3"]
+) -> tuple[str, list[str]]:
     # config schema: { feature: { P2: { target, categorical: {..} } } }
     feature = config.get("feature") or {}
     station_cfg = feature.get(station) or {}
@@ -336,12 +439,13 @@ def run_external_categorical_analysis(
     _ensure_analytical_four_importable(paths.analytical_four_root)
 
     # Import only the lightweight analyzer (pandas-based) to avoid pulling heavy deps.
-    from analysis.descriptive.categorical_analyzer import CategoricalAnalyzer  # type: ignore
+    from analysis.descriptive.categorical_analyzer import (
+        CategoricalAnalyzer,  # type: ignore
+    )
 
     config = _load_json(paths.config_path)
 
     df = pd.read_csv(paths.merged_csv_path)
-    df = _filter_df(df, start_date=start_date, end_date=end_date, product_id=product_id)
 
     analyzer = CategoricalAnalyzer()
     combined: dict[str, Any] = {}
@@ -349,12 +453,20 @@ def run_external_categorical_analysis(
     for station in _station_codes_from_request(stations):
         target_col, categorical_cols = _extract_station_config(config, station)
 
-        if target_col not in df.columns:
+        station_df = _filter_df(
+            df,
+            start_date=start_date,
+            end_date=end_date,
+            product_id=product_id,
+            station=station,
+        )
+
+        if target_col not in station_df.columns:
             # If the merged CSV doesn't include this station's target, just skip.
             continue
 
         # Only keep rows with meaningful target (avoid NaN -> "nan").
-        station_df = df[df[target_col].notna()].copy()
+        station_df = station_df[station_df[target_col].notna()].copy()
         if station_df.empty:
             continue
 
