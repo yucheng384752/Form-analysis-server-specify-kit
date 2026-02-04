@@ -121,7 +121,7 @@ echo [6/12] 連接埠檢查...
 echo ──────────────────────────────────────── >> %REPORT_FILE%
 echo  連接埠狀態 >> %REPORT_FILE%
 echo ──────────────────────────────────────── >> %REPORT_FILE%
-set PORTS=5432 8000 5173 3000
+set PORTS=18001 18002 18003 3000
 for %%p in (%PORTS%) do (
     netstat -an | findstr ":%%p " >nul 2>nul
     if errorlevel 1 (

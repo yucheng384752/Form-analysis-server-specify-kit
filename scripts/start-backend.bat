@@ -42,7 +42,7 @@ if errorlevel 1 (
 
 set "HOST_API_PORT=18002"
 if exist "%SERVER_PATH%\.env" (
-    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"API_PORT=" "%SERVER_PATH%\.env"`) do (
+    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"HOST_API_PORT=" "%SERVER_PATH%\.env"`) do (
         if not "%%b"=="" set "HOST_API_PORT=%%b"
     )
 )

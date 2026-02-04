@@ -13,6 +13,18 @@ cd ..
 set "PROJECT_ROOT=%cd%"
 set "SERVER_PATH=%PROJECT_ROOT%\form-analysis-server"
 
+REM 服務對外端口（host）
+set "HOST_API_PORT=18002"
+set "HOST_FRONTEND_PORT=18003"
+if exist "%SERVER_PATH%\.env" (
+    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"HOST_API_PORT=" "%SERVER_PATH%\.env"`) do (
+        if not "%%b"=="" set "HOST_API_PORT=%%b"
+    )
+    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"FRONTEND_PORT=" "%SERVER_PATH%\.env"`) do (
+        if not "%%b"=="" set "HOST_FRONTEND_PORT=%%b"
+    )
+)
+
 echo 項目路徑: %PROJECT_ROOT%
 echo 服務器路徑: %SERVER_PATH%
 echo.
@@ -73,8 +85,8 @@ echo.
 echo  服務啟動完成！
 echo.
 echo 服務連結：
-echo 前端: http://localhost:5173
-echo API: http://localhost:8000/docs
+echo 前端: http://localhost:!HOST_FRONTEND_PORT!/index.html
+echo API: http://localhost:!HOST_API_PORT!/docs
 echo.
 echo 當前容器狀態：
 docker-compose ps

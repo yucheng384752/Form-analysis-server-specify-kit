@@ -42,11 +42,19 @@ if exist "%SERVER_PATH%\.env" (
     )
 )
 
-REM 顯示 API base URL（docker-compose 會把主機的 API_PORT 對應到容器 8000）
+REM 顯示 API base URL（docker-compose 會把主機的 HOST_API_PORT 對應到容器 8000）
 set "HOST_API_PORT=18002"
+set "HOST_FRONTEND_PORT=18003"
+set "HOST_DB_PORT=18001"
 if exist "%SERVER_PATH%\.env" (
-    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"API_PORT=" "%SERVER_PATH%\.env"`) do (
+    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"HOST_API_PORT=" "%SERVER_PATH%\.env"`) do (
         if not "%%b"=="" set "HOST_API_PORT=%%b"
+    )
+    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"FRONTEND_PORT=" "%SERVER_PATH%\.env"`) do (
+        if not "%%b"=="" set "HOST_FRONTEND_PORT=%%b"
+    )
+    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"POSTGRES_PORT=" "%SERVER_PATH%\.env"`) do (
+        if not "%%b"=="" set "HOST_DB_PORT=%%b"
     )
 )
 echo [0/6] API base URL: http://localhost:!HOST_API_PORT!
@@ -143,26 +151,42 @@ echo  預先診斷檢查...
 
 REM 檢查端口佔用並自動處理
 set "port_conflict=false"
-netstat -an | find ":5432" | find "LISTENING" >nul 2>&1
+set "docker_port_conflict=false"
+set "non_docker_port_conflict=false"
+set "BLOCKING_PORTS="
+
+netstat -an | find ":!HOST_DB_PORT!" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo   檢測到端口 5432 PostgreSQL 被佔用
+    echo   檢測到端口 !HOST_DB_PORT! PostgreSQL 被佔用
     echo     檢查是否為其他 Docker 容器...
-    for /f "tokens=*" %%i in ('docker ps --filter "publish=5432" --format "{{.Names}}"') do (
+    for /f "tokens=*" %%i in ('docker ps --filter "publish=!HOST_DB_PORT!" --format "{{.Names}}"') do (
         echo     停止容器: %%i
         docker stop %%i >nul 2>&1
+        set "docker_port_conflict=true"
     )
     set "port_conflict=true"
+    netstat -an | find ":!HOST_DB_PORT!" | find "LISTENING" >nul 2>&1
+    if not errorlevel 1 (
+        set "non_docker_port_conflict=true"
+        set "BLOCKING_PORTS=!BLOCKING_PORTS! !HOST_DB_PORT!"
+    )
 )
 
-netstat -an | find ":8000" | find "LISTENING" >nul 2>&1
+netstat -an | find ":!HOST_API_PORT!" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo   檢測到端口 8000 API 被佔用
+    echo   檢測到端口 !HOST_API_PORT! API 被佔用
     echo     檢查是否為其他 Docker 容器...
-    for /f "tokens=*" %%i in ('docker ps --filter "publish=8000" --format "{{.Names}}"') do (
+    for /f "tokens=*" %%i in ('docker ps --filter "publish=!HOST_API_PORT!" --format "{{.Names}}"') do (
         echo     停止容器: %%i
         docker stop %%i >nul 2>&1
+        set "docker_port_conflict=true"
     )
     set "port_conflict=true"
+    netstat -an | find ":!HOST_API_PORT!" | find "LISTENING" >nul 2>&1
+    if not errorlevel 1 (
+        set "non_docker_port_conflict=true"
+        set "BLOCKING_PORTS=!BLOCKING_PORTS! !HOST_API_PORT!"
+    )
 )
 
 netstat -an | find ":3000" | find "LISTENING" >nul 2>&1
@@ -176,18 +200,38 @@ if not errorlevel 1 (
     set "port_conflict=true"
 )
 
-netstat -an | find ":5173" | find "LISTENING" >nul 2>&1
+netstat -an | find ":!HOST_FRONTEND_PORT!" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo   檢測到端口 5173 前端被佔用
+    echo   檢測到端口 !HOST_FRONTEND_PORT! 前端被佔用
     echo     檢查是否為其他 Docker 容器...
-    for /f "tokens=*" %%i in ('docker ps --filter "publish=5173" --format "{{.Names}}"') do (
+    for /f "tokens=*" %%i in ('docker ps --filter "publish=!HOST_FRONTEND_PORT!" --format "{{.Names}}"') do (
         echo     停止容器: %%i
         docker stop %%i >nul 2>&1
+        set "docker_port_conflict=true"
     )
     set "port_conflict=true"
+    netstat -an | find ":!HOST_FRONTEND_PORT!" | find "LISTENING" >nul 2>&1
+    if not errorlevel 1 (
+        set "non_docker_port_conflict=true"
+        set "BLOCKING_PORTS=!BLOCKING_PORTS! !HOST_FRONTEND_PORT!"
+    )
 )
 
-if "!port_conflict!"=="true" (
+if "!non_docker_port_conflict!"=="true" (
+    echo.
+    echo  [ERROR] 仍有端口被「非 Docker 程序」占用，無法自動釋放：!BLOCKING_PORTS!
+    echo    - 建議修改 %SERVER_PATH%\.env 中的 HOST_API_PORT/FRONTEND_PORT/POSTGRES_PORT
+    echo    - 或停止占用程序後再重試
+    echo.
+    echo  你可以用以下指令找出 PID：
+    echo    netstat -ano ^| findstr ":!HOST_FRONTEND_PORT!"
+    echo  再用以下指令結束程序（請自行確認 PID）：
+    echo    taskkill /PID ^<pid^> /F
+    pause
+    exit /b 1
+)
+
+if "!docker_port_conflict!"=="true" (
     echo     執行額外清理以釋放端口...
     docker-compose -f "%SERVER_PATH%\docker-compose.yml" down --remove-orphans >nul 2>&1
     timeout /t 2 /nobreak >nul
@@ -287,7 +331,7 @@ if not errorlevel 1 (
         echo  常見解決方案：
         echo    1. 檢查 PostgreSQL 密碼設定
         echo    2. 清理舊的資料卷：docker-compose down -v
-        echo    3. 檢查端口 5432 是否被佔用
+        echo    3. 檢查端口 !HOST_DB_PORT! 是否被佔用
         pause
         exit /b 1
     ) else (
@@ -389,7 +433,7 @@ if %counter% geq 45 (
     echo  常見問題檢查：
     echo    1. 資料庫連線是否正常
     echo    2. Python 依賴是否正確安裝  
-    echo    3. 端口 8000 是否被佔用
+    echo    3. 端口 !HOST_API_PORT! 是否被佔用
     echo    4. 環境變數設定是否正確
     pause
     exit /b 1
@@ -470,7 +514,7 @@ if %counter% geq 40 (
     echo  常見問題檢查：
     echo    1. Node.js 依賴是否正確安裝
     echo    2. Vite 開發伺服器配置  
-    echo    3. 端口 5173 是否被佔用
+    echo    3. 端口 !HOST_FRONTEND_PORT! 是否被佔用
     echo    4. 後端 API 連線是否正常
     pause
     exit /b 1
@@ -491,8 +535,8 @@ echo cd /d "%SERVER_PATH%" >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo echo     後端 API 服務日誌監控 >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_backend.bat"
-echo echo 後端服務 URL: http://localhost:18002 >> "%PROJECT_ROOT%\monitor_backend.bat"
-echo echo API 文檔: http://localhost:18002/docs >> "%PROJECT_ROOT%\monitor_backend.bat"
+echo echo 後端服務 URL: http://localhost:!HOST_API_PORT! >> "%PROJECT_ROOT%\monitor_backend.bat"
+echo echo API 文檔: http://localhost:!HOST_API_PORT!/docs >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo echo. >> "%PROJECT_ROOT%\monitor_backend.bat"
 echo docker-compose logs -f backend db >> "%PROJECT_ROOT%\monitor_backend.bat"
@@ -505,7 +549,7 @@ echo cd /d "%SERVER_PATH%" >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo echo     前端應用日誌監控 >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_frontend.bat"
-echo echo 前端應用 URL: http://localhost:18003/index.html >> "%PROJECT_ROOT%\monitor_frontend.bat"
+echo echo 前端應用 URL: http://localhost:!HOST_FRONTEND_PORT!/index.html >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo echo ======================================== >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo echo. >> "%PROJECT_ROOT%\monitor_frontend.bat"
 echo docker-compose logs -f frontend >> "%PROJECT_ROOT%\monitor_frontend.bat"
@@ -521,10 +565,10 @@ echo             系統啟動完成！
 echo ========================================
 echo.
 echo  服務連結：
-echo     前端應用: http://localhost:18003/index.html
-echo     API 文檔: http://localhost:18002/docs  
-echo     API 測試: http://localhost:18002/redoc
-echo     資料庫: localhost:18001 (PostgreSQL)
+echo     前端應用: http://localhost:!HOST_FRONTEND_PORT!/index.html
+echo     API 文檔: http://localhost:!HOST_API_PORT!/docs  
+echo     API 測試: http://localhost:!HOST_API_PORT!/redoc
+echo     資料庫: localhost:!HOST_DB_PORT! (PostgreSQL)
 echo     資料庫管理: http://localhost:18004 (可選)
 echo.
 echo  服務狀態：
@@ -548,14 +592,14 @@ timeout /t 3 /nobreak > nul
 
 REM 測試服務連通性
 echo  測試服務連通性...
-curl -s http://localhost:18002/healthz >nul 2>&1
+curl -s http://localhost:!HOST_API_PORT!/healthz >nul 2>&1
 if not errorlevel 1 (
     echo  後端 API 服務正常
 ) else (
     echo   後端 API 可能尚未完全就緒
 )
 
-curl -s http://localhost:18003 >nul 2>&1
+curl -s http://localhost:!HOST_FRONTEND_PORT! >nul 2>&1
 if not errorlevel 1 (
     echo  前端應用服務正常
 ) else (
@@ -566,9 +610,9 @@ echo.
 set /p "open_browser= 是否立即開啟瀏覽器? (y/N): "
 if /i "!open_browser!"=="y" (
     echo 正在開啟瀏覽器...
-    start http://localhost:18003/index.html
+    start http://localhost:!HOST_FRONTEND_PORT!/index.html
     timeout /t 2 /nobreak > nul
-    start http://localhost:18002/docs
+    start http://localhost:!HOST_API_PORT!/docs
 )
 
 echo 按任意鍵結束啟動程序...

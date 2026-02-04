@@ -13,6 +13,22 @@ cd ..
 set "PROJECT_ROOT=%cd%"
 set "SERVER_PATH=%PROJECT_ROOT%\form-analysis-server"
 
+REM 服務對外端口（host）
+set "HOST_API_PORT=18002"
+set "HOST_FRONTEND_PORT=18003"
+set "HOST_DB_PORT=18001"
+if exist "%SERVER_PATH%\.env" (
+    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"HOST_API_PORT=" "%SERVER_PATH%\.env"`) do (
+        if not "%%b"=="" set "HOST_API_PORT=%%b"
+    )
+    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"FRONTEND_PORT=" "%SERVER_PATH%\.env"`) do (
+        if not "%%b"=="" set "HOST_FRONTEND_PORT=%%b"
+    )
+    for /f "usebackq tokens=1,2 delims==" %%a in (`findstr /R /B /C:"POSTGRES_PORT=" "%SERVER_PATH%\.env"`) do (
+        if not "%%b"=="" set "HOST_DB_PORT=%%b"
+    )
+)
+
 echo  項目路徑設定:
 echo    根目錄: %PROJECT_ROOT%
 echo    服務器: %SERVER_PATH%
@@ -138,21 +154,21 @@ echo [4/7] 預先診斷檢查...
 
 REM 檢查端口佔用
 set "port_conflict=false"
-netstat -an | find ":18001" | find "LISTENING" >nul 2>&1
+netstat -an | find ":!HOST_DB_PORT!" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo   檢測到端口 18001 PostgreSQL 被佔用，將自動清理
+    echo   檢測到端口 !HOST_DB_PORT! PostgreSQL 被佔用，將自動清理
     set "port_conflict=true"
 )
 
-netstat -an | find ":18002" | find "LISTENING" >nul 2>&1
+netstat -an | find ":!HOST_API_PORT!" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo   檢測到端口 18002 API 被佔用，將自動清理
+    echo   檢測到端口 !HOST_API_PORT! API 被佔用，將自動清理
     set "port_conflict=true"
 )
 
-netstat -an | find ":18003" | find "LISTENING" >nul 2>&1
+netstat -an | find ":!HOST_FRONTEND_PORT!" | find "LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    echo   檢測到端口 18003 前端被佔用，將自動清理
+    echo   檢測到端口 !HOST_FRONTEND_PORT! 前端被佔用，將自動清理
     set "port_conflict=true"
 )
 
@@ -264,10 +280,10 @@ echo             系統啟動完成！
 echo ========================================
 echo.
 echo  服務連結：
-echo     前端應用: http://localhost:18003/index.html
-echo     API 文檔: http://localhost:18002/docs  
-echo     API 測試: http://localhost:18002/redoc
-echo     資料庫: localhost:18001 (PostgreSQL)
+echo     前端應用: http://localhost:!HOST_FRONTEND_PORT!/index.html
+echo     API 文檔: http://localhost:!HOST_API_PORT!/docs  
+echo     API 測試: http://localhost:!HOST_API_PORT!/redoc
+echo     資料庫: localhost:!HOST_DB_PORT! (PostgreSQL)
 echo.
 echo  服務狀態：
 %DOCKER_COMPOSE% ps
@@ -276,16 +292,16 @@ echo.
 echo  測試服務連通性...
 timeout /t 3 /nobreak > nul
 
-curl -s http://localhost:18002/healthz >nul 2>&1
+curl -s http://localhost:!HOST_API_PORT!/healthz >nul 2>&1
 if not errorlevel 1 (
-    echo  後端 API 服務正常 (http://localhost:18002)
+    echo  後端 API 服務正常 (http://localhost:!HOST_API_PORT!)
 ) else (
     echo   後端 API 可能尚未完全就緒
 )
 
-curl -s http://localhost:18003 >nul 2>&1
+curl -s http://localhost:!HOST_FRONTEND_PORT! >nul 2>&1
 if not errorlevel 1 (
-    echo  前端應用服務正常 (http://localhost:18003/index.html)
+    echo  前端應用服務正常 (http://localhost:!HOST_FRONTEND_PORT!/index.html)
 ) else (
     echo   前端應用可能尚未完全就緒
 )
@@ -302,9 +318,9 @@ echo.
 set /p "open_browser= 是否立即開啟瀏覽器? (y/N): "
 if /i "!open_browser!"=="y" (
     echo 正在開啟瀏覽器...
-    start http://localhost:5173
+    start http://localhost:!HOST_FRONTEND_PORT!/index.html
     timeout /t 2 /nobreak > nul
-    start http://localhost:8000/docs
+    start http://localhost:!HOST_API_PORT!/docs
 )
 
 set /p "open_logs= 是否開啟日誌監控? (y/N): "

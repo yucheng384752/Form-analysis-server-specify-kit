@@ -161,12 +161,12 @@ CORS_ORIGINS=http://localhost:18003,http://localhost:3000
 
 - **asyncpg** - 建議用於本地開發和非同步 FastAPI 應用
   ```env
-  DATABASE_URL=postgresql+asyncpg://app:app_secure_password_2024@localhost:18001/form_analysis_db
+   DATABASE_URL=postgresql+asyncpg://app:change-me-strong@localhost:18001/form_analysis_db
   ```
 
 - **psycopg** - 用於 Docker 環境（支援同步和非同步模式）
   ```env
-  DATABASE_URL=postgresql+psycopg://app:app_secure_password_2024@db:5432/form_analysis_db
+   DATABASE_URL=postgresql+psycopg://app:change-me-strong@db:5432/form_analysis_db
   ```
 
 ### vite.config.ts 代理設定
@@ -278,6 +278,25 @@ docker compose logs db
 docker compose exec db pg_isready -U app
 ```
 
+**Q: 出現 `password authentication failed for user \"app\"`（後端容器起不來）**
+A: 這通常表示資料庫 volume 已經初始化過（Postgres 會顯示 `Skipping initialization`），此時就算你改了 `POSTGRES_PASSWORD`，既有使用者密碼也不會自動更新。
+
+你可以二選一修復：
+
+1) **保留既有資料（推薦）**：在 db 容器內重設 `app` 密碼，讓它與 `DATABASE_URL` 一致。
+```bash
+# 把 change-me-strong 改成你目前 .env / docker-compose 使用的密碼
+echo "ALTER ROLE app WITH PASSWORD 'change-me-strong';" | docker exec -i form_analysis_db psql -U app -d postgres
+
+docker compose restart backend
+```
+
+2) **重建資料庫（會清空資料）**：
+```bash
+docker compose down -v
+docker compose up -d
+```
+
 **Q: 資料持久化問題**
 A: 資料庫資料存儲在 Docker Volume 中：
 ```bash
@@ -354,7 +373,7 @@ docker compose up -d --build
    # 使用 Docker 執行 PostgreSQL
    docker run -d --name postgres \
      -e POSTGRES_USER=app \
-     -e POSTGRES_PASSWORD=app_secure_password_2024 \
+       -e POSTGRES_PASSWORD=change-me-strong \
      -e POSTGRES_DB=form_analysis_db \
      -p 5432:5432 postgres:16
    ```

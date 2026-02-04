@@ -10,9 +10,24 @@ cd /d "%~dp0"
 set "PROJECT_ROOT=%cd%"
 set "SERVER_PATH=%PROJECT_ROOT%\form-analysis-server"
 
+REM Compose v1/v2 偵測
+set "DOCKER_COMPOSE=docker-compose"
+docker-compose --version >nul 2>&1
+if errorlevel 1 (
+    docker compose --version >nul 2>&1
+    if errorlevel 1 (
+        echo Docker Compose 未安裝或不可用
+        echo   請確認 Docker Desktop 已安裝 compose plugin 或已安裝 docker-compose
+        pause
+        exit /b 1
+    ) else (
+        set "DOCKER_COMPOSE=docker compose"
+    )
+)
+
 echo [1/3] 停止所有服務...
 cd "%SERVER_PATH%"
-docker-compose down --remove-orphans
+%DOCKER_COMPOSE% down --remove-orphans
 if not errorlevel 1 (
     echo  所有服務已停止
 ) else (
@@ -32,7 +47,7 @@ if exist "%PROJECT_ROOT%\monitor_frontend.bat" (
 
 echo.
 echo [3/3] 檢查服務狀態...
-docker-compose ps
+%DOCKER_COMPOSE% ps
 
 echo.
 echo ========================================

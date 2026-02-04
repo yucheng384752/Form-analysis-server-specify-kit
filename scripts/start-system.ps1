@@ -154,8 +154,9 @@ try {
     exit 1
 }
 
-$apiPort = Get-DotEnvValue -Path (Join-Path $serverPath ".env") -Key "API_PORT" -Default "18002"
+$apiPort = Get-DotEnvValue -Path (Join-Path $serverPath ".env") -Key "HOST_API_PORT" -Default "18002"
 $frontendPort = Get-DotEnvValue -Path (Join-Path $serverPath ".env") -Key "FRONTEND_PORT" -Default "18003"
+$dbPort = Get-DotEnvValue -Path (Join-Path $serverPath ".env") -Key "POSTGRES_PORT" -Default "18001"
 
 Write-Host "";
 Write-Host "[3/6] Stopping existing containers..." -ForegroundColor Yellow
@@ -232,7 +233,7 @@ Write-Host ""
 Write-Host "Service Links:" -ForegroundColor White
 Write-Host "  Frontend: http://localhost:$frontendPort/index.html" -ForegroundColor Cyan
 Write-Host "  API Docs: http://localhost:$apiPort/docs" -ForegroundColor Cyan
-Write-Host "  Database: localhost:18001" -ForegroundColor Cyan
+Write-Host "  Database: localhost:$dbPort" -ForegroundColor Cyan
 
 Write-Host ""
 Invoke-Compose @("ps") -ShowOutput
