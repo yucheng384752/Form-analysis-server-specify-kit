@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import get_db
 from app.main import app
@@ -20,7 +20,9 @@ def _restore_global_auth_settings():
     previous = {
         "auth_mode": getattr(settings, "auth_mode", None),
         "auth_api_key_header": getattr(settings, "auth_api_key_header", None),
-        "auth_protect_prefixes_str": getattr(settings, "auth_protect_prefixes_str", None),
+        "auth_protect_prefixes_str": getattr(
+            settings, "auth_protect_prefixes_str", None
+        ),
         "admin_api_keys_str": getattr(settings, "admin_api_keys_str", None),
     }
     yield
@@ -48,7 +50,9 @@ async def client(db_session_clean, test_engine):
         expire_on_commit=False,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()

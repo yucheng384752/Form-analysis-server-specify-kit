@@ -30,7 +30,9 @@ async def client(db_session_clean):
 @pytest.mark.asyncio
 async def test_admin_create_additional_tenant_and_delete_soft(client):
     # Bootstrap-only create works once.
-    create1 = await client.post("/api/tenants", json={}, headers={"X-Admin-API-Key": "test-admin-key"})
+    create1 = await client.post(
+        "/api/tenants", json={}, headers={"X-Admin-API-Key": "test-admin-key"}
+    )
     assert create1.status_code == 201, create1.text
     t1 = create1.json()
     uuid.UUID(str(t1["id"]))
@@ -38,7 +40,12 @@ async def test_admin_create_additional_tenant_and_delete_soft(client):
     # Admin CRUD create can add more tenants.
     create2 = await client.post(
         "/api/tenants/admin",
-        json={"name": "Tenant Two", "code": "t2", "is_active": True, "is_default": False},
+        json={
+            "name": "Tenant Two",
+            "code": "t2",
+            "is_active": True,
+            "is_default": False,
+        },
         headers={"X-Admin-API-Key": "test-admin-key"},
     )
     assert create2.status_code == 201, create2.text
@@ -47,7 +54,9 @@ async def test_admin_create_additional_tenant_and_delete_soft(client):
     assert t2["is_active"] is True
 
     # Deleting is a soft delete (is_active=false) and requires admin key.
-    delete = await client.delete(f"/api/tenants/{t2['id']}", headers={"X-Admin-API-Key": "test-admin-key"})
+    delete = await client.delete(
+        f"/api/tenants/{t2['id']}", headers={"X-Admin-API-Key": "test-admin-key"}
+    )
     assert delete.status_code == 200, delete.text
     deleted = delete.json()
     assert deleted["id"] == t2["id"]
@@ -62,7 +71,10 @@ async def test_admin_create_additional_tenant_and_delete_soft(client):
     assert t2["id"] not in [r.get("id") for r in active_rows]
 
     # With include_inactive + admin key, include inactive tenants.
-    get_all = await client.get("/api/tenants?include_inactive=true", headers={"X-Admin-API-Key": "test-admin-key"})
+    get_all = await client.get(
+        "/api/tenants?include_inactive=true",
+        headers={"X-Admin-API-Key": "test-admin-key"},
+    )
     assert get_all.status_code == 200, get_all.text
     all_rows = get_all.json()
     ids = [r.get("id") for r in all_rows]

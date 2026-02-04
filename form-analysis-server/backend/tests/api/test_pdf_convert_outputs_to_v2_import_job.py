@@ -8,10 +8,10 @@ from sqlalchemy import select
 from app.api.deps import get_db
 from app.core.config import get_settings
 from app.main import app
-from app.models.core.tenant import Tenant
 from app.models.core.schema_registry import TableRegistry
-from app.models.pdf_conversion_job import PdfConversionJob, PdfConversionStatus
+from app.models.core.tenant import Tenant
 from app.models.p1_record import P1Record
+from app.models.pdf_conversion_job import PdfConversionJob, PdfConversionStatus
 from app.services.import_v2 import ImportService
 
 
@@ -36,7 +36,9 @@ async def client(db_session_clean):
 
 
 @pytest.mark.asyncio
-async def test_pdf_convert_outputs_can_flow_into_v2_import_job_commit(client, db_session_clean):
+async def test_pdf_convert_outputs_can_flow_into_v2_import_job_commit(
+    client, db_session_clean
+):
     # Seed tenant
     tenant = Tenant(name="T1", code="t1", is_default=True, is_active=True)
     db_session_clean.add(tenant)
@@ -48,7 +50,9 @@ async def test_pdf_convert_outputs_can_flow_into_v2_import_job_commit(client, db
 
     # Upload a PDF
     files = {"file": ("sample.pdf", _pdf_bytes(), "application/pdf")}
-    upload_resp = await client.post("/api/upload/pdf", files=files, headers={"X-Tenant-Id": str(tenant.id)})
+    upload_resp = await client.post(
+        "/api/upload/pdf", files=files, headers={"X-Tenant-Id": str(tenant.id)}
+    )
     assert upload_resp.status_code == 200, upload_resp.text
     pdf_process_id = uuid.UUID(str(upload_resp.json()["process_id"]))
 
@@ -116,7 +120,9 @@ async def test_pdf_convert_outputs_can_flow_into_v2_import_job_commit(client, db
 
     # Verify P1Record created
     result = await db_session_clean.execute(
-        select(P1Record).where(P1Record.tenant_id == tenant.id, P1Record.lot_no_norm == 250303301)
+        select(P1Record).where(
+            P1Record.tenant_id == tenant.id, P1Record.lot_no_norm == 250303301
+        )
     )
     record = result.scalar_one_or_none()
     assert record is not None

@@ -3,7 +3,7 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import get_db
 from app.core.auth import hash_api_key
@@ -21,7 +21,9 @@ def _restore_global_settings():
     previous = {
         "auth_mode": getattr(settings, "auth_mode", None),
         "auth_api_key_header": getattr(settings, "auth_api_key_header", None),
-        "auth_protect_prefixes_str": getattr(settings, "auth_protect_prefixes_str", None),
+        "auth_protect_prefixes_str": getattr(
+            settings, "auth_protect_prefixes_str", None
+        ),
         "auth_exempt_paths_str": getattr(settings, "auth_exempt_paths_str", None),
         "admin_api_keys_str": getattr(settings, "admin_api_keys_str", None),
         "admin_api_key_header": getattr(settings, "admin_api_key_header", None),
@@ -49,7 +51,9 @@ async def client(db_session_clean, test_engine):
         expire_on_commit=False,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -69,7 +73,9 @@ async def _create_tenant(db_session_clean, *, code: str) -> Tenant:
     return tenant
 
 
-async def _create_user(db_session_clean, *, tenant_id, username: str, role: str) -> TenantUser:
+async def _create_user(
+    db_session_clean, *, tenant_id, username: str, role: str
+) -> TenantUser:
     user = TenantUser(
         tenant_id=tenant_id,
         username=username,
@@ -83,7 +89,9 @@ async def _create_user(db_session_clean, *, tenant_id, username: str, role: str)
     return user
 
 
-async def _create_api_key(db_session_clean, *, tenant_id, user_id, raw_key: str, label: str = "test") -> None:
+async def _create_api_key(
+    db_session_clean, *, tenant_id, user_id, raw_key: str, label: str = "test"
+) -> None:
     from app.main import settings
 
     key_hash = hash_api_key(raw_key=raw_key, secret_key=settings.secret_key)
@@ -100,7 +108,9 @@ async def _create_api_key(db_session_clean, *, tenant_id, user_id, raw_key: str,
 
 
 @pytest.mark.asyncio
-async def test_admin_key_can_patch_tenant_without_x_api_key_when_auth_mode_api_key(client, db_session_clean):
+async def test_admin_key_can_patch_tenant_without_x_api_key_when_auth_mode_api_key(
+    client, db_session_clean
+):
     from app.main import settings
 
     settings.auth_mode = "api_key"
@@ -121,7 +131,9 @@ async def test_admin_key_can_patch_tenant_without_x_api_key_when_auth_mode_api_k
 
 
 @pytest.mark.asyncio
-async def test_admin_key_can_patch_user_without_x_api_key_when_auth_mode_api_key(client, db_session_clean):
+async def test_admin_key_can_patch_user_without_x_api_key_when_auth_mode_api_key(
+    client, db_session_clean
+):
     from app.main import settings
 
     settings.auth_mode = "api_key"
@@ -129,7 +141,9 @@ async def test_admin_key_can_patch_user_without_x_api_key_when_auth_mode_api_key
     settings.admin_api_keys_str = "test-admin-key"
 
     t1 = await _create_tenant(db_session_clean, code="t1")
-    u1 = await _create_user(db_session_clean, tenant_id=t1.id, username="u1", role="user")
+    u1 = await _create_user(
+        db_session_clean, tenant_id=t1.id, username="u1", role="user"
+    )
 
     resp = await client.patch(
         f"/api/auth/users/{u1.id}",
@@ -143,7 +157,9 @@ async def test_admin_key_can_patch_user_without_x_api_key_when_auth_mode_api_key
 
 
 @pytest.mark.asyncio
-async def test_tenant_admin_scoped_to_own_tenant_for_user_management(client, db_session_clean):
+async def test_tenant_admin_scoped_to_own_tenant_for_user_management(
+    client, db_session_clean
+):
     from app.main import settings
 
     settings.auth_mode = "api_key"
@@ -152,11 +168,17 @@ async def test_tenant_admin_scoped_to_own_tenant_for_user_management(client, db_
     t1 = await _create_tenant(db_session_clean, code="t1")
     t2 = await _create_tenant(db_session_clean, code="t2")
 
-    admin_user_t1 = await _create_user(db_session_clean, tenant_id=t1.id, username="admin1", role="admin")
-    other_user_t2 = await _create_user(db_session_clean, tenant_id=t2.id, username="user2", role="user")
+    admin_user_t1 = await _create_user(
+        db_session_clean, tenant_id=t1.id, username="admin1", role="admin"
+    )
+    other_user_t2 = await _create_user(
+        db_session_clean, tenant_id=t2.id, username="user2", role="user"
+    )
 
     raw_key = "tenant1-admin-key"
-    await _create_api_key(db_session_clean, tenant_id=t1.id, user_id=admin_user_t1.id, raw_key=raw_key)
+    await _create_api_key(
+        db_session_clean, tenant_id=t1.id, user_id=admin_user_t1.id, raw_key=raw_key
+    )
 
     # List should only include tenant t1.
     list_resp = await client.get("/api/auth/users", headers={"X-API-Key": raw_key})
@@ -176,6 +198,8 @@ async def test_tenant_admin_scoped_to_own_tenant_for_user_management(client, db_
 
     # Sanity: t2 user still active.
     stored = (
-        await db_session_clean.execute(select(TenantUser).where(TenantUser.id == other_user_t2.id))
+        await db_session_clean.execute(
+            select(TenantUser).where(TenantUser.id == other_user_t2.id)
+        )
     ).scalar_one()
     assert bool(stored.is_active) is True

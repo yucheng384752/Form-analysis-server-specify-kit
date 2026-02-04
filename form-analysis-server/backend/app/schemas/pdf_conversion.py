@@ -1,11 +1,10 @@
 import uuid
 from enum import Enum
-from typing import Any, Optional
-from typing import List
-
-from app.schemas.upload import UploadErrorResponse
+from typing import Any
 
 from pydantic import BaseModel, Field
+
+from app.schemas.upload import UploadErrorResponse
 
 
 class PdfConversionStatus(str, Enum):
@@ -24,34 +23,34 @@ class PdfConvertTriggerResponse(BaseModel):
 
 class PdfConvertStatusResponse(BaseModel):
     status: PdfConversionStatus
-    job_id: Optional[uuid.UUID] = None
+    job_id: uuid.UUID | None = None
     progress: int = Field(default=0, ge=0, le=100)
-    external_job_id: Optional[str] = None
-    output_path: Optional[str] = None
-    output_paths: Optional[List[str]] = None
-    error_summary: Optional[dict[str, Any]] = None
+    external_job_id: str | None = None
+    output_path: str | None = None
+    output_paths: list[str] | None = None
+    error_summary: dict[str, Any] | None = None
 
 
 class PdfConvertIngestedUpload(BaseModel):
     filename: str
     process_id: uuid.UUID
     # Optional v2 import job created from this UploadJob.
-    import_job_id: Optional[uuid.UUID] = None
+    import_job_id: uuid.UUID | None = None
     total_rows: int
     valid_rows: int
     invalid_rows: int
-    sample_errors: List[UploadErrorResponse] = Field(default=[])
-    csv_text: Optional[str] = None
+    sample_errors: list[UploadErrorResponse] = Field(default=[])
+    csv_text: str | None = None
 
 
 class PdfConvertIngestResponse(BaseModel):
-    uploads: List[PdfConvertIngestedUpload]
+    uploads: list[PdfConvertIngestedUpload]
 
 
 class PdfConvertOutputFile(BaseModel):
     filename: str
-    csv_text: Optional[str] = None
+    csv_text: str | None = None
 
 
 class PdfConvertOutputsResponse(BaseModel):
-    outputs: List[PdfConvertOutputFile]
+    outputs: list[PdfConvertOutputFile]

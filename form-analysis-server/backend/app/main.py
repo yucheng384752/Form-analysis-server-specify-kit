@@ -8,39 +8,53 @@ Main application entry point.
 """
 
 import sys
-import os
-from pathlib import Path
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from pathlib import Path
 
 # 添加專案根目錄到 Python 路徑，以便直接執行時能找到模組
 current_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(current_dir))
 
 import uvicorn
-from fastapi import FastAPI, Request, Depends
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import func, select
 from sqlalchemy.exc import ProgrammingError
-from sqlalchemy import select, func
+from starlette.middleware.gzip import GZipMiddleware
 
-from app.core.config import get_settings
-from app.core.database import init_db, Base
-from app.core.logging import setup_logging
-from app.core.middleware import RequestLoggingMiddleware, add_process_time_header
-from app.api import routes_health, routes_upload, routes_validate, routes_import, routes_export, routes_logs, routes_import_v2, routes_tenants, routes_query_v2, routes_edit, routes_audit_events
-from app.api import routes_auth
 from app.api import constants as routes_constants
+from app.api import (
+    routes_analytics,
+    routes_audit_events,
+    routes_auth,
+    routes_edit,
+    routes_export,
+    routes_health,
+    routes_import,
+    routes_import_v2,
+    routes_logs,
+    routes_query_v2,
+    routes_tenants,
+    routes_upload,
+    routes_ut,
+    routes_validate,
+)
 from app.api import traceability as routes_traceability
-from app.api import routes_analytics, routes_ut
 from app.api.deps import get_current_tenant
 from app.core.auth import hash_api_key
-from app.models.core.tenant_api_key import TenantApiKey
-from app.models.core.tenant_user import TenantUser
+from app.core.config import get_settings
+from app.core.database import Base, init_db
+from app.core.logging import setup_logging
+from app.core.middleware import RequestLoggingMiddleware, add_process_time_header
 
 # Import all models to ensure they're registered with Base
-from app.models import UploadJob, UploadError, Record, AuditEvent, PdfUpload, PdfConversionJob
+from app.models import (
+    AuditEvent,
+)
+from app.models.core.tenant_api_key import TenantApiKey
+from app.models.core.tenant_user import TenantUser
 
 # Initialize application settings
 settings = get_settings()
@@ -53,22 +67,26 @@ setup_logging(settings.log_level, settings.log_format)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Application lifespan manager.
-    
+
     Handles startup and shutdown events:
     - Database initialization
     - Connection pool setup
     - Resource cleanup
     """
     # Startup - 驗證PostgreSQL或SQLite配置
-    if not settings.database_url.startswith('postgresql') and not settings.database_url.startswith('sqlite'):
-        raise ValueError(f" 系統只支援PostgreSQL或SQLite資料庫！當前配置: {settings.database_url[:30]}...")
-    
+    if not settings.database_url.startswith(
+        "postgresql"
+    ) and not settings.database_url.startswith("sqlite"):
+        raise ValueError(
+            f" 系統只支援PostgreSQL或SQLite資料庫！當前配置: {settings.database_url[:30]}..."
+        )
+
     # Initialize database connection
     await init_db()
-    
+
     # Import engine after initialization
     from app.core.database import engine
-    
+
     # Create all tables
     async with engine.begin() as conn:
         try:
@@ -78,7 +96,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # 忽略 "type ... already exists" 錯誤
             # 這是因為 Alembic 可能已經創建了該類型，而 SQLAlchemy create_all 又嘗試創建
             if "already exists" in str(e):
-                print(f" Note: Database objects already exist (safe to ignore): {str(e).splitlines()[0]}")
+                print(
+                    f" Note: Database objects already exist (safe to ignore): {str(e).splitlines()[0]}"
+                )
             else:
                 raise e
 
@@ -91,8 +111,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # 1) Table registry
             try:
                 from app.models.core.schema_registry import TableRegistry
+
                 async with async_session_factory() as db:
-                    existing = set((await db.execute(select(TableRegistry.table_code))).scalars().all())
+                    existing = set(
+                        (await db.execute(select(TableRegistry.table_code)))
+                        .scalars()
+                        .all()
+                    )
                     for code in ("P1", "P2", "P3"):
                         if code not in existing:
                             db.add(TableRegistry(table_code=code, display_name=code))
@@ -104,10 +129,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # 2) Default tenant
             try:
                 from app.models.core.tenant import Tenant
+
                 async with async_session_factory() as db:
-                    tenant_count = (await db.execute(select(func.count(Tenant.id)))).scalar() or 0
+                    tenant_count = (
+                        await db.execute(select(func.count(Tenant.id)))
+                    ).scalar() or 0
                     if tenant_count == 0:
-                        db.add(Tenant(name="Default", code="default", is_default=True, is_active=True))
+                        db.add(
+                            Tenant(
+                                name="Default",
+                                code="default",
+                                is_default=True,
+                                is_active=True,
+                            )
+                        )
                         await db.commit()
             except Exception as e:
                 print(f" Warning: failed to seed default tenant: {e}")
@@ -133,15 +168,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 print(f" Warning: failed to bootstrap manager user: {e}")
     except Exception as e:
         print(f" Warning: failed to run startup seed: {e}")
-    
+
     print(f" Form Analysis API starting on {settings.api_host}:{settings.api_port}")
-    print(f" Database: PostgreSQL - {settings.database_url.split('@')[-1]}")  # Hide credentials
+    print(
+        f" Database: PostgreSQL - {settings.database_url.split('@')[-1]}"
+    )  # Hide credentials
     print(f" Upload limit: {settings.max_upload_size_mb}MB")
     print(f" CORS origins: {settings.cors_origins}")
-    print(f" Database Type: PostgreSQL Only (固定使用PostgreSQL)")
-    
+    print(" Database Type: PostgreSQL Only (固定使用PostgreSQL)")
+
     yield
-    
+
     # Shutdown
     print(" Form Analysis API shutting down...")
 
@@ -218,7 +255,9 @@ async def api_key_auth_middleware(request: Request, call_next):
     if not any(path.startswith(p) for p in prefixes):
         return await call_next(request)
 
-    exempt_paths = getattr(settings, "auth_exempt_paths", ["/healthz", "/docs", "/redoc", "/openapi.json"])
+    exempt_paths = getattr(
+        settings, "auth_exempt_paths", ["/healthz", "/docs", "/redoc", "/openapi.json"]
+    )
     if any(path.startswith(p) for p in exempt_paths):
         return await call_next(request)
 
@@ -274,13 +313,18 @@ async def api_key_auth_middleware(request: Request, call_next):
         return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
     try:
-        key_hash = hash_api_key(raw_key=provided.strip(), secret_key=settings.secret_key)
+        key_hash = hash_api_key(
+            raw_key=provided.strip(), secret_key=settings.secret_key
+        )
     except Exception:
         return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
     from app.core.database import async_session_factory
+
     if async_session_factory is None:
-        return JSONResponse(status_code=500, content={"detail": "Database not initialized"})
+        return JSONResponse(
+            status_code=500, content={"detail": "Database not initialized"}
+        )
 
     async with async_session_factory() as db:
         result = await db.execute(
@@ -315,7 +359,9 @@ async def api_key_auth_middleware(request: Request, call_next):
                 if actor:
                     request.state.actor_user_id = actor.id
                     request.state.actor_role = actor.role
-                    request.state.must_change_password = bool(getattr(actor, "must_change_password", False))
+                    request.state.must_change_password = bool(
+                        getattr(actor, "must_change_password", False)
+                    )
         except Exception:
             # Best-effort: do not block request if actor resolution fails.
             request.state.actor_user_id = None
@@ -332,7 +378,9 @@ async def api_key_auth_middleware(request: Request, call_next):
     # Enforce forced password change after reset/temporary password.
     # Allow only a minimal set of endpoints until the user changes their password.
     try:
-        must_change = bool(getattr(getattr(request, "state", None), "must_change_password", False))
+        must_change = bool(
+            getattr(getattr(request, "state", None), "must_change_password", False)
+        )
         if must_change:
             path = request.url.path
             allowed_prefixes = (
@@ -369,13 +417,17 @@ async def audit_events_middleware(request: Request, call_next):
         return response
 
     method = (request.method or "").upper()
-    if method not in getattr(settings, "audit_events_methods", {"POST", "PUT", "PATCH", "DELETE"}):
+    if method not in getattr(
+        settings, "audit_events_methods", {"POST", "PUT", "PATCH", "DELETE"}
+    ):
         return response
 
     path = request.url.path
 
     # Avoid auditing clearly non-business endpoints by default.
-    exempt_paths = getattr(settings, "auth_exempt_paths", ["/healthz", "/docs", "/redoc", "/openapi.json"])
+    exempt_paths = getattr(
+        settings, "auth_exempt_paths", ["/healthz", "/docs", "/redoc", "/openapi.json"]
+    )
     if any(path.startswith(p) for p in exempt_paths):
         return response
 
@@ -385,6 +437,7 @@ async def audit_events_middleware(request: Request, call_next):
         return response
 
     from app.core.database import async_session_factory
+
     if async_session_factory is None:
         return response
 
@@ -392,7 +445,9 @@ async def audit_events_middleware(request: Request, call_next):
         getattr(request, "state", None), "auth_tenant_id", None
     )
     actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
-    actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+    actor_api_key_label = getattr(
+        getattr(request, "state", None), "auth_api_key_label", None
+    )
     request_id = getattr(getattr(request, "state", None), "request_id", None)
 
     # Keep metadata small and non-sensitive.
@@ -436,24 +491,16 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
             "error": "Internal Server Error",
             "message": "An unexpected error occurred. Please try again later.",
             "request_id": getattr(request.state, "request_id", "unknown"),
-        }
+        },
     )
 
 
 # Include API routers
 tenant_deps = [Depends(get_current_tenant)]
 
-app.include_router(
-    routes_health.router,
-    prefix="/healthz",
-    tags=["Health Check"]
-)
+app.include_router(routes_health.router, prefix="/healthz", tags=["Health Check"])
 
-app.include_router(
-    routes_auth.router,
-    prefix="/api/auth",
-    tags=["Authentication"]
-)
+app.include_router(routes_auth.router, prefix="/api/auth", tags=["Authentication"])
 # 檔案上傳路由
 app.include_router(
     routes_upload.router,
@@ -503,10 +550,7 @@ app.include_router(
 )
 
 # Tenant Routes
-app.include_router(
-    routes_tenants.router,
-    tags=["Tenants"]
-)
+app.include_router(routes_tenants.router, tags=["Tenants"])
 
 # 系統常數查詢路由
 app.include_router(
@@ -556,6 +600,7 @@ app.include_router(
     dependencies=tenant_deps,
 )
 
+
 @app.get("/", tags=["Root"])
 async def root() -> dict[str, str]:
     """Root endpoint with basic API information."""
@@ -564,7 +609,7 @@ async def root() -> dict[str, str]:
         "version": "1.0.0",
         "status": "running",
         "docs": "/docs",
-        "health": "/healthz"
+        "health": "/healthz",
     }
 
 

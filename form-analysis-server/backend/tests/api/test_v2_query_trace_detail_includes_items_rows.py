@@ -21,7 +21,9 @@ async def client(db_session_clean):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -40,7 +42,9 @@ async def _create_tenant(db_session_clean) -> Tenant:
 
 
 @pytest.mark.asyncio
-async def test_v2_trace_detail_uses_items_rows_when_record_extras_empty(client, db_session_clean):
+async def test_v2_trace_detail_uses_items_rows_when_record_extras_empty(
+    client, db_session_clean
+):
     tenant = await _create_tenant(db_session_clean)
 
     lot_no_raw = "2507173_02"

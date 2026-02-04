@@ -1,6 +1,6 @@
+import hashlib
 import hmac
 import secrets
-import hashlib
 
 
 def generate_api_key() -> str:
@@ -15,7 +15,9 @@ def hash_api_key(*, raw_key: str, secret_key: str) -> str:
         raise ValueError("raw_key is required")
     if not secret_key:
         raise ValueError("secret_key is required")
-    digest = hmac.new(secret_key.encode("utf-8"), raw_key.encode("utf-8"), hashlib.sha256).hexdigest()
+    digest = hmac.new(
+        secret_key.encode("utf-8"), raw_key.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
     return digest
 
 

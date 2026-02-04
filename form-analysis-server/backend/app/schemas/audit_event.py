@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -11,17 +11,17 @@ class AuditEventResponse(BaseModel):
     id: UUID
     created_at: datetime
 
-    tenant_id: Optional[UUID]
-    actor_api_key_id: Optional[UUID]
-    actor_label_snapshot: Optional[str]
+    tenant_id: UUID | None
+    actor_api_key_id: UUID | None
+    actor_label_snapshot: str | None
 
-    request_id: Optional[str]
+    request_id: str | None
     method: str
     path: str
     status_code: int
 
-    client_host: Optional[str]
-    user_agent: Optional[str]
+    client_host: str | None
+    user_agent: str | None
 
     action: str
     metadata_json: dict[str, Any]

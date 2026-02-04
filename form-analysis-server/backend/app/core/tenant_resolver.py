@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -10,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.core.tenant import Tenant
 
 
-async def resolve_tenant_or_raise(*, db: AsyncSession, x_tenant_id: Optional[str]) -> Tenant:
+async def resolve_tenant_or_raise(
+    *, db: AsyncSession, x_tenant_id: str | None
+) -> Tenant:
     """Resolve current tenant from header or DB defaults.
 
     Behavior matches the API dependency in `app.api.deps.get_current_tenant`:
@@ -34,7 +35,9 @@ async def resolve_tenant_or_raise(*, db: AsyncSession, x_tenant_id: Optional[str
         result = await db.execute(select(Tenant).where(Tenant.id == tenant_uuid))
         tenant = result.scalar_one_or_none()
         if not tenant:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found"
+            )
         return tenant
 
     count_result = await db.execute(select(func.count(Tenant.id)))
@@ -61,7 +64,9 @@ async def resolve_tenant_or_raise(*, db: AsyncSession, x_tenant_id: Optional[str
     )
 
 
-async def resolve_tenant_or_none(*, db: AsyncSession, x_tenant_id: Optional[str]) -> Tenant | None:
+async def resolve_tenant_or_none(
+    *, db: AsyncSession, x_tenant_id: str | None
+) -> Tenant | None:
     """Best-effort tenant resolution.
 
     This is intentionally non-raising and is used for optional/background work

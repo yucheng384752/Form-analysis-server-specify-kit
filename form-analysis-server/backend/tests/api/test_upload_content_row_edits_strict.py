@@ -55,7 +55,9 @@ async def client_upload_content_edits(db_session_clean, test_engine):
 
     await db_session_clean.commit()
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac, raw_key, tenant_id
 
     settings.auth_mode = prev_auth_mode
@@ -65,7 +67,9 @@ async def client_upload_content_edits(db_session_clean, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_update_upload_content_writes_row_edits_and_lists(client_upload_content_edits, db_session_clean):
+async def test_update_upload_content_writes_row_edits_and_lists(
+    client_upload_content_edits, db_session_clean
+):
     client, raw_key, tenant_id = client_upload_content_edits
 
     # 1) create upload job
@@ -78,7 +82,9 @@ async def test_update_upload_content_writes_row_edits_and_lists(client_upload_co
     process_id = uuid.UUID(str(resp.json()["process_id"]))
 
     job = (
-        await db_session_clean.execute(select(UploadJob).where(UploadJob.process_id == process_id))
+        await db_session_clean.execute(
+            select(UploadJob).where(UploadJob.process_id == process_id)
+        )
     ).scalar_one()
 
     # 2) update content
@@ -94,23 +100,29 @@ async def test_update_upload_content_writes_row_edits_and_lists(client_upload_co
 
     # 3) row_edits persisted
     row_edit = (
-        await db_session_clean.execute(
-            select(RowEdit)
-            .where(
-                RowEdit.tenant_id == tenant_id,
-                RowEdit.table_code == "UPLOAD",
-                RowEdit.record_id == job.id,
+        (
+            await db_session_clean.execute(
+                select(RowEdit)
+                .where(
+                    RowEdit.tenant_id == tenant_id,
+                    RowEdit.table_code == "UPLOAD",
+                    RowEdit.record_id == job.id,
+                )
+                .order_by(RowEdit.created_at.desc())
             )
-            .order_by(RowEdit.created_at.desc())
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
 
     assert row_edit is not None
     assert row_edit.created_by == "uploader"
     assert row_edit.reason_text == "fix upload csv"
     assert (row_edit.before_json or {}).get("process_id") == str(process_id)
     assert (row_edit.after_json or {}).get("process_id") == str(process_id)
-    assert (row_edit.before_json or {}).get("file_sha256") != (row_edit.after_json or {}).get("file_sha256")
+    assert (row_edit.before_json or {}).get("file_sha256") != (
+        row_edit.after_json or {}
+    ).get("file_sha256")
 
     # 4) list endpoint
     resp_list = await client.get(

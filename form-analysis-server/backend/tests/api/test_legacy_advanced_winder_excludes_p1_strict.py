@@ -2,16 +2,16 @@ import uuid
 from datetime import date
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
-from app.main import app
 from app.api.deps import get_db
+from app.main import app
 from app.models.core.tenant import Tenant
 from app.models.p1_record import P1Record
-from app.models.p2_record import P2Record
-from app.models.p3_record import P3Record
 from app.models.p2_item_v2 import P2ItemV2
+from app.models.p2_record import P2Record
 from app.models.p3_item_v2 import P3ItemV2
+from app.models.p3_record import P3Record
 from app.utils.normalization import normalize_lot_no
 
 
@@ -22,14 +22,18 @@ async def client(db_session_clean):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
-async def test_legacy_advanced_query_winder_does_not_include_p1(client, db_session_clean):
+async def test_legacy_advanced_query_winder_does_not_include_p1(
+    client, db_session_clean
+):
     # Arrange
     tenant = Tenant(
         name=f"Test Tenant {uuid.uuid4()}",
@@ -69,7 +73,7 @@ async def test_legacy_advanced_query_winder_does_not_include_p1(client, db_sessi
         tenant_id=tenant.id,
         lot_no_raw=lot_no,
         lot_no_norm=lot_no_norm,
-        production_date_yyyymmdd=int(date(2025, 1, 1).strftime('%Y%m%d')),
+        production_date_yyyymmdd=int(date(2025, 1, 1).strftime("%Y%m%d")),
         machine_no="P24",
         mold_no="M1",
         product_id="2025-01-01-P24-M1-2507173_02",

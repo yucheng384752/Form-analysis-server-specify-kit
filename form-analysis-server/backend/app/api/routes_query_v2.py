@@ -1,52 +1,61 @@
 import re
-from typing import List, Optional, Dict, Any, Iterable
-from uuid import UUID
+from collections.abc import Iterable
 from datetime import date
+from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select, and_, or_, func, cast, union_all, JSON
+from pydantic import BaseModel, Field
+from sqlalchemy import JSON, and_, cast, func, or_, select, union_all
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, Field
 
-from app.api.deps import get_db, get_current_tenant
+from app.api.deps import get_current_tenant, get_db
 from app.models.core.tenant import Tenant
 from app.models.p1_record import P1Record
 from app.models.p2_record import P2Record
 from app.models.p3_record import P3Record
-from app.utils.normalization import normalize_lot_no, normalize_search_term, normalize_search_term_variants
 from app.services.audit_events import write_audit_event_best_effort
+from app.utils.normalization import (
+    normalize_lot_no,
+    normalize_search_term,
+    normalize_search_term_variants,
+)
 
 router = APIRouter()
 
 # --- Schemas ---
 
+
 class AdvancedSearchRequest(BaseModel):
-    lot_no: Optional[str] = None
-    date_start: Optional[date] = None
-    date_end: Optional[date] = None
-    machine_no: Optional[str] = None
-    mold_no: Optional[str] = None
-    winder_number: Optional[int] = None
-    
+    lot_no: str | None = None
+    date_start: date | None = None
+    date_end: date | None = None
+    machine_no: str | None = None
+    mold_no: str | None = None
+    winder_number: int | None = None
+
     page: int = 1
     page_size: int = 20
+
 
 class TraceResult(BaseModel):
     trace_key: str  # Usually lot_no_norm
     p1_found: bool
     p2_count: int
     p3_count: int
-    
+
+
 class AdvancedSearchResponse(BaseModel):
     total: int
-    results: List[TraceResult]
+    results: list[TraceResult]
+
 
 class TraceDetailResponse(BaseModel):
     trace_key: str
-    p1: Optional[Dict[str, Any]]
-    p2: List[Dict[str, Any]]
-    p3: List[Dict[str, Any]]
+    p1: dict[str, Any] | None
+    p2: list[dict[str, Any]]
+    p3: list[dict[str, Any]]
 
 
 class DynamicFilter(BaseModel):
@@ -54,7 +63,9 @@ class DynamicFilter(BaseModel):
 
     field: str = Field(..., description="Allowlisted field key")
     op: str = Field(..., description="Allowlisted operator")
-    value: Any = Field(None, description="Operator value; may be scalar or list depending on op")
+    value: Any = Field(
+        None, description="Operator value; may be scalar or list depending on op"
+    )
 
 
 class DynamicQueryRequest(BaseModel):
@@ -65,7 +76,7 @@ class DynamicQueryRequest(BaseModel):
     """
 
     data_type: str = Field(..., description="P1|P2|P3")
-    filters: List[DynamicFilter] = Field(default_factory=list)
+    filters: list[DynamicFilter] = Field(default_factory=list)
     page: int = Field(1, ge=1)
     page_size: int = Field(50, ge=1, le=200)
 
@@ -81,15 +92,17 @@ def _validate_row_data_key(raw_key: str) -> str:
         raise HTTPException(status_code=400, detail="row_data key cannot contain '.'")
     # Disallow ASCII control characters.
     if any(ord(ch) < 32 for ch in key):
-        raise HTTPException(status_code=400, detail="row_data key contains invalid characters")
+        raise HTTPException(
+            status_code=400, detail="row_data key contains invalid characters"
+        )
     return key
 
 
-def _coerce_row_data_terms(value: Any) -> List[str]:
+def _coerce_row_data_terms(value: Any) -> list[str]:
     if value is None:
         return []
     if isinstance(value, list):
-        out: List[str] = []
+        out: list[str] = []
         for v in value:
             s = str(v).strip() if v is not None else ""
             if s:
@@ -101,31 +114,32 @@ def _coerce_row_data_terms(value: Any) -> List[str]:
 
 # --- Legacy-compatible schemas (for frontend QueryPage) ---
 
+
 class QueryRecordV2Compat(BaseModel):
     id: str
     lot_no: str
     data_type: str  # 'P1' | 'P2' | 'P3'
-    production_date: Optional[str] = None
+    production_date: str | None = None
     created_at: str
     display_name: str
 
     # Optional known fields used by frontend (kept for compatibility)
-    winder_number: Optional[int] = None
+    winder_number: int | None = None
     # For merged P2 cards: list of winders that match advanced filters.
-    winder_numbers: Optional[List[int]] = None
-    product_id: Optional[str] = None
-    machine_no: Optional[str] = None
-    mold_no: Optional[str] = None
-    source_winder: Optional[int] = None
-    specification: Optional[str] = None
-    additional_data: Optional[Dict[str, Any]] = None
+    winder_numbers: list[int] | None = None
+    product_id: str | None = None
+    machine_no: str | None = None
+    mold_no: str | None = None
+    source_winder: int | None = None
+    specification: str | None = None
+    additional_data: dict[str, Any] | None = None
 
 
 class QueryResponseV2Compat(BaseModel):
     total_count: int
     page: int
     page_size: int
-    records: List[QueryRecordV2Compat]
+    records: list[QueryRecordV2Compat]
 
 
 class LotGroupV2Compat(BaseModel):
@@ -134,7 +148,7 @@ class LotGroupV2Compat(BaseModel):
     p2_count: int
     p3_count: int
     total_count: int
-    latest_production_date: Optional[str] = None
+    latest_production_date: str | None = None
     created_at: str
 
 
@@ -142,7 +156,7 @@ class LotGroupListV2Compat(BaseModel):
     total_count: int
     page: int
     page_size: int
-    groups: List[LotGroupV2Compat]
+    groups: list[LotGroupV2Compat]
 
 
 class RecordStatsV2Compat(BaseModel):
@@ -151,11 +165,11 @@ class RecordStatsV2Compat(BaseModel):
     p1_records: int
     p2_records: int
     p3_records: int
-    latest_production_date: Optional[str]
-    earliest_production_date: Optional[str]
+    latest_production_date: str | None
+    earliest_production_date: str | None
 
 
-def _yyyymmdd_to_yyyy_mm_dd(v: Optional[int]) -> Optional[str]:
+def _yyyymmdd_to_yyyy_mm_dd(v: int | None) -> str | None:
     if not v:
         return None
     s = str(v)
@@ -164,7 +178,7 @@ def _yyyymmdd_to_yyyy_mm_dd(v: Optional[int]) -> Optional[str]:
     return f"{s[0:4]}-{s[4:6]}-{s[6:8]}"
 
 
-def _max_isoformat(values: Iterable[Optional[Any]]) -> Optional[str]:
+def _max_isoformat(values: Iterable[Any | None]) -> str | None:
     best = None
     for v in values:
         if v is None:
@@ -176,7 +190,7 @@ def _max_isoformat(values: Iterable[Optional[Any]]) -> Optional[str]:
 
 @router.get("/lots", response_model=LotGroupListV2Compat)
 async def query_lot_groups_v2(
-    search: Optional[str] = Query(None, description="搜尋批號關鍵字"),
+    search: str | None = Query(None, description="搜尋批號關鍵字"),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -249,34 +263,46 @@ async def query_lot_groups_v2(
 
         created_at = base.get("created_at")
         if created_at is not None:
-            row["created_at"] = created_at if row["created_at"] is None else max(row["created_at"], created_at)
+            row["created_at"] = (
+                created_at
+                if row["created_at"] is None
+                else max(row["created_at"], created_at)
+            )
 
     for lot_no_norm, lot_no_raw, p1_count, p1_created in p1_rows:
-        upsert({
-            "lot_no_norm": lot_no_norm,
-            "lot_no_raw": lot_no_raw,
-            "p1_count": p1_count,
-            "created_at": p1_created,
-        })
+        upsert(
+            {
+                "lot_no_norm": lot_no_norm,
+                "lot_no_raw": lot_no_raw,
+                "p1_count": p1_count,
+                "created_at": p1_created,
+            }
+        )
     for lot_no_norm, lot_no_raw, p2_count, p2_created in p2_rows:
-        upsert({
-            "lot_no_norm": lot_no_norm,
-            "lot_no_raw": lot_no_raw,
-            "p2_count": p2_count,
-            "created_at": p2_created,
-        })
+        upsert(
+            {
+                "lot_no_norm": lot_no_norm,
+                "lot_no_raw": lot_no_raw,
+                "p2_count": p2_count,
+                "created_at": p2_created,
+            }
+        )
     for lot_no_norm, lot_no_raw, p3_count, p3_created, latest_prod in p3_rows:
-        upsert({
-            "lot_no_norm": lot_no_norm,
-            "lot_no_raw": lot_no_raw,
-            "p3_count": p3_count,
-            "created_at": p3_created,
-            "latest_prod": latest_prod,
-        })
+        upsert(
+            {
+                "lot_no_norm": lot_no_norm,
+                "lot_no_raw": lot_no_raw,
+                "p3_count": p3_count,
+                "created_at": p3_created,
+                "latest_prod": latest_prod,
+            }
+        )
 
     # Sort and paginate
     groups_raw = list(merged.values())
-    groups_raw.sort(key=lambda r: (r.get("created_at") is None, r.get("created_at")), reverse=True)
+    groups_raw.sort(
+        key=lambda r: (r.get("created_at") is None, r.get("created_at")), reverse=True
+    )
     total = len(groups_raw)
     start = (page - 1) * page_size
     end = start + page_size
@@ -288,7 +314,11 @@ async def query_lot_groups_v2(
         p2c = int(g.get("p2_count") or 0)
         p3c = int(g.get("p3_count") or 0)
         total_c = p1c + p2c + p3c
-        created_iso = g.get("created_at").isoformat() if g.get("created_at") is not None else "1970-01-01T00:00:00"
+        created_iso = (
+            g.get("created_at").isoformat()
+            if g.get("created_at") is not None
+            else "1970-01-01T00:00:00"
+        )
         groups.append(
             LotGroupV2Compat(
                 lot_no=str(g.get("lot_no") or ""),
@@ -301,26 +331,33 @@ async def query_lot_groups_v2(
             )
         )
 
-    return LotGroupListV2Compat(total_count=total, page=page, page_size=page_size, groups=groups)
+    return LotGroupListV2Compat(
+        total_count=total, page=page, page_size=page_size, groups=groups
+    )
 
 
-def _first_row(extras: Any) -> Optional[Dict[str, Any]]:
+def _first_row(extras: Any) -> dict[str, Any] | None:
     if not isinstance(extras, dict):
         return None
-    rows = extras.get('rows')
+    rows = extras.get("rows")
     if not isinstance(rows, list) or not rows:
         return None
     first = rows[0]
     return first if isinstance(first, dict) else None
 
 
-def _extract_spec_from_row(row: Optional[Dict[str, Any]]) -> Optional[str]:
+def _extract_spec_from_row(row: dict[str, Any] | None) -> str | None:
     if not row:
         return None
     for key in [
-        'specification', 'Specification', 'SPECIFICATION',
-        '規格', '產品規格', 'P3規格',
-        'Spec', 'spec',
+        "specification",
+        "Specification",
+        "SPECIFICATION",
+        "規格",
+        "產品規格",
+        "P3規格",
+        "Spec",
+        "spec",
     ]:
         v = row.get(key)
         if v is None:
@@ -331,7 +368,7 @@ def _extract_spec_from_row(row: Optional[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def _normalize_production_date(value: Any) -> Optional[str]:
+def _normalize_production_date(value: Any) -> str | None:
     if value is None:
         return None
 
@@ -396,15 +433,20 @@ def _normalize_production_date(value: Any) -> Optional[str]:
     return s
 
 
-def _extract_production_date_from_row(row: Optional[Dict[str, Any]]) -> Optional[str]:
+def _extract_production_date_from_row(row: dict[str, Any] | None) -> str | None:
     if not row:
         return None
     for key in [
-        'production_date', 'Production Date', 'Production date',
-        'Production Date_x', 'Production Date_y',
-        'Slitting date',
-        'year-month-day', 'Year-Month-Day',
-        '生產日期', '日期',
+        "production_date",
+        "Production Date",
+        "Production date",
+        "Production Date_x",
+        "Production Date_y",
+        "Slitting date",
+        "year-month-day",
+        "Year-Month-Day",
+        "生產日期",
+        "日期",
     ]:
         v = row.get(key)
         if v is None:
@@ -415,12 +457,22 @@ def _extract_production_date_from_row(row: Optional[Dict[str, Any]]) -> Optional
     return None
 
 
-def _derive_machine_mold(record_machine: Optional[str], record_mold: Optional[str], extras: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+def _derive_machine_mold(
+    record_machine: str | None, record_mold: str | None, extras: dict[str, Any]
+) -> tuple[str | None, str | None]:
     machine = None
     mold = None
-    if record_machine and str(record_machine).strip() and str(record_machine).upper() != 'UNKNOWN':
+    if (
+        record_machine
+        and str(record_machine).strip()
+        and str(record_machine).upper() != "UNKNOWN"
+    ):
         machine = str(record_machine).strip()
-    if record_mold and str(record_mold).strip() and str(record_mold).upper() != 'UNKNOWN':
+    if (
+        record_mold
+        and str(record_mold).strip()
+        and str(record_mold).upper() != "UNKNOWN"
+    ):
         mold = str(record_mold).strip()
     if machine and mold:
         return machine, mold
@@ -435,15 +487,19 @@ def _p1_to_query_record(r: P1Record) -> QueryRecordV2Compat:
     return QueryRecordV2Compat(
         id=str(r.id),
         lot_no=r.lot_no_raw,
-        data_type='P1',
+        data_type="P1",
         production_date=_extract_production_date_from_row(row0),
         created_at=r.created_at.isoformat(),
         display_name=display,
-        additional_data=(r.extras if isinstance(r.extras, dict) else {}),  # 修復: 返回完整 extras 而非只有 row0
+        additional_data=(
+            r.extras if isinstance(r.extras, dict) else {}
+        ),  # 修復: 返回完整 extras 而非只有 row0
     )
 
 
-def _p2_to_query_record_with_items(p2_record: P2Record, items: list) -> QueryRecordV2Compat:
+def _p2_to_query_record_with_items(
+    p2_record: P2Record, items: list
+) -> QueryRecordV2Compat:
     """
     組合 P2Record + P2ItemsV2 為查詢結果
     items: List[P2ItemV2]
@@ -455,45 +511,65 @@ def _p2_to_query_record_with_items(p2_record: P2Record, items: list) -> QueryRec
         # Some datasets store the real row fields inside row_data.rows[0]
         # (legacy import shape). Flatten it to keep UI tables consistent.
         row: dict = {}
-        if isinstance(raw.get('rows'), list) and raw.get('rows') and isinstance(raw.get('rows')[0], dict):
-            row.update({k: v for k, v in raw.items() if k != 'rows'})
-            row.update(raw.get('rows')[0])
+        if (
+            isinstance(raw.get("rows"), list)
+            and raw.get("rows")
+            and isinstance(raw.get("rows")[0], dict)
+        ):
+            row.update({k: v for k, v in raw.items() if k != "rows"})
+            row.update(raw.get("rows")[0])
         else:
             row.update(raw)
-        row['winder_number'] = item.winder_number
+        row["winder_number"] = item.winder_number
         # 加入結構化欄位
-        for field in ['sheet_width', 'thickness1', 'thickness2', 'thickness3',
-                     'thickness4', 'thickness5', 'thickness6', 'thickness7',
-                     'appearance', 'rough_edge', 'slitting_result']:
+        for field in [
+            "sheet_width",
+            "thickness1",
+            "thickness2",
+            "thickness3",
+            "thickness4",
+            "thickness5",
+            "thickness6",
+            "thickness7",
+            "appearance",
+            "rough_edge",
+            "slitting_result",
+        ]:
             val = getattr(item, field, None)
             if val is not None:
                 row[field] = val
         rows.append(row)
-    
-    # 按 winder_number 排序
-    rows.sort(key=lambda x: x.get('winder_number', 0))
 
-    winder_numbers = sorted({int(r.get('winder_number')) for r in rows if isinstance(r.get('winder_number'), (int, float))})
-    
+    # 按 winder_number 排序
+    rows.sort(key=lambda x: x.get("winder_number", 0))
+
+    winder_numbers = sorted(
+        {
+            int(r.get("winder_number"))
+            for r in rows
+            if isinstance(r.get("winder_number"), (int, float))
+        }
+    )
+
     # 從第一個 item 提取生產日期
     first_item = items[0] if items else None
     production_date = None
     if first_item and isinstance(first_item.row_data, dict):
-        for key in ['Production Date', 'production_date', '生產日期', 'date']:
+        for key in ["Production Date", "production_date", "生產日期", "date"]:
             if key in first_item.row_data:
                 production_date = _normalize_production_date(first_item.row_data[key])
                 break
-    
+
     return QueryRecordV2Compat(
         id=str(p2_record.id),
         lot_no=p2_record.lot_no_raw,
-        data_type='P2',
+        data_type="P2",
         production_date=production_date,
         created_at=p2_record.created_at.isoformat(),
         display_name=p2_record.lot_no_raw,
         winder_number=None,  # 合併模式
         winder_numbers=winder_numbers or None,
-        additional_data={'rows': rows},
+        additional_data={"rows": rows},
     )
 
 
@@ -504,7 +580,7 @@ def _p2_to_query_record(r: P2Record) -> QueryRecordV2Compat:
     return QueryRecordV2Compat(
         id=str(r.id),
         lot_no=r.lot_no_raw,
-        data_type='P2',
+        data_type="P2",
         production_date=_extract_production_date_from_row(row0),
         created_at=r.created_at.isoformat(),
         display_name=display,
@@ -515,25 +591,25 @@ def _p2_to_query_record(r: P2Record) -> QueryRecordV2Compat:
 
 def _merge_p2_records(records: list[P2Record]) -> list[QueryRecordV2Compat]:
     """將相同 lot_no 的 P2 Records (20個winders) 合併成單一筆查詢記錄
-    
+
     前端期望的資料結構是 additional_data.rows 陣列，每個 row 是扁平的 dict。
     """
     from collections import defaultdict
-    
+
     # 按 lot_no_norm 分組
     grouped = defaultdict(list)
     for r in records:
         grouped[r.lot_no_norm].append(r)
-    
+
     merged_results = []
     for lot_no_norm, lot_records in grouped.items():
         # 排序確保 winder 順序一致
         lot_records.sort(key=lambda x: x.winder_number)
-        
+
         # 使用第一個 record 的基本資訊
         first = lot_records[0]
         row0 = _first_row(first.extras)
-        
+
         # 將所有 winder 的 extras 展開為 rows 陣列（前端期望的格式）
         rows = []
         for rec in lot_records:
@@ -541,42 +617,57 @@ def _merge_p2_records(records: list[P2Record]) -> list[QueryRecordV2Compat]:
                 extras = rec.extras
                 row: dict = {}
                 # Legacy shape: extras may be { rows: [ { ...real fields... } ], ... }
-                if isinstance(extras.get('rows'), list) and extras.get('rows') and isinstance(extras.get('rows')[0], dict):
-                    row.update({k: v for k, v in extras.items() if k != 'rows'})
-                    row.update(extras.get('rows')[0])
+                if (
+                    isinstance(extras.get("rows"), list)
+                    and extras.get("rows")
+                    and isinstance(extras.get("rows")[0], dict)
+                ):
+                    row.update({k: v for k, v in extras.items() if k != "rows"})
+                    row.update(extras.get("rows")[0])
                 else:
                     row.update(extras)
                 # 確保 winder_number 包含在 row 中（前端可能需要）
-                row['winder_number'] = rec.winder_number
+                row["winder_number"] = rec.winder_number
                 rows.append(row)
-        
+
         # 組裝 additional_data (包含 rows 陣列)
         merged_extras = {
-            'lot_no': first.lot_no_raw,
-            'rows': rows  # 前端期望此欄位名稱
+            "lot_no": first.lot_no_raw,
+            "rows": rows,  # 前端期望此欄位名稱
         }
-        
+
         # 從第一個 winder 的 extras 提取共同資訊（保留共同欄位）
         if isinstance(first.extras, dict):
-            for key in ['format', 'Format', '規格', 'production_date', 'Production Date', '生產日期']:
+            for key in [
+                "format",
+                "Format",
+                "規格",
+                "production_date",
+                "Production Date",
+                "生產日期",
+            ]:
                 if key in first.extras:
                     merged_extras[key] = first.extras[key]
-        
-        merged_results.append(QueryRecordV2Compat(
-            id=str(first.id),  # 使用第一個 winder 的 ID
-            lot_no=first.lot_no_raw,
-            data_type='P2',
-            production_date=_extract_production_date_from_row(row0),
-            created_at=first.created_at.isoformat(),
-            display_name=first.lot_no_raw,  # 不再顯示 winder number
-            winder_number=None,  # 合併後不顯示單一 winder
-            additional_data=merged_extras,
-        ))
-    
+
+        merged_results.append(
+            QueryRecordV2Compat(
+                id=str(first.id),  # 使用第一個 winder 的 ID
+                lot_no=first.lot_no_raw,
+                data_type="P2",
+                production_date=_extract_production_date_from_row(row0),
+                created_at=first.created_at.isoformat(),
+                display_name=first.lot_no_raw,  # 不再顯示 winder number
+                winder_number=None,  # 合併後不顯示單一 winder
+                additional_data=merged_extras,
+            )
+        )
+
     return merged_results
 
 
-def _p3_to_query_record_with_items(p3_record: P3Record, items: list) -> QueryRecordV2Compat:
+def _p3_to_query_record_with_items(
+    p3_record: P3Record, items: list
+) -> QueryRecordV2Compat:
     """
     組合 P3Record + P3ItemsV2 為查詢結果
     items: List[P3ItemV2]
@@ -585,21 +676,21 @@ def _p3_to_query_record_with_items(p3_record: P3Record, items: list) -> QueryRec
     rows = []
     for item in items:
         row = item.row_data if isinstance(item.row_data, dict) else {}
-        row['row_no'] = item.row_no
+        row["row_no"] = item.row_no
         # Some datasets store product_id only on the record; legacy UI expects
         # it to exist inside each row dict as well.
-        row['product_id'] = item.product_id or p3_record.product_id
-        row['source_winder'] = item.source_winder
-        row['specification'] = item.specification
+        row["product_id"] = item.product_id or p3_record.product_id
+        row["source_winder"] = item.source_winder
+        row["specification"] = item.specification
         rows.append(row)
-    
+
     # 按 row_no 排序
-    rows.sort(key=lambda x: x.get('row_no', 0))
-    
+    rows.sort(key=lambda x: x.get("row_no", 0))
+
     return QueryRecordV2Compat(
         id=str(p3_record.id),
         lot_no=p3_record.lot_no_raw,
-        data_type='P3',
+        data_type="P3",
         production_date=_yyyymmdd_to_yyyy_mm_dd(p3_record.production_date_yyyymmdd),
         created_at=p3_record.created_at.isoformat(),
         display_name=p3_record.product_id or p3_record.lot_no_raw,
@@ -607,7 +698,7 @@ def _p3_to_query_record_with_items(p3_record: P3Record, items: list) -> QueryRec
         machine_no=p3_record.machine_no,
         mold_no=p3_record.mold_no,
         specification=items[0].specification if items else None,
-        additional_data={'rows': rows},
+        additional_data={"rows": rows},
     )
 
 
@@ -619,7 +710,7 @@ def _p3_to_query_record(r: P3Record) -> QueryRecordV2Compat:
     return QueryRecordV2Compat(
         id=str(r.id),
         lot_no=r.lot_no_raw,
-        data_type='P3',
+        data_type="P3",
         production_date=_yyyymmdd_to_yyyy_mm_dd(r.production_date_yyyymmdd),
         created_at=r.created_at.isoformat(),
         display_name=display,
@@ -631,7 +722,9 @@ def _p3_to_query_record(r: P3Record) -> QueryRecordV2Compat:
     )
 
 
-def _derive_machine_mold_from_extras(extras: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+def _derive_machine_mold_from_extras(
+    extras: dict[str, Any],
+) -> tuple[str | None, str | None]:
     try:
         rows = extras.get("rows") if isinstance(extras, dict) else None
         if not rows or not isinstance(rows, list):
@@ -659,7 +752,9 @@ def _derive_machine_mold_from_extras(extras: Dict[str, Any]) -> tuple[Optional[s
     except Exception:
         return None, None
 
+
 # --- Routes ---
+
 
 @router.post("/advanced", response_model=AdvancedSearchResponse)
 async def advanced_search(
@@ -676,9 +771,9 @@ async def advanced_search(
     # 2. Find matching lot_no_norm from those tables
     # 3. Intersect the sets of lot_no_norm
     # 4. For the resulting lots, count P1/P2/P3 records
-    
+
     candidate_lots = None
-    
+
     # 1. Filter by Lot No (P1/P2/P3)
     if criteria.lot_no:
         try:
@@ -687,11 +782,18 @@ async def advanced_search(
         except Exception:
             # If normalization fails, return empty results immediately
             return AdvancedSearchResponse(total=0, results=[])
-        
+
     # 2. Filter by Date/Machine/Mold (P3)
-    if criteria.date_start or criteria.date_end or criteria.machine_no or criteria.mold_no:
-        stmt = select(P3Record.lot_no_norm).where(P3Record.tenant_id == current_tenant.id)
-        
+    if (
+        criteria.date_start
+        or criteria.date_end
+        or criteria.machine_no
+        or criteria.mold_no
+    ):
+        stmt = select(P3Record.lot_no_norm).where(
+            P3Record.tenant_id == current_tenant.id
+        )
+
         if criteria.date_start:
             start_int = int(criteria.date_start.strftime("%Y%m%d"))
             stmt = stmt.where(P3Record.production_date_yyyymmdd >= start_int)
@@ -702,33 +804,37 @@ async def advanced_search(
             stmt = stmt.where(P3Record.machine_no == criteria.machine_no)
         if criteria.mold_no:
             stmt = stmt.where(P3Record.mold_no == criteria.mold_no)
-            
+
         result = await db.execute(stmt)
         p3_lots = set(result.scalars().all())
-        
+
         if candidate_lots is None:
             candidate_lots = p3_lots
         else:
             candidate_lots &= p3_lots
-            
+
     # 3. Filter by Winder (P2)
     if criteria.winder_number is not None:
         stmt = select(P2Record.lot_no_norm).where(
             P2Record.tenant_id == current_tenant.id,
-            P2Record.winder_number == criteria.winder_number
+            P2Record.winder_number == criteria.winder_number,
         )
         result = await db.execute(stmt)
         p2_lots = set(result.scalars().all())
-        
+
         if candidate_lots is None:
             candidate_lots = p2_lots
         else:
             candidate_lots &= p2_lots
-            
+
     # If no criteria provided, return empty or recent (limit to avoid full scan)
     if candidate_lots is None:
         # Default: fetch recent P1 lots
-        stmt = select(P1Record.lot_no_norm).where(P1Record.tenant_id == current_tenant.id).limit(100)
+        stmt = (
+            select(P1Record.lot_no_norm)
+            .where(P1Record.tenant_id == current_tenant.id)
+            .limit(100)
+        )
         result = await db.execute(stmt)
         candidate_lots = set(result.scalars().all())
 
@@ -738,67 +844,84 @@ async def advanced_search(
     start = (criteria.page - 1) * criteria.page_size
     end = start + criteria.page_size
     page_lots = sorted_lots[start:end]
-    
+
     results = []
     for lot in page_lots:
         # Count P1
-        p1_stmt = select(func.count()).select_from(P1Record).where(
-            P1Record.tenant_id == current_tenant.id,
-            P1Record.lot_no_norm == lot
+        p1_stmt = (
+            select(func.count())
+            .select_from(P1Record)
+            .where(P1Record.tenant_id == current_tenant.id, P1Record.lot_no_norm == lot)
         )
         p1_count = (await db.execute(p1_stmt)).scalar()
-        
+
         # Count P2
-        p2_stmt = select(func.count()).select_from(P2Record).where(
-            P2Record.tenant_id == current_tenant.id,
-            P2Record.lot_no_norm == lot
+        p2_stmt = (
+            select(func.count())
+            .select_from(P2Record)
+            .where(P2Record.tenant_id == current_tenant.id, P2Record.lot_no_norm == lot)
         )
         p2_count = (await db.execute(p2_stmt)).scalar()
-        
+
         # Count P3
-        p3_stmt = select(func.count()).select_from(P3Record).where(
-            P3Record.tenant_id == current_tenant.id,
-            P3Record.lot_no_norm == lot
+        p3_stmt = (
+            select(func.count())
+            .select_from(P3Record)
+            .where(P3Record.tenant_id == current_tenant.id, P3Record.lot_no_norm == lot)
         )
         p3_count = (await db.execute(p3_stmt)).scalar()
-        
-        results.append(TraceResult(
-            trace_key=str(lot),
-            p1_found=p1_count > 0,
-            p2_count=p2_count,
-            p3_count=p3_count
-        ))
-        
+
+        results.append(
+            TraceResult(
+                trace_key=str(lot),
+                p1_found=p1_count > 0,
+                p2_count=p2_count,
+                p3_count=p3_count,
+            )
+        )
+
     return AdvancedSearchResponse(total=total, results=results)
 
 
-@router.get("/lots/suggestions", response_model=List[str])
+@router.get("/lots/suggestions", response_model=list[str])
 async def suggest_lots(
     term: str = Query("", description="lot no prefix/substring"),
     limit: int = Query(10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
-    t = (term or '').strip()
+    t = (term or "").strip()
     if not t:
         return []
 
     # Search raw lot strings across P1/P2/P3
     like = f"%{t}%"
-    p1_stmt = select(P1Record.lot_no_raw).where(
-        P1Record.tenant_id == current_tenant.id,
-        P1Record.lot_no_raw.ilike(like),
-    ).limit(limit)
-    p2_stmt = select(P2Record.lot_no_raw).where(
-        P2Record.tenant_id == current_tenant.id,
-        P2Record.lot_no_raw.ilike(like),
-    ).limit(limit)
-    p3_stmt = select(P3Record.lot_no_raw).where(
-        P3Record.tenant_id == current_tenant.id,
-        P3Record.lot_no_raw.ilike(like),
-    ).limit(limit)
+    p1_stmt = (
+        select(P1Record.lot_no_raw)
+        .where(
+            P1Record.tenant_id == current_tenant.id,
+            P1Record.lot_no_raw.ilike(like),
+        )
+        .limit(limit)
+    )
+    p2_stmt = (
+        select(P2Record.lot_no_raw)
+        .where(
+            P2Record.tenant_id == current_tenant.id,
+            P2Record.lot_no_raw.ilike(like),
+        )
+        .limit(limit)
+    )
+    p3_stmt = (
+        select(P3Record.lot_no_raw)
+        .where(
+            P3Record.tenant_id == current_tenant.id,
+            P3Record.lot_no_raw.ilike(like),
+        )
+        .limit(limit)
+    )
 
-    lots: List[str] = []
+    lots: list[str] = []
     seen = set()
     for stmt in [p1_stmt, p2_stmt, p3_stmt]:
         result = await db.execute(stmt)
@@ -814,7 +937,7 @@ async def suggest_lots(
     return lots
 
 
-@router.get("/options/{field_name}", response_model=List[str])
+@router.get("/options/{field_name}", response_model=list[str])
 async def get_field_options_v2(
     field_name: str,
     limit: int = Query(200, ge=1, le=2000),
@@ -822,7 +945,14 @@ async def get_field_options_v2(
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
     field = field_name.strip().lower()
-    if field not in {"machine_no", "mold_no", "product_id", "specification", "winder_number", "material"}:
+    if field not in {
+        "machine_no",
+        "mold_no",
+        "product_id",
+        "specification",
+        "winder_number",
+        "material",
+    }:
         raise HTTPException(status_code=400, detail=f"Unsupported field: {field_name}")
 
     if field == "material":
@@ -840,7 +970,9 @@ async def get_field_options_v2(
             .limit(limit)
         )
         result = await db.execute(stmt)
-        return [str(v[0]).strip() for v in result.fetchall() if v[0] and str(v[0]).strip()]
+        return [
+            str(v[0]).strip() for v in result.fetchall() if v[0] and str(v[0]).strip()
+        ]
 
     if field == "mold_no":
         stmt = (
@@ -852,7 +984,9 @@ async def get_field_options_v2(
             .limit(limit)
         )
         result = await db.execute(stmt)
-        return [str(v[0]).strip() for v in result.fetchall() if v[0] and str(v[0]).strip()]
+        return [
+            str(v[0]).strip() for v in result.fetchall() if v[0] and str(v[0]).strip()
+        ]
 
     if field == "product_id":
         stmt = (
@@ -864,7 +998,9 @@ async def get_field_options_v2(
             .limit(limit)
         )
         result = await db.execute(stmt)
-        return [str(v[0]).strip() for v in result.fetchall() if v[0] and str(v[0]).strip()]
+        return [
+            str(v[0]).strip() for v in result.fetchall() if v[0] and str(v[0]).strip()
+        ]
 
     # specification: 統一規格選項，從 P1/P2/P3 的 extras 中提取
     if field == "specification":
@@ -901,7 +1037,7 @@ async def get_field_options_v2(
             existing = display_by_key.get(key)
             if existing is None or _score_display(disp) > _score_display(existing):
                 display_by_key[key] = disp
-        
+
         # P1: extras.Specification
         p1_stmt = (
             select(P1Record.extras)
@@ -911,9 +1047,13 @@ async def get_field_options_v2(
         p1_result = await db.execute(p1_stmt)
         for (extras,) in p1_result.fetchall():
             if isinstance(extras, dict):
-                spec = extras.get('Specification') or extras.get('specification') or extras.get('規格')
+                spec = (
+                    extras.get("Specification")
+                    or extras.get("specification")
+                    or extras.get("規格")
+                )
                 _maybe_add_spec(spec)
-        
+
         # P2: extras.format
         p2_stmt = (
             select(P2Record.extras)
@@ -923,9 +1063,11 @@ async def get_field_options_v2(
         p2_result = await db.execute(p2_stmt)
         for (extras,) in p2_result.fetchall():
             if isinstance(extras, dict):
-                spec = extras.get('format') or extras.get('Format') or extras.get('規格')
+                spec = (
+                    extras.get("format") or extras.get("Format") or extras.get("規格")
+                )
                 _maybe_add_spec(spec)
-        
+
         # P3: extras.rows[0].Specification
         p3_stmt = (
             select(P3Record.extras)
@@ -941,12 +1083,12 @@ async def get_field_options_v2(
 
         specs = sorted(display_by_key.values())
         return specs[:limit]
-    
+
     # winder_number: 從 P2/P3 的 extras 中提取
     if field == "winder_number":
-        winders: List[str] = []
+        winders: list[str] = []
         seen = set()
-        
+
         # P2: extras.rows[].winder_number
         p2_stmt = (
             select(P2Record.extras)
@@ -955,16 +1097,24 @@ async def get_field_options_v2(
         )
         p2_result = await db.execute(p2_stmt)
         for (extras,) in p2_result.fetchall():
-            if isinstance(extras, dict) and 'rows' in extras:
-                rows = extras.get('rows', [])
+            if isinstance(extras, dict) and "rows" in extras:
+                rows = extras.get("rows", [])
                 if isinstance(rows, list):
                     for row in rows:
                         if isinstance(row, dict):
-                            winder = row.get('winder_number') or row.get('Winder Number') or row.get('winder')
-                            if winder and str(winder).strip() and str(winder).strip() not in seen:
+                            winder = (
+                                row.get("winder_number")
+                                or row.get("Winder Number")
+                                or row.get("winder")
+                            )
+                            if (
+                                winder
+                                and str(winder).strip()
+                                and str(winder).strip() not in seen
+                            ):
                                 seen.add(str(winder).strip())
                                 winders.append(str(winder).strip())
-        
+
         # P3: extras.rows[0].source_winder (如果有的話)
         p3_stmt = (
             select(P3Record.extras)
@@ -975,21 +1125,25 @@ async def get_field_options_v2(
         for (extras,) in p3_result.fetchall():
             row0 = _first_row(extras)
             if row0:
-                winder = row0.get('source_winder') or row0.get('Source Winder') or row0.get('winder')
+                winder = (
+                    row0.get("source_winder")
+                    or row0.get("Source Winder")
+                    or row0.get("winder")
+                )
                 if winder and str(winder).strip() and str(winder).strip() not in seen:
                     seen.add(str(winder).strip())
                     winders.append(str(winder).strip())
-        
+
         winders.sort(key=lambda x: (x.isdigit() and int(x) or 999999, x))
         return winders[:limit]
-    
+
     return []
 
 
 @router.get("/records", response_model=QueryResponseV2Compat)
 async def query_records_v2(
-    lot_no: Optional[str] = Query(None),
-    data_type: Optional[str] = Query(None, description="P1|P2|P3"),
+    lot_no: str | None = Query(None),
+    data_type: str | None = Query(None, description="P1|P2|P3"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -1019,58 +1173,72 @@ async def query_records_v2(
 @router.get("/records/advanced", response_model=QueryResponseV2Compat)
 async def query_records_advanced_v2(
     request: Request = None,
-    lot_no: Optional[str] = Query(None),
-    production_date_from: Optional[str] = Query(None),
-    production_date_to: Optional[str] = Query(None),
-    machine_no: Optional[List[str]] = Query(None),
-    mold_no: Optional[List[str]] = Query(None),
-    product_id: Optional[str] = Query(None),
-    material: Optional[List[str]] = Query(None, description="材料代號 (P1/P2)"),
-    specification: Optional[List[str]] = Query(None, description="統一規格搜尋 (P1.Specification, P2.format, P3.Specification)"),
-    thickness_min: Optional[int] = Query(None, description="Thickness min (integer, 0.01mm units; e.g., 30 means 0.30mm)"),
-    thickness_max: Optional[int] = Query(None, description="Thickness max (integer, 0.01mm units; e.g., 33 means 0.33mm)"),
-    winder_number: Optional[str] = Query(None, description="Winder Number (P2/P3)"),
-    data_type: Optional[str] = Query(None, description="P1|P2|P3"),
+    lot_no: str | None = Query(None),
+    production_date_from: str | None = Query(None),
+    production_date_to: str | None = Query(None),
+    machine_no: list[str] | None = Query(None),
+    mold_no: list[str] | None = Query(None),
+    product_id: str | None = Query(None),
+    material: list[str] | None = Query(None, description="材料代號 (P1/P2)"),
+    specification: list[str] | None = Query(
+        None, description="統一規格搜尋 (P1.Specification, P2.format, P3.Specification)"
+    ),
+    thickness_min: int | None = Query(
+        None, description="Thickness min (integer, 0.01mm units; e.g., 30 means 0.30mm)"
+    ),
+    thickness_max: int | None = Query(
+        None, description="Thickness max (integer, 0.01mm units; e.g., 33 means 0.33mm)"
+    ),
+    winder_number: str | None = Query(None, description="Winder Number (P2/P3)"),
+    data_type: str | None = Query(None, description="P1|P2|P3"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant),
 ):
-    dt = (data_type or '').strip().upper() or None
+    dt = (data_type or "").strip().upper() or None
     allow = {"P1", "P2", "P3"}
     if dt and dt not in allow:
         raise HTTPException(status_code=400, detail="Invalid data_type")
 
-    winder_requested: Optional[int] = None
+    winder_requested: int | None = None
     if winder_number and winder_number.strip():
         try:
             winder_requested = int(winder_number.strip())
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid winder_number")
 
-    lot_no_raw = (lot_no or '').strip() or None
-    lot_no_norm: Optional[int]
+    lot_no_raw = (lot_no or "").strip() or None
+    lot_no_norm: int | None
     try:
         lot_no_norm = normalize_lot_no(lot_no_raw) if lot_no_raw else None
     except Exception:
         lot_no_norm = None
 
     # Parse date range for P3 (YYYY-MM-DD)
-    def to_int_yyyymmdd(s: Optional[str]) -> Optional[int]:
+    def to_int_yyyymmdd(s: str | None) -> int | None:
         if not s:
             return None
         try:
-            return int(date.fromisoformat(s).strftime('%Y%m%d'))
+            return int(date.fromisoformat(s).strftime("%Y%m%d"))
         except Exception:
             return None
 
     date_from_i = to_int_yyyymmdd(production_date_from)
     date_to_i = to_int_yyyymmdd(production_date_to)
 
-    machine_terms = [s.strip() for s in (machine_no or []) if isinstance(s, str) and s.strip()]
-    mold_terms = [s.strip() for s in (mold_no or []) if isinstance(s, str) and s.strip()]
-    material_terms = [s.strip() for s in (material or []) if isinstance(s, str) and s.strip()]
-    specification_terms = [s.strip() for s in (specification or []) if isinstance(s, str) and s.strip()]
+    machine_terms = [
+        s.strip() for s in (machine_no or []) if isinstance(s, str) and s.strip()
+    ]
+    mold_terms = [
+        s.strip() for s in (mold_no or []) if isinstance(s, str) and s.strip()
+    ]
+    material_terms = [
+        s.strip() for s in (material or []) if isinstance(s, str) and s.strip()
+    ]
+    specification_terms = [
+        s.strip() for s in (specification or []) if isinstance(s, str) and s.strip()
+    ]
 
     # AND semantics for multi-select within the same field.
     material_norms = [normalize_search_term(s) for s in material_terms]
@@ -1085,8 +1253,8 @@ async def query_records_advanced_v2(
     if thickness_max_i is not None and thickness_min_i is None:
         thickness_min_i = thickness_max_i
 
-    thickness_min_f: Optional[float] = None
-    thickness_max_f: Optional[float] = None
+    thickness_min_f: float | None = None
+    thickness_max_f: float | None = None
     if thickness_min_i is not None and thickness_max_i is not None:
         if thickness_min_i > thickness_max_i:
             raise HTTPException(status_code=400, detail="Invalid thickness range")
@@ -1094,7 +1262,7 @@ async def query_records_advanced_v2(
         thickness_min_f = float(thickness_min_i) / 100.0
         thickness_max_f = float(thickness_max_i) / 100.0
 
-    records: List[QueryRecordV2Compat] = []
+    records: list[QueryRecordV2Compat] = []
 
     dialect_name = (db.get_bind().dialect.name if db.get_bind() else "").lower()
 
@@ -1107,9 +1275,17 @@ async def query_records_advanced_v2(
         s = func.coalesce(expr, "")
         s = func.lower(s)
         for ch in [
-            " ", "\t", "\n", "\r",
+            " ",
+            "\t",
+            "\n",
+            "\r",
             "_",
-            "-", "‐", "‑", "–", "—", "－",
+            "-",
+            "‐",
+            "‑",
+            "–",
+            "—",
+            "－",
             "　",
         ]:
             s = func.replace(s, ch, "")
@@ -1135,42 +1311,51 @@ async def query_records_advanced_v2(
 
     # P1
     # winder_number 僅適用 P2/P3：即使 data_type=P1，也不應在指定 winder_number 時回傳 P1。
-    if (dt == "P1" and winder_requested is None) or (dt is None and winder_requested is None):
+    if (dt == "P1" and winder_requested is None) or (
+        dt is None and winder_requested is None
+    ):
         p1_stmt = select(P1Record).where(P1Record.tenant_id == current_tenant.id)
         if lot_no_norm is not None:
             p1_stmt = p1_stmt.where(P1Record.lot_no_norm == lot_no_norm)
         elif lot_no_raw:
             p1_stmt = p1_stmt.where(P1Record.lot_no_raw.ilike(f"%{lot_no_raw}%"))
-        
+
         # 統一規格搜尋: P1 查 extras.Specification
         for spec in specification_terms:
             preds = [
-                _normalized_like(_json_key_text(P1Record.extras, 'Specification'), spec),
-                _normalized_like(_json_key_text(P1Record.extras, 'specification'), spec),
-                _normalized_like(_json_key_text(P1Record.extras, '規格'), spec),
+                _normalized_like(
+                    _json_key_text(P1Record.extras, "Specification"), spec
+                ),
+                _normalized_like(
+                    _json_key_text(P1Record.extras, "specification"), spec
+                ),
+                _normalized_like(_json_key_text(P1Record.extras, "規格"), spec),
             ]
             preds = [p for p in preds if p is not None]
             if preds:
                 p1_stmt = p1_stmt.where(or_(*preds))
-        
+
         p1_stmt = p1_stmt.order_by(P1Record.created_at.desc()).limit(page * page_size)
         p1_result = await db.execute(p1_stmt)
         records.extend([_p1_to_query_record(r) for r in p1_result.scalars().all()])
 
     # P2
     if dt in (None, "P2"):
-        from app.models.p2_item_v2 import P2ItemV2
         from sqlalchemy.orm import selectinload
-        
+
+        from app.models.p2_item_v2 import P2ItemV2
+
         # 查詢 P2Record，預先加載 items_v2
-        p2_stmt = select(P2Record).options(selectinload(P2Record.items_v2)).where(
-            P2Record.tenant_id == current_tenant.id
+        p2_stmt = (
+            select(P2Record)
+            .options(selectinload(P2Record.items_v2))
+            .where(P2Record.tenant_id == current_tenant.id)
         )
         if lot_no_norm is not None:
             p2_stmt = p2_stmt.where(P2Record.lot_no_norm == lot_no_norm)
         elif lot_no_raw:
             p2_stmt = p2_stmt.where(P2Record.lot_no_raw.ilike(f"%{lot_no_raw}%"))
-        
+
         # 統一規格搜尋: 在 items 的 row_data 中搜尋
         # NOTE: SQLite's JSON/LIKE canonicalization is less reliable across environments.
         # For sqlite, we rely on Python-side item pruning (still correct, test-friendly).
@@ -1179,15 +1364,15 @@ async def query_records_advanced_v2(
             p2_stmt = p2_stmt.join(P2ItemV2, P2Record.id == P2ItemV2.p2_record_id)
             for spec in specification_terms:
                 preds = [
-                    _normalized_like(_json_key_text(P2ItemV2.row_data, 'format'), spec),
-                    _normalized_like(_json_key_text(P2ItemV2.row_data, 'Format'), spec),
-                    _normalized_like(_json_key_text(P2ItemV2.row_data, '規格'), spec),
+                    _normalized_like(_json_key_text(P2ItemV2.row_data, "format"), spec),
+                    _normalized_like(_json_key_text(P2ItemV2.row_data, "Format"), spec),
+                    _normalized_like(_json_key_text(P2ItemV2.row_data, "規格"), spec),
                 ]
                 preds = [p for p in preds if p is not None]
                 if preds:
                     p2_stmt = p2_stmt.where(or_(*preds))
             p2_stmt = p2_stmt.distinct()
-        
+
         p2_stmt = p2_stmt.order_by(P2Record.created_at.desc())
         p2_result = await db.execute(p2_stmt)
         p2_records = p2_result.scalars().unique().all()
@@ -1195,7 +1380,11 @@ async def query_records_advanced_v2(
         def _p2_item_matches_spec(item: Any) -> bool:
             if not specification_norms:
                 return True
-            raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
+            raw = (
+                item.row_data
+                if isinstance(getattr(item, "row_data", None), dict)
+                else {}
+            )
             haystacks: list[str] = []
             for key in ["format", "Format", "規格", "specification", "Specification"]:
                 v = raw.get(key)
@@ -1203,26 +1392,35 @@ async def query_records_advanced_v2(
                 if v_norm:
                     haystacks.append(v_norm)
             # AND semantics: every selected spec must match.
-            return all(any(spec_norm in h for h in haystacks) for spec_norm in specification_norms)
+            return all(
+                any(spec_norm in h for h in haystacks)
+                for spec_norm in specification_norms
+            )
 
         def _p2_item_matches_material(item: Any) -> bool:
             if not material_norms:
                 return True
-            raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
+            raw = (
+                item.row_data
+                if isinstance(getattr(item, "row_data", None), dict)
+                else {}
+            )
             haystacks: list[str] = []
             for key in [
-                'material_code',
-                'Material',
-                'Material Code',
-                'material',
-                '材料',
-                '材料代號',
+                "material_code",
+                "Material",
+                "Material Code",
+                "material",
+                "材料",
+                "材料代號",
             ]:
                 v = raw.get(key)
                 v_norm = normalize_search_term(v)
                 if v_norm:
                     haystacks.append(v_norm)
-            return all(any(mat_norm in h for h in haystacks) for mat_norm in material_norms)
+            return all(
+                any(mat_norm in h for h in haystacks) for mat_norm in material_norms
+            )
 
         def _p2_item_matches_thickness(item: Any) -> bool:
             if thickness_min_f is None or thickness_max_f is None:
@@ -1230,8 +1428,13 @@ async def query_records_advanced_v2(
             # OR semantics across thickness1..7: any measurement in range qualifies.
             # Null values are treated as non-matching.
             for field in [
-                'thickness1', 'thickness2', 'thickness3',
-                'thickness4', 'thickness5', 'thickness6', 'thickness7',
+                "thickness1",
+                "thickness2",
+                "thickness3",
+                "thickness4",
+                "thickness5",
+                "thickness6",
+                "thickness7",
             ]:
                 v = getattr(item, field, None)
                 if v is None:
@@ -1257,7 +1460,9 @@ async def query_records_advanced_v2(
 
             # 套用 winder 篩選（items 層級）
             if winder_requested is not None:
-                items = [item for item in items if item.winder_number == winder_requested]
+                items = [
+                    item for item in items if item.winder_number == winder_requested
+                ]
 
             # 進階查詢時，只顯示與搜尋條件相關的 row（避免 UI 展開看到一堆不相關 rows）。
             if specification_norms:
@@ -1268,11 +1473,14 @@ async def query_records_advanced_v2(
                 items = [item for item in items if _p2_item_matches_thickness(item)]
 
             if items:
-                lot_key = int(getattr(p2_record, 'lot_no_norm'))
+                lot_key = int(p2_record.lot_no_norm)
                 p2_items_by_lot.setdefault(lot_key, []).extend(items)
 
                 best = p2_best_record_by_lot.get(lot_key)
-                if best is None or (getattr(p2_record, 'created_at', None) and p2_record.created_at > best.created_at):
+                if best is None or (
+                    getattr(p2_record, "created_at", None)
+                    and p2_record.created_at > best.created_at
+                ):
                     p2_best_record_by_lot[lot_key] = p2_record
                 continue
 
@@ -1299,12 +1507,15 @@ async def query_records_advanced_v2(
 
     # P3
     if dt in (None, "P3"):
-        from app.models.p3_item_v2 import P3ItemV2
         from sqlalchemy.orm import selectinload
-        
+
+        from app.models.p3_item_v2 import P3ItemV2
+
         # 查詢 P3Record，預先加載 items_v2
-        p3_stmt = select(P3Record).options(selectinload(P3Record.items_v2)).where(
-            P3Record.tenant_id == current_tenant.id
+        p3_stmt = (
+            select(P3Record)
+            .options(selectinload(P3Record.items_v2))
+            .where(P3Record.tenant_id == current_tenant.id)
         )
         if lot_no_norm is not None:
             p3_stmt = p3_stmt.where(P3Record.lot_no_norm == lot_no_norm)
@@ -1335,47 +1546,63 @@ async def query_records_advanced_v2(
                 if pred is not None:
                     p3_stmt = p3_stmt.where(pred)
             p3_stmt = p3_stmt.distinct()
-        
+
         # Winder Number 篩選: 搜尋 items 的 source_winder
         if winder_requested is not None:
             if not specification:  # 避免重複 JOIN
                 p3_stmt = p3_stmt.join(P3ItemV2, P3Record.id == P3ItemV2.p3_record_id)
-            p3_stmt = p3_stmt.where(P3ItemV2.source_winder == winder_requested).distinct()
+            p3_stmt = p3_stmt.where(
+                P3ItemV2.source_winder == winder_requested
+            ).distinct()
 
         p3_stmt = p3_stmt.order_by(P3Record.created_at.desc())
         p3_result = await db.execute(p3_stmt)
         p3_records = p3_result.scalars().unique().all()
-        
+
         # 處理每個 P3Record + 其 items
         for p3_record in p3_records:
             items = list(p3_record.items_v2 or [])
 
             # 進階查詢時，只顯示與搜尋條件相關的 rows。
             if winder_requested is not None:
-                items = [item for item in items if item.source_winder == winder_requested]
+                items = [
+                    item for item in items if item.source_winder == winder_requested
+                ]
             if specification_norms:
+
                 def _p3_item_matches_spec(item: Any) -> bool:
-                    v_norm = normalize_search_term(getattr(item, "specification", None)) or ""
+                    v_norm = (
+                        normalize_search_term(getattr(item, "specification", None))
+                        or ""
+                    )
                     return all(spec_norm in v_norm for spec_norm in specification_norms)
 
                 items = [item for item in items if _p3_item_matches_spec(item)]
             if material_norms:
+
                 def _p3_item_matches_material(item: Any) -> bool:
-                    raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
+                    raw = (
+                        item.row_data
+                        if isinstance(getattr(item, "row_data", None), dict)
+                        else {}
+                    )
                     haystacks: list[str] = []
                     for key in [
-                        'material_code',
-                        'Material',
-                        'Material Code',
-                        'material',
-                        '材料',
-                        '材料代號',
+                        "material_code",
+                        "Material",
+                        "Material Code",
+                        "material",
+                        "材料",
+                        "材料代號",
                     ]:
                         v = raw.get(key)
                         v_norm = normalize_search_term(v)
                         if v_norm:
                             haystacks.append(v_norm)
-                    return all(any(mat_norm in h for h in haystacks) for mat_norm in material_norms)
+                    return all(
+                        any(mat_norm in h for h in haystacks)
+                        for mat_norm in material_norms
+                    )
 
                 items = [item for item in items if _p3_item_matches_material(item)]
 
@@ -1384,12 +1611,12 @@ async def query_records_advanced_v2(
 
     if material_norms:
         material_keys = (
-            'material_code',
-            'Material',
-            'Material Code',
-            'material',
-            '材料',
-            '材料代號',
+            "material_code",
+            "Material",
+            "Material Code",
+            "material",
+            "材料",
+            "材料代號",
         )
 
         def _matches_material(rec: QueryRecordV2Compat) -> bool:
@@ -1400,7 +1627,7 @@ async def query_records_advanced_v2(
                     v = data.get(k)
                     if v is not None and str(v).strip():
                         candidates.append(str(v).strip())
-                rows = data.get('rows')
+                rows = data.get("rows")
                 if isinstance(rows, list):
                     matched_rows: list[dict[str, Any]] = []
                     for row in rows:
@@ -1418,14 +1645,17 @@ async def query_records_advanced_v2(
                             if any(
                                 (
                                     (normalize_search_term(c) or "")
-                                    and all(mat_norm in (normalize_search_term(c) or "") for mat_norm in material_norms)
+                                    and all(
+                                        mat_norm in (normalize_search_term(c) or "")
+                                        for mat_norm in material_norms
+                                    )
                                 )
                                 for c in row_candidates
                             ):
                                 matched_rows.append(row)
 
                     if matched_rows:
-                        rec.additional_data = {**data, 'rows': matched_rows}
+                        rec.additional_data = {**data, "rows": matched_rows}
 
             for c in candidates:
                 c_norm = normalize_search_term(c)
@@ -1473,8 +1703,12 @@ async def query_records_advanced_v2(
         filters["data_type"] = dt
 
     if request is not None and filters:
-        actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
-        actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+        actor_api_key_id = getattr(
+            getattr(request, "state", None), "auth_api_key_id", None
+        )
+        actor_api_key_label = getattr(
+            getattr(request, "state", None), "auth_api_key_label", None
+        )
         request_id = getattr(getattr(request, "state", None), "request_id", None)
         await write_audit_event_best_effort(
             tenant_id=current_tenant.id,
@@ -1523,7 +1757,7 @@ async def query_records_dynamic_v2(
 
     # Field allowlist and operator allowlist.
     # Keep this intentionally small; expand via explicit review.
-    field_ops: Dict[str, set[str]] = {
+    field_ops: dict[str, set[str]] = {
         "lot_no": {"contains", "eq"},
         "production_date": {"eq", "between", "gte", "lte"},
         "machine_no": {"contains", "all_of"},
@@ -1537,27 +1771,27 @@ async def query_records_dynamic_v2(
     row_data_ops = {"contains", "eq", "all_of"}
 
     # Accumulate translated advanced-query params.
-    lot_no: Optional[str] = None
-    production_date_from: Optional[str] = None
-    production_date_to: Optional[str] = None
-    machine_no: Optional[List[str]] = None
-    mold_no: Optional[List[str]] = None
-    product_id: Optional[str] = None
-    material: Optional[List[str]] = None
-    specification: Optional[List[str]] = None
-    thickness_min: Optional[int] = None
-    thickness_max: Optional[int] = None
-    winder_number: Optional[str] = None
-    row_data_filters: List[Dict[str, Any]] = []
+    lot_no: str | None = None
+    production_date_from: str | None = None
+    production_date_to: str | None = None
+    machine_no: list[str] | None = None
+    mold_no: list[str] | None = None
+    product_id: str | None = None
+    material: list[str] | None = None
+    specification: list[str] | None = None
+    thickness_min: int | None = None
+    thickness_max: int | None = None
+    winder_number: str | None = None
+    row_data_filters: list[dict[str, Any]] = []
 
-    def _as_str_list(v: Any) -> List[str]:
+    def _as_str_list(v: Any) -> list[str]:
         if v is None:
             return []
         if isinstance(v, str):
             s = v.strip()
             return [s] if s else []
         if isinstance(v, list):
-            out: List[str] = []
+            out: list[str] = []
             for item in v:
                 if isinstance(item, str):
                     s = item.strip()
@@ -1572,20 +1806,27 @@ async def query_records_dynamic_v2(
         if isinstance(v, dict):
             v = [v.get("min"), v.get("max")]
         if not isinstance(v, list) or len(v) != 2:
-            raise HTTPException(status_code=400, detail="Invalid thickness value; expected [min,max]")
+            raise HTTPException(
+                status_code=400, detail="Invalid thickness value; expected [min,max]"
+            )
         try:
             a = int(v[0])
             b = int(v[1])
         except Exception:
-            raise HTTPException(status_code=400, detail="Invalid thickness value; expected integers")
+            raise HTTPException(
+                status_code=400, detail="Invalid thickness value; expected integers"
+            )
         return a, b
 
-    def _as_date_pair(v: Any) -> tuple[Optional[str], Optional[str]]:
+    def _as_date_pair(v: Any) -> tuple[str | None, str | None]:
         if isinstance(v, dict):
             v = [v.get("from"), v.get("to")]
         if isinstance(v, list):
             if len(v) != 2:
-                raise HTTPException(status_code=400, detail="Invalid production_date; expected [from,to]")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid production_date; expected [from,to]",
+                )
             return (
                 str(v[0]).strip() if v[0] is not None and str(v[0]).strip() else None,
                 str(v[1]).strip() if v[1] is not None and str(v[1]).strip() else None,
@@ -1593,21 +1834,25 @@ async def query_records_dynamic_v2(
         s = str(v).strip() if v is not None else None
         return (s, s) if s else (None, None)
 
-    for f in (body.filters or []):
+    for f in body.filters or []:
         field = (getattr(f, "field", "") or "").strip()
         op = (getattr(f, "op", "") or "").strip().lower()
 
         if field.startswith("row_data."):
             key = _validate_row_data_key(field[len("row_data.") :])
             if op not in row_data_ops:
-                raise HTTPException(status_code=400, detail=f"Invalid operator for row_data.{key}: {op}")
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid operator for row_data.{key}: {op}"
+                )
             row_data_filters.append({"key": key, "op": op, "value": f.value})
             continue
 
         if not field or field not in field_ops:
             raise HTTPException(status_code=400, detail=f"Invalid field: {field}")
         if op not in field_ops[field]:
-            raise HTTPException(status_code=400, detail=f"Invalid operator for {field}: {op}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid operator for {field}: {op}"
+            )
 
         if field == "lot_no":
             if lot_no is not None:
@@ -1619,31 +1864,42 @@ async def query_records_dynamic_v2(
                 try:
                     _ = normalize_lot_no(f.value.strip())
                 except Exception:
-                    raise HTTPException(status_code=400, detail="lot_no eq requires a valid lot number")
+                    raise HTTPException(
+                        status_code=400, detail="lot_no eq requires a valid lot number"
+                    )
             lot_no = f.value.strip()
 
         elif field == "production_date":
             if op == "between":
                 a, b = _as_date_pair(f.value)
                 if not a or not b:
-                    raise HTTPException(status_code=400, detail="production_date between requires [from,to]")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="production_date between requires [from,to]",
+                    )
                 production_date_from = a
                 production_date_to = b
             elif op == "eq":
                 a, b = _as_date_pair(f.value)
                 if not a:
-                    raise HTTPException(status_code=400, detail="production_date eq requires a date")
+                    raise HTTPException(
+                        status_code=400, detail="production_date eq requires a date"
+                    )
                 production_date_from = a
                 production_date_to = b
             elif op == "gte":
                 s = str(f.value).strip() if f.value is not None else ""
                 if not s:
-                    raise HTTPException(status_code=400, detail="production_date gte requires a date")
+                    raise HTTPException(
+                        status_code=400, detail="production_date gte requires a date"
+                    )
                 production_date_from = s
             elif op == "lte":
                 s = str(f.value).strip() if f.value is not None else ""
                 if not s:
-                    raise HTTPException(status_code=400, detail="production_date lte requires a date")
+                    raise HTTPException(
+                        status_code=400, detail="production_date lte requires a date"
+                    )
                 production_date_to = s
 
         elif field == "machine_no":
@@ -1660,7 +1916,9 @@ async def query_records_dynamic_v2(
 
         elif field == "product_id":
             if product_id is not None:
-                raise HTTPException(status_code=400, detail="Duplicate product_id filter")
+                raise HTTPException(
+                    status_code=400, detail="Duplicate product_id filter"
+                )
             if not isinstance(f.value, str) or not f.value.strip():
                 raise HTTPException(status_code=400, detail="Invalid product_id value")
             product_id = f.value.strip()
@@ -1674,21 +1932,29 @@ async def query_records_dynamic_v2(
         elif field == "specification":
             terms = _as_str_list(f.value)
             if not terms:
-                raise HTTPException(status_code=400, detail="Invalid specification value")
+                raise HTTPException(
+                    status_code=400, detail="Invalid specification value"
+                )
             specification = (specification or []) + terms
 
         elif field == "winder_number":
             if winder_number is not None:
-                raise HTTPException(status_code=400, detail="Duplicate winder_number filter")
+                raise HTTPException(
+                    status_code=400, detail="Duplicate winder_number filter"
+                )
             try:
                 w = int(f.value)
             except Exception:
-                raise HTTPException(status_code=400, detail="Invalid winder_number value")
+                raise HTTPException(
+                    status_code=400, detail="Invalid winder_number value"
+                )
             winder_number = str(w)
 
         elif field == "thickness":
             if thickness_min is not None or thickness_max is not None:
-                raise HTTPException(status_code=400, detail="Duplicate thickness filter")
+                raise HTTPException(
+                    status_code=400, detail="Duplicate thickness filter"
+                )
             a, b = _as_int_pair(f.value)
             thickness_min = a
             thickness_max = b
@@ -1697,7 +1963,10 @@ async def query_records_dynamic_v2(
     # row_data filters require an explicit station because P1 has no row_data.
     if dt is None:
         if row_data_filters:
-            raise HTTPException(status_code=400, detail="row_data filters require explicit data_type (P2 or P3)")
+            raise HTTPException(
+                status_code=400,
+                detail="row_data filters require explicit data_type (P2 or P3)",
+            )
 
         resp = await query_records_advanced_v2(
             request=request,
@@ -1720,8 +1989,12 @@ async def query_records_dynamic_v2(
         )
 
         if request is not None and (body.filters or row_data_filters):
-            actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
-            actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+            actor_api_key_id = getattr(
+                getattr(request, "state", None), "auth_api_key_id", None
+            )
+            actor_api_key_label = getattr(
+                getattr(request, "state", None), "auth_api_key_label", None
+            )
             request_id = getattr(getattr(request, "state", None), "request_id", None)
             await write_audit_event_best_effort(
                 tenant_id=current_tenant.id,
@@ -1748,35 +2021,43 @@ async def query_records_dynamic_v2(
         return resp
 
     # From here on, run the query in-process so row_data filters apply BEFORE pagination.
-    winder_requested: Optional[int] = None
+    winder_requested: int | None = None
     if winder_number and winder_number.strip():
         try:
             winder_requested = int(winder_number.strip())
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid winder_number")
 
-    lot_no_raw = (lot_no or '').strip() or None
-    lot_no_norm: Optional[int]
+    lot_no_raw = (lot_no or "").strip() or None
+    lot_no_norm: int | None
     try:
         lot_no_norm = normalize_lot_no(lot_no_raw) if lot_no_raw else None
     except Exception:
         lot_no_norm = None
 
-    def to_int_yyyymmdd(s: Optional[str]) -> Optional[int]:
+    def to_int_yyyymmdd(s: str | None) -> int | None:
         if not s:
             return None
         try:
-            return int(date.fromisoformat(s).strftime('%Y%m%d'))
+            return int(date.fromisoformat(s).strftime("%Y%m%d"))
         except Exception:
             return None
 
     date_from_i = to_int_yyyymmdd(production_date_from)
     date_to_i = to_int_yyyymmdd(production_date_to)
 
-    machine_terms = [s.strip() for s in (machine_no or []) if isinstance(s, str) and s.strip()]
-    mold_terms = [s.strip() for s in (mold_no or []) if isinstance(s, str) and s.strip()]
-    material_terms = [s.strip() for s in (material or []) if isinstance(s, str) and s.strip()]
-    specification_terms = [s.strip() for s in (specification or []) if isinstance(s, str) and s.strip()]
+    machine_terms = [
+        s.strip() for s in (machine_no or []) if isinstance(s, str) and s.strip()
+    ]
+    mold_terms = [
+        s.strip() for s in (mold_no or []) if isinstance(s, str) and s.strip()
+    ]
+    material_terms = [
+        s.strip() for s in (material or []) if isinstance(s, str) and s.strip()
+    ]
+    specification_terms = [
+        s.strip() for s in (specification or []) if isinstance(s, str) and s.strip()
+    ]
 
     material_norms = [normalize_search_term(s) for s in material_terms]
     material_norms = [s for s in material_norms if s]
@@ -1790,8 +2071,8 @@ async def query_records_dynamic_v2(
     if thickness_max_i is not None and thickness_min_i is None:
         thickness_min_i = thickness_max_i
 
-    thickness_min_f: Optional[float] = None
-    thickness_max_f: Optional[float] = None
+    thickness_min_f: float | None = None
+    thickness_max_f: float | None = None
     if thickness_min_i is not None and thickness_max_i is not None:
         if thickness_min_i > thickness_max_i:
             raise HTTPException(status_code=400, detail="Invalid thickness range")
@@ -1804,9 +2085,17 @@ async def query_records_dynamic_v2(
         s = func.coalesce(expr, "")
         s = func.lower(s)
         for ch in [
-            " ", "\t", "\n", "\r",
+            " ",
+            "\t",
+            "\n",
+            "\r",
             "_",
-            "-", "‐", "‑", "–", "—", "－",
+            "-",
+            "‐",
+            "‑",
+            "–",
+            "—",
+            "－",
             "　",
         ]:
             s = func.replace(s, ch, "")
@@ -1874,13 +2163,17 @@ async def query_records_dynamic_v2(
         key = _validate_row_data_key(str(rf.get("key") or ""))
         op = str(rf.get("op") or "").strip().lower()
         if op not in row_data_ops:
-            raise HTTPException(status_code=400, detail=f"Invalid operator for row_data.{key}: {op}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid operator for row_data.{key}: {op}"
+            )
 
-    records: List[QueryRecordV2Compat] = []
+    records: list[QueryRecordV2Compat] = []
 
     if dt == "P1":
         if row_data_filters:
-            raise HTTPException(status_code=400, detail="row_data filters are not supported for P1")
+            raise HTTPException(
+                status_code=400, detail="row_data filters are not supported for P1"
+            )
         # Delegate to existing advanced logic (P1 only) by calling GET handler in-process.
         resp = await query_records_advanced_v2(
             request=request,
@@ -1904,11 +2197,14 @@ async def query_records_dynamic_v2(
         return resp
 
     if dt == "P2":
-        from app.models.p2_item_v2 import P2ItemV2
         from sqlalchemy.orm import selectinload
 
-        p2_stmt = select(P2Record).options(selectinload(P2Record.items_v2)).where(
-            P2Record.tenant_id == current_tenant.id
+        from app.models.p2_item_v2 import P2ItemV2
+
+        p2_stmt = (
+            select(P2Record)
+            .options(selectinload(P2Record.items_v2))
+            .where(P2Record.tenant_id == current_tenant.id)
         )
         if lot_no_norm is not None:
             p2_stmt = p2_stmt.where(P2Record.lot_no_norm == lot_no_norm)
@@ -1919,16 +2215,21 @@ async def query_records_dynamic_v2(
             p2_stmt = p2_stmt.join(P2ItemV2, P2Record.id == P2ItemV2.p2_record_id)
             for spec in specification_terms:
                 preds = [
-                    _normalized_like(_json_key_text(P2ItemV2.row_data, 'format'), spec),
-                    _normalized_like(_json_key_text(P2ItemV2.row_data, 'Format'), spec),
-                    _normalized_like(_json_key_text(P2ItemV2.row_data, '規格'), spec),
+                    _normalized_like(_json_key_text(P2ItemV2.row_data, "format"), spec),
+                    _normalized_like(_json_key_text(P2ItemV2.row_data, "Format"), spec),
+                    _normalized_like(_json_key_text(P2ItemV2.row_data, "規格"), spec),
                 ]
                 preds = [p for p in preds if p is not None]
                 if preds:
                     p2_stmt = p2_stmt.where(or_(*preds))
 
             for rf in row_data_filters:
-                pred = _row_data_sql_predicates(P2ItemV2.row_data, str(rf.get("key")), str(rf.get("op")), rf.get("value"))
+                pred = _row_data_sql_predicates(
+                    P2ItemV2.row_data,
+                    str(rf.get("key")),
+                    str(rf.get("op")),
+                    rf.get("value"),
+                )
                 if pred is not None:
                     p2_stmt = p2_stmt.where(pred)
 
@@ -1941,40 +2242,58 @@ async def query_records_dynamic_v2(
         def _p2_item_matches_spec(item: Any) -> bool:
             if not specification_norms:
                 return True
-            raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
+            raw = (
+                item.row_data
+                if isinstance(getattr(item, "row_data", None), dict)
+                else {}
+            )
             haystacks: list[str] = []
             for key in ["format", "Format", "規格", "specification", "Specification"]:
                 v = raw.get(key)
                 v_norm = normalize_search_term(v)
                 if v_norm:
                     haystacks.append(v_norm)
-            return all(any(spec_norm in h for h in haystacks) for spec_norm in specification_norms)
+            return all(
+                any(spec_norm in h for h in haystacks)
+                for spec_norm in specification_norms
+            )
 
         def _p2_item_matches_material(item: Any) -> bool:
             if not material_norms:
                 return True
-            raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
+            raw = (
+                item.row_data
+                if isinstance(getattr(item, "row_data", None), dict)
+                else {}
+            )
             haystacks: list[str] = []
             for key in [
-                'material_code',
-                'Material',
-                'Material Code',
-                'material',
-                '材料',
-                '材料代號',
+                "material_code",
+                "Material",
+                "Material Code",
+                "material",
+                "材料",
+                "材料代號",
             ]:
                 v = raw.get(key)
                 v_norm = normalize_search_term(v)
                 if v_norm:
                     haystacks.append(v_norm)
-            return all(any(mat_norm in h for h in haystacks) for mat_norm in material_norms)
+            return all(
+                any(mat_norm in h for h in haystacks) for mat_norm in material_norms
+            )
 
         def _p2_item_matches_thickness(item: Any) -> bool:
             if thickness_min_f is None or thickness_max_f is None:
                 return True
             for field in [
-                'thickness1', 'thickness2', 'thickness3',
-                'thickness4', 'thickness5', 'thickness6', 'thickness7',
+                "thickness1",
+                "thickness2",
+                "thickness3",
+                "thickness4",
+                "thickness5",
+                "thickness6",
+                "thickness7",
             ]:
                 v = getattr(item, field, None)
                 if v is None:
@@ -1991,7 +2310,9 @@ async def query_records_dynamic_v2(
             if not row_data_filters:
                 return True
             for rf in row_data_filters:
-                if not _row_data_item_matches(item, str(rf.get("key")), str(rf.get("op")), rf.get("value")):
+                if not _row_data_item_matches(
+                    item, str(rf.get("key")), str(rf.get("op")), rf.get("value")
+                ):
                     return False
             return True
 
@@ -2002,7 +2323,9 @@ async def query_records_dynamic_v2(
         for p2_record in p2_records:
             items = list(p2_record.items_v2 or [])
             if winder_requested is not None:
-                items = [item for item in items if item.winder_number == winder_requested]
+                items = [
+                    item for item in items if item.winder_number == winder_requested
+                ]
             if specification_norms:
                 items = [item for item in items if _p2_item_matches_spec(item)]
             if material_norms:
@@ -2013,10 +2336,13 @@ async def query_records_dynamic_v2(
                 items = [item for item in items if _p2_item_matches_row_data(item)]
 
             if items:
-                lot_key = int(getattr(p2_record, 'lot_no_norm'))
+                lot_key = int(p2_record.lot_no_norm)
                 p2_items_by_lot.setdefault(lot_key, []).extend(items)
                 best = p2_best_record_by_lot.get(lot_key)
-                if best is None or (getattr(p2_record, 'created_at', None) and p2_record.created_at > best.created_at):
+                if best is None or (
+                    getattr(p2_record, "created_at", None)
+                    and p2_record.created_at > best.created_at
+                ):
                     p2_best_record_by_lot[lot_key] = p2_record
                 continue
 
@@ -2037,11 +2363,14 @@ async def query_records_dynamic_v2(
             records.extend(_merge_p2_records(legacy_records))
 
     if dt == "P3":
-        from app.models.p3_item_v2 import P3ItemV2
         from sqlalchemy.orm import selectinload
 
-        p3_stmt = select(P3Record).options(selectinload(P3Record.items_v2)).where(
-            P3Record.tenant_id == current_tenant.id
+        from app.models.p3_item_v2 import P3ItemV2
+
+        p3_stmt = (
+            select(P3Record)
+            .options(selectinload(P3Record.items_v2))
+            .where(P3Record.tenant_id == current_tenant.id)
         )
         if lot_no_norm is not None:
             p3_stmt = p3_stmt.where(P3Record.lot_no_norm == lot_no_norm)
@@ -2064,7 +2393,9 @@ async def query_records_dynamic_v2(
             if pred is not None:
                 p3_stmt = p3_stmt.where(pred)
 
-        if (specification_terms or (winder_requested is not None) or row_data_filters) and dialect_name != "sqlite":
+        if (
+            specification_terms or (winder_requested is not None) or row_data_filters
+        ) and dialect_name != "sqlite":
             p3_stmt = p3_stmt.join(P3ItemV2, P3Record.id == P3ItemV2.p3_record_id)
 
             if specification_terms:
@@ -2077,7 +2408,12 @@ async def query_records_dynamic_v2(
                 p3_stmt = p3_stmt.where(P3ItemV2.source_winder == winder_requested)
 
             for rf in row_data_filters:
-                pred = _row_data_sql_predicates(P3ItemV2.row_data, str(rf.get("key")), str(rf.get("op")), rf.get("value"))
+                pred = _row_data_sql_predicates(
+                    P3ItemV2.row_data,
+                    str(rf.get("key")),
+                    str(rf.get("op")),
+                    rf.get("value"),
+                )
                 if pred is not None:
                     p3_stmt = p3_stmt.where(pred)
 
@@ -2096,34 +2432,44 @@ async def query_records_dynamic_v2(
         def _p3_item_matches_material(item: Any) -> bool:
             if not material_norms:
                 return True
-            raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
+            raw = (
+                item.row_data
+                if isinstance(getattr(item, "row_data", None), dict)
+                else {}
+            )
             haystacks: list[str] = []
             for key in [
-                'material_code',
-                'Material',
-                'Material Code',
-                'material',
-                '材料',
-                '材料代號',
+                "material_code",
+                "Material",
+                "Material Code",
+                "material",
+                "材料",
+                "材料代號",
             ]:
                 v = raw.get(key)
                 v_norm = normalize_search_term(v)
                 if v_norm:
                     haystacks.append(v_norm)
-            return all(any(mat_norm in h for h in haystacks) for mat_norm in material_norms)
+            return all(
+                any(mat_norm in h for h in haystacks) for mat_norm in material_norms
+            )
 
         def _p3_item_matches_row_data(item: Any) -> bool:
             if not row_data_filters:
                 return True
             for rf in row_data_filters:
-                if not _row_data_item_matches(item, str(rf.get("key")), str(rf.get("op")), rf.get("value")):
+                if not _row_data_item_matches(
+                    item, str(rf.get("key")), str(rf.get("op")), rf.get("value")
+                ):
                     return False
             return True
 
         for p3_record in p3_records:
             items = list(p3_record.items_v2 or [])
             if winder_requested is not None:
-                items = [item for item in items if item.source_winder == winder_requested]
+                items = [
+                    item for item in items if item.source_winder == winder_requested
+                ]
             if specification_norms:
                 items = [item for item in items if _p3_item_matches_spec(item)]
             if material_norms:
@@ -2136,12 +2482,12 @@ async def query_records_dynamic_v2(
 
     if material_norms:
         material_keys = (
-            'material_code',
-            'Material',
-            'Material Code',
-            'material',
-            '材料',
-            '材料代號',
+            "material_code",
+            "Material",
+            "Material Code",
+            "material",
+            "材料",
+            "材料代號",
         )
 
         def _matches_material(rec: QueryRecordV2Compat) -> bool:
@@ -2152,7 +2498,7 @@ async def query_records_dynamic_v2(
                     v = data.get(k)
                     if v is not None and str(v).strip():
                         candidates.append(str(v).strip())
-                rows = data.get('rows')
+                rows = data.get("rows")
                 if isinstance(rows, list):
                     matched_rows: list[dict[str, Any]] = []
                     for row in rows:
@@ -2169,14 +2515,17 @@ async def query_records_dynamic_v2(
                             if any(
                                 (
                                     (normalize_search_term(c) or "")
-                                    and all(mat_norm in (normalize_search_term(c) or "") for mat_norm in material_norms)
+                                    and all(
+                                        mat_norm in (normalize_search_term(c) or "")
+                                        for mat_norm in material_norms
+                                    )
                                 )
                                 for c in row_candidates
                             ):
                                 matched_rows.append(row)
 
                     if matched_rows:
-                        rec.additional_data = {**data, 'rows': matched_rows}
+                        rec.additional_data = {**data, "rows": matched_rows}
 
             for c in candidates:
                 c_norm = normalize_search_term(c)
@@ -2195,8 +2544,12 @@ async def query_records_dynamic_v2(
     page_records = records[start:end]
 
     if request is not None and (body.filters or row_data_filters):
-        actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
-        actor_api_key_label = getattr(getattr(request, "state", None), "auth_api_key_label", None)
+        actor_api_key_id = getattr(
+            getattr(request, "state", None), "auth_api_key_id", None
+        )
+        actor_api_key_label = getattr(
+            getattr(request, "state", None), "auth_api_key_label", None
+        )
         request_id = getattr(getattr(request, "state", None), "request_id", None)
         await write_audit_event_best_effort(
             tenant_id=current_tenant.id,
@@ -2235,13 +2588,19 @@ async def get_record_stats_v2(
 ) -> RecordStatsV2Compat:
     """Tenant-scoped record stats across v2 P1/P2/P3 tables."""
     p1_count = await db.scalar(
-        select(func.count()).select_from(P1Record).where(P1Record.tenant_id == current_tenant.id)
+        select(func.count())
+        .select_from(P1Record)
+        .where(P1Record.tenant_id == current_tenant.id)
     )
     p2_count = await db.scalar(
-        select(func.count()).select_from(P2Record).where(P2Record.tenant_id == current_tenant.id)
+        select(func.count())
+        .select_from(P2Record)
+        .where(P2Record.tenant_id == current_tenant.id)
     )
     p3_count = await db.scalar(
-        select(func.count()).select_from(P3Record).where(P3Record.tenant_id == current_tenant.id)
+        select(func.count())
+        .select_from(P3Record)
+        .where(P3Record.tenant_id == current_tenant.id)
     )
 
     p1_records = int(p1_count or 0)
@@ -2261,19 +2620,28 @@ async def get_record_stats_v2(
         )
 
     lot_union = union_all(
-        select(P1Record.lot_no_norm.label("lot_no_norm")).where(P1Record.tenant_id == current_tenant.id),
-        select(P2Record.lot_no_norm.label("lot_no_norm")).where(P2Record.tenant_id == current_tenant.id),
-        select(P3Record.lot_no_norm.label("lot_no_norm")).where(P3Record.tenant_id == current_tenant.id),
+        select(P1Record.lot_no_norm.label("lot_no_norm")).where(
+            P1Record.tenant_id == current_tenant.id
+        ),
+        select(P2Record.lot_no_norm.label("lot_no_norm")).where(
+            P2Record.tenant_id == current_tenant.id
+        ),
+        select(P3Record.lot_no_norm.label("lot_no_norm")).where(
+            P3Record.tenant_id == current_tenant.id
+        ),
     ).subquery()
 
-    unique_lots = await db.scalar(select(func.count(func.distinct(lot_union.c.lot_no_norm))))
+    unique_lots = await db.scalar(
+        select(func.count(func.distinct(lot_union.c.lot_no_norm)))
+    )
     unique_lots = int(unique_lots or 0)
 
     date_row = (
         await db.execute(
-            select(func.max(P3Record.production_date_yyyymmdd), func.min(P3Record.production_date_yyyymmdd)).where(
-                P3Record.tenant_id == current_tenant.id
-            )
+            select(
+                func.max(P3Record.production_date_yyyymmdd),
+                func.min(P3Record.production_date_yyyymmdd),
+            ).where(P3Record.tenant_id == current_tenant.id)
         )
     ).first()
     latest_yyyymmdd = date_row[0] if date_row else None
@@ -2327,7 +2695,11 @@ async def get_record_v2(
     ).scalar_one_or_none()
     if p2:
         items = list(p2.items_v2 or [])
-        return _p2_to_query_record_with_items(p2, items) if items else _p2_to_query_record(p2)
+        return (
+            _p2_to_query_record_with_items(p2, items)
+            if items
+            else _p2_to_query_record(p2)
+        )
 
     # P3
     p3 = (
@@ -2342,9 +2714,14 @@ async def get_record_v2(
     ).scalar_one_or_none()
     if p3:
         items = list(p3.items_v2 or [])
-        return _p3_to_query_record_with_items(p3, items) if items else _p3_to_query_record(p3)
+        return (
+            _p3_to_query_record_with_items(p3, items)
+            if items
+            else _p3_to_query_record(p3)
+        )
 
     raise HTTPException(status_code=404, detail="Record not found")
+
 
 @router.get("/trace/{trace_key}", response_model=TraceDetailResponse)
 async def get_trace_detail(
@@ -2359,24 +2736,23 @@ async def get_trace_detail(
         lot_no_norm = int(trace_key)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid trace key format")
-        
+
     # Fetch P1
     p1_stmt = select(P1Record).where(
-        P1Record.tenant_id == current_tenant.id,
-        P1Record.lot_no_norm == lot_no_norm
+        P1Record.tenant_id == current_tenant.id, P1Record.lot_no_norm == lot_no_norm
     )
     p1_result = await db.execute(p1_stmt)
     p1_record = p1_result.scalar_one_or_none()
-    
+
     p1_data = None
     if p1_record:
         p1_data = {
             "id": p1_record.id,
             "lot_no_raw": p1_record.lot_no_raw,
             "extras": p1_record.extras,
-            "created_at": p1_record.created_at
+            "created_at": p1_record.created_at,
         }
-        
+
     from sqlalchemy.orm import selectinload
 
     # Fetch P2
@@ -2384,14 +2760,13 @@ async def get_trace_detail(
         select(P2Record)
         .options(selectinload(P2Record.items_v2))
         .where(
-        P2Record.tenant_id == current_tenant.id,
-        P2Record.lot_no_norm == lot_no_norm
+            P2Record.tenant_id == current_tenant.id, P2Record.lot_no_norm == lot_no_norm
         )
         .order_by(P2Record.winder_number)
     )
     p2_result = await db.execute(p2_stmt)
     p2_records = p2_result.scalars().all()
-    
+
     p2_data: list[dict[str, Any]] = []
     for r in p2_records:
         items = list(r.items_v2 or [])
@@ -2407,20 +2782,19 @@ async def get_trace_detail(
                 "created_at": r.created_at,
             }
         )
-    
+
     # Fetch P3
     p3_stmt = (
         select(P3Record)
         .options(selectinload(P3Record.items_v2))
         .where(
-        P3Record.tenant_id == current_tenant.id,
-        P3Record.lot_no_norm == lot_no_norm
+            P3Record.tenant_id == current_tenant.id, P3Record.lot_no_norm == lot_no_norm
         )
         .order_by(P3Record.production_date_yyyymmdd, P3Record.machine_no)
     )
     p3_result = await db.execute(p3_stmt)
     p3_records = p3_result.scalars().all()
-    
+
     p3_data: list[dict[str, Any]] = []
     for r in p3_records:
         items = list(r.items_v2 or [])
@@ -2456,10 +2830,5 @@ async def get_trace_detail(
                 "created_at": r.created_at,
             }
         )
-    
-    return TraceDetailResponse(
-        trace_key=trace_key,
-        p1=p1_data,
-        p2=p2_data,
-        p3=p3_data
-    )
+
+    return TraceDetailResponse(trace_key=trace_key, p1=p1_data, p2=p2_data, p3=p3_data)

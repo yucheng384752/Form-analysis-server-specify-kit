@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
@@ -58,31 +58,31 @@ class PdfConversionJob(Base):
         comment="0-100 progress",
     )
 
-    external_job_id: Mapped[Optional[str]] = mapped_column(
+    external_job_id: Mapped[str | None] = mapped_column(
         String(200),
         nullable=True,
         comment="External PDF server job id (if any)",
     )
 
-    output_path: Mapped[Optional[str]] = mapped_column(
+    output_path: Mapped[str | None] = mapped_column(
         String(500),
         nullable=True,
         comment="Converted output path (e.g. csv)",
     )
 
-    output_paths: Mapped[Optional[list[str]]] = mapped_column(
+    output_paths: Mapped[list[str] | None] = mapped_column(
         JSONB,
         nullable=True,
         comment="Converted output paths (e.g. multiple csv files extracted from zip)",
     )
 
-    ingested_upload_jobs: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(
+    ingested_upload_jobs: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSONB,
         nullable=True,
         comment="Upload jobs created from converted outputs (for idempotency)",
     )
 
-    error_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(
+    error_summary: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB,
         nullable=True,
         comment="Error summary / diagnostics",
@@ -101,17 +101,17 @@ class PdfConversionJob(Base):
         nullable=False,
     )
 
-    started_at: Mapped[Optional[datetime]] = mapped_column(
+    started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
 
-    finished_at: Mapped[Optional[datetime]] = mapped_column(
+    finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
 
-    actor_api_key_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    actor_api_key_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("tenant_api_keys.id"),
         nullable=True,
@@ -119,7 +119,7 @@ class PdfConversionJob(Base):
         comment="API key ID (who triggered)",
     )
 
-    actor_label_snapshot: Mapped[Optional[str]] = mapped_column(
+    actor_label_snapshot: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
         comment="API key label snapshot",

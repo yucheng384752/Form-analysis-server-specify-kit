@@ -74,10 +74,16 @@ async def test_legacy_import_sync_upserts_p3_items_v2(db_session_clean):
 
     # Confirm p3_items_v2 are created and linked
     items = (
-        await db_session_clean.execute(
-            select(P3ItemV2).where(P3ItemV2.p3_record_id == p3_record.id).order_by(P3ItemV2.row_no)
+        (
+            await db_session_clean.execute(
+                select(P3ItemV2)
+                .where(P3ItemV2.p3_record_id == p3_record.id)
+                .order_by(P3ItemV2.row_no)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     assert len(items) == 2
     assert items[0].row_no == 1

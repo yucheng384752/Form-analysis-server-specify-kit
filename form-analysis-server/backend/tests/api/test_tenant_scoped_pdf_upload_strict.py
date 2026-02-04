@@ -1,4 +1,3 @@
-import os
 import uuid
 from pathlib import Path
 
@@ -48,7 +47,9 @@ async def test_tenant_scoped_pdf_upload_no_tenants_returns_404(client):
 
 
 @pytest.mark.asyncio
-async def test_tenant_scoped_pdf_upload_single_tenant_allows_missing_header(client, db_session_clean):
+async def test_tenant_scoped_pdf_upload_single_tenant_allows_missing_header(
+    client, db_session_clean
+):
     tenant = Tenant(name="T1", code="t1", is_default=True, is_active=True)
     db_session_clean.add(tenant)
     await db_session_clean.commit()
@@ -59,7 +60,13 @@ async def test_tenant_scoped_pdf_upload_single_tenant_allows_missing_header(clie
     assert resp.status_code == 200, resp.text
     data = resp.json()
 
-    assert set(data.keys()) >= {"process_id", "total_rows", "valid_rows", "invalid_rows", "sample_errors"}
+    assert set(data.keys()) >= {
+        "process_id",
+        "total_rows",
+        "valid_rows",
+        "invalid_rows",
+        "sample_errors",
+    }
     assert data["total_rows"] == 0
     assert data["valid_rows"] == 0
     assert data["invalid_rows"] == 0
@@ -81,7 +88,9 @@ async def test_tenant_scoped_pdf_upload_single_tenant_allows_missing_header(clie
 
 
 @pytest.mark.asyncio
-async def test_tenant_scoped_pdf_upload_multiple_tenants_no_default_requires_header(client, db_session_clean):
+async def test_tenant_scoped_pdf_upload_multiple_tenants_no_default_requires_header(
+    client, db_session_clean
+):
     t1 = Tenant(name="T1", code="t1", is_default=False, is_active=True)
     t2 = Tenant(name="T2", code="t2", is_default=False, is_active=True)
     db_session_clean.add_all([t1, t2])
@@ -97,7 +106,9 @@ async def test_tenant_scoped_pdf_upload_multiple_tenants_no_default_requires_hea
 
 
 @pytest.mark.asyncio
-async def test_tenant_scoped_pdf_upload_unique_default_allows_missing_header(client, db_session_clean):
+async def test_tenant_scoped_pdf_upload_unique_default_allows_missing_header(
+    client, db_session_clean
+):
     t1 = Tenant(name="T1", code="t1", is_default=False, is_active=True)
     t2 = Tenant(name="T2", code="t2", is_default=True, is_active=True)
     db_session_clean.add_all([t1, t2])
@@ -123,14 +134,18 @@ async def test_tenant_scoped_pdf_upload_unique_default_allows_missing_header(cli
 
 
 @pytest.mark.asyncio
-async def test_tenant_scoped_pdf_upload_invalid_header_returns_422(client, db_session_clean):
+async def test_tenant_scoped_pdf_upload_invalid_header_returns_422(
+    client, db_session_clean
+):
     # Even if tenants exist, invalid header should 422.
     tenant = Tenant(name="T1", code="t1", is_default=True, is_active=True)
     db_session_clean.add(tenant)
     await db_session_clean.commit()
 
     files = {"file": (_pdf_filename(), _pdf_bytes(), "application/pdf")}
-    resp = await client.post("/api/upload/pdf", files=files, headers={"X-Tenant-Id": "not-a-uuid"})
+    resp = await client.post(
+        "/api/upload/pdf", files=files, headers={"X-Tenant-Id": "not-a-uuid"}
+    )
 
     assert resp.status_code == 422, resp.text
     body = resp.json()
@@ -138,7 +153,9 @@ async def test_tenant_scoped_pdf_upload_invalid_header_returns_422(client, db_se
 
 
 @pytest.mark.asyncio
-async def test_tenant_scoped_pdf_upload_missing_tenant_returns_404(client, db_session_clean):
+async def test_tenant_scoped_pdf_upload_missing_tenant_returns_404(
+    client, db_session_clean
+):
     # tenant in DB exists, but header points to a different tenant id.
     tenant = Tenant(name="T1", code="t1", is_default=True, is_active=True)
     db_session_clean.add(tenant)

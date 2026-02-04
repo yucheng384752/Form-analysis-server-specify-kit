@@ -54,7 +54,9 @@ async def client_edit_reasons(db_session_clean, test_engine):
 
     await db_session_clean.commit()
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac, raw_key, tenant_id
 
     settings.auth_mode = prev_auth_mode
@@ -64,7 +66,9 @@ async def client_edit_reasons(db_session_clean, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_edit_reasons_crud_and_active_filter(client_edit_reasons, db_session_clean):
+async def test_edit_reasons_crud_and_active_filter(
+    client_edit_reasons, db_session_clean
+):
     client, raw_key, tenant_id = client_edit_reasons
 
     # Create
@@ -116,7 +120,9 @@ async def test_edit_reasons_crud_and_active_filter(client_edit_reasons, db_sessi
     # DB still has it
     db_reason = (
         await db_session_clean.execute(
-            select(EditReason).where(EditReason.id == reason_id, EditReason.tenant_id == tenant_id)
+            select(EditReason).where(
+                EditReason.id == reason_id, EditReason.tenant_id == tenant_id
+            )
         )
     ).scalar_one()
     assert db_reason.is_active is False

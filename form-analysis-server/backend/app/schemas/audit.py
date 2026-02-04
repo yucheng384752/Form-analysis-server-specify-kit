@@ -1,7 +1,9 @@
-from typing import Optional, Dict, Any, List
-from uuid import UUID
 from datetime import datetime
+from typing import Any
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
 
 class EditReasonResponse(BaseModel):
     id: UUID
@@ -11,10 +13,13 @@ class EditReasonResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class RecordUpdateRequest(BaseModel):
-    updates: Dict[str, Any] = Field(..., description="Fields to update")
-    reason_id: Optional[UUID] = Field(None, description="Selected reason ID")
-    reason_text: Optional[str] = Field(None, description="Custom reason text or snapshot of reason")
+    updates: dict[str, Any] = Field(..., description="Fields to update")
+    reason_id: UUID | None = Field(None, description="Selected reason ID")
+    reason_text: str | None = Field(
+        None, description="Custom reason text or snapshot of reason"
+    )
 
 
 class EditReasonCreateRequest(BaseModel):
@@ -25,9 +30,9 @@ class EditReasonCreateRequest(BaseModel):
 
 
 class EditReasonUpdateRequest(BaseModel):
-    description: Optional[str] = Field(None, min_length=1, max_length=255)
-    display_order: Optional[int] = Field(None, ge=0)
-    is_active: Optional[bool] = None
+    description: str | None = Field(None, min_length=1, max_length=255)
+    display_order: int | None = Field(None, ge=0)
+    is_active: bool | None = None
 
 
 class EditRecordRequest(BaseModel):
@@ -38,17 +43,19 @@ class EditRecordRequest(BaseModel):
     - Legacy payload: {tenant_id, request: {updates, reason_id?, reason_text?}}
     """
 
-    tenant_id: Optional[UUID] = Field(
+    tenant_id: UUID | None = Field(
         None,
         description="Optional tenant id; prefer X-Tenant-Id header or API key bound tenant",
     )
 
-    updates: Dict[str, Any] = Field(..., description="Fields to update")
-    reason_id: Optional[UUID] = Field(None, description="Selected reason ID")
-    reason_text: Optional[str] = Field(None, description="Custom reason text or snapshot of reason")
+    updates: dict[str, Any] = Field(..., description="Fields to update")
+    reason_id: UUID | None = Field(None, description="Selected reason ID")
+    reason_text: str | None = Field(
+        None, description="Custom reason text or snapshot of reason"
+    )
 
     # Backward-compat only
-    request: Optional[RecordUpdateRequest] = Field(
+    request: RecordUpdateRequest | None = Field(
         None,
         description="Legacy nested request payload (deprecated)",
     )
@@ -71,14 +78,15 @@ class EditRecordRequest(BaseModel):
 
         return data
 
+
 class RowEditResponse(BaseModel):
     id: UUID
     table_code: str
     record_id: UUID
-    reason_text: Optional[str]
-    before_json: Dict[str, Any]
-    after_json: Dict[str, Any]
+    reason_text: str | None
+    before_json: dict[str, Any]
+    after_json: dict[str, Any]
     created_at: datetime
-    created_by: Optional[str]
+    created_by: str | None
 
     model_config = ConfigDict(from_attributes=True)

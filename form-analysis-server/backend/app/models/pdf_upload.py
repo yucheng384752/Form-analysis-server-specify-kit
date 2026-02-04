@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -52,7 +51,7 @@ class PdfUpload(Base):
         comment="Created time",
     )
 
-    actor_api_key_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    actor_api_key_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("tenant_api_keys.id"),
         nullable=True,
@@ -60,7 +59,7 @@ class PdfUpload(Base):
         comment="API key ID (who uploaded)",
     )
 
-    actor_label_snapshot: Mapped[Optional[str]] = mapped_column(
+    actor_label_snapshot: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
         comment="API key label snapshot",

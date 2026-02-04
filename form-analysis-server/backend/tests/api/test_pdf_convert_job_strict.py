@@ -41,7 +41,9 @@ async def test_pdf_convert_status_not_started(client, db_session_clean):
     await db_session_clean.commit()
 
     files = {"file": (_pdf_filename(), _pdf_bytes(), "application/pdf")}
-    upload_resp = await client.post("/api/upload/pdf", files=files, headers={"X-Tenant-Id": str(tenant.id)})
+    upload_resp = await client.post(
+        "/api/upload/pdf", files=files, headers={"X-Tenant-Id": str(tenant.id)}
+    )
     assert upload_resp.status_code == 200, upload_resp.text
     process_id = uuid.UUID(str(upload_resp.json()["process_id"]))
 
@@ -61,7 +63,9 @@ async def test_pdf_convert_trigger_creates_job_and_status(client, db_session_cle
     await db_session_clean.commit()
 
     files = {"file": (_pdf_filename(), _pdf_bytes(), "application/pdf")}
-    upload_resp = await client.post("/api/upload/pdf", files=files, headers={"X-Tenant-Id": str(tenant.id)})
+    upload_resp = await client.post(
+        "/api/upload/pdf", files=files, headers={"X-Tenant-Id": str(tenant.id)}
+    )
     assert upload_resp.status_code == 200, upload_resp.text
     process_id = uuid.UUID(str(upload_resp.json()["process_id"]))
 
@@ -101,7 +105,9 @@ async def test_pdf_convert_is_tenant_scoped(client, db_session_clean):
     await db_session_clean.commit()
 
     files = {"file": (_pdf_filename(), _pdf_bytes(), "application/pdf")}
-    upload_resp = await client.post("/api/upload/pdf", files=files, headers={"X-Tenant-Id": str(t1.id)})
+    upload_resp = await client.post(
+        "/api/upload/pdf", files=files, headers={"X-Tenant-Id": str(t1.id)}
+    )
     assert upload_resp.status_code == 200, upload_resp.text
     process_id = uuid.UUID(str(upload_resp.json()["process_id"]))
 

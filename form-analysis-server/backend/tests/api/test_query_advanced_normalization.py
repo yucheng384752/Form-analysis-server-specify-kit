@@ -2,13 +2,13 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from app.api.deps import get_db
 from app.main import app
 from app.models.core.tenant import Tenant
-from app.models.p3_record import P3Record
 from app.models.p3_item_v2 import P3ItemV2
+from app.models.p3_record import P3Record
 from app.utils.normalization import normalize_lot_no
 
 
@@ -19,7 +19,9 @@ async def client(db_session):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -38,7 +40,9 @@ async def _create_tenant(db_session) -> Tenant:
 
 
 @pytest.mark.asyncio
-async def test_v2_advanced_query_normalizes_specification_ascii_and_fullwidth(client, db_session):
+async def test_v2_advanced_query_normalizes_specification_ascii_and_fullwidth(
+    client, db_session
+):
     tenant = await _create_tenant(db_session)
 
     lot_ascii = "2507173_02"
@@ -130,7 +134,11 @@ async def test_v2_advanced_query_normalizes_machine_and_product_id(client, db_se
             lot_no=lot,
             source_winder=5,
             specification="PE 32",
-            row_data={"specification": "PE 32", "source_winder": 5, "product_id": product_id},
+            row_data={
+                "specification": "PE 32",
+                "source_winder": 5,
+                "product_id": product_id,
+            },
         )
     ]
 

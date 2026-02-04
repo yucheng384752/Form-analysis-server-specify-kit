@@ -3,7 +3,7 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import get_db
 from app.core.auth import hash_api_key
@@ -23,7 +23,9 @@ def _restore_global_auth_settings():
     previous = {
         "auth_mode": getattr(settings, "auth_mode", None),
         "auth_api_key_header": getattr(settings, "auth_api_key_header", None),
-        "auth_protect_prefixes_str": getattr(settings, "auth_protect_prefixes_str", None),
+        "auth_protect_prefixes_str": getattr(
+            settings, "auth_protect_prefixes_str", None
+        ),
     }
     yield
     for key, value in previous.items():
@@ -50,7 +52,9 @@ async def client(db_session_clean, test_engine):
         expire_on_commit=False,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -96,7 +100,9 @@ async def test_auth_api_key_allows_call_without_tenant_header(client, db_session
 
     raw_key = "test-key-123"
     key_hash = hash_api_key(raw_key=raw_key, secret_key=settings.secret_key)
-    db_session_clean.add(TenantApiKey(tenant_id=t1.id, key_hash=key_hash, label="test", is_active=True))
+    db_session_clean.add(
+        TenantApiKey(tenant_id=t1.id, key_hash=key_hash, label="test", is_active=True)
+    )
     await db_session_clean.commit()
 
     resp = await client.get("/api/constants/materials", headers={"X-API-Key": raw_key})
@@ -115,7 +121,9 @@ async def test_auth_api_key_missing_or_wrong_key_is_401(client, db_session_clean
 
     raw_key = "correct-key"
     key_hash = hash_api_key(raw_key=raw_key, secret_key=settings.secret_key)
-    db_session_clean.add(TenantApiKey(tenant_id=t1.id, key_hash=key_hash, label="test", is_active=True))
+    db_session_clean.add(
+        TenantApiKey(tenant_id=t1.id, key_hash=key_hash, label="test", is_active=True)
+    )
     await db_session_clean.commit()
 
     resp_missing = await client.get("/api/tenants")
@@ -136,7 +144,11 @@ async def test_auth_api_key_revoked_is_401(client, db_session_clean):
 
     raw_key = "revoked-key"
     key_hash = hash_api_key(raw_key=raw_key, secret_key=settings.secret_key)
-    db_session_clean.add(TenantApiKey(tenant_id=t1.id, key_hash=key_hash, label="revoked", is_active=False))
+    db_session_clean.add(
+        TenantApiKey(
+            tenant_id=t1.id, key_hash=key_hash, label="revoked", is_active=False
+        )
+    )
     await db_session_clean.commit()
 
     resp = await client.get("/api/tenants", headers={"X-API-Key": raw_key})
@@ -144,7 +156,9 @@ async def test_auth_api_key_revoked_is_401(client, db_session_clean):
 
 
 @pytest.mark.asyncio
-async def test_auth_api_key_does_not_allow_tenant_switch_via_header(client, db_session_clean):
+async def test_auth_api_key_does_not_allow_tenant_switch_via_header(
+    client, db_session_clean
+):
     # When auth is enabled, tenant is bound to key. Even if client sends X-Tenant-Id,
     # resolver should follow auth tenant.
     t1 = await _create_tenant(db_session_clean, code="t1", is_default=False)
@@ -157,7 +171,9 @@ async def test_auth_api_key_does_not_allow_tenant_switch_via_header(client, db_s
 
     raw_key = "bound-key"
     key_hash = hash_api_key(raw_key=raw_key, secret_key=settings.secret_key)
-    db_session_clean.add(TenantApiKey(tenant_id=t1.id, key_hash=key_hash, label="bound", is_active=True))
+    db_session_clean.add(
+        TenantApiKey(tenant_id=t1.id, key_hash=key_hash, label="bound", is_active=True)
+    )
     await db_session_clean.commit()
 
     # This endpoint requires tenant dependency; without auth it would be 422.

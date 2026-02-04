@@ -4,53 +4,64 @@
 處理檔案上傳、驗證和工作建立的 API 端點。
 """
 
-import uuid
-import time
 import hashlib
-from datetime import datetime, timezone
-from typing import List
+import time
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, status, Request, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
 
-from app.core.database import get_db
+from app.api.routes_import_v2 import process_import_job_background
 from app.core import database
 from app.core.config import get_settings
+from app.core.database import get_db
 from app.core.logging import get_logger
-from app.models.upload_job import UploadJob, JobStatus
-from app.models.upload_error import UploadError
 from app.models.audit import RowEdit
-from app.models.pdf_upload import PdfUpload
-from app.models.pdf_conversion_job import PdfConversionJob, PdfConversionStatus
 from app.models.core.schema_registry import TableRegistry
-from app.models.import_job import ImportJob, ImportFile, ImportJobStatus
-from app.schemas.upload import FileUploadResponse, UploadErrorResponse, UpdateUploadContentRequest
+from app.models.import_job import ImportFile, ImportJob, ImportJobStatus
+from app.models.pdf_conversion_job import PdfConversionJob, PdfConversionStatus
+from app.models.pdf_upload import PdfUpload
+from app.models.upload_error import UploadError
+from app.models.upload_job import JobStatus, UploadJob
 from app.schemas.audit import RowEditResponse
 from app.schemas.pdf_conversion import (
-    PdfConvertTriggerResponse,
-    PdfConvertStatusResponse,
     PdfConversionStatus as PdfSchemaConversionStatus,
-    PdfConvertIngestResponse,
+)
+from app.schemas.pdf_conversion import (
     PdfConvertIngestedUpload,
+    PdfConvertIngestResponse,
     PdfConvertOutputFile,
     PdfConvertOutputsResponse,
+    PdfConvertStatusResponse,
+    PdfConvertTriggerResponse,
 )
-from app.services.validation import file_validation_service, ValidationError
-from app.services.pdf_conversion import process_pdf_conversion_job_background
+from app.schemas.upload import (
+    FileUploadResponse,
+    UpdateUploadContentRequest,
+    UploadErrorResponse,
+)
 from app.services.audit_events import write_audit_event_best_effort
-from app.api.routes_import_v2 import process_import_job_background
+from app.services.pdf_conversion import process_pdf_conversion_job_background
+from app.services.validation import ValidationError, file_validation_service
 
 # 獲取日誌記錄器
 logger = get_logger(__name__)
 
 
 # 建立路由器
-router = APIRouter(
-    tags=["檔案上傳"]
-)
+router = APIRouter(tags=["檔案上傳"])
 
 
 def _is_pdf_bytes(file_content: bytes) -> bool:
@@ -78,8 +89,12 @@ async def _create_upload_job_from_csv_bytes(
     Returns: (upload_job, response, csv_text)
     """
     tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
-    actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None)
-    actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None)
+    actor_api_key_id = getattr(
+        getattr(http_request, "state", None), "auth_api_key_id", None
+    )
+    actor_api_key_label = getattr(
+        getattr(http_request, "state", None), "auth_api_key_label", None
+    )
 
     upload_job = UploadJob(
         filename=filename,
@@ -88,7 +103,7 @@ async def _create_upload_job_from_csv_bytes(
         tenant_id=tenant_id,
         actor_api_key_id=actor_api_key_id,
         actor_label_snapshot=actor_api_key_label,
-        last_status_changed_at=datetime.now(timezone.utc),
+        last_status_changed_at=datetime.now(UTC),
         last_status_actor_kind="user",
         last_status_actor_api_key_id=actor_api_key_id,
         last_status_actor_label_snapshot=actor_api_key_label,
@@ -114,7 +129,7 @@ async def _create_upload_job_from_csv_bytes(
     validation_result = file_validation_service.validate_file(file_content, filename)
 
     upload_job.status = JobStatus.VALIDATED
-    upload_job.last_status_changed_at = datetime.now(timezone.utc)
+    upload_job.last_status_changed_at = datetime.now(UTC)
     upload_job.last_status_actor_kind = "user"
     upload_job.last_status_actor_api_key_id = actor_api_key_id
     upload_job.last_status_actor_label_snapshot = actor_api_key_label
@@ -184,11 +199,18 @@ async def _create_v2_import_job_from_upload_job(
     table_code: str | None = None,
     allow_duplicate: bool = True,
 ) -> uuid.UUID:
-    inferred = (table_code or "").strip().upper() or _infer_table_code_from_filename(upload_job.filename)
+    inferred = (table_code or "").strip().upper() or _infer_table_code_from_filename(
+        upload_job.filename
+    )
     if not inferred:
-        raise HTTPException(status_code=400, detail="table_code 無法從檔名推論（檔名需以 P1_/P2_/P3_ 開頭）")
+        raise HTTPException(
+            status_code=400,
+            detail="table_code 無法從檔名推論（檔名需以 P1_/P2_/P3_ 開頭）",
+        )
 
-    result = await db.execute(select(TableRegistry).where(TableRegistry.table_code == inferred))
+    result = await db.execute(
+        select(TableRegistry).where(TableRegistry.table_code == inferred)
+    )
     table_registry = result.scalar_one_or_none()
     if not table_registry:
         raise HTTPException(status_code=400, detail=f"Invalid table code: {inferred}")
@@ -196,8 +218,12 @@ async def _create_v2_import_job_from_upload_job(
     job_id = uuid.uuid4()
     batch_id = f"{datetime.now().strftime('%Y%m%d')}-{str(job_id)[:8]}"
 
-    actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None)
-    actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None)
+    actor_api_key_id = getattr(
+        getattr(http_request, "state", None), "auth_api_key_id", None
+    )
+    actor_api_key_label = getattr(
+        getattr(http_request, "state", None), "auth_api_key_label", None
+    )
     request_id = getattr(getattr(http_request, "state", None), "request_id", None)
 
     job = ImportJob(
@@ -213,7 +239,7 @@ async def _create_v2_import_job_from_upload_job(
         job.actor_label_snapshot = actor_api_key_label
         job.last_status_actor_api_key_id = actor_api_key_id
         job.last_status_actor_label_snapshot = actor_api_key_label
-    job.last_status_changed_at = datetime.now(timezone.utc)
+    job.last_status_changed_at = datetime.now(UTC)
     job.last_status_actor_kind = "user"
     db.add(job)
 
@@ -237,7 +263,9 @@ async def _create_v2_import_job_from_upload_job(
             )
             dup_result = await db.execute(dup_stmt)
             if dup_result.scalars().first():
-                raise HTTPException(status_code=400, detail=f"Duplicate file detected: {filename}")
+                raise HTTPException(
+                    status_code=400, detail=f"Duplicate file detected: {filename}"
+                )
 
         import_file = ImportFile(
             job_id=job_id,
@@ -296,29 +324,47 @@ async def validate_upload_job(
     http_request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> FileUploadResponse:
-    result = await db.execute(select(UploadJob).where(UploadJob.process_id == process_id))
+    result = await db.execute(
+        select(UploadJob).where(UploadJob.process_id == process_id)
+    )
     upload_job = result.scalar_one_or_none()
     if not upload_job:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到指定的上傳工作")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="找不到指定的上傳工作"
+        )
 
     tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
-    if upload_job.tenant_id is not None and tenant_id and upload_job.tenant_id != tenant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到指定的上傳工作")
+    if (
+        upload_job.tenant_id is not None
+        and tenant_id
+        and upload_job.tenant_id != tenant_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="找不到指定的上傳工作"
+        )
     if upload_job.tenant_id is None and tenant_id:
         upload_job.tenant_id = tenant_id
 
     if not upload_job.file_content:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="檔案內容為空")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="檔案內容為空"
+        )
 
-    actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None)
-    actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None)
+    actor_api_key_id = getattr(
+        getattr(http_request, "state", None), "auth_api_key_id", None
+    )
+    actor_api_key_label = getattr(
+        getattr(http_request, "state", None), "auth_api_key_label", None
+    )
 
     # Clear old errors then re-validate current content.
     await db.execute(delete(UploadError).where(UploadError.job_id == upload_job.id))
-    validation_result = file_validation_service.validate_file(upload_job.file_content, upload_job.filename)
+    validation_result = file_validation_service.validate_file(
+        upload_job.file_content, upload_job.filename
+    )
 
     upload_job.status = JobStatus.VALIDATED
-    upload_job.last_status_changed_at = datetime.now(timezone.utc)
+    upload_job.last_status_changed_at = datetime.now(UTC)
     upload_job.last_status_actor_kind = "user"
     upload_job.last_status_actor_api_key_id = actor_api_key_id
     upload_job.last_status_actor_label_snapshot = actor_api_key_label
@@ -389,7 +435,9 @@ async def update_upload_content(
         return hashlib.sha256(data).hexdigest()
 
     try:
-        result = await db.execute(select(UploadJob).where(UploadJob.process_id == process_id))
+        result = await db.execute(
+            select(UploadJob).where(UploadJob.process_id == process_id)
+        )
         upload_job = result.scalar_one_or_none()
 
         if not upload_job:
@@ -399,7 +447,11 @@ async def update_upload_content(
             )
 
         tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
-        if upload_job.tenant_id is not None and tenant_id and upload_job.tenant_id != tenant_id:
+        if (
+            upload_job.tenant_id is not None
+            and tenant_id
+            and upload_job.tenant_id != tenant_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="找不到指定的上傳工作",
@@ -407,8 +459,12 @@ async def update_upload_content(
         if upload_job.tenant_id is None and tenant_id:
             upload_job.tenant_id = tenant_id
 
-        actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None)
-        actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None)
+        actor_api_key_id = getattr(
+            getattr(http_request, "state", None), "auth_api_key_id", None
+        )
+        actor_api_key_label = getattr(
+            getattr(http_request, "state", None), "auth_api_key_label", None
+        )
         if actor_api_key_id:
             upload_job.actor_api_key_id = actor_api_key_id
             upload_job.actor_label_snapshot = actor_api_key_label
@@ -446,7 +502,7 @@ async def update_upload_content(
         )
 
         upload_job.status = JobStatus.VALIDATED
-        upload_job.last_status_changed_at = datetime.now(timezone.utc)
+        upload_job.last_status_changed_at = datetime.now(UTC)
         upload_job.last_status_actor_kind = "user"
         upload_job.last_status_actor_api_key_id = actor_api_key_id
         upload_job.last_status_actor_label_snapshot = actor_api_key_label
@@ -468,7 +524,11 @@ async def update_upload_content(
         }
 
         if upload_job.tenant_id is not None:
-            created_by = actor_api_key_label or (str(actor_api_key_id) if actor_api_key_id else None) or "system"
+            created_by = (
+                actor_api_key_label
+                or (str(actor_api_key_id) if actor_api_key_id else None)
+                or "system"
+            )
             row_edit = RowEdit(
                 tenant_id=upload_job.tenant_id,
                 table_code="UPLOAD",
@@ -529,16 +589,22 @@ async def update_upload_content(
 
     except ValidationError as ve:
         # 驗證流程本身失敗（結構性問題）
-        result = await db.execute(select(UploadJob).where(UploadJob.process_id == process_id))
+        result = await db.execute(
+            select(UploadJob).where(UploadJob.process_id == process_id)
+        )
         upload_job = result.scalar_one_or_none()
         if upload_job:
             tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
             if upload_job.tenant_id is None and tenant_id:
                 upload_job.tenant_id = tenant_id
-            actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None)
-            actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None)
+            actor_api_key_id = getattr(
+                getattr(http_request, "state", None), "auth_api_key_id", None
+            )
+            actor_api_key_label = getattr(
+                getattr(http_request, "state", None), "auth_api_key_label", None
+            )
             upload_job.status = JobStatus.PENDING
-            upload_job.last_status_changed_at = datetime.now(timezone.utc)
+            upload_job.last_status_changed_at = datetime.now(UTC)
             upload_job.last_status_actor_kind = "user"
             upload_job.last_status_actor_api_key_id = actor_api_key_id
             upload_job.last_status_actor_label_snapshot = actor_api_key_label
@@ -562,7 +628,7 @@ async def update_upload_content(
 
 @router.get(
     "/upload/{process_id}/edits",
-    response_model=List[RowEditResponse],
+    response_model=list[RowEditResponse],
     status_code=status.HTTP_200_OK,
     summary="查詢上傳工作修改紀錄",
 )
@@ -570,15 +636,25 @@ async def list_upload_job_edits(
     process_id: uuid.UUID,
     http_request: Request,
     db: AsyncSession = Depends(get_db),
-) -> List[RowEditResponse]:
-    result = await db.execute(select(UploadJob).where(UploadJob.process_id == process_id))
+) -> list[RowEditResponse]:
+    result = await db.execute(
+        select(UploadJob).where(UploadJob.process_id == process_id)
+    )
     upload_job = result.scalar_one_or_none()
     if not upload_job:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到指定的上傳工作")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="找不到指定的上傳工作"
+        )
 
     tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
-    if upload_job.tenant_id is not None and tenant_id and upload_job.tenant_id != tenant_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到指定的上傳工作")
+    if (
+        upload_job.tenant_id is not None
+        and tenant_id
+        and upload_job.tenant_id != tenant_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="找不到指定的上傳工作"
+        )
     if upload_job.tenant_id is None and tenant_id:
         upload_job.tenant_id = tenant_id
         await db.commit()
@@ -588,16 +664,20 @@ async def list_upload_job_edits(
         return []
 
     edits = (
-        await db.execute(
-            select(RowEdit)
-            .where(
-                RowEdit.tenant_id == upload_job.tenant_id,
-                RowEdit.table_code == "UPLOAD",
-                RowEdit.record_id == upload_job.id,
+        (
+            await db.execute(
+                select(RowEdit)
+                .where(
+                    RowEdit.tenant_id == upload_job.tenant_id,
+                    RowEdit.table_code == "UPLOAD",
+                    RowEdit.record_id == upload_job.id,
+                )
+                .order_by(RowEdit.created_at.desc())
             )
-            .order_by(RowEdit.created_at.desc())
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return edits
 
 
@@ -643,12 +723,12 @@ async def list_upload_job_edits(
                                 "row_index": 2,
                                 "field": "lot_no",
                                 "error_code": "INVALID_FORMAT",
-                                "message": "批號格式錯誤，應為7位數字_2位數字格式，實際值：123456"
+                                "message": "批號格式錯誤，應為7位數字_2位數字格式，實際值：123456",
                             }
-                        ]
+                        ],
                     }
                 }
-            }
+            },
         },
         422: {
             "description": "檔案格式或內容驗證失敗",
@@ -657,68 +737,58 @@ async def list_upload_job_edits(
                     "examples": {
                         "missing_columns": {
                             "summary": "缺少必要欄位",
-                            "value": {
-                                "detail": "缺少必要欄位：lot_no, quantity"
-                            }
+                            "value": {"detail": "缺少必要欄位：lot_no, quantity"},
                         },
                         "unknown_columns": {
                             "summary": "未知欄位",
-                            "value": {
-                                "detail": "發現未知欄位：extra_field"
-                            }
+                            "value": {"detail": "發現未知欄位：extra_field"},
                         },
                         "file_format": {
                             "summary": "不支援的檔案格式",
                             "value": {
                                 "detail": "不支援的檔案格式，僅支援 CSV 和 Excel 檔案"
-                            }
-                        }
+                            },
+                        },
                     }
                 }
-            }
+            },
         },
         413: {
             "description": "檔案過大",
             "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "檔案大小超過限制"
-                    }
-                }
-            }
+                "application/json": {"example": {"detail": "檔案大小超過限制"}}
+            },
         },
         500: {
             "description": "伺服器內部錯誤",
             "content": {
                 "application/json": {
-                    "example": {
-                        "detail": "檔案處理時發生未預期的錯誤"
-                    }
+                    "example": {"detail": "檔案處理時發生未預期的錯誤"}
                 }
-            }
-        }
-    }
+            },
+        },
+    },
 )
 async def upload_file(
     http_request: Request,
     file: UploadFile = File(..., description="要上傳的 CSV 或 Excel 檔案"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> FileUploadResponse:
     """
     處理檔案上傳和驗證
-    
+
     Args:
         file: 上傳的檔案
         db: 資料庫會話
-        
+
     Returns:
         FileUploadResponse: 上傳結果
-        
+
     Raises:
         HTTPException: 各種驗證或處理錯誤
     """
     start_time = time.time()
-    
+
     logger.info("檔案上傳開始", filename=file.filename if file else None)
 
     if get_settings().multi_tenant_enabled:
@@ -730,41 +800,46 @@ async def upload_file(
                 "error_code": "LEGACY_UPLOAD_DISABLED",
             },
         )
-    
+
     try:
         # 1. 檢查檔案是否存在
         if not file or not file.filename:
             logger.warning("上傳失敗：未選擇檔案或檔案名稱為空")
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="未選擇檔案或檔案名稱為空"
+                detail="未選擇檔案或檔案名稱為空",
             )
-        
+
         # 2. 檢查檔案大小（10MB 限制）
         file_content = await file.read()
         file_size = len(file_content)
-        
+
         if file_size == 0:
             logger.warning("上傳失敗：檔案內容為空", filename=file.filename)
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="檔案內容為空"
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="檔案內容為空"
             )
-        
+
         if file_size > 10 * 1024 * 1024:  # 10MB
-            logger.warning("上傳失敗：檔案超過大小限制", 
-                         filename=file.filename, 
-                         file_size=file_size,
-                         max_size=10*1024*1024)
+            logger.warning(
+                "上傳失敗：檔案超過大小限制",
+                filename=file.filename,
+                file_size=file_size,
+                max_size=10 * 1024 * 1024,
+            )
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail="檔案大小超過 10MB 限制"
+                detail="檔案大小超過 10MB 限制",
             )
-        
+
         # 3. 建立上傳工作記錄
         tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
-        actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None)
-        actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None)
+        actor_api_key_id = getattr(
+            getattr(http_request, "state", None), "auth_api_key_id", None
+        )
+        actor_api_key_label = getattr(
+            getattr(http_request, "state", None), "auth_api_key_label", None
+        )
         upload_job = UploadJob(
             filename=file.filename,
             status=JobStatus.PENDING,
@@ -772,118 +847,122 @@ async def upload_file(
             tenant_id=tenant_id,
             actor_api_key_id=actor_api_key_id,
             actor_label_snapshot=actor_api_key_label,
-            last_status_changed_at=datetime.now(timezone.utc),
+            last_status_changed_at=datetime.now(UTC),
             last_status_actor_kind="user",
             last_status_actor_api_key_id=actor_api_key_id,
             last_status_actor_label_snapshot=actor_api_key_label,
         )
-        
+
         db.add(upload_job)
         await db.commit()
         await db.refresh(upload_job)
-        
-        logger.info("上傳工作已建立", 
-                   process_id=str(upload_job.process_id),
-                   filename=file.filename,
-                   file_size=file_size)
-        
+
+        logger.info(
+            "上傳工作已建立",
+            process_id=str(upload_job.process_id),
+            filename=file.filename,
+            file_size=file_size,
+        )
+
         try:
             # 4. 執行檔案驗證
             logger.info("開始檔案驗證", process_id=str(upload_job.process_id))
             validation_result = file_validation_service.validate_file(
-                file_content, 
-                file.filename
+                file_content, file.filename
             )
-            
+
             # 5. 更新上傳工作統計資訊
             upload_job.status = JobStatus.VALIDATED
-            upload_job.last_status_changed_at = datetime.now(timezone.utc)
+            upload_job.last_status_changed_at = datetime.now(UTC)
             upload_job.last_status_actor_kind = "user"
             upload_job.last_status_actor_api_key_id = actor_api_key_id
             upload_job.last_status_actor_label_snapshot = actor_api_key_label
-            upload_job.total_rows = validation_result['total_rows']
-            upload_job.valid_rows = validation_result['valid_rows']
-            upload_job.invalid_rows = validation_result['invalid_rows']
-            
+            upload_job.total_rows = validation_result["total_rows"]
+            upload_job.valid_rows = validation_result["valid_rows"]
+            upload_job.invalid_rows = validation_result["invalid_rows"]
+
             # 6. 儲存驗證錯誤到資料庫
             upload_errors = []
-            for error in validation_result['errors']:
+            for error in validation_result["errors"]:
                 upload_error = UploadError(
                     job_id=upload_job.id,
-                    row_index=error['row_index'],
-                    field=error['field'],
-                    error_code=error['error_code'],
-                    message=error['message']
+                    row_index=error["row_index"],
+                    field=error["field"],
+                    error_code=error["error_code"],
+                    message=error["message"],
                 )
                 upload_errors.append(upload_error)
-            
+
             if upload_errors:
                 db.add_all(upload_errors)
-            
+
             await db.commit()
-            
+
             # 7. 準備回應資料
             sample_errors = [
                 UploadErrorResponse(
-                    row_index=error['row_index'],
-                    field=error['field'],
-                    error_code=error['error_code'],
-                    message=error['message']
+                    row_index=error["row_index"],
+                    field=error["field"],
+                    error_code=error["error_code"],
+                    message=error["message"],
                 )
-                for error in validation_result['sample_errors']
+                for error in validation_result["sample_errors"]
             ]
-            
+
             # 8. 記錄處理時間
             processing_time = time.time() - start_time
-            
-            logger.info("檔案上傳和驗證完成",
-                       process_id=str(upload_job.process_id),
-                       filename=file.filename,
-                       total_rows=validation_result['total_rows'],
-                       valid_rows=validation_result['valid_rows'],
-                       invalid_rows=validation_result['invalid_rows'],
-                       processing_time=processing_time)
-            
+
+            logger.info(
+                "檔案上傳和驗證完成",
+                process_id=str(upload_job.process_id),
+                filename=file.filename,
+                total_rows=validation_result["total_rows"],
+                valid_rows=validation_result["valid_rows"],
+                invalid_rows=validation_result["invalid_rows"],
+                processing_time=processing_time,
+            )
+
             return FileUploadResponse(
                 process_id=upload_job.process_id,
-                total_rows=validation_result['total_rows'],
-                valid_rows=validation_result['valid_rows'],
-                invalid_rows=validation_result['invalid_rows'],
-                sample_errors=sample_errors
+                total_rows=validation_result["total_rows"],
+                valid_rows=validation_result["valid_rows"],
+                invalid_rows=validation_result["invalid_rows"],
+                sample_errors=sample_errors,
             )
-            
+
         except ValidationError as ve:
             # 驗證錯誤：更新工作狀態但不刪除記錄
             upload_job.status = JobStatus.PENDING  # 保持 PENDING 狀態表示驗證失敗
             await db.commit()
-            
-            logger.error("檔案驗證失敗",
-                        process_id=str(upload_job.process_id),
-                        filename=file.filename,
-                        error_message=ve.message)
-            
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=ve.message
+
+            logger.error(
+                "檔案驗證失敗",
+                process_id=str(upload_job.process_id),
+                filename=file.filename,
+                error_message=ve.message,
             )
-        
+
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=ve.message
+            )
+
         except Exception as e:
             # 其他錯誤：回滾上傳工作建立
             await db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"檔案處理時發生錯誤：{str(e)}"
+                detail=f"檔案處理時發生錯誤：{str(e)}",
             )
-    
+
     except HTTPException:
         # 重新拋出 HTTP 例外
         raise
-    
+
     except Exception as e:
         # 捕獲所有其他未處理的例外
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"上傳檔案時發生未預期的錯誤：{str(e)}"
+            detail=f"上傳檔案時發生未預期的錯誤：{str(e)}",
         )
 
 
@@ -909,7 +988,9 @@ async def upload_file(
         },
         413: {
             "description": "檔案過大",
-            "content": {"application/json": {"example": {"detail": "檔案大小超過 10MB 限制"}}},
+            "content": {
+                "application/json": {"example": {"detail": "檔案大小超過 10MB 限制"}}
+            },
         },
     },
 )
@@ -964,7 +1045,11 @@ async def upload_pdf(
     target_path.write_bytes(file_content)
 
     # Persist tenant-scoped upload record for later conversion/status.
-    tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None) if http_request else None
+    tenant_id = (
+        getattr(getattr(http_request, "state", None), "tenant_id", None)
+        if http_request
+        else None
+    )
     if not tenant_id:
         # Should not happen because the router is tenant-scoped via dependencies.
         # Still keep it defensive.
@@ -978,8 +1063,16 @@ async def upload_pdf(
             detail="Tenant context missing",
         )
 
-    actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None) if http_request else None
-    actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None) if http_request else None
+    actor_api_key_id = (
+        getattr(getattr(http_request, "state", None), "auth_api_key_id", None)
+        if http_request
+        else None
+    )
+    actor_api_key_label = (
+        getattr(getattr(http_request, "state", None), "auth_api_key_label", None)
+        if http_request
+        else None
+    )
 
     try:
         db.add(
@@ -1058,15 +1151,19 @@ async def trigger_pdf_convert(
 
     # Idempotency: return latest active/completed job if exists.
     latest_job = (
-        await db.execute(
-            select(PdfConversionJob)
-            .where(
-                PdfConversionJob.process_id == process_id,
-                PdfConversionJob.tenant_id == tenant_id,
+        (
+            await db.execute(
+                select(PdfConversionJob)
+                .where(
+                    PdfConversionJob.process_id == process_id,
+                    PdfConversionJob.tenant_id == tenant_id,
+                )
+                .order_by(PdfConversionJob.created_at.desc())
             )
-            .order_by(PdfConversionJob.created_at.desc())
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
 
     if latest_job and latest_job.status in {
         PdfConversionStatus.QUEUED,
@@ -1079,8 +1176,12 @@ async def trigger_pdf_convert(
             status=PdfSchemaConversionStatus(latest_job.status.value),
         )
 
-    actor_api_key_id = getattr(getattr(http_request, "state", None), "auth_api_key_id", None)
-    actor_api_key_label = getattr(getattr(http_request, "state", None), "auth_api_key_label", None)
+    actor_api_key_id = getattr(
+        getattr(http_request, "state", None), "auth_api_key_id", None
+    )
+    actor_api_key_label = getattr(
+        getattr(http_request, "state", None), "auth_api_key_label", None
+    )
 
     job = PdfConversionJob(
         process_id=process_id,
@@ -1099,9 +1200,13 @@ async def trigger_pdf_convert(
         background_tasks.add_task(process_pdf_conversion_job_background, job.id)
     else:
         if get_settings().environment.lower() != "testing":
-            logger.warning("Skip pdf conversion background task: async_session_factory not initialized")
+            logger.warning(
+                "Skip pdf conversion background task: async_session_factory not initialized"
+            )
 
-    return PdfConvertTriggerResponse(job_id=job.id, status=PdfSchemaConversionStatus.QUEUED)
+    return PdfConvertTriggerResponse(
+        job_id=job.id, status=PdfSchemaConversionStatus.QUEUED
+    )
 
 
 @router.get(
@@ -1131,18 +1236,24 @@ async def get_pdf_convert_status(
         raise HTTPException(status_code=404, detail="找不到指定的 PDF 上傳紀錄")
 
     latest_job = (
-        await db.execute(
-            select(PdfConversionJob)
-            .where(
-                PdfConversionJob.process_id == process_id,
-                PdfConversionJob.tenant_id == tenant_id,
+        (
+            await db.execute(
+                select(PdfConversionJob)
+                .where(
+                    PdfConversionJob.process_id == process_id,
+                    PdfConversionJob.tenant_id == tenant_id,
+                )
+                .order_by(PdfConversionJob.created_at.desc())
             )
-            .order_by(PdfConversionJob.created_at.desc())
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
 
     if not latest_job:
-        return PdfConvertStatusResponse(status=PdfSchemaConversionStatus.NOT_STARTED, progress=0)
+        return PdfConvertStatusResponse(
+            status=PdfSchemaConversionStatus.NOT_STARTED, progress=0
+        )
 
     return PdfConvertStatusResponse(
         status=PdfSchemaConversionStatus(latest_job.status.value),
@@ -1193,15 +1304,19 @@ async def ingest_pdf_converted_csvs(
         raise HTTPException(status_code=404, detail="找不到指定的 PDF 上傳紀錄")
 
     latest_job = (
-        await db.execute(
-            select(PdfConversionJob)
-            .where(
-                PdfConversionJob.process_id == process_id,
-                PdfConversionJob.tenant_id == tenant_id,
+        (
+            await db.execute(
+                select(PdfConversionJob)
+                .where(
+                    PdfConversionJob.process_id == process_id,
+                    PdfConversionJob.tenant_id == tenant_id,
+                )
+                .order_by(PdfConversionJob.created_at.desc())
             )
-            .order_by(PdfConversionJob.created_at.desc())
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if not latest_job:
         raise HTTPException(status_code=404, detail="找不到 PDF 轉檔工作")
 
@@ -1243,13 +1358,17 @@ async def ingest_pdf_converted_csvs(
                 import_job_id = None
 
             errors = (
-                await db.execute(
-                    select(UploadError)
-                    .where(UploadError.job_id == ujob.id)
-                    .order_by(UploadError.row_index.asc(), UploadError.field.asc())
-                    .limit(10)
+                (
+                    await db.execute(
+                        select(UploadError)
+                        .where(UploadError.job_id == ujob.id)
+                        .order_by(UploadError.row_index.asc(), UploadError.field.asc())
+                        .limit(10)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
             sample_errors = [
                 UploadErrorResponse(
@@ -1261,7 +1380,9 @@ async def ingest_pdf_converted_csvs(
                 for e in errors
             ]
 
-            csv_text = _decode_csv_text(ujob.file_content or b"") if include_csv_text else None
+            csv_text = (
+                _decode_csv_text(ujob.file_content or b"") if include_csv_text else None
+            )
             uploads.append(
                 PdfConvertIngestedUpload(
                     filename=ujob.filename or (item.get("filename") or "output.csv"),
@@ -1300,7 +1421,9 @@ async def ingest_pdf_converted_csvs(
             # Skip empty outputs rather than failing the entire ingest.
             continue
         if len(file_content) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail=f"CSV 檔案大小超過 10MB：{csv_path.name}")
+            raise HTTPException(
+                status_code=413, detail=f"CSV 檔案大小超過 10MB：{csv_path.name}"
+            )
         try:
             upload_job, response, csv_text = await _create_upload_job_from_csv_bytes(
                 db=db,
@@ -1343,7 +1466,10 @@ async def ingest_pdf_converted_csvs(
         )
 
     if not uploads:
-        raise HTTPException(status_code=422, detail="沒有可匯入的 CSV（輸出可能只有空檔或 error_list.csv）")
+        raise HTTPException(
+            status_code=422,
+            detail="沒有可匯入的 CSV（輸出可能只有空檔或 error_list.csv）",
+        )
 
     latest_job.ingested_upload_jobs = created
     await db.commit()
@@ -1386,15 +1512,19 @@ async def get_pdf_convert_outputs(
         raise HTTPException(status_code=404, detail="找不到指定的 PDF 上傳紀錄")
 
     latest_job = (
-        await db.execute(
-            select(PdfConversionJob)
-            .where(
-                PdfConversionJob.process_id == process_id,
-                PdfConversionJob.tenant_id == tenant_id,
+        (
+            await db.execute(
+                select(PdfConversionJob)
+                .where(
+                    PdfConversionJob.process_id == process_id,
+                    PdfConversionJob.tenant_id == tenant_id,
+                )
+                .order_by(PdfConversionJob.created_at.desc())
             )
-            .order_by(PdfConversionJob.created_at.desc())
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if not latest_job:
         raise HTTPException(status_code=404, detail="找不到 PDF 轉檔工作")
 
@@ -1430,13 +1560,18 @@ async def get_pdf_convert_outputs(
         if not file_content:
             continue
         if len(file_content) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail=f"CSV 檔案大小超過 10MB：{csv_path.name}")
+            raise HTTPException(
+                status_code=413, detail=f"CSV 檔案大小超過 10MB：{csv_path.name}"
+            )
 
         csv_text = _decode_csv_text(file_content) if include_csv_text else None
         outputs.append(PdfConvertOutputFile(filename=filename, csv_text=csv_text))
 
     if not outputs:
-        raise HTTPException(status_code=422, detail="沒有可用的 CSV（輸出可能只有空檔或 error_list.csv）")
+        raise HTTPException(
+            status_code=422,
+            detail="沒有可用的 CSV（輸出可能只有空檔或 error_list.csv）",
+        )
 
     return PdfConvertOutputsResponse(outputs=outputs)
 
@@ -1457,56 +1592,55 @@ async def get_pdf_convert_outputs(
                         "total_rows": 100,
                         "valid_rows": 95,
                         "invalid_rows": 5,
-                        "created_at": "2024-01-08T10:30:00Z"
+                        "created_at": "2024-01-08T10:30:00Z",
                     }
                 }
-            }
+            },
         },
         404: {
             "description": "找不到指定的上傳工作",
             "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "找不到指定的上傳工作"
-                    }
-                }
-            }
-        }
-    }
+                "application/json": {"example": {"detail": "找不到指定的上傳工作"}}
+            },
+        },
+    },
 )
 async def get_upload_status(
-    process_id: uuid.UUID,
-    http_request: Request,
-    db: AsyncSession = Depends(get_db)
+    process_id: uuid.UUID, http_request: Request, db: AsyncSession = Depends(get_db)
 ) -> dict:
     """
     查詢上傳工作狀態
-    
+
     Args:
         process_id: 處理流程識別碼
         db: 資料庫會話
-        
+
     Returns:
         dict: 工作狀態資訊
-        
+
     Raises:
         HTTPException: 找不到工作或其他錯誤
     """
     try:
         # 根據 process_id 查詢上傳工作
         from sqlalchemy import select
-        
-        result = await db.execute(select(UploadJob).where(UploadJob.process_id == process_id))
+
+        result = await db.execute(
+            select(UploadJob).where(UploadJob.process_id == process_id)
+        )
         upload_job = result.scalar_one_or_none()
-        
+
         if not upload_job:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="找不到指定的上傳工作"
+                status_code=status.HTTP_404_NOT_FOUND, detail="找不到指定的上傳工作"
             )
-        
+
         tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
-        if upload_job.tenant_id is not None and tenant_id and upload_job.tenant_id != tenant_id:
+        if (
+            upload_job.tenant_id is not None
+            and tenant_id
+            and upload_job.tenant_id != tenant_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="找不到指定的上傳工作",
@@ -1519,14 +1653,16 @@ async def get_upload_status(
             "total_rows": upload_job.total_rows,
             "valid_rows": upload_job.valid_rows,
             "invalid_rows": upload_job.invalid_rows,
-            "created_at": upload_job.created_at.isoformat() if upload_job.created_at else None
+            "created_at": upload_job.created_at.isoformat()
+            if upload_job.created_at
+            else None,
         }
-        
+
     except HTTPException:
         raise
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"查詢工作狀態時發生錯誤：{str(e)}"
+            detail=f"查詢工作狀態時發生錯誤：{str(e)}",
         )

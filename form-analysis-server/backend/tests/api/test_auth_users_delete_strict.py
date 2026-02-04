@@ -28,7 +28,9 @@ async def client(db_session_clean):
 @pytest.mark.asyncio
 async def test_admin_can_delete_user_soft(client):
     # Bootstrap tenant.
-    t = await client.post("/api/tenants", json={}, headers={"X-Admin-API-Key": "test-admin-key"})
+    t = await client.post(
+        "/api/tenants", json={}, headers={"X-Admin-API-Key": "test-admin-key"}
+    )
     assert t.status_code == 201, t.text
     tenant = t.json()
     assert tenant.get("code") == "ut"
@@ -36,7 +38,12 @@ async def test_admin_can_delete_user_soft(client):
     # Create user in that tenant using admin key.
     create = await client.post(
         "/api/auth/users",
-        json={"tenant_code": "ut", "username": "u1", "password": "password-123", "role": "user"},
+        json={
+            "tenant_code": "ut",
+            "username": "u1",
+            "password": "password-123",
+            "role": "user",
+        },
         headers={"X-Admin-API-Key": "test-admin-key"},
     )
     assert create.status_code == 201, create.text
@@ -46,7 +53,9 @@ async def test_admin_can_delete_user_soft(client):
     assert user.get("is_active") is True
 
     # Delete (deactivate).
-    deleted = await client.delete(f"/api/auth/users/{user_id}", headers={"X-Admin-API-Key": "test-admin-key"})
+    deleted = await client.delete(
+        f"/api/auth/users/{user_id}", headers={"X-Admin-API-Key": "test-admin-key"}
+    )
     assert deleted.status_code == 200, deleted.text
     body = deleted.json()
     assert body.get("id") == user_id

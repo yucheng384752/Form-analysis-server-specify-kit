@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import base64
 import io
+import re
 import uuid
-from datetime import datetime, timezone
+import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import httpx
-import re
-import zipfile
 from sqlalchemy import select
 
 from app.core import database
@@ -17,9 +17,8 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models.pdf_conversion_job import PdfConversionJob, PdfConversionStatus
 from app.models.pdf_upload import PdfUpload
-from app.models.upload_job import UploadJob, JobStatus
-from app.models.upload_error import UploadError
-from app.services.validation import file_validation_service, ValidationError
+from app.models.upload_job import JobStatus, UploadJob
+from app.services.validation import ValidationError
 
 logger = get_logger(__name__)
 
@@ -31,7 +30,7 @@ class PdfServerNotConfigured(RuntimeError):
     pass
 
 
-def _infer_table_from_filename(filename: str) -> Optional[str]:
+def _infer_table_from_filename(filename: str) -> str | None:
     name = (Path(filename).name or "").strip().upper()
     if not name:
         return None
@@ -69,15 +68,19 @@ async def _call_pdf_server_convert(
     *,
     pdf_bytes: bytes,
     filename: str,
-    options: Optional[dict[str, Any]] = None,
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     base_url = (getattr(settings, "pdf_server_url", None) or "").strip()
     if not base_url:
         raise PdfServerNotConfigured("PDF_SERVER_URL is not configured")
 
-    convert_path = (getattr(settings, "pdf_server_convert_path", None) or "/convert").strip() or "/convert"
-    url = base_url.rstrip("/") + (convert_path if convert_path.startswith("/") else ("/" + convert_path))
+    convert_path = (
+        getattr(settings, "pdf_server_convert_path", None) or "/convert"
+    ).strip() or "/convert"
+    url = base_url.rstrip("/") + (
+        convert_path if convert_path.startswith("/") else ("/" + convert_path)
+    )
 
     timeout_seconds = int(getattr(settings, "pdf_server_timeout_seconds", 60))
 
@@ -102,7 +105,10 @@ async def _call_pdf_server_convert(
 
             data: dict[str, Any] = {"table": table}
             if options:
-                if isinstance(options.get("llm_url"), str) and options["llm_url"].strip():
+                if (
+                    isinstance(options.get("llm_url"), str)
+                    and options["llm_url"].strip()
+                ):
                     data["llm_url"] = options["llm_url"].strip()
                 if options.get("llm_timeout") is not None:
                     data["llm_timeout"] = str(options["llm_timeout"])
@@ -203,7 +209,9 @@ def _select_csv_name_for_pdf(csvs: dict[str, str], pdf_filename: str) -> str:
     )
 
 
-def _extract_csv_texts(result: dict[str, Any], *, pdf_filename: str) -> tuple[dict[str, str], str]:
+def _extract_csv_texts(
+    result: dict[str, Any], *, pdf_filename: str
+) -> tuple[dict[str, str], str]:
     """Return (all_csvs, selected_name).
 
     Supports:
@@ -290,7 +298,7 @@ async def _auto_ingest_converted_csvs(
             tenant_id=tenant_id,
             actor_api_key_id=actor_api_key_id,
             actor_label_snapshot=actor_api_key_label,
-            last_status_changed_at=datetime.now(timezone.utc),
+            last_status_changed_at=datetime.now(UTC),
             last_status_actor_kind="system",
             last_status_actor_api_key_id=actor_api_key_id,
             last_status_actor_label_snapshot=actor_api_key_label,
@@ -307,7 +315,10 @@ async def _auto_ingest_converted_csvs(
 
 async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
     if not database.async_session_factory:
-        logger.error("Async session factory not initialized; cannot process pdf conversion job", job_id=str(job_id))
+        logger.error(
+            "Async session factory not initialized; cannot process pdf conversion job",
+            job_id=str(job_id),
+        )
         return
 
     settings = get_settings()
@@ -319,19 +330,25 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
             return
 
         # Load upload record
-        upload = (await db.execute(select(PdfUpload).where(PdfUpload.process_id == job.process_id))).scalar_one_or_none()
+        upload = (
+            await db.execute(
+                select(PdfUpload).where(PdfUpload.process_id == job.process_id)
+            )
+        ).scalar_one_or_none()
         if not upload:
             job.status = PdfConversionStatus.FAILED
             job.progress = 100
-            job.error_summary = _to_error_summary("PDF upload record not found", stage="load_upload")
-            job.finished_at = datetime.now(timezone.utc)
+            job.error_summary = _to_error_summary(
+                "PDF upload record not found", stage="load_upload"
+            )
+            job.finished_at = datetime.now(UTC)
             await db.commit()
             return
 
         try:
             job.status = PdfConversionStatus.UPLOADING
             job.progress = 15
-            job.started_at = datetime.now(timezone.utc)
+            job.started_at = datetime.now(UTC)
             await db.commit()
 
             pdf_path = Path(upload.storage_path)
@@ -353,13 +370,15 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
                 },
             )
 
-            csvs, selected_name = _extract_csv_texts(result, pdf_filename=upload.filename)
+            csvs, selected_name = _extract_csv_texts(
+                result, pdf_filename=upload.filename
+            )
 
             out_dir = Path(settings.upload_temp_dir) / "pdf" / str(upload.process_id)
             out_dir.mkdir(parents=True, exist_ok=True)
 
             output_paths: list[str] = []
-            selected_path: Optional[str] = None
+            selected_path: str | None = None
             for name, text in csvs.items():
                 safe_name = (Path(name).name or "output.csv").strip() or "output.csv"
                 out_path = out_dir / safe_name
@@ -376,7 +395,7 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
             job.progress = 100
             job.output_path = selected_path
             job.output_paths = output_paths
-            job.finished_at = datetime.now(timezone.utc)
+            job.finished_at = datetime.now(UTC)
             job.error_summary = None
             await db.commit()
 
@@ -402,13 +421,17 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
             job.status = PdfConversionStatus.FAILED
             job.progress = 100
             job.error_summary = _to_error_summary(e, stage="config")
-            job.finished_at = datetime.now(timezone.utc)
+            job.finished_at = datetime.now(UTC)
             await db.commit()
 
         except Exception as e:
-            logger.exception("PDF conversion job failed", job_id=str(job_id), process_id=str(job.process_id))
+            logger.exception(
+                "PDF conversion job failed",
+                job_id=str(job_id),
+                process_id=str(job.process_id),
+            )
             job.status = PdfConversionStatus.FAILED
             job.progress = 100
             job.error_summary = _to_error_summary(e, stage="convert")
-            job.finished_at = datetime.now(timezone.utc)
+            job.finished_at = datetime.now(UTC)
             await db.commit()

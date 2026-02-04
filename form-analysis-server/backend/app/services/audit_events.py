@@ -1,8 +1,8 @@
 import uuid
-from typing import Any, Optional
+from typing import Any
 
-from app.core.config import get_settings
 from app.core import database
+from app.core.config import get_settings
 from app.models.core.audit_event import AuditEvent
 
 
@@ -13,17 +13,17 @@ def _is_enabled() -> bool:
 
 async def write_audit_event_best_effort(
     *,
-    tenant_id: Optional[uuid.UUID],
-    actor_api_key_id: Optional[uuid.UUID] = None,
-    actor_label_snapshot: Optional[str] = None,
-    request_id: Optional[str] = None,
+    tenant_id: uuid.UUID | None,
+    actor_api_key_id: uuid.UUID | None = None,
+    actor_label_snapshot: str | None = None,
+    request_id: str | None = None,
     method: str,
     path: str,
     status_code: int,
     action: str,
-    metadata: Optional[dict[str, Any]] = None,
-    client_host: Optional[str] = None,
-    user_agent: Optional[str] = None,
+    metadata: dict[str, Any] | None = None,
+    client_host: str | None = None,
+    user_agent: str | None = None,
 ) -> None:
     """Persist an AuditEvent if enabled.
 

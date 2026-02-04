@@ -60,7 +60,11 @@ async def client_obs_audit_enabled(db_session_clean, test_engine):
     db_session_clean.add(api_key)
 
     # Ensure TableRegistry exists for import v2.
-    p1_table = (await db_session_clean.execute(select(TableRegistry).where(TableRegistry.table_code == "P1"))).scalar_one_or_none()
+    p1_table = (
+        await db_session_clean.execute(
+            select(TableRegistry).where(TableRegistry.table_code == "P1")
+        )
+    ).scalar_one_or_none()
     if not p1_table:
         p1_table = TableRegistry(table_code="P1", display_name="P1 Records")
         db_session_clean.add(p1_table)
@@ -82,7 +86,9 @@ async def client_obs_audit_enabled(db_session_clean, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_obs_audit_trail_import_query_edit(client_obs_audit_enabled, db_session_clean):
+async def test_obs_audit_trail_import_query_edit(
+    client_obs_audit_enabled, db_session_clean
+):
     client, raw_key, tenant_id, api_key_id = client_obs_audit_enabled
 
     # 1) Create import job
@@ -100,13 +106,17 @@ async def test_obs_audit_trail_import_query_edit(client_obs_audit_enabled, db_se
 
     # Semantic create event
     created = (
-        await db_session_clean.execute(
-            select(AuditEvent).where(
-                AuditEvent.action == "import.job.create",
-                AuditEvent.tenant_id == tenant_id,
+        (
+            await db_session_clean.execute(
+                select(AuditEvent).where(
+                    AuditEvent.action == "import.job.create",
+                    AuditEvent.tenant_id == tenant_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert created, "Expected import.job.create audit event"
 
     # 2) Parse + validate happen in background (system).
@@ -118,16 +128,26 @@ async def test_obs_audit_trail_import_query_edit(client_obs_audit_enabled, db_se
     assert resp_commit.status_code == 200, resp_commit.text
 
     status_events = (
-        await db_session_clean.execute(
-            select(AuditEvent).where(
-                AuditEvent.action == "import.job.status",
-                AuditEvent.tenant_id == tenant_id,
+        (
+            await db_session_clean.execute(
+                select(AuditEvent).where(
+                    AuditEvent.action == "import.job.status",
+                    AuditEvent.tenant_id == tenant_id,
+                )
             )
         )
-    ).scalars().all()
-    assert any((e.metadata_json or {}).get("job_id") == str(job_id) for e in status_events)
-    assert any((e.metadata_json or {}).get("to_status") == "READY" for e in status_events)
-    assert any((e.metadata_json or {}).get("to_status") == "COMPLETED" for e in status_events)
+        .scalars()
+        .all()
+    )
+    assert any(
+        (e.metadata_json or {}).get("job_id") == str(job_id) for e in status_events
+    )
+    assert any(
+        (e.metadata_json or {}).get("to_status") == "READY" for e in status_events
+    )
+    assert any(
+        (e.metadata_json or {}).get("to_status") == "COMPLETED" for e in status_events
+    )
 
     # 3) Advanced query (GET) should write semantic audit event when filters provided
     resp_q = await client.get(
@@ -138,13 +158,17 @@ async def test_obs_audit_trail_import_query_edit(client_obs_audit_enabled, db_se
     assert resp_q.status_code == 200, resp_q.text
 
     query_events = (
-        await db_session_clean.execute(
-            select(AuditEvent).where(
-                AuditEvent.action == "query.advanced",
-                AuditEvent.tenant_id == tenant_id,
+        (
+            await db_session_clean.execute(
+                select(AuditEvent).where(
+                    AuditEvent.action == "query.advanced",
+                    AuditEvent.tenant_id == tenant_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert query_events, "Expected query.advanced audit event"
 
     # 4) Edit record should write semantic audit event
@@ -167,14 +191,20 @@ async def test_obs_audit_trail_import_query_edit(client_obs_audit_enabled, db_se
     assert resp_edit.status_code == 200, resp_edit.text
 
     edit_events = (
-        await db_session_clean.execute(
-            select(AuditEvent).where(
-                AuditEvent.action == "edit.record",
-                AuditEvent.tenant_id == tenant_id,
+        (
+            await db_session_clean.execute(
+                select(AuditEvent).where(
+                    AuditEvent.action == "edit.record",
+                    AuditEvent.tenant_id == tenant_id,
+                )
             )
         )
-    ).scalars().all()
-    assert any((e.metadata_json or {}).get("record_id") == str(record_id) for e in edit_events)
+        .scalars()
+        .all()
+    )
+    assert any(
+        (e.metadata_json or {}).get("record_id") == str(record_id) for e in edit_events
+    )
 
     # 5) Audit event listing endpoints
     resp_list = await client.get("/api/audit-events", headers={"X-API-Key": raw_key})

@@ -7,8 +7,8 @@ from httpx import ASGITransport, AsyncClient
 from app.api.deps import get_db
 from app.core.config import get_settings
 from app.main import app
-from app.models.core.tenant import Tenant
 from app.models.core.schema_registry import TableRegistry
+from app.models.core.tenant import Tenant
 from app.models.pdf_conversion_job import PdfConversionJob, PdfConversionStatus
 
 
@@ -33,20 +33,26 @@ async def client(db_session_clean):
 
 
 @pytest.mark.asyncio
-async def test_pdf_convert_ingest_creates_upload_jobs_and_is_idempotent(client, db_session_clean):
+async def test_pdf_convert_ingest_creates_upload_jobs_and_is_idempotent(
+    client, db_session_clean
+):
     tenant = Tenant(name="T1", code="t1", is_default=True, is_active=True)
     db_session_clean.add(tenant)
     await db_session_clean.commit()
 
     # Seed table registry for v2 import jobs created during ingest
-    db_session_clean.add_all([
-        TableRegistry(table_code="P1", display_name="P1"),
-        TableRegistry(table_code="P2", display_name="P2"),
-    ])
+    db_session_clean.add_all(
+        [
+            TableRegistry(table_code="P1", display_name="P1"),
+            TableRegistry(table_code="P2", display_name="P2"),
+        ]
+    )
     await db_session_clean.commit()
 
     files = {"file": ("sample.pdf", _pdf_bytes(), "application/pdf")}
-    upload_resp = await client.post("/api/upload/pdf", files=files, headers={"X-Tenant-Id": str(tenant.id)})
+    upload_resp = await client.post(
+        "/api/upload/pdf", files=files, headers={"X-Tenant-Id": str(tenant.id)}
+    )
     assert upload_resp.status_code == 200, upload_resp.text
     pdf_process_id = uuid.UUID(str(upload_resp.json()["process_id"]))
 
@@ -109,7 +115,9 @@ async def test_pdf_convert_ingest_creates_upload_jobs_and_is_idempotent(client, 
     body2 = ingest_resp2.json()
     uploads2 = body2.get("uploads")
     assert sorted([u["process_id"] for u in uploads2]) == sorted(process_ids)
-    assert sorted([u["import_job_id"] for u in uploads2]) == sorted([u["import_job_id"] for u in uploads])
+    assert sorted([u["import_job_id"] for u in uploads2]) == sorted(
+        [u["import_job_id"] for u in uploads]
+    )
 
     # Cleanup disk files to keep workspace tidy
     pdf_path = Path(settings.upload_temp_dir) / "pdf" / f"{pdf_process_id}.pdf"

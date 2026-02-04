@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.api.deps import get_db
-from app.core.auth import hash_api_key
 from app.core import database as core_database
+from app.core.auth import hash_api_key
 from app.main import app, settings
 from app.models.core.audit_event import AuditEvent
 from app.models.core.tenant import Tenant
@@ -77,7 +77,9 @@ async def client_audit_enabled(db_session_clean, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_audit_events_enabled_persists_write_event(client_audit_enabled, db_session_clean):
+async def test_audit_events_enabled_persists_write_event(
+    client_audit_enabled, db_session_clean
+):
     client, raw_key, tenant_id, api_key_id = client_audit_enabled
 
     # Tenant already exists; POST /api/tenants should be blocked with 409.

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from sqlalchemy import select
 
@@ -14,12 +13,14 @@ from app.models.core.tenant_user import TenantUser
 class BootstrapManagerResult:
     attempted: bool
     created: bool
-    reason: Optional[str] = None
-    tenant_code: Optional[str] = None
-    username: Optional[str] = None
+    reason: str | None = None
+    tenant_code: str | None = None
+    username: str | None = None
 
 
-async def bootstrap_manager_user_if_configured(*, async_session_factory, settings) -> BootstrapManagerResult:
+async def bootstrap_manager_user_if_configured(
+    *, async_session_factory, settings
+) -> BootstrapManagerResult:
     """Best-effort bootstrap for a tenant manager user.
 
     This is meant for first-time deployments and local/dev environments.
@@ -33,8 +34,12 @@ async def bootstrap_manager_user_if_configured(*, async_session_factory, setting
 
     username = (getattr(settings, "bootstrap_manager_username", "") or "").strip()
     password = (getattr(settings, "bootstrap_manager_password", "") or "").strip()
-    tenant_code = (getattr(settings, "bootstrap_manager_tenant_code", "") or "").strip() or None
-    must_change_password = bool(getattr(settings, "bootstrap_manager_must_change_password", False))
+    tenant_code = (
+        getattr(settings, "bootstrap_manager_tenant_code", "") or ""
+    ).strip() or None
+    must_change_password = bool(
+        getattr(settings, "bootstrap_manager_must_change_password", False)
+    )
 
     if not username or not password:
         return BootstrapManagerResult(
@@ -70,7 +75,9 @@ async def bootstrap_manager_user_if_configured(*, async_session_factory, setting
             if tenant_code:
                 tenant = (
                     await db.execute(
-                        select(Tenant).where(Tenant.code == tenant_code, Tenant.is_active == True)
+                        select(Tenant).where(
+                            Tenant.code == tenant_code, Tenant.is_active == True
+                        )
                     )
                 ).scalar_one_or_none()
                 if not tenant:
@@ -83,14 +90,18 @@ async def bootstrap_manager_user_if_configured(*, async_session_factory, setting
                     )
             else:
                 tenants = (
-                    await db.execute(select(Tenant).where(Tenant.is_active == True))
-                ).scalars().all()
+                    (await db.execute(select(Tenant).where(Tenant.is_active == True)))
+                    .scalars()
+                    .all()
+                )
                 if len(tenants) == 1:
                     tenant = tenants[0]
                 else:
                     tenant = (
                         await db.execute(
-                            select(Tenant).where(Tenant.is_default == True, Tenant.is_active == True)
+                            select(Tenant).where(
+                                Tenant.is_default == True, Tenant.is_active == True
+                            )
                         )
                     ).scalar_one_or_none()
                     if not tenant:

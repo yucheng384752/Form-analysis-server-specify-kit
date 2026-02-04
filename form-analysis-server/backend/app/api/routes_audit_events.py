@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -8,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_tenant
-from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.database import get_db
 from app.models.core.audit_event import AuditEvent
 from app.models.core.tenant import Tenant
 from app.schemas.audit_event import AuditEventResponse
@@ -17,10 +16,10 @@ from app.schemas.audit_event import AuditEventResponse
 router = APIRouter(tags=["Audit Events"])
 
 
-@router.get("/api/audit-events", response_model=List[AuditEventResponse])
+@router.get("/api/audit-events", response_model=list[AuditEventResponse])
 async def list_audit_events(
     request: Request,
-    action: Optional[str] = Query(None, description="Filter by action"),
+    action: str | None = Query(None, description="Filter by action"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -37,11 +36,11 @@ async def list_audit_events(
     return result.scalars().all()
 
 
-@router.get("/api/admin/audit-events", response_model=List[AuditEventResponse])
+@router.get("/api/admin/audit-events", response_model=list[AuditEventResponse])
 async def admin_list_audit_events(
     request: Request,
-    tenant_id: Optional[UUID] = Query(None, description="Optional tenant filter"),
-    action: Optional[str] = Query(None, description="Filter by action"),
+    tenant_id: UUID | None = Query(None, description="Optional tenant filter"),
+    action: str | None = Query(None, description="Filter by action"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -56,7 +55,9 @@ async def admin_list_audit_events(
     provided = request.headers.get(admin_header)
     is_admin_key = bool(provided and provided.strip() in admin_keys)
     if not (is_admin_state or is_admin_key):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required"
+        )
 
     stmt = select(AuditEvent)
     if tenant_id is not None:

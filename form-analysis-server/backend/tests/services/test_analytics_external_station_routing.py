@@ -34,15 +34,23 @@ def test_is_p3_produce_no_product_id_false() -> None:
 
 def test_normalize_station_selection_for_product_id_forces_p2() -> None:
     assert _normalize_station_selection_for_product_id(["P3"], "2507173_02_1") == ["P2"]
-    assert _normalize_station_selection_for_product_id(["ALL"], "2507173_01_1") == ["P2"]
+    assert _normalize_station_selection_for_product_id(["ALL"], "2507173_01_1") == [
+        "P2"
+    ]
     assert _normalize_station_selection_for_product_id([], "2507173_01_1") == ["P2"]
 
 
 def test_normalize_station_selection_for_product_id_forces_p3() -> None:
-    assert _normalize_station_selection_for_product_id(["P2"], "20250902_P21_238-3_302") == ["P3"]
-    assert _normalize_station_selection_for_product_id(["ALL"], "20250902_P21_238-3_302_dup9") == ["P3"]
+    assert _normalize_station_selection_for_product_id(
+        ["P2"], "20250902_P21_238-3_302"
+    ) == ["P3"]
+    assert _normalize_station_selection_for_product_id(
+        ["ALL"], "20250902_P21_238-3_302_dup9"
+    ) == ["P3"]
 
 
 def test_normalize_station_selection_for_product_id_passthrough() -> None:
     assert _normalize_station_selection_for_product_id(["P3"], None) == ["P3"]
-    assert _normalize_station_selection_for_product_id(["P2", "P3"], "P3-20250901-001") == ["P2", "P3"]
+    assert _normalize_station_selection_for_product_id(
+        ["P2", "P3"], "P3-20250901-001"
+    ) == ["P2", "P3"]

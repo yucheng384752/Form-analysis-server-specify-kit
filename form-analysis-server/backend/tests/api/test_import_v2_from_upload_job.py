@@ -8,8 +8,7 @@ from app.api.deps import get_db
 from app.main import app
 from app.models.core.schema_registry import TableRegistry
 from app.models.core.tenant import Tenant
-from app.models.import_job import ImportJob
-from app.models.import_job import ImportJobStatus
+from app.models.import_job import ImportJob, ImportJobStatus
 from app.models.p1_record import P1Record
 from app.services.import_v2 import ImportService
 
@@ -21,7 +20,9 @@ async def client(db_session_clean):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -29,7 +30,9 @@ async def client(db_session_clean):
 
 @pytest.mark.asyncio
 async def test_create_import_job_from_upload_job_and_commit(client, db_session_clean):
-    tenant = Tenant(name="T1", code=f"t1_{uuid.uuid4()}", is_default=True, is_active=True)
+    tenant = Tenant(
+        name="T1", code=f"t1_{uuid.uuid4()}", is_default=True, is_active=True
+    )
     db_session_clean.add(tenant)
     await db_session_clean.commit()
 
@@ -40,7 +43,13 @@ async def test_create_import_job_from_upload_job_and_commit(client, db_session_c
     upload_resp = await client.post(
         "/api/upload",
         headers={"X-Tenant-Id": str(tenant.id)},
-        files={"file": ("P1_2503033_01.csv", b"lot_no,quantity\n2503033_01,1\n", "text/csv")},
+        files={
+            "file": (
+                "P1_2503033_01.csv",
+                b"lot_no,quantity\n2503033_01,1\n",
+                "text/csv",
+            )
+        },
     )
     assert upload_resp.status_code == 200, upload_resp.text
     upload_process_id = uuid.UUID(str(upload_resp.json()["process_id"]))
@@ -68,14 +77,20 @@ async def test_create_import_job_from_upload_job_and_commit(client, db_session_c
 
     # Ensure job exists
     job = (
-        await db_session_clean.execute(select(ImportJob).where(ImportJob.id == job_id, ImportJob.tenant_id == tenant.id))
+        await db_session_clean.execute(
+            select(ImportJob).where(
+                ImportJob.id == job_id, ImportJob.tenant_id == tenant.id
+            )
+        )
     ).scalar_one()
     assert job.status == ImportJobStatus.COMPLETED
 
     # Verify P1Record created
     rec = (
         await db_session_clean.execute(
-            select(P1Record).where(P1Record.tenant_id == tenant.id, P1Record.lot_no_norm == 250303301)
+            select(P1Record).where(
+                P1Record.tenant_id == tenant.id, P1Record.lot_no_norm == 250303301
+            )
         )
     ).scalar_one_or_none()
     assert rec is not None

@@ -13,7 +13,7 @@ from app.core.config import get_settings
 from app.models.core.tenant import Tenant
 from app.models.pdf_conversion_job import PdfConversionJob, PdfConversionStatus
 from app.models.pdf_upload import PdfUpload
-from app.models.upload_job import UploadJob, JobStatus
+from app.models.upload_job import JobStatus, UploadJob
 from app.services import pdf_conversion
 
 
@@ -30,7 +30,9 @@ def _zip_base64_csvs(files: dict[str, str]) -> str:
 
 
 @pytest.mark.asyncio
-async def test_pdf_conversion_background_auto_ingests_into_upload_jobs(db_session_clean, test_engine, monkeypatch):
+async def test_pdf_conversion_background_auto_ingests_into_upload_jobs(
+    db_session_clean, test_engine, monkeypatch
+):
     # Ensure the middleware/background code path can open sessions.
     previous_factory = core_database.async_session_factory
     core_database.async_session_factory = async_sessionmaker(
@@ -40,7 +42,9 @@ async def test_pdf_conversion_background_auto_ingests_into_upload_jobs(db_sessio
     )
 
     # Fake external PDF server response (ZIP -> 2 CSV files).
-    async def fake_call_pdf_server_convert(*, pdf_bytes: bytes, filename: str, options=None):
+    async def fake_call_pdf_server_convert(
+        *, pdf_bytes: bytes, filename: str, options=None
+    ):
         assert pdf_bytes.startswith(b"%PDF-")
         return {
             "zip_base64": _zip_base64_csvs(
@@ -51,13 +55,17 @@ async def test_pdf_conversion_background_auto_ingests_into_upload_jobs(db_sessio
             )
         }
 
-    monkeypatch.setattr(pdf_conversion, "_call_pdf_server_convert", fake_call_pdf_server_convert)
+    monkeypatch.setattr(
+        pdf_conversion, "_call_pdf_server_convert", fake_call_pdf_server_convert
+    )
 
     settings = get_settings()
     base_dir = Path(settings.upload_temp_dir)
 
     # Create tenant + pdf upload record and write PDF to disk where the background task expects.
-    tenant = Tenant(name="T1", code=f"t1_{uuid.uuid4()}", is_default=True, is_active=True)
+    tenant = Tenant(
+        name="T1", code=f"t1_{uuid.uuid4()}", is_default=True, is_active=True
+    )
     db_session_clean.add(tenant)
     await db_session_clean.commit()
     await db_session_clean.refresh(tenant)
@@ -101,10 +109,19 @@ async def test_pdf_conversion_background_auto_ingests_into_upload_jobs(db_sessio
 
     # Verify UploadJobs created.
     jobs = (
-        await db_session_clean.execute(select(UploadJob).where(UploadJob.tenant_id == tenant.id))
-    ).scalars().all()
+        (
+            await db_session_clean.execute(
+                select(UploadJob).where(UploadJob.tenant_id == tenant.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert len(jobs) == 2
-    assert sorted([j.filename for j in jobs]) == ["P1_2503033_01.csv", "P2_2503033_01.csv"]
+    assert sorted([j.filename for j in jobs]) == [
+        "P1_2503033_01.csv",
+        "P2_2503033_01.csv",
+    ]
     assert all(j.status == JobStatus.PENDING for j in jobs)
     assert all(j.total_rows is None for j in jobs)
 

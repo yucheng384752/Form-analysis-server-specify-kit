@@ -8,17 +8,17 @@ from app.api.deps import get_db
 from app.main import app
 from app.models.core.tenant import Tenant
 
-# Legacy models (for endpoints that still fall back to legacy in single-tenant)
-from app.models.record import DataType, Record
-from app.models.p2_item import P2Item
-from app.models.p3_item import P3Item
-
 # V2 models
 from app.models.p1_record import P1Record
-from app.models.p2_record import P2Record
-from app.models.p3_record import P3Record
+from app.models.p2_item import P2Item
 from app.models.p2_item_v2 import P2ItemV2
+from app.models.p2_record import P2Record
+from app.models.p3_item import P3Item
 from app.models.p3_item_v2 import P3ItemV2
+from app.models.p3_record import P3Record
+
+# Legacy models (for endpoints that still fall back to legacy in single-tenant)
+from app.models.record import DataType, Record
 from app.utils.normalization import normalize_lot_no
 
 
@@ -29,7 +29,9 @@ async def client(db_session_clean):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -47,7 +49,9 @@ async def _create_tenant(db_session_clean) -> Tenant:
     return tenant
 
 
-async def _seed_legacy_records_for_pagination(db_session_clean) -> tuple[str, list[str]]:
+async def _seed_legacy_records_for_pagination(
+    db_session_clean,
+) -> tuple[str, list[str]]:
     lot_no = "1234567_01"
 
     # Set explicit created_at to make ordering deterministic.
@@ -89,7 +93,9 @@ async def _seed_legacy_records_for_pagination(db_session_clean) -> tuple[str, li
     return lot_no, [str(r1.id), str(r2.id), str(r3.id)]
 
 
-async def _seed_v2_records_for_pagination(db_session_clean, tenant: Tenant) -> tuple[str, list[str]]:
+async def _seed_v2_records_for_pagination(
+    db_session_clean, tenant: Tenant
+) -> tuple[str, list[str]]:
     lot_no = "1234567_01"
     lot_no_norm = normalize_lot_no(lot_no)
 
@@ -266,7 +272,9 @@ async def _seed_v2_all_types(db_session_clean, tenant: Tenant) -> str:
     return lot_no
 
 
-async def _seed_v2_p2_multi_winder_legacy_extras(db_session_clean, tenant: Tenant) -> str:
+async def _seed_v2_p2_multi_winder_legacy_extras(
+    db_session_clean, tenant: Tenant
+) -> str:
     lot_no = "2507173_99"
     lot_no_norm = normalize_lot_no(lot_no)
 
@@ -294,7 +302,9 @@ async def _seed_v2_p2_multi_winder_legacy_extras(db_session_clean, tenant: Tenan
 @pytest.mark.asyncio
 async def test_v2_records_returns_empty_when_no_conditions(client, db_session_clean):
     tenant = await _create_tenant(db_session_clean)
-    resp = await client.get("/api/v2/query/records", headers={"X-Tenant-Id": str(tenant.id)})
+    resp = await client.get(
+        "/api/v2/query/records", headers={"X-Tenant-Id": str(tenant.id)}
+    )
     assert resp.status_code == 200, resp.text
     payload = resp.json()
     assert payload["total_count"] == 0
@@ -390,9 +400,13 @@ async def test_legacy_records_data_type_filter(client, db_session_clean):
 
 
 @pytest.mark.asyncio
-async def test_legacy_advanced_returns_empty_when_no_conditions(client, db_session_clean):
+async def test_legacy_advanced_returns_empty_when_no_conditions(
+    client, db_session_clean
+):
     tenant = await _create_tenant(db_session_clean)
-    resp = await client.get("/api/v2/query/records/advanced", headers={"X-Tenant-Id": str(tenant.id)})
+    resp = await client.get(
+        "/api/v2/query/records/advanced", headers={"X-Tenant-Id": str(tenant.id)}
+    )
     assert resp.status_code == 200, resp.text
     payload = resp.json()
     assert payload["total_count"] == 0
@@ -446,7 +460,9 @@ async def test_legacy_advanced_winder_filters_p2_items_rows(client, db_session_c
 
 
 @pytest.mark.asyncio
-async def test_legacy_advanced_winder_does_not_return_p1_and_can_match_p3(client, db_session_clean):
+async def test_legacy_advanced_winder_does_not_return_p1_and_can_match_p3(
+    client, db_session_clean
+):
     tenant = await _create_tenant(db_session_clean)
     lot_no = "2507173_02"
     lot_no_norm = normalize_lot_no(lot_no)
@@ -512,7 +528,9 @@ async def test_legacy_advanced_winder_does_not_return_p1_and_can_match_p3(client
 
 
 @pytest.mark.asyncio
-async def test_legacy_advanced_p3_filters_machine_and_specification(client, db_session_clean):
+async def test_legacy_advanced_p3_filters_machine_and_specification(
+    client, db_session_clean
+):
     tenant = await _create_tenant(db_session_clean)
     lot_no = "2507173_03"
     lot_no_norm = normalize_lot_no(lot_no)
@@ -535,7 +553,11 @@ async def test_legacy_advanced_p3_filters_machine_and_specification(client, db_s
             lot_no=lot_no,
             source_winder=5,
             specification="PE 32",
-            row_data={"specification": "PE 32", "machine_no": "P24", "product_id": product_id},
+            row_data={
+                "specification": "PE 32",
+                "machine_no": "P24",
+                "product_id": product_id,
+            },
         )
     ]
     db_session_clean.add(p3)
@@ -543,7 +565,12 @@ async def test_legacy_advanced_p3_filters_machine_and_specification(client, db_s
 
     resp = await client.get(
         "/api/v2/query/records/advanced",
-        params={"machine_no": "P2", "p3_specification": "PE", "page": 1, "page_size": 10},
+        params={
+            "machine_no": "P2",
+            "p3_specification": "PE",
+            "page": 1,
+            "page_size": 10,
+        },
         headers={"X-Tenant-Id": str(tenant.id)},
     )
     assert resp.status_code == 200, resp.text

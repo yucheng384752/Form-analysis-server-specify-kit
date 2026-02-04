@@ -1,16 +1,16 @@
 import uuid
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
-from app.main import app
 from app.api.deps import get_db
+from app.main import app
 from app.models.core.tenant import Tenant
 from app.models.p1_record import P1Record
-from app.models.p2_record import P2Record
-from app.models.p3_record import P3Record
 from app.models.p2_item_v2 import P2ItemV2
+from app.models.p2_record import P2Record
 from app.models.p3_item_v2 import P3ItemV2
+from app.models.p3_record import P3Record
 from app.utils.normalization import normalize_lot_no
 
 
@@ -21,7 +21,9 @@ async def client(db_session):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -124,7 +126,9 @@ async def test_advanced_query_invalid_winder_returns_400(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_advanced_query_winder_with_data_type_p1_returns_empty(client, db_session):
+async def test_advanced_query_winder_with_data_type_p1_returns_empty(
+    client, db_session
+):
     tenant = Tenant(
         name=f"Test Tenant {uuid.uuid4()}",
         code=f"test_tenant_{uuid.uuid4()}",

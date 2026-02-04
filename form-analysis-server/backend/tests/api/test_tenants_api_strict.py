@@ -38,7 +38,9 @@ async def test_get_tenants_initially_empty(client):
 @pytest.mark.asyncio
 async def test_create_tenant_only_when_empty_then_409(client):
     # Create with empty JSON body -> should use defaults.
-    create = await client.post("/api/tenants", json={}, headers={"X-Admin-API-Key": "test-admin-key"})
+    create = await client.post(
+        "/api/tenants", json={}, headers={"X-Admin-API-Key": "test-admin-key"}
+    )
     assert create.status_code == 201, create.text
 
     body = create.json()
@@ -49,7 +51,9 @@ async def test_create_tenant_only_when_empty_then_409(client):
     assert body["is_active"] is True
 
     # Second create must be blocked.
-    create2 = await client.post("/api/tenants", json={}, headers={"X-Admin-API-Key": "test-admin-key"})
+    create2 = await client.post(
+        "/api/tenants", json={}, headers={"X-Admin-API-Key": "test-admin-key"}
+    )
     assert create2.status_code == 409, create2.text
     assert create2.json().get("detail") == "Tenant already exists"
 

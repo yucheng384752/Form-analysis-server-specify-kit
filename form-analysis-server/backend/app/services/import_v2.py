@@ -1,29 +1,30 @@
 import csv
 import json
+import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-import logging
+from typing import Any
 
-from sqlalchemy import select, func, delete
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.import_job import ImportJob, ImportFile, StagingRow, ImportJobStatus
 from app.models.core.schema_registry import TableRegistry
-from app.utils.normalization import normalize_lot_no
-from app.services.csv_field_mapper import CSVFieldMapper, csv_field_mapper
+from app.models.import_job import ImportJob, ImportJobStatus, StagingRow
 from app.services.audit_events import write_audit_event_best_effort
+from app.services.csv_field_mapper import CSVFieldMapper, csv_field_mapper
+from app.utils.normalization import normalize_lot_no
 
 logger = logging.getLogger(__name__)
+
 
 class ImportService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    def _extract_lot_no_from_row_dict(self, row: Dict[str, Any]) -> Optional[str]:
+    def _extract_lot_no_from_row_dict(self, row: dict[str, Any]) -> str | None:
         if not row or not isinstance(row, dict):
             return None
         for field in CSVFieldMapper.LOT_NO_FIELD_NAMES:
@@ -35,7 +36,7 @@ class ImportService:
                 return s
         return None
 
-    def _canonicalize_lot_no_raw(self, val: str) -> Optional[str]:
+    def _canonicalize_lot_no_raw(self, val: str) -> str | None:
         """Return canonical 7+2 lot in underscore form, or None if invalid."""
         s = str(val or "").strip()
         if not s:
@@ -45,7 +46,9 @@ class ImportService:
             return None
         return f"{m.group(1)}_{m.group(2).zfill(2)}"
 
-    def _extract_file_lot_no_raw_or_raise(self, row_data: List[Dict[str, Any]], *, table_code: str) -> str:
+    def _extract_file_lot_no_raw_or_raise(
+        self, row_data: list[dict[str, Any]], *, table_code: str
+    ) -> str:
         """Extract a single lot_no for a file from row content.
 
         For P1/P2 we expect one lot per file.
@@ -62,7 +65,9 @@ class ImportService:
         if not seen:
             raise ValueError(f"{table_code} file is missing lot_no in content")
         if len(seen) > 1:
-            raise ValueError(f"{table_code} file contains multiple lot_no values: {sorted(seen)}")
+            raise ValueError(
+                f"{table_code} file contains multiple lot_no values: {sorted(seen)}"
+            )
         return next(iter(seen))
 
     def _touch_status(
@@ -70,12 +75,12 @@ class ImportService:
         job: ImportJob,
         status: str,
         *,
-        actor_api_key_id: Optional[uuid.UUID] = None,
-        actor_label_snapshot: Optional[str] = None,
+        actor_api_key_id: uuid.UUID | None = None,
+        actor_label_snapshot: str | None = None,
         actor_kind: str = "system",
     ) -> None:
         job.status = status
-        job.last_status_changed_at = datetime.now(timezone.utc)
+        job.last_status_changed_at = datetime.now(UTC)
         job.last_status_actor_kind = actor_kind
         job.last_status_actor_api_key_id = actor_api_key_id
         job.last_status_actor_label_snapshot = actor_label_snapshot
@@ -90,7 +95,7 @@ class ImportService:
             return f"{parts[0]}_{parts[1].zfill(2)}"
         return s
 
-    def _row_signature_for_dedupe(self, row: Dict[str, Any]) -> str:
+    def _row_signature_for_dedupe(self, row: dict[str, Any]) -> str:
         """Compute a stable signature for a parsed CSV row.
 
         This is an *exact-match* dedupe helper (after light normalization), used to
@@ -99,7 +104,7 @@ class ImportService:
         if not isinstance(row, dict):
             return ""
 
-        normalized: Dict[str, Any] = {}
+        normalized: dict[str, Any] = {}
         for k, v in row.items():
             key = str(k).strip()
             if key == "":
@@ -111,11 +116,13 @@ class ImportService:
             normalized[key] = s
 
         # JSON canonicalization: stable order, stable separators.
-        return json.dumps(normalized, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        return json.dumps(
+            normalized, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        )
 
-    def _dedupe_rows_exact(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _dedupe_rows_exact(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen: set[str] = set()
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for r in rows or []:
             if not isinstance(r, dict):
                 continue
@@ -140,12 +147,14 @@ class ImportService:
             return ""
         return str(v).strip()
 
-    def _row_completeness_score(self, row: Dict[str, Any]) -> int:
+    def _row_completeness_score(self, row: dict[str, Any]) -> int:
         if not isinstance(row, dict):
             return 0
         return sum(1 for v in row.values() if not self._is_empty_value(v))
 
-    def _merge_rows_prefer_complete(self, rows: List[Dict[str, Any]]) -> tuple[Optional[Dict[str, Any]], int]:
+    def _merge_rows_prefer_complete(
+        self, rows: list[dict[str, Any]]
+    ) -> tuple[dict[str, Any] | None, int]:
         """Merge multiple parsed rows into one.
 
         Used for "mostly same" cases: same business key (P1: lot; P2: lot+winder)
@@ -161,7 +170,7 @@ class ImportService:
             return None, 0
 
         material_rows.sort(key=self._row_completeness_score, reverse=True)
-        merged: Dict[str, Any] = dict(material_rows[0])
+        merged: dict[str, Any] = dict(material_rows[0])
         conflicts = 0
 
         for r in material_rows[1:]:
@@ -185,15 +194,19 @@ class ImportService:
         self,
         job_id: uuid.UUID,
         *,
-        actor_api_key_id: Optional[uuid.UUID] = None,
-        actor_label_snapshot: Optional[str] = None,
+        actor_api_key_id: uuid.UUID | None = None,
+        actor_label_snapshot: str | None = None,
         actor_kind: str = "system",
     ) -> ImportJob:
         """
         Parse all files in the import job and populate staging_rows.
         """
         # 1. Fetch Job with Files
-        stmt = select(ImportJob).options(selectinload(ImportJob.files)).where(ImportJob.id == job_id)
+        stmt = (
+            select(ImportJob)
+            .options(selectinload(ImportJob.files))
+            .where(ImportJob.id == job_id)
+        )
         result = await self.db.execute(stmt)
         job = result.scalar_one_or_none()
 
@@ -229,7 +242,7 @@ class ImportService:
         )
 
         total_rows_job = 0
-        
+
         try:
             for file_record in job.files:
                 file_path = Path(file_record.storage_path)
@@ -240,35 +253,39 @@ class ImportService:
                 # Parse CSV
                 rows_to_insert = []
                 row_count_file = 0
-                
+
                 # TODO: Handle encoding detection if needed. Defaulting to utf-8-sig for now.
                 try:
-                    with open(file_path, mode='r', encoding='utf-8-sig', newline='') as csvfile:
+                    with open(file_path, encoding="utf-8-sig", newline="") as csvfile:
                         reader = csv.DictReader(csvfile)
-                        
-                        # Normalize headers? 
+
+                        # Normalize headers?
                         # For now, we assume headers match the keys we want or we store raw dict.
-                        
+
                         for i, row in enumerate(reader, start=1):
                             # Basic cleanup: strip whitespace from keys and values
-                            clean_row = {k.strip(): v.strip() for k, v in row.items() if k}
-                            
+                            clean_row = {
+                                k.strip(): v.strip() for k, v in row.items() if k
+                            }
+
                             staging_row = StagingRow(
                                 id=uuid.uuid4(),
                                 job_id=job.id,
                                 file_id=file_record.id,
                                 row_index=i,
                                 parsed_json=clean_row,
-                                is_valid=True, # Assume valid until validation step
-                                errors_json=[]
+                                is_valid=True,  # Assume valid until validation step
+                                errors_json=[],
                             )
                             rows_to_insert.append(staging_row)
                             row_count_file += 1
-                            
+
                             # Batch insert every 1000 rows to avoid memory issues
                             if len(rows_to_insert) >= 1000:
                                 self.db.add_all(rows_to_insert)
-                                await self.db.flush() # Flush to send to DB but not commit yet
+                                await (
+                                    self.db.flush()
+                                )  # Flush to send to DB but not commit yet
                                 rows_to_insert = []
 
                     # Insert remaining rows
@@ -279,13 +296,15 @@ class ImportService:
                     # Update file row count
                     file_record.row_count = row_count_file
                     total_rows_job += row_count_file
-                    
+
                 except UnicodeDecodeError:
                     # Fallback to cp950 (Big5) commonly used in Taiwan/Windows
-                     with open(file_path, mode='r', encoding='cp950', newline='') as csvfile:
+                    with open(file_path, encoding="cp950", newline="") as csvfile:
                         reader = csv.DictReader(csvfile)
                         for i, row in enumerate(reader, start=1):
-                            clean_row = {k.strip(): v.strip() for k, v in row.items() if k}
+                            clean_row = {
+                                k.strip(): v.strip() for k, v in row.items() if k
+                            }
                             staging_row = StagingRow(
                                 id=uuid.uuid4(),
                                 job_id=job.id,
@@ -293,7 +312,7 @@ class ImportService:
                                 row_index=i,
                                 parsed_json=clean_row,
                                 is_valid=True,
-                                errors_json=[]
+                                errors_json=[],
                             )
                             rows_to_insert.append(staging_row)
                             row_count_file += 1
@@ -304,9 +323,9 @@ class ImportService:
                         if rows_to_insert:
                             self.db.add_all(rows_to_insert)
                             await self.db.flush()
-                            
-                     file_record.row_count = row_count_file
-                     total_rows_job += row_count_file
+
+                    file_record.row_count = row_count_file
+                    total_rows_job += row_count_file
 
             # 3. Update Job Status to VALIDATING (or READY if we skip validation for now)
             # The plan implies validation is next.
@@ -319,7 +338,7 @@ class ImportService:
                 actor_label_snapshot=actor_label_snapshot,
                 actor_kind=actor_kind,
             )
-            
+
             await self.db.commit()
 
             await write_audit_event_best_effort(
@@ -378,28 +397,32 @@ class ImportService:
         self,
         job_id: uuid.UUID,
         *,
-        actor_api_key_id: Optional[uuid.UUID] = None,
-        actor_label_snapshot: Optional[str] = None,
+        actor_api_key_id: uuid.UUID | None = None,
+        actor_label_snapshot: str | None = None,
         actor_kind: str = "system",
     ) -> ImportJob:
         """
         Validate staging rows against schema.
         """
         # 1. Fetch Job with Table info and Files
-        stmt = select(ImportJob).options(selectinload(ImportJob.files)).where(ImportJob.id == job_id)
+        stmt = (
+            select(ImportJob)
+            .options(selectinload(ImportJob.files))
+            .where(ImportJob.id == job_id)
+        )
         result = await self.db.execute(stmt)
         job = result.scalar_one_or_none()
 
         if not job:
             raise ValueError(f"Import job {job_id} not found")
-            
+
         # Fetch table code to determine validation rules
         table_stmt = select(TableRegistry).where(TableRegistry.id == job.table_id)
         table_result = await self.db.execute(table_stmt)
         table = table_result.scalar_one_or_none()
-        
+
         if not table:
-             raise ValueError(f"Table for job {job_id} not found")
+            raise ValueError(f"Table for job {job_id} not found")
 
         # Map file_id to filename
         file_map = {f.id: f.filename for f in job.files}
@@ -408,8 +431,8 @@ class ImportService:
         # Import V2 目前採用「一個檔案 → 1 筆 records + N 筆 items」的混合架構。
         # 因此 staging_rows 不應以「同一檔案內 key 重複」判錯（會把多列 items 全打成 invalid）。
         # 這裡僅做非常保守的欄位檢查；真正的欄位映射/解析放在 commit_job。
-        required_fields: List[str] = []
-        numeric_fields: List[str] = []
+        required_fields: list[str] = []
+        numeric_fields: list[str] = []
 
         # lot_no 驗證：一律從內容欄位抓取
         lot_no_pattern = re.compile(r"^\d{7}_\d{2}$")
@@ -419,27 +442,36 @@ class ImportService:
         offset = 0
         limit = 1000
         error_count_job = 0
-        
+
         while True:
-            rows_stmt = select(StagingRow).where(StagingRow.job_id == job_id).offset(offset).limit(limit)
+            rows_stmt = (
+                select(StagingRow)
+                .where(StagingRow.job_id == job_id)
+                .offset(offset)
+                .limit(limit)
+            )
             rows_result = await self.db.execute(rows_stmt)
             rows = rows_result.scalars().all()
-            
+
             if not rows:
                 break
-                
+
             for row in rows:
                 errors = []
                 data = row.parsed_json
-                filename = file_map.get(row.file_id, "")
+                _filename = file_map.get(row.file_id, "")
 
                 # LOT NO validation (all tables): extract from row content
-                lot_no_val = self._extract_lot_no_from_row_dict(data if isinstance(data, dict) else {})
+                lot_no_val = self._extract_lot_no_from_row_dict(
+                    data if isinstance(data, dict) else {}
+                )
                 if not lot_no_val:
-                    errors.append({
-                        "field": "lot_no",
-                        "message": "Missing lot_no in row content",
-                    })
+                    errors.append(
+                        {
+                            "field": "lot_no",
+                            "message": "Missing lot_no in row content",
+                        }
+                    )
                 else:
                     m = lot_no_flexible_pattern.match(str(lot_no_val).strip())
                     canonical = f"{m.group(1)}_{m.group(2).zfill(2)}" if m else None
@@ -447,31 +479,39 @@ class ImportService:
                     if table.table_code in ("P1", "P2"):
                         # P1/P2 enforce strict 7+2 format
                         if not canonical or not lot_no_pattern.match(canonical):
-                            errors.append({
-                                "field": "lot_no",
-                                "message": f"Invalid lot_no format: {lot_no_val}",
-                            })
+                            errors.append(
+                                {
+                                    "field": "lot_no",
+                                    "message": f"Invalid lot_no format: {lot_no_val}",
+                                }
+                            )
                     elif table.table_code == "P3":
                         # P3 allows suffixes (e.g. 2507173_02_18) but must still start with 7+2
                         if not canonical:
-                            errors.append({
-                                "field": "lot_no",
-                                "message": f"Invalid lot_no format: {lot_no_val}",
-                            })
-                
+                            errors.append(
+                                {
+                                    "field": "lot_no",
+                                    "message": f"Invalid lot_no format: {lot_no_val}",
+                                }
+                            )
+
                 # Check required fields
                 for field in required_fields:
                     if field not in data or not data[field]:
-                        errors.append({"field": field, "message": "Missing required field"})
-                
+                        errors.append(
+                            {"field": field, "message": "Missing required field"}
+                        )
+
                 # Check numeric fields
                 for field in numeric_fields:
                     if field in data and data[field]:
                         try:
                             float(data[field])
                         except ValueError:
-                            errors.append({"field": field, "message": "Value must be numeric"})
-                
+                            errors.append(
+                                {"field": field, "message": "Value must be numeric"}
+                            )
+
                 if errors:
                     row.is_valid = False
                     row.errors_json = errors
@@ -479,7 +519,7 @@ class ImportService:
                 else:
                     row.is_valid = True
                     row.errors_json = []
-            
+
             # Flush changes for this chunk
             await self.db.flush()
             offset += limit
@@ -520,8 +560,8 @@ class ImportService:
         self,
         job_id: uuid.UUID,
         *,
-        actor_api_key_id: Optional[uuid.UUID] = None,
-        actor_label_snapshot: Optional[str] = None,
+        actor_api_key_id: uuid.UUID | None = None,
+        actor_label_snapshot: str | None = None,
         actor_kind: str = "system",
     ) -> ImportJob:
         """
@@ -529,17 +569,26 @@ class ImportService:
         """
         logger.info(f"Starting commit_job for {job_id}")
         # 1. Fetch Job
-        stmt = select(ImportJob).options(selectinload(ImportJob.files)).where(ImportJob.id == job_id)
+        stmt = (
+            select(ImportJob)
+            .options(selectinload(ImportJob.files))
+            .where(ImportJob.id == job_id)
+        )
         result = await self.db.execute(stmt)
         job = result.scalar_one_or_none()
 
         if not job:
             logger.error(f"Import job {job_id} not found")
             raise ValueError(f"Import job {job_id} not found")
-            
-        if job.status != ImportJobStatus.READY and job.status != ImportJobStatus.COMMITTING:
-             logger.error(f"Job {job_id} is not ready to commit (status: {job.status})")
-             raise ValueError(f"Job {job_id} is not ready to commit (status: {job.status})")
+
+        if (
+            job.status != ImportJobStatus.READY
+            and job.status != ImportJobStatus.COMMITTING
+        ):
+            logger.error(f"Job {job_id} is not ready to commit (status: {job.status})")
+            raise ValueError(
+                f"Job {job_id} is not ready to commit (status: {job.status})"
+            )
 
         # Update status (only when transitioning from READY)
         if job.status == ImportJobStatus.READY:
@@ -574,68 +623,82 @@ class ImportService:
         table_stmt = select(TableRegistry).where(TableRegistry.id == job.table_id)
         table_result = await self.db.execute(table_stmt)
         table = table_result.scalar_one_or_none()
-        
-        if not table:
-             logger.error(f"Table for job {job_id} not found")
-             raise ValueError(f"Table for job {job_id} not found")
 
-        logger.info(f"Commit job {job_id}: Table code {table.table_code}, Files: {len(job.files)}")
+        if not table:
+            logger.error(f"Table for job {job_id} not found")
+            raise ValueError(f"Table for job {job_id} not found")
+
+        logger.info(
+            f"Commit job {job_id}: Table code {table.table_code}, Files: {len(job.files)}"
+        )
 
         try:
             # Collect per-key rows across files in the *same job* for dedupe/merge.
             # This helps when users upload split files or mostly-identical files.
-            p1_rows_by_lot_norm: Dict[int, List[Dict[str, Any]]] = {}
-            p1_lot_raw_by_norm: Dict[int, str] = {}
+            p1_rows_by_lot_norm: dict[int, list[dict[str, Any]]] = {}
+            p1_lot_raw_by_norm: dict[int, str] = {}
 
-            p2_rows_by_key: Dict[tuple[int, int], List[Dict[str, Any]]] = {}
-            p2_lot_raw_by_norm: Dict[int, str] = {}
+            p2_rows_by_key: dict[tuple[int, int], list[dict[str, Any]]] = {}
+            p2_lot_raw_by_norm: dict[int, str] = {}
 
             # Process by file
             for file_record in job.files:
-                logger.info(f"Processing file {file_record.filename} (ID: {file_record.id})")
+                logger.info(
+                    f"Processing file {file_record.filename} (ID: {file_record.id})"
+                )
                 # Get staging rows
-                rows_stmt = select(StagingRow).where(
-                    StagingRow.file_id == file_record.id,
-                    StagingRow.is_valid == True
-                ).order_by(StagingRow.row_index)
-                
+                rows_stmt = (
+                    select(StagingRow)
+                    .where(
+                        StagingRow.file_id == file_record.id,
+                        StagingRow.is_valid == True,
+                    )
+                    .order_by(StagingRow.row_index)
+                )
+
                 rows_result = await self.db.execute(rows_stmt)
                 rows = rows_result.scalars().all()
-                
+
                 if not rows:
                     continue
 
                 # Prepare Data
                 row_data = [r.parsed_json for r in rows]
-                
+
                 if table.table_code == "P1":
                     from app.models.p1_record import P1Record
 
-                    lot_no_raw = self._extract_file_lot_no_raw_or_raise(row_data, table_code="P1")
+                    lot_no_raw = self._extract_file_lot_no_raw_or_raise(
+                        row_data, table_code="P1"
+                    )
                     lot_no_norm = normalize_lot_no(lot_no_raw)
                     p1_lot_raw_by_norm.setdefault(lot_no_norm, lot_no_raw)
                     p1_rows_by_lot_norm.setdefault(lot_no_norm, []).extend(
                         [r for r in row_data if isinstance(r, dict)]
                     )
                     continue
-                
-                elif table.table_code == "P2":
-                    from app.models.p2_record import P2Record
-                    from app.models.p2_item_v2 import P2ItemV2
 
-                    lot_no_raw = self._extract_file_lot_no_raw_or_raise(row_data, table_code="P2")
+                elif table.table_code == "P2":
+                    from app.models.p2_item_v2 import P2ItemV2
+                    from app.models.p2_record import P2Record
+
+                    lot_no_raw = self._extract_file_lot_no_raw_or_raise(
+                        row_data, table_code="P2"
+                    )
                     lot_no_norm = normalize_lot_no(lot_no_raw)
 
                     p2_lot_raw_by_norm.setdefault(lot_no_norm, lot_no_raw)
-                    
+
                     # P2 匯入：
                     # - 支援「單檔單一 winder」（例如檔名含 _05 或內容只有一列）
                     # - 也支援「單檔多個 winder」（內容多列且每列帶 winder_number）
                     #
                     # 目前資料模型以 (tenant_id, lot_no_norm, winder_number) 為 key 建立/更新 P2Record。
-                    winder_num_for_file = self._extract_p2_info(file_record.filename, row_data)
+                    winder_num_for_file = self._extract_p2_info(
+                        file_record.filename, row_data
+                    )
 
-                    def _extract_winder_from_row(row: Dict[str, Any]) -> int | None:
+                    def _extract_winder_from_row(row: dict[str, Any]) -> int | None:
                         for field in CSVFieldMapper.WINDER_NUMBER_FIELD_NAMES:
                             v = row.get(field)
                             if v is None or v == "":
@@ -646,7 +709,7 @@ class ImportService:
                                 continue
                         return None
 
-                    rows_by_winder: Dict[int, List[Dict[str, Any]]] = {}
+                    rows_by_winder: dict[int, list[dict[str, Any]]] = {}
                     if row_data:
                         for r0 in row_data:
                             if not isinstance(r0, dict):
@@ -658,10 +721,14 @@ class ImportService:
 
                     # 若內容沒有任何可用的 winder_number，視為單一 winder 檔案（用檔名/第一列推導的 winder）
                     if not rows_by_winder and row_data:
-                        rows_by_winder[winder_num_for_file] = [r for r in row_data if isinstance(r, dict)]
+                        rows_by_winder[winder_num_for_file] = [
+                            r for r in row_data if isinstance(r, dict)
+                        ]
 
                     if not rows_by_winder:
-                        logger.warning(f"P2 import has no rows (filename={file_record.filename})")
+                        logger.warning(
+                            f"P2 import has no rows (filename={file_record.filename})"
+                        )
                         continue
 
                     for winder_num, winder_rows in rows_by_winder.items():
@@ -674,20 +741,25 @@ class ImportService:
                     continue
 
                 elif table.table_code == "P3":
-                    from app.models.p3_record import P3Record
                     from app.models.p3_item_v2 import P3ItemV2
-                    
+                    from app.models.p3_record import P3Record
+
                     # P3 改用混合架構: 依 lot_no 分組 → 每個 lot 1筆 p3_records + N筆 p3_items_v2
                     # 注意：你的檔名 (例如 P3_0902_P24 copy.csv) 不包含 lot_no，不能用檔名推 lot。
 
                     p3_info = self._extract_p3_info(file_record.filename, row_data)
 
                     # Group rows by lot_no_norm extracted from row content
-                    groups: Dict[int, Dict[str, Any]] = {}
+                    groups: dict[int, dict[str, Any]] = {}
                     for row in row_data:
                         # Skip completely blank CSV rows (common in real exports)
-                        if not row or not isinstance(row, dict) or all(
-                            (v is None) or (str(v).strip() == "") for v in row.values()
+                        if (
+                            not row
+                            or not isinstance(row, dict)
+                            or all(
+                                (v is None) or (str(v).strip() == "")
+                                for v in row.values()
+                            )
                         ):
                             continue
 
@@ -709,11 +781,16 @@ class ImportService:
 
                         lot_norm_row = normalize_lot_no(lot_from_row)
                         if lot_norm_row not in groups:
-                            groups[lot_norm_row] = {"lot_no_raw": lot_from_row, "rows": []}
+                            groups[lot_norm_row] = {
+                                "lot_no_raw": lot_from_row,
+                                "rows": [],
+                            }
                         groups[lot_norm_row]["rows"].append(row)
 
                     if not groups:
-                        logger.warning(f"P3 import produced no groups (filename={file_record.filename})")
+                        logger.warning(
+                            f"P3 import produced no groups (filename={file_record.filename})"
+                        )
 
                     for lot_norm_row, payload in groups.items():
                         group_lot_raw = payload["lot_no_raw"]
@@ -725,14 +802,21 @@ class ImportService:
                             P3Record.lot_no_norm == lot_norm_row,
                             P3Record.machine_no == p3_info["machine_no"],
                             P3Record.mold_no == p3_info["mold_no"],
-                            P3Record.production_date_yyyymmdd == p3_info["production_date_yyyymmdd"]
+                            P3Record.production_date_yyyymmdd
+                            == p3_info["production_date_yyyymmdd"],
                         )
                         existing_result = await self.db.execute(existing_stmt)
                         p3_record = existing_result.scalar_one_or_none()
 
                         # Generate product_id for P3Record
-                        production_date_yyyymmdd = int(p3_info.get("production_date_yyyymmdd") or 0)
-                        date_str = f"{production_date_yyyymmdd:08d}" if production_date_yyyymmdd else ""
+                        production_date_yyyymmdd = int(
+                            p3_info.get("production_date_yyyymmdd") or 0
+                        )
+                        date_str = (
+                            f"{production_date_yyyymmdd:08d}"
+                            if production_date_yyyymmdd
+                            else ""
+                        )
                         lot_part_raw = None
                         if group_rows:
                             for field in CSVFieldMapper.LOT_FIELD_NAMES:
@@ -741,7 +825,11 @@ class ImportService:
                                     break
                         lot_part: int
                         try:
-                            lot_part = int(float(lot_part_raw)) if lot_part_raw is not None else 0
+                            lot_part = (
+                                int(float(lot_part_raw))
+                                if lot_part_raw is not None
+                                else 0
+                            )
                         except (ValueError, TypeError):
                             lot_part = 0
 
@@ -755,11 +843,13 @@ class ImportService:
                                 lot_no_raw=group_lot_raw,
                                 lot_no_norm=lot_norm_row,
                                 schema_version_id=job.schema_version_id,
-                                production_date_yyyymmdd=p3_info["production_date_yyyymmdd"],
+                                production_date_yyyymmdd=p3_info[
+                                    "production_date_yyyymmdd"
+                                ],
                                 machine_no=p3_info["machine_no"],
                                 mold_no=p3_info["mold_no"],
                                 product_id=product_id,
-                                extras={}
+                                extras={},
                             )
                             self.db.add(p3_record)
                             await self.db.flush()
@@ -769,7 +859,9 @@ class ImportService:
 
                         # Delete existing items for this record (if re-importing)
                         await self.db.execute(
-                            delete(P3ItemV2).where(P3ItemV2.p3_record_id == p3_record.id)
+                            delete(P3ItemV2).where(
+                                P3ItemV2.p3_record_id == p3_record.id
+                            )
                         )
                         # Ensure DELETE is flushed before INSERT to avoid unique constraint conflicts
                         await self.db.flush()
@@ -786,42 +878,47 @@ class ImportService:
                             item_source_winder = None
                             item_specification = None
                             item_bottom_tape_lot = None
-                            
+
                             # Map fields from row
                             for field in CSVFieldMapper.PRODUCT_ID_FIELD_NAMES:
                                 if field in row and row[field]:
                                     item_product_id = str(row[field]).strip()
                                     break
-                            
+
                             for field in CSVFieldMapper.LOT_NO_FIELD_NAMES:
                                 if field in row and row[field]:
                                     item_lot_no = str(row[field]).strip()
                                     break
-                            
+
                             for field in CSVFieldMapper.DATE_FIELD_NAMES:
                                 if field in row and row[field]:
                                     try:
-                                        ymd = csv_field_mapper._normalize_date_to_yyyymmdd(str(row[field]))
+                                        ymd = csv_field_mapper._normalize_date_to_yyyymmdd(
+                                            str(row[field])
+                                        )
                                         if ymd:
                                             year = ymd // 10000
                                             month = (ymd % 10000) // 100
                                             day = ymd % 100
                                             from datetime import date
-                                            item_production_date = date(year, month, day)
+
+                                            item_production_date = date(
+                                                year, month, day
+                                            )
                                             break
                                     except Exception:
                                         pass
-                            
+
                             for field in CSVFieldMapper.MACHINE_NO_FIELD_NAMES:
                                 if field in row and row[field]:
                                     item_machine_no = str(row[field]).strip()
                                     break
-                            
+
                             for field in CSVFieldMapper.MOLD_NO_FIELD_NAMES:
                                 if field in row and row[field]:
                                     item_mold_no = str(row[field]).strip()
                                     break
-                            
+
                             for field in CSVFieldMapper.LOT_FIELD_NAMES:
                                 if field in row and row[field]:
                                     try:
@@ -829,7 +926,7 @@ class ImportService:
                                     except (ValueError, TypeError):
                                         pass
                                     break
-                            
+
                             for field in CSVFieldMapper.SOURCE_WINDER_FIELD_NAMES:
                                 if field in row and row[field]:
                                     try:
@@ -837,17 +934,17 @@ class ImportService:
                                     except (ValueError, TypeError):
                                         pass
                                     break
-                            
+
                             for field in CSVFieldMapper.SPECIFICATION_FIELD_NAMES:
                                 if field in row and row[field]:
                                     item_specification = str(row[field]).strip()
                                     break
-                            
+
                             for field in CSVFieldMapper.BOTTOM_TAPE_LOT_FIELD_NAMES:
                                 if field in row and row[field]:
                                     item_bottom_tape_lot = str(row[field]).strip()
                                     break
-                            
+
                             # Create P3ItemV2
                             p3_item = P3ItemV2(
                                 id=uuid.uuid4(),
@@ -863,7 +960,7 @@ class ImportService:
                                 source_winder=item_source_winder,
                                 specification=item_specification,
                                 bottom_tape_lot=item_bottom_tape_lot,
-                                row_data=row
+                                row_data=row,
                             )
                             self.db.add(p3_item)
 
@@ -875,7 +972,9 @@ class ImportService:
                     lot_no_raw = p1_lot_raw_by_norm.get(lot_no_norm) or str(lot_no_norm)
                     # Business-key merge: one lot -> one merged row (but keep list wrapper for compatibility)
                     deduped_rows = self._dedupe_rows_exact(rows_for_lot)
-                    merged_row, conflict_count = self._merge_rows_prefer_complete(deduped_rows)
+                    merged_row, conflict_count = self._merge_rows_prefer_complete(
+                        deduped_rows
+                    )
                     if conflict_count:
                         logger.info(
                             f"P1 dedupe merge conflicts (tenant={job.tenant_id}, lot_no_norm={lot_no_norm}): {conflict_count}"
@@ -906,14 +1005,16 @@ class ImportService:
                         )
 
             if table.table_code == "P2":
-                from app.models.p2_record import P2Record
                 from app.models.p2_item_v2 import P2ItemV2
+                from app.models.p2_record import P2Record
 
                 for (lot_no_norm, winder_num), rows_for_key in p2_rows_by_key.items():
                     lot_no_raw = p2_lot_raw_by_norm.get(lot_no_norm) or str(lot_no_norm)
                     # Business-key merge: one (lot,winder) -> one merged row (but keep list wrapper)
                     deduped_rows = self._dedupe_rows_exact(rows_for_key)
-                    merged_row, conflict_count = self._merge_rows_prefer_complete(deduped_rows)
+                    merged_row, conflict_count = self._merge_rows_prefer_complete(
+                        deduped_rows
+                    )
                     if conflict_count:
                         logger.info(
                             f"P2 dedupe merge conflicts (tenant={job.tenant_id}, lot_no_norm={lot_no_norm}, winder={winder_num}): {conflict_count}"
@@ -947,7 +1048,9 @@ class ImportService:
                         p2_record.extras = {"rows": merged_rows}
                         p2_record.updated_at = func.now()
 
-                    await self.db.execute(delete(P2ItemV2).where(P2ItemV2.p2_record_id == p2_record.id))
+                    await self.db.execute(
+                        delete(P2ItemV2).where(P2ItemV2.p2_record_id == p2_record.id)
+                    )
                     await self.db.flush()
 
                     row = merged_rows[0]
@@ -960,17 +1063,17 @@ class ImportService:
                     )
 
                     for field in [
-                        'sheet_width',
-                        'thickness1',
-                        'thickness2',
-                        'thickness3',
-                        'thickness4',
-                        'thickness5',
-                        'thickness6',
-                        'thickness7',
-                        'appearance',
-                        'rough_edge',
-                        'slitting_result',
+                        "sheet_width",
+                        "thickness1",
+                        "thickness2",
+                        "thickness3",
+                        "thickness4",
+                        "thickness5",
+                        "thickness6",
+                        "thickness7",
+                        "appearance",
+                        "rough_edge",
+                        "slitting_result",
                     ]:
                         if field in row and row[field]:
                             try:
@@ -979,7 +1082,7 @@ class ImportService:
                                 pass
 
                     self.db.add(p2_item)
-                
+
             self._touch_status(
                 job,
                 ImportJobStatus.COMPLETED,
@@ -1000,13 +1103,17 @@ class ImportService:
                 action="import.job.status",
                 metadata={
                     "job_id": str(job.id),
-                    "from_status": getattr(ImportJobStatus.COMMITTING, "name", str(ImportJobStatus.COMMITTING)),
+                    "from_status": getattr(
+                        ImportJobStatus.COMMITTING,
+                        "name",
+                        str(ImportJobStatus.COMMITTING),
+                    ),
                     "to_status": getattr(job.status, "name", str(job.status)),
                     "actor_kind": actor_kind,
                 },
             )
             return job
-            
+
         except Exception as e:
             logger.exception(f"Error committing job {job_id}: {e}")
             # Ensure no partial writes are committed.
@@ -1056,11 +1163,11 @@ class ImportService:
         # Strip it first so the regular P1_/P2_/P3_ parsing still works.
         for test_prefix in ["_import_test_", "import_test_"]:
             if stem.lower().startswith(test_prefix):
-                stem = stem[len(test_prefix):]
+                stem = stem[len(test_prefix) :]
                 break
         for prefix in ["P1_", "P2_", "P3_", "QC_"]:
             if stem.upper().startswith(prefix):
-                stem = stem[len(prefix):]
+                stem = stem[len(prefix) :]
                 break
 
         # Normalize P1/P2 style lot numbers: keep only the first 7+2 segment
@@ -1071,21 +1178,21 @@ class ImportService:
 
         return stem
 
-    def _extract_p2_info(self, filename: str, row_data: List[Dict[str, Any]]) -> int:
+    def _extract_p2_info(self, filename: str, row_data: list[dict[str, Any]]) -> int:
         # Try to get winder from filename
         # Format: P2_LotNo_Winder.csv or P2_LotNo.csv (if winder in content)
-        parts = Path(filename).stem.split('_')
+        parts = Path(filename).stem.split("_")
         winder = None
-        
+
         # Try last part of filename if it's a number and length is small (e.g. 1, 01, 17)
         if len(parts) >= 3:
             last_part = parts[-1]
             if last_part.isdigit() and len(last_part) <= 2:
                 winder = int(last_part)
-        
+
         if winder is not None:
             return winder
-            
+
         # Try to get from content (first row)
         if row_data:
             first_row = row_data[0]
@@ -1095,51 +1202,55 @@ class ImportService:
                         return int(first_row[field])
                     except (ValueError, TypeError):
                         pass
-                        
+
         # Default or Error
         # For now, default to 1 if not found, but log warning
-        logger.warning(f"Could not extract winder number for {filename}, defaulting to 1")
+        logger.warning(
+            f"Could not extract winder number for {filename}, defaulting to 1"
+        )
         return 1
 
-    def _extract_p3_info(self, filename: str, row_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _extract_p3_info(
+        self, filename: str, row_data: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         info = {
             "production_date_yyyymmdd": 0,
             "machine_no": "UNKNOWN",
-            "mold_no": "UNKNOWN"
+            "mold_no": "UNKNOWN",
         }
-        
+
         # Try filename first
         # P3_YYYYMDD_MM_WW.csv
-        parts = Path(filename).stem.split('_')
-        
+        parts = Path(filename).stem.split("_")
+
         if len(parts) >= 4:
-             # P3_2507173_02_17 -> Date: 2507173, Machine: 02
-             # Wait, 2507173 is 7 digits. YYYYMDD? 2025-07-17?
-             # If so, YYYYMMDD = 20250717
-             date_str = parts[1]
-             machine_str = parts[2]
-             
-             if len(date_str) == 7:
-                 # 2507173 -> 20250717
-                 # First 2 digits are year (25 -> 2025)
-                 # Next 2 are month (07)
-                 # Next 2 are day (17)
-                 # Last digit? 3?
-                 # Wait, PRD says "YYYYMDD". 
-                 # 2024 11 01 2 -> 2411012.
-                 # 24 (Year) 11 (Month) 01 (Day) 2 (Shift/Seq?)
-                 # So date is 20241101.
-                 
-                 try:
+            # P3_2507173_02_17 -> Date: 2507173, Machine: 02
+            # Wait, 2507173 is 7 digits. YYYYMDD? 2025-07-17?
+            # If so, YYYYMMDD = 20250717
+            date_str = parts[1]
+            machine_str = parts[2]
+
+            if len(date_str) == 7:
+                # 2507173 -> 20250717
+                # First 2 digits are year (25 -> 2025)
+                # Next 2 are month (07)
+                # Next 2 are day (17)
+                # Last digit? 3?
+                # Wait, PRD says "YYYYMDD".
+                # 2024 11 01 2 -> 2411012.
+                # 24 (Year) 11 (Month) 01 (Day) 2 (Shift/Seq?)
+                # So date is 20241101.
+
+                try:
                     year = int("20" + date_str[:2])
                     month = int(date_str[2:4])
                     day = int(date_str[4:6])
                     info["production_date_yyyymmdd"] = year * 10000 + month * 100 + day
-                 except ValueError:
+                except ValueError:
                     pass
-                 
-             info["machine_no"] = machine_str
-             
+
+            info["machine_no"] = machine_str
+
         elif len(parts) >= 3:
             # P3_0902_P24 -> Date: 0902, Machine: P24
             date_str = parts[1]
@@ -1157,7 +1268,9 @@ class ImportService:
             for field in CSVFieldMapper.DATE_FIELD_NAMES:
                 if field in first_row and first_row[field]:
                     try:
-                        ymd = csv_field_mapper._normalize_date_to_yyyymmdd(str(first_row[field]))
+                        ymd = csv_field_mapper._normalize_date_to_yyyymmdd(
+                            str(first_row[field])
+                        )
                         if ymd:
                             info["production_date_yyyymmdd"] = ymd
                             break
@@ -1180,9 +1293,9 @@ class ImportService:
             for field in CSVFieldMapper.LOT_FIELD_NAMES:
                 if field in first_row and first_row[field]:
                     try:
-                        info['lot'] = int(float(first_row[field]))
+                        info["lot"] = int(float(first_row[field]))
                     except (ValueError, TypeError):
-                        info['lot'] = str(first_row[field])
+                        info["lot"] = str(first_row[field])
                     break
 
         # 最終保護：若仍無法取得日期，直接讓匯入失敗，避免寫入錯誤年份。

@@ -1,4 +1,5 @@
 import uuid
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -16,7 +17,9 @@ async def client(db_session_clean):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -61,8 +64,12 @@ async def _upload_and_commit_v2(
 
 
 @pytest.mark.asyncio
-async def test_import_v2_only_write_min_consistency_query_and_traceability(client, db_session_clean):
-    tenant = Tenant(name="T1", code=f"t1_{uuid.uuid4()}", is_default=True, is_active=True)
+async def test_import_v2_only_write_min_consistency_query_and_traceability(
+    client, db_session_clean
+):
+    tenant = Tenant(
+        name="T1", code=f"t1_{uuid.uuid4()}", is_default=True, is_active=True
+    )
     db_session_clean.add(tenant)
     await db_session_clean.commit()
 
@@ -83,10 +90,31 @@ async def test_import_v2_only_write_min_consistency_query_and_traceability(clien
     p3_csv = "year-month-day,Machine NO,Mold NO,lot no,lot,Source Winder\n114年09月02日,P24,238-2,2507173_02_17,301,17\n"
 
     # Import P1/P2/P3 through v2 jobs created from UploadJob (no legacy write assumptions)
-    await _upload_and_commit_v2(client, db_session_clean, str(tenant.id), "P1", "P1_2507173_02.csv", p1_csv.encode("utf-8"))
+    await _upload_and_commit_v2(
+        client,
+        db_session_clean,
+        str(tenant.id),
+        "P1",
+        "P1_2507173_02.csv",
+        p1_csv.encode("utf-8"),
+    )
     # winder inferred from filename when absent in rows
-    await _upload_and_commit_v2(client, db_session_clean, str(tenant.id), "P2", "P2_2507173_02_17.csv", p2_csv.encode("utf-8"))
-    await _upload_and_commit_v2(client, db_session_clean, str(tenant.id), "P3", "P3_0902_P24_copy.csv", p3_csv.encode("utf-8"))
+    await _upload_and_commit_v2(
+        client,
+        db_session_clean,
+        str(tenant.id),
+        "P2",
+        "P2_2507173_02_17.csv",
+        p2_csv.encode("utf-8"),
+    )
+    await _upload_and_commit_v2(
+        client,
+        db_session_clean,
+        str(tenant.id),
+        "P3",
+        "P3_0902_P24_copy.csv",
+        p3_csv.encode("utf-8"),
+    )
 
     # 1) v2 query should return records for this lot
     lot_search = "2507173_02"

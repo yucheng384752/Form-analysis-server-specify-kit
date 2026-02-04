@@ -15,7 +15,9 @@ def test_p1_missing_lot_no_still_errors_when_filename_has_no_lot():
 
     result = file_validation_service.validate_file(csv_bytes, "P1_no_lot.csv")
     assert result["invalid_rows"] == 1
-    assert any(e.get("error_code") == "REQUIRED_FIELD" for e in result.get("errors", []))
+    assert any(
+        e.get("error_code") == "REQUIRED_FIELD" for e in result.get("errors", [])
+    )
 
 
 def test_p3_does_not_fallback_from_filename_for_lot_no():
@@ -25,4 +27,6 @@ def test_p3_does_not_fallback_from_filename_for_lot_no():
     result = file_validation_service.validate_file(csv_bytes, "P3_2507173_02.csv")
     assert result["invalid_rows"] == 1
     # Error should point to missing lot field
-    assert any(e.get("error_code") == "REQUIRED_FIELD" for e in result.get("errors", []))
+    assert any(
+        e.get("error_code") == "REQUIRED_FIELD" for e in result.get("errors", [])
+    )

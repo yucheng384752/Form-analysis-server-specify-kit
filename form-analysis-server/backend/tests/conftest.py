@@ -1,13 +1,14 @@
 """
 測試套件配置和共用工具
 """
-import pytest
+
 import asyncio
-import os
 import logging
-from pathlib import Path
-from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+import os
+from collections.abc import AsyncGenerator
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 # 設置測試環境變數
@@ -17,14 +18,13 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///file:memdb1?mode=memory&cache=
 os.environ["ENVIRONMENT"] = "testing"
 os.environ["DEBUG"] = "true"
 
-from app.core.database import Base, init_db, close_db
+from app.core.database import Base
+from app.models.core.schema_registry import SchemaVersion, TableRegistry  # noqa: F401
 
 # Import models early so they are registered on Base.metadata before create_all.
-from app.models import UploadJob, Record, UploadError
 from app.models.core.tenant import Tenant  # noqa: F401
 from app.models.core.tenant_api_key import TenantApiKey  # noqa: F401
 from app.models.core.tenant_user import TenantUser  # noqa: F401
-from app.models.core.schema_registry import TableRegistry, SchemaVersion  # noqa: F401
 
 # 測試資料庫引擎 (使用 shared-cache 記憶體 SQLite)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///file:memdb1?mode=memory&cache=shared"
@@ -43,6 +43,7 @@ def pytest_configure(config: pytest.Config) -> None:
     logging.getLogger("app.core.middleware").setLevel(logging.WARNING)
     logging.getLogger("app.services.import_v2").setLevel(logging.WARNING)
 
+
 @pytest.fixture(scope="session")
 def event_loop():
     """創建事件循環供整個測試會話使用"""
@@ -50,10 +51,16 @@ def event_loop():
     yield loop
     loop.close()
 
+
 @pytest.fixture(scope="session")
 async def test_engine():
     """創建測試資料庫引擎"""
-    echo_sql = os.getenv("TEST_DATABASE_ECHO", "false").strip().lower() in {"1", "true", "yes", "y"}
+    echo_sql = os.getenv("TEST_DATABASE_ECHO", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }
     engine = create_async_engine(
         TEST_DATABASE_URL,
         echo=echo_sql,
@@ -63,27 +70,28 @@ async def test_engine():
             "uri": True,
         },
     )
-    
+
     # 創建所有表格
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     yield engine
-    
+
     # 清理
     await engine.dispose()
+
 
 @pytest.fixture(scope="function")
 async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """創建資料庫會話，每個測試函數都會有獨立的會話"""
-    
+
     # 創建會話工廠
     async_session_factory = async_sessionmaker(
         test_engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    
+
     async with async_session_factory() as session:
         try:
             yield session
@@ -112,6 +120,7 @@ async def db_session_clean(clean_db, test_engine) -> AsyncGenerator[AsyncSession
             await session.rollback()
             await session.close()
 
+
 @pytest.fixture(scope="function")
 async def clean_db(test_engine):
     """在每個測試前後清理資料庫"""
@@ -119,21 +128,24 @@ async def clean_db(test_engine):
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    
+
     yield
 
     # 測試後不 drop schema：避免影響未使用 clean_db 的後續測試。
 
+
 # 匯入模型枚舉和日期類型
-from app.models.upload_job import JobStatus
 import uuid
 from datetime import date
+
 from app.models.record import DataType
+from app.models.upload_job import JobStatus
+
 
 # 測試資料工廠
 class TestDataFactory:
     """測試資料工廠類"""
-    
+
     @staticmethod
     def upload_job_data(filename: str = "test_file.csv", **kwargs):
         """創建 UploadJob 測試資料"""
@@ -142,11 +154,11 @@ class TestDataFactory:
             "status": JobStatus.PENDING,
             "total_rows": 100,
             "valid_rows": 80,
-            "invalid_rows": 20
+            "invalid_rows": 20,
         }
         default_data.update(kwargs)
         return default_data
-    
+
     @staticmethod
     def record_data(lot_no: str = "1234567_01", **kwargs):
         """創建 Record 測試資料"""
@@ -155,11 +167,11 @@ class TestDataFactory:
             "data_type": DataType.P1,
             "product_name": "測試產品",
             "quantity": 100,
-            "production_date": date(2024, 1, 15)
+            "production_date": date(2024, 1, 15),
         }
         default_data.update(kwargs)
         return default_data
-    
+
     @staticmethod
     def upload_error_data(job_id: uuid.UUID, **kwargs):
         """創建 UploadError 測試資料"""
@@ -168,7 +180,7 @@ class TestDataFactory:
             "row_index": 1,
             "field": "test_field",
             "error_code": "INVALID_FORMAT",
-            "message": "測試驗證錯誤訊息"
+            "message": "測試驗證錯誤訊息",
         }
         default_data.update(kwargs)
         return default_data

@@ -15,14 +15,18 @@ async def client(db_session_clean):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
-async def test_v2_records_stats_requires_tenant_id_in_multitenant(client, db_session_clean, clean_db):
+async def test_v2_records_stats_requires_tenant_id_in_multitenant(
+    client, db_session_clean, clean_db
+):
     # Two tenants, no unique default -> must specify tenant.
     t1 = Tenant(
         name=f"Tenant {uuid.uuid4()}",

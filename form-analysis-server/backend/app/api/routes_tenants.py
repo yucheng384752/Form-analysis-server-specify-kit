@@ -1,17 +1,17 @@
-from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, func, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.database import get_db
 from app.models.core.tenant import Tenant
 
 router = APIRouter(tags=["Tenants"])
+
 
 class TenantResponse(BaseModel):
     id: UUID
@@ -22,7 +22,8 @@ class TenantResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-@router.get("/api/tenants", response_model=List[TenantResponse])
+
+@router.get("/api/tenants", response_model=list[TenantResponse])
 async def get_tenants(
     request: Request,
     include_inactive: bool = False,
@@ -64,7 +65,9 @@ class TenantCreateRequest(BaseModel):
     is_default: bool = True
 
 
-@router.post("/api/tenants", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/api/tenants", response_model=TenantResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_tenant(
     payload: TenantCreateRequest = Body(default_factory=TenantCreateRequest),
     request: Request = None,
@@ -81,14 +84,22 @@ async def create_tenant(
     admin_header = getattr(settings, "admin_api_key_header", "X-Admin-API-Key")
     admin_keys = getattr(settings, "admin_api_keys", set())
 
-    is_admin = bool(getattr(getattr(request, "state", None), "is_admin", False)) if request is not None else False
+    is_admin = (
+        bool(getattr(getattr(request, "state", None), "is_admin", False))
+        if request is not None
+        else False
+    )
     provided = request.headers.get(admin_header) if request is not None else None
     if not is_admin and not (provided and provided.strip() in admin_keys):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required"
+        )
 
     tenant_count = (await db.execute(select(func.count(Tenant.id)))).scalar() or 0
     if tenant_count > 0:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant already exists")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Tenant already exists"
+        )
 
     tenant = Tenant(
         name=payload.name,
@@ -103,7 +114,9 @@ async def create_tenant(
     except IntegrityError:
         await db.rollback()
         # Another request may have created it concurrently.
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant already exists")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Tenant already exists"
+        )
 
     await db.refresh(tenant)
     return tenant
@@ -122,7 +135,11 @@ class TenantAdminCreateRequest(BaseModel):
     is_default: bool = False
 
 
-@router.post("/api/tenants/admin", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/api/tenants/admin",
+    response_model=TenantResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def admin_create_tenant(
     payload: TenantAdminCreateRequest = Body(...),
     request: Request = None,
@@ -132,10 +149,16 @@ async def admin_create_tenant(
     admin_header = getattr(settings, "admin_api_key_header", "X-Admin-API-Key")
     admin_keys = getattr(settings, "admin_api_keys", set())
 
-    is_admin = bool(getattr(getattr(request, "state", None), "is_admin", False)) if request is not None else False
+    is_admin = (
+        bool(getattr(getattr(request, "state", None), "is_admin", False))
+        if request is not None
+        else False
+    )
     provided = request.headers.get(admin_header) if request is not None else None
     if not is_admin and not (provided and provided.strip() in admin_keys):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required"
+        )
 
     if payload.is_default:
         await db.execute(update(Tenant).values(is_default=False))
@@ -152,16 +175,18 @@ async def admin_create_tenant(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant already exists")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Tenant already exists"
+        )
 
     await db.refresh(tenant)
     return tenant
 
 
 class TenantUpdateRequest(BaseModel):
-    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
-    is_active: Optional[bool] = None
-    is_default: Optional[bool] = None
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    is_active: bool | None = None
+    is_default: bool | None = None
 
 
 @router.patch("/api/tenants/{tenant_id}", response_model=TenantResponse)
@@ -184,14 +209,24 @@ async def update_tenant(
     admin_header = getattr(settings, "admin_api_key_header", "X-Admin-API-Key")
     admin_keys = getattr(settings, "admin_api_keys", set())
 
-    is_admin = bool(getattr(getattr(request, "state", None), "is_admin", False)) if request is not None else False
+    is_admin = (
+        bool(getattr(getattr(request, "state", None), "is_admin", False))
+        if request is not None
+        else False
+    )
     provided = request.headers.get(admin_header) if request is not None else None
     if not is_admin and not (provided and provided.strip() in admin_keys):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required"
+        )
 
-    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    ).scalar_one_or_none()
     if not tenant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found"
+        )
 
     did_change = False
     if payload.name is not None:
@@ -213,7 +248,9 @@ async def update_tenant(
             did_change = True
 
     if not did_change:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No changes provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No changes provided"
+        )
 
     await db.commit()
     await db.refresh(tenant)
@@ -235,14 +272,24 @@ async def delete_tenant(
     admin_header = getattr(settings, "admin_api_key_header", "X-Admin-API-Key")
     admin_keys = getattr(settings, "admin_api_keys", set())
 
-    is_admin = bool(getattr(getattr(request, "state", None), "is_admin", False)) if request is not None else False
+    is_admin = (
+        bool(getattr(getattr(request, "state", None), "is_admin", False))
+        if request is not None
+        else False
+    )
     provided = request.headers.get(admin_header) if request is not None else None
     if not is_admin and not (provided and provided.strip() in admin_keys):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin API key required"
+        )
 
-    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    ).scalar_one_or_none()
     if not tenant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found"
+        )
 
     if bool(tenant.is_active):
         tenant.is_active = False

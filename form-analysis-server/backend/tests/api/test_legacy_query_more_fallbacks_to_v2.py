@@ -1,13 +1,13 @@
 import uuid
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
-from app.main import app
 from app.api.deps import get_db
+from app.main import app
 from app.models.core.tenant import Tenant
-from app.models.p3_record import P3Record
 from app.models.p3_item_v2 import P3ItemV2
+from app.models.p3_record import P3Record
 from app.utils.normalization import normalize_lot_no
 
 
@@ -18,7 +18,9 @@ async def client(db_session):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -171,7 +173,9 @@ async def test_v2_records_advanced_returns_results(client, db_session):
 
     payload = resp.json()
     assert payload["total_count"] >= 1
-    assert any(r["lot_no"] == lot_no and r["data_type"] == "P3" for r in payload["records"])
+    assert any(
+        r["lot_no"] == lot_no and r["data_type"] == "P3" for r in payload["records"]
+    )
 
 
 @pytest.mark.asyncio

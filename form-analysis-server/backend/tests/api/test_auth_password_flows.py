@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.deps import get_db
 from app.core.password import hash_password
@@ -18,7 +18,9 @@ def _restore_global_settings():
     previous = {
         "auth_mode": getattr(settings, "auth_mode", None),
         "auth_api_key_header": getattr(settings, "auth_api_key_header", None),
-        "auth_protect_prefixes_str": getattr(settings, "auth_protect_prefixes_str", None),
+        "auth_protect_prefixes_str": getattr(
+            settings, "auth_protect_prefixes_str", None
+        ),
         "auth_exempt_paths_str": getattr(settings, "auth_exempt_paths_str", None),
         "admin_api_keys_str": getattr(settings, "admin_api_keys_str", None),
         "admin_api_key_header": getattr(settings, "admin_api_key_header", None),
@@ -46,7 +48,9 @@ async def client(db_session_clean, test_engine):
         expire_on_commit=False,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -66,7 +70,14 @@ async def _create_tenant(db_session_clean, *, code: str) -> Tenant:
     return tenant
 
 
-async def _create_user(db_session_clean, *, tenant_id, username: str, role: str, password: str = "password123") -> TenantUser:
+async def _create_user(
+    db_session_clean,
+    *,
+    tenant_id,
+    username: str,
+    role: str,
+    password: str = "password123",
+) -> TenantUser:
     user = TenantUser(
         tenant_id=tenant_id,
         username=username,
@@ -80,7 +91,9 @@ async def _create_user(db_session_clean, *, tenant_id, username: str, role: str,
     return user
 
 
-async def _login(client: AsyncClient, *, tenant_code: str, username: str, password: str) -> dict:
+async def _login(
+    client: AsyncClient, *, tenant_code: str, username: str, password: str
+) -> dict:
     resp = await client.post(
         "/api/auth/login",
         json={"tenant_code": tenant_code, "username": username, "password": password},
@@ -97,10 +110,16 @@ async def test_admin_reset_forces_password_change_flow(client, db_session_clean)
     settings.auth_api_key_header = "X-API-Key"
 
     tenant = await _create_tenant(db_session_clean, code="t1")
-    admin = await _create_user(db_session_clean, tenant_id=tenant.id, username="admin", role="admin")
-    user = await _create_user(db_session_clean, tenant_id=tenant.id, username="user", role="user")
+    admin = await _create_user(
+        db_session_clean, tenant_id=tenant.id, username="admin", role="admin"
+    )
+    user = await _create_user(
+        db_session_clean, tenant_id=tenant.id, username="user", role="user"
+    )
 
-    admin_login = await _login(client, tenant_code=tenant.code, username=admin.username, password="password123")
+    admin_login = await _login(
+        client, tenant_code=tenant.code, username=admin.username, password="password123"
+    )
     admin_key = admin_login["api_key"]
 
     reset_resp = await client.post(
@@ -115,7 +134,9 @@ async def test_admin_reset_forces_password_change_flow(client, db_session_clean)
     assert reset_body.get("temporary_password")
 
     temp_pw = reset_body["temporary_password"]
-    user_login = await _login(client, tenant_code=tenant.code, username=user.username, password=temp_pw)
+    user_login = await _login(
+        client, tenant_code=tenant.code, username=user.username, password=temp_pw
+    )
     user_key = user_login["api_key"]
     assert user_login.get("must_change_password") is True
 
@@ -134,12 +155,18 @@ async def test_admin_reset_forces_password_change_flow(client, db_session_clean)
     allowed = await client.get("/api/audit-events", headers={"X-API-Key": user_key})
     assert allowed.status_code == 200, allowed.text
 
-    relogin = await _login(client, tenant_code=tenant.code, username=user.username, password="newpass123")
+    relogin = await _login(
+        client, tenant_code=tenant.code, username=user.username, password="newpass123"
+    )
     assert relogin.get("must_change_password") is False
 
     old_pw_fail = await client.post(
         "/api/auth/login",
-        json={"tenant_code": tenant.code, "username": user.username, "password": temp_pw},
+        json={
+            "tenant_code": tenant.code,
+            "username": user.username,
+            "password": temp_pw,
+        },
     )
     assert old_pw_fail.status_code == 401
 
@@ -152,10 +179,19 @@ async def test_manager_cannot_reset_admin_user(client, db_session_clean):
     settings.auth_api_key_header = "X-API-Key"
 
     tenant = await _create_tenant(db_session_clean, code="t1")
-    manager = await _create_user(db_session_clean, tenant_id=tenant.id, username="mgr", role="manager")
-    admin = await _create_user(db_session_clean, tenant_id=tenant.id, username="admin", role="admin")
+    manager = await _create_user(
+        db_session_clean, tenant_id=tenant.id, username="mgr", role="manager"
+    )
+    admin = await _create_user(
+        db_session_clean, tenant_id=tenant.id, username="admin", role="admin"
+    )
 
-    mgr_login = await _login(client, tenant_code=tenant.code, username=manager.username, password="password123")
+    mgr_login = await _login(
+        client,
+        tenant_code=tenant.code,
+        username=manager.username,
+        password="password123",
+    )
     mgr_key = mgr_login["api_key"]
 
     resp = await client.post(

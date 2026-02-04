@@ -61,7 +61,9 @@ async def client_import_job_actor(db_session_clean, test_engine):
 
     await db_session_clean.commit()
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac, raw_key, tenant_id, api_key.id
 
     settings.auth_mode = prev_auth_mode
@@ -71,7 +73,9 @@ async def client_import_job_actor(db_session_clean, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_import_job_writes_actor_fields(client_import_job_actor, db_session_clean):
+async def test_import_job_writes_actor_fields(
+    client_import_job_actor, db_session_clean
+):
     client, raw_key, tenant_id, api_key_id = client_import_job_actor
 
     files = [
@@ -88,7 +92,9 @@ async def test_import_job_writes_actor_fields(client_import_job_actor, db_sessio
 
     job_id = uuid.UUID(resp.json()["id"])
 
-    result = await db_session_clean.execute(select(ImportJob).where(ImportJob.id == job_id))
+    result = await db_session_clean.execute(
+        select(ImportJob).where(ImportJob.id == job_id)
+    )
     job = result.scalar_one()
 
     assert job.tenant_id == tenant_id

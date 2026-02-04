@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.api.deps import get_db
-from app.core.auth import hash_api_key
 from app.core import database as core_database
+from app.core.auth import hash_api_key
 from app.main import app, settings
 from app.models import P1Record, RowEdit
 from app.models.core.tenant import Tenant
@@ -77,7 +77,9 @@ async def client_edit_actor(db_session_clean, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_edit_route_writes_row_edits_created_by_actor(client_edit_actor, db_session_clean):
+async def test_edit_route_writes_row_edits_created_by_actor(
+    client_edit_actor, db_session_clean
+):
     client, raw_key, tenant_id, record_id = client_edit_actor
 
     resp = await client.patch(
@@ -94,7 +96,9 @@ async def test_edit_route_writes_row_edits_created_by_actor(client_edit_actor, d
     assert resp.status_code == 200, resp.text
 
     result = await db_session_clean.execute(
-        select(RowEdit).where(RowEdit.record_id == record_id).order_by(RowEdit.created_at.desc())
+        select(RowEdit)
+        .where(RowEdit.record_id == record_id)
+        .order_by(RowEdit.created_at.desc())
     )
     row_edit = result.scalars().first()
     assert row_edit is not None
@@ -102,7 +106,9 @@ async def test_edit_route_writes_row_edits_created_by_actor(client_edit_actor, d
 
 
 @pytest.mark.asyncio
-async def test_edit_route_accepts_legacy_nested_request_shape(client_edit_actor, db_session_clean):
+async def test_edit_route_accepts_legacy_nested_request_shape(
+    client_edit_actor, db_session_clean
+):
     client, raw_key, tenant_id, record_id = client_edit_actor
 
     resp = await client.patch(
@@ -120,7 +126,9 @@ async def test_edit_route_accepts_legacy_nested_request_shape(client_edit_actor,
     assert resp.status_code == 200, resp.text
 
     result = await db_session_clean.execute(
-        select(RowEdit).where(RowEdit.record_id == record_id).order_by(RowEdit.created_at.desc())
+        select(RowEdit)
+        .where(RowEdit.record_id == record_id)
+        .order_by(RowEdit.created_at.desc())
     )
     row_edit = result.scalars().first()
     assert row_edit is not None
