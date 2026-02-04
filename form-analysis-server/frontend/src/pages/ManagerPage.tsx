@@ -110,7 +110,6 @@ export function ManagerPage() {
   useEffect(() => {
     if (!canManage) return
     void refreshUsers()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeInactive, canManage])
 
   const handleCreateUser = async () => {

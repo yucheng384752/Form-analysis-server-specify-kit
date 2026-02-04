@@ -6,6 +6,7 @@ import { enUS, zhTW } from 'date-fns/locale'
 import { ResponsiveContainer, Pie, PieChart, Cell, Tooltip, Legend, ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid } from 'recharts'
 import { getTenantId } from '../services/tenant'
 import { getTenantLabelById, writeTenantMap } from '../services/tenantMap'
+import { clampCustomRange, normalizeDayPickerRange } from '../utils/analyticsDateRange'
 import { Drawer, DrawerContent } from '../components/ui/drawer'
 import { TraceabilityFlow } from '../components/TraceabilityFlow'
 
@@ -79,36 +80,8 @@ const UT_FEATURE_PCT_DEMO: ReadonlyArray<{ name: string; pct: number }> = [
   { name: 'Appearance', pct: 0.0 },
 ]
 
-// Date granularity: min = week, max = half-year.
+// Preset modes are week/month/quarter/half-year; custom supports day-level.
 type RangeMode = 'week' | 'month' | 'quarter' | 'halfYear' | 'custom'
-
-const MIN_RANGE_DAYS = 7
-const MAX_RANGE_DAYS = 184 // approx half-year
-
-function addDays(date: Date, days: number): Date {
-  const d = new Date(date)
-  d.setDate(d.getDate() + days)
-  return d
-}
-
-function clampCustomRange(from: Date, to: Date): { start: Date; end: Date } {
-  const start = new Date(from)
-  const end = new Date(to)
-
-  // Normalize order
-  if (end.getTime() < start.getTime()) {
-    return clampCustomRange(end, start)
-  }
-
-  const diffDays = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
-  if (diffDays < MIN_RANGE_DAYS) {
-    return { start, end: addDays(start, MIN_RANGE_DAYS - 1) }
-  }
-  if (diffDays > MAX_RANGE_DAYS) {
-    return { start, end: addDays(start, MAX_RANGE_DAYS - 1) }
-  }
-  return { start, end }
-}
 
 function toYmd(date: Date): string {
   return format(date, 'yyyy-MM-dd')
@@ -363,8 +336,9 @@ export function AnalyticsPage() {
         setTraceData(null)
         setTraceError(String(err?.message || t('analytics.traceabilityFetchFailed')))
       } finally {
-        if (controller.signal.aborted) return
-        setTraceLoading(false)
+        if (!controller.signal.aborted) {
+          setTraceLoading(false)
+        }
       }
     })()
 
@@ -408,9 +382,7 @@ export function AnalyticsPage() {
     }
 
     // Safari/older browsers
-    // eslint-disable-next-line deprecation/deprecation
     mq.addListener(update)
-    // eslint-disable-next-line deprecation/deprecation
     return () => mq.removeListener(update)
   }, [])
 
@@ -466,19 +438,26 @@ export function AnalyticsPage() {
 
   const handleSelectCustomRange = (range: DateRange | undefined) => {
     autoRunArmedRef.current = true
-    setCustomRange(range)
-    if (!range?.from) {
+
+    const normalized = normalizeDayPickerRange(range)
+    setCustomRange(normalized)
+
+    if (!normalized?.from) {
       setStartDate('')
       setEndDate('')
       return
     }
-    if (!range.to) {
-      // Min granularity is week: if only one day is picked, expand to the week.
-      const bounds = getModeBounds('week', range.from)
-      applyComputedRange(bounds.start, bounds.end)
+
+    const from = normalized.from
+    const to = normalized.to ?? normalized.from
+
+    // Single-day selection stays day-level (no forced expansion).
+    if (from.getTime() === to.getTime()) {
+      applyComputedRange(from, to)
       return
     }
-    const clamped = clampCustomRange(range.from, range.to)
+
+    const clamped = clampCustomRange(from, to)
     applyComputedRange(clamped.start, clamped.end)
   }
 
