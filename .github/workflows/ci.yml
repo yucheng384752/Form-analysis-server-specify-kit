@@ -10,8 +10,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  secrets-scan:
+    name: Security (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          config: .gitleaks.toml
+
   backend:
-    name: Backend (pytest)
+    name: Backend (lint + pytest)
     runs-on: ubuntu-latest
 
     steps:
@@ -33,13 +52,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-test.txt
 
+      - name: Lint
+        working-directory: form-analysis-server/backend
+        run: |
+          python -m ruff check app tests
+          python -m ruff format --check app tests
+
       - name: Run tests
         working-directory: form-analysis-server/backend
         run: |
           python -m pytest
 
   frontend:
-    name: Frontend (typecheck + vitest)
+    name: Frontend (lint + typecheck + vitest)
     runs-on: ubuntu-latest
 
     steps:
@@ -57,6 +82,10 @@ jobs:
       - name: Install deps
         working-directory: form-analysis-server/frontend
         run: npm ci
+
+      - name: Lint
+        working-directory: form-analysis-server/frontend
+        run: npm run lint
 
       - name: Type check
         working-directory: form-analysis-server/frontend
