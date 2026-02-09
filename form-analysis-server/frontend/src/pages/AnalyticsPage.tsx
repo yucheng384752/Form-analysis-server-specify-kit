@@ -9,6 +9,7 @@ import { getTenantLabelById, writeTenantMap } from '../services/tenantMap'
 import { clampCustomRange, normalizeDayPickerRange } from '../utils/analyticsDateRange'
 import { Drawer, DrawerContent } from '../components/ui/drawer'
 import { TraceabilityFlow } from '../components/TraceabilityFlow'
+import { ArtifactsView, type ViewKey } from '../components/analytics/ArtifactsView'
 
 import './../styles/analytics-page.css'
 import 'react-day-picker/dist/style.css'
@@ -82,6 +83,52 @@ const UT_FEATURE_PCT_DEMO: ReadonlyArray<{ name: string; pct: number }> = [
 
 // Preset modes are week/month/quarter/half-year; custom supports day-level.
 type RangeMode = 'week' | 'month' | 'quarter' | 'halfYear' | 'custom'
+
+function parseProductIds(input: string): string[] {
+  const normalizeProductId = (value: string): string => {
+    const s = value.trim()
+    if (!s) return s
+
+    // Screenshot format examples:
+    //   250902-P24-2382-301
+    // Desired DB/CSV format:
+    //   20250902_P24_238-2_301
+    const m = s.match(/^([0-9]{6})-(P[0-9]{2})-([0-9]{4})-([0-9]{3})$/i)
+    if (m) {
+      const yymmdd = m[1]
+      const station = m[2].toUpperCase()
+      const film = m[3]
+      const seq = m[4]
+
+      const yyyy = `20${yymmdd.slice(0, 2)}`
+      const mm = yymmdd.slice(2, 4)
+      const dd = yymmdd.slice(4, 6)
+      const yyyymmdd = `${yyyy}${mm}${dd}`
+
+      // film: 2382 -> 238-2
+      const filmFmt = `${film.slice(0, 3)}-${film.slice(3)}`
+
+      return `${yyyymmdd}_${station}_${filmFmt}_${seq}`
+    }
+
+    return s
+  }
+
+  const raw = input
+    .split(/[\s,，;；]+/g)
+    .map((s) => normalizeProductId(s))
+    .filter(Boolean)
+  const uniq: string[] = []
+  const seen = new Set<string>()
+  for (const x of raw) {
+    const key = x.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    uniq.push(x)
+    if (uniq.length >= 50) break
+  }
+  return uniq
+}
 
 function toYmd(date: Date): string {
   return format(date, 'yyyy-MM-dd')
@@ -249,6 +296,13 @@ export function AnalyticsPage() {
   const [ngError, setNgError] = useState('')
   const [ngWinderNumber, setNgWinderNumber] = useState<number | null>(null)
 
+  const [artifactView, setArtifactView] = useState<ViewKey>('events')
+
+  const artifactsSectionRef = useRef<HTMLDivElement | null>(null)
+
+  const productIds = useMemo(() => parseProductIds(productIdCommitted), [productIdCommitted])
+  const artifactsMode = productIds.length > 0
+
   const ngFeaturePctEntries = useMemo(() => {
     const aggregate = new Map<string, { sum: number; count: number }>()
     for (const r of ngRecords) {
@@ -298,7 +352,13 @@ export function AnalyticsPage() {
   const pendingAutoRunKeyRef = useRef<string>('')
 
   const tenantId = useMemo(() => getTenantId(), [])
-  const tenantLabel = useMemo(() => getTenantLabelById(tenantId), [tenantId, tenantMapVersion])
+  const tenantLabelRaw = useMemo(() => getTenantLabelById(tenantId), [tenantId, tenantMapVersion])
+  const tenantLabel = useMemo(() => {
+    const raw = String(tenantLabelRaw || '').trim()
+    if (!raw) return ''
+    if (raw.toLowerCase() === 'default') return '預設'
+    return raw
+  }, [tenantLabelRaw])
 
   const buildTenantHeaders = useCallback(() => {
     if (!tenantId) return {}
@@ -306,7 +366,7 @@ export function AnalyticsPage() {
   }, [tenantId])
 
   useEffect(() => {
-    const pid = productIdCommitted.trim()
+    const pid = productIds[0]?.trim() ?? ''
     if (!pid) {
       setTraceData(null)
       setTraceError('')
@@ -343,14 +403,21 @@ export function AnalyticsPage() {
     })()
 
     return () => controller.abort()
-  }, [buildTenantHeaders, productIdCommitted, t])
+  }, [buildTenantHeaders, productIds, t])
 
   const commitProductId = useCallback(() => {
     const next = productIdDraft.trim()
     if (next === productIdCommitted) return
-    autoRunArmedRef.current = true
+    // Default behavior: date-based analysis auto-run. If user provides product_id(s), switch to Artifacts mode.
+    autoRunArmedRef.current = parseProductIds(next).length === 0
     setProductIdCommitted(next)
   }, [productIdCommitted, productIdDraft])
+
+  useEffect(() => {
+    if (!artifactsMode) return
+    // When switching into artifacts mode, keep the artifacts view visible and predictable.
+    setArtifactView('events')
+  }, [artifactsMode])
 
   useEffect(() => {
     if (!tenantId) return
@@ -523,10 +590,11 @@ export function AnalyticsPage() {
   }, [analysisResult])
 
   const computeAutoRunKey = useCallback(() => {
-    return JSON.stringify({ startDate, endDate, productId: productIdCommitted, stations })
-  }, [startDate, endDate, productIdCommitted, stations])
+    // Date analysis key should not depend on product_id; product_id switches to Artifacts mode.
+    return JSON.stringify({ startDate, endDate, stations })
+  }, [startDate, endDate, stations])
 
-  const handleRun = useCallback((opts?: { productIdOverride?: string }) => {
+  const handleRun = useCallback((_opts?: { productIdOverride?: string }) => {
     void (async () => {
       setParseError('')
       setIsLoading(true)
@@ -553,7 +621,7 @@ export function AnalyticsPage() {
           body: JSON.stringify({
             start_date: startDate || null,
             end_date: endDate || null,
-            product_id: (opts?.productIdOverride ?? productIdCommitted) || null,
+            product_id: null,
             stations: chosenStations,
           }),
         })
@@ -608,16 +676,25 @@ export function AnalyticsPage() {
         setIsLoading(false)
       }
     })()
-  }, [buildTenantHeaders, endDate, productIdCommitted, startDate, stations, t])
+  }, [buildTenantHeaders, endDate, startDate, stations, t])
 
   const runNow = useCallback(() => {
-    autoRunArmedRef.current = true
-
     const overrideProductId = productIdDraft.trim()
+    const nextIds = parseProductIds(overrideProductId)
     setProductIdCommitted(overrideProductId)
 
+    if (nextIds.length > 0) {
+      autoRunArmedRef.current = false
+      window.setTimeout(() => {
+        artifactsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 0)
+      return
+    }
+
+    autoRunArmedRef.current = true
+
     pendingAutoRunKeyRef.current = ''
-    lastAutoRunKeyRef.current = JSON.stringify({ startDate, endDate, productId: overrideProductId, stations })
+    lastAutoRunKeyRef.current = JSON.stringify({ startDate, endDate, stations })
     if (autoRunTimerRef.current) {
       window.clearTimeout(autoRunTimerRef.current)
       autoRunTimerRef.current = null
@@ -750,9 +827,7 @@ export function AnalyticsPage() {
             filters.push({ field: 'production_date', op: 'eq', value: endDate })
           }
 
-          if (productIdCommitted) {
-            filters.push({ field: 'product_id', op: 'contains', value: productIdCommitted })
-          }
+          // product_id is reserved for Artifacts mode; keep NG query date-based.
 
           if (opts?.winderNumber) {
             filters.push({ field: 'winder_number', op: 'eq', value: String(opts.winderNumber) })
@@ -788,7 +863,7 @@ export function AnalyticsPage() {
     } finally {
       setNgLoading(false)
     }
-  }, [buildTenantHeaders, endDate, productIdCommitted, recordHasNg, startDate, stations, t])
+  }, [buildTenantHeaders, endDate, recordHasNg, startDate, stations, t])
 
   const enterNgMode = useCallback((opts?: { winderNumber?: number | null }) => {
     autoRunArmedRef.current = true
@@ -807,6 +882,7 @@ export function AnalyticsPage() {
 
   useEffect(() => {
     if (!autoRunArmedRef.current) return
+    if (artifactsMode) return
     if (isLoading) return
 
     const key = computeAutoRunKey()
@@ -827,15 +903,34 @@ export function AnalyticsPage() {
         autoRunTimerRef.current = null
       }
     }
-  }, [computeAutoRunKey, handleRun, isLoading])
+  }, [artifactsMode, computeAutoRunKey, handleRun, isLoading])
 
-  const handleFilterKeyDown: KeyboardEventHandler<HTMLInputElement> = (e) => {
-    if (e.key !== 'Enter') return
+  const handleFilterKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+    if (e.key !== 'Enter' || e.shiftKey) return
     e.preventDefault()
     if (isLoading) return
     commitProductId()
+    // If product_id is provided, enter artifacts mode instead of running date analysis.
+    if (parseProductIds(productIdDraft).length > 0) {
+      window.setTimeout(() => {
+        artifactsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 0)
+      return
+    }
     runNow()
   }
+
+  const productIdTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const syncProductIdTextareaHeight = useCallback(() => {
+    const el = productIdTextareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [])
+
+  useEffect(() => {
+    syncProductIdTextareaHeight()
+  }, [productIdDraft, syncProductIdTextareaHeight])
 
   return (
     <div className="analytics-page">
@@ -1128,15 +1223,30 @@ export function AnalyticsPage() {
 
           <div className="analytics-filter-block">
             <div className="analytics-filter-title">{t('analytics.productId')}</div>
-            <input
-              className="register-input"
-              type="text"
-              placeholder={t('analytics.productIdPlaceholder')}
+            <textarea
+              ref={productIdTextareaRef}
+              className="register-input analytics-product-textarea"
+              rows={1}
+              placeholder="輸入 產品編號（可多筆，以逗號/空白/換行分隔）→ 觸發 改善報告"
               value={productIdDraft}
-              onChange={(e) => setProductIdDraft(e.target.value)}
+              onChange={(e) => {
+                setProductIdDraft(e.target.value)
+                // Keep height in sync for immediate feedback.
+                window.setTimeout(() => syncProductIdTextareaHeight(), 0)
+              }}
               onBlur={commitProductId}
               onKeyDown={handleFilterKeyDown}
             />
+
+            <div className="analytics-artifacts-hint" style={{ marginTop: 8 }}>
+              {artifactsMode ? (
+                <>
+                  目前為 改善報告 模式（{productIds.length} 筆）：{productIds.slice(0, 6).join('、')}{productIds.length > 6 ? '…' : ''}
+                </>
+              ) : (
+                <>預設為日期分析；輸入 產品編號 後會切換到 改善報告。</>
+              )}
+            </div>
 
             <div className="analytics-trace-actions">
               <button
@@ -1144,14 +1254,28 @@ export function AnalyticsPage() {
                 className="btn-secondary"
                 onClick={() => {
                   commitProductId()
-                  const pid = productIdDraft.trim()
+                  const pid = parseProductIds(productIdDraft)[0] ?? ''
                   if (!pid) return
                   setTraceDrawerOpen(true)
                 }}
-                disabled={!productIdDraft.trim()}
+                disabled={!parseProductIds(productIdDraft).length}
               >
                 {t('analytics.traceabilityOpen')}
               </button>
+
+              {productIdDraft.trim() ? (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    autoRunArmedRef.current = true
+                    setProductIdDraft('')
+                    setProductIdCommitted('')
+                  }}
+                >
+                  清除 產品編號
+                </button>
+              ) : null}
             </div>
 
             {productIdCommitted ? (
@@ -1207,22 +1331,62 @@ export function AnalyticsPage() {
         </div>
 
         <div className="analytics-actions">
-          <button className="btn-primary" onClick={runNow} disabled={isLoading}>{isLoading ? t('analytics.analyzing') : t('analytics.analyze')}</button>
+          <button
+            className="btn-primary"
+            onClick={() => {
+              if (artifactsMode) {
+                artifactsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                return
+              }
+              runNow()
+            }}
+            disabled={isLoading && !artifactsMode}
+          >
+            {isLoading && !artifactsMode ? t('analytics.analyzing') : artifactsMode ? '查看改善報告' : t('analytics.analyze')}
+          </button>
         </div>
 
         {parseError ? <div className="analytics-error">{parseError}</div> : null}
       </section>
 
-        <Drawer open={traceDrawerOpen} onOpenChange={setTraceDrawerOpen}>
-          <DrawerContent>
-            <TraceabilityFlow
-              productId={productIdCommitted || productIdDraft.trim()}
-              {...(traceData ? { preloadedData: traceData } : {})}
-              tenantId={tenantId}
-              onClose={() => setTraceDrawerOpen(false)}
-            />
-          </DrawerContent>
-        </Drawer>
+        {artifactsMode ? (
+          <>
+            <div ref={artifactsSectionRef} className="analytics-section-header">改善報告（由 產品編號 觸發）</div>
+            <section className="analytics-card">
+              <div className="analytics-actions" style={{ justifyContent: 'flex-start', marginTop: 0, gap: 8, flexWrap: 'wrap' }}>
+                {([
+                  ['events', 'Events'],
+                  ['aggregated', 'Aggregated'],
+                  ['weighted', 'Weighted'],
+                  ['rag', 'RAG'],
+                  ['llm', 'LLM'],
+                ] as Array<[ViewKey, string]>).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={artifactView === key ? 'btn-primary' : 'btn-secondary'}
+                    onClick={() => setArtifactView(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <ArtifactsView view={artifactView} tenantHeaders={buildTenantHeaders()} productIds={productIds} />
+            </section>
+          </>
+        ) : null}
+
+      <Drawer open={traceDrawerOpen} onOpenChange={setTraceDrawerOpen}>
+        <DrawerContent>
+          <TraceabilityFlow
+            productId={productIds[0] || parseProductIds(productIdDraft)[0] || ''}
+            {...(traceData ? { preloadedData: traceData } : {})}
+            tenantId={tenantId}
+            onClose={() => setTraceDrawerOpen(false)}
+          />
+        </DrawerContent>
+      </Drawer>
 
       {ngMode ? (
         <>
