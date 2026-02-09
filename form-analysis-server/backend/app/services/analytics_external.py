@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
@@ -11,7 +12,25 @@ from typing import Any, Literal
 
 import pandas as pd
 
+logger = logging.getLogger(__name__)
+
 StationCode = Literal["P2", "P3", "ALL"]
+
+ArtifactKey = Literal[
+    "serialized_events",
+    "aggregated_diagnostics",
+    "rag_results",
+    "llm_reports",
+    "weighted_contributions",
+]
+
+_ARTIFACT_FILE_MAP: dict[ArtifactKey, str] = {
+    "serialized_events": "ut_serialized_results.json",
+    "aggregated_diagnostics": "ut_aggregated_diagnostics.json",
+    "rag_results": "ut_event_rag_results.json",
+    "llm_reports": "ut_gemini_output_all.json",
+    "weighted_contributions": "ut_weighted_contributions.json",
+}
 
 
 @dataclass(frozen=True)
@@ -20,6 +39,15 @@ class AnalyticsExternalPaths:
     september_v2_root: Path
     config_path: Path
     merged_csv_path: Path
+
+
+@dataclass(frozen=True)
+class AnalyticsArtifactInfo:
+    key: ArtifactKey
+    filename: str
+    exists: bool
+    size_bytes: int | None
+    mtime_epoch: float | None
 
 
 def _default_desktop() -> Path:
@@ -75,6 +103,595 @@ def resolve_external_paths() -> AnalyticsExternalPaths:
         config_path=config_path,
         merged_csv_path=merged_csv_path,
     )
+
+
+def resolve_artifacts_dir(*, paths: AnalyticsExternalPaths | None = None) -> Path:
+    """Resolve where pre-generated Analytical-Four JSON artifacts live.
+
+    Default: use september_v2 root (mounted into the backend container).
+    Override with ANALYTICS_ARTIFACTS_DIR.
+
+    Note: We only read files from this directory via allowlisted filenames.
+    """
+
+    if paths is None:
+        paths = resolve_external_paths()
+
+    raw = os.environ.get("ANALYTICS_ARTIFACTS_DIR")
+    if raw and str(raw).strip():
+        return Path(str(raw)).expanduser().resolve()
+    return paths.september_v2_root
+
+
+def list_analytics_artifacts(*, artifacts_dir: Path | None = None) -> list[AnalyticsArtifactInfo]:
+    paths = resolve_external_paths()
+    base = artifacts_dir or resolve_artifacts_dir(paths=paths)
+
+    out: list[AnalyticsArtifactInfo] = []
+    for key, filename in _ARTIFACT_FILE_MAP.items():
+        p = (base / filename).resolve()
+        # Safety: ensure file stays within base dir
+        try:
+            p.relative_to(base)
+        except Exception:
+            exists = False
+            out.append(
+                AnalyticsArtifactInfo(
+                    key=key,
+                    filename=filename,
+                    exists=exists,
+                    size_bytes=None,
+                    mtime_epoch=None,
+                )
+            )
+            continue
+
+        if p.exists() and p.is_file():
+            st = p.stat()
+            out.append(
+                AnalyticsArtifactInfo(
+                    key=key,
+                    filename=filename,
+                    exists=True,
+                    size_bytes=int(st.st_size),
+                    mtime_epoch=float(st.st_mtime),
+                )
+            )
+        else:
+            out.append(
+                AnalyticsArtifactInfo(
+                    key=key,
+                    filename=filename,
+                    exists=False,
+                    size_bytes=None,
+                    mtime_epoch=None,
+                )
+            )
+    return out
+
+
+def load_analytics_artifact(
+    key: ArtifactKey,
+    *,
+    artifacts_dir: Path | None = None,
+) -> Any:
+    paths = resolve_external_paths()
+    base = artifacts_dir or resolve_artifacts_dir(paths=paths)
+    filename = _ARTIFACT_FILE_MAP[key]
+    p = (base / filename).resolve()
+    try:
+        p.relative_to(base)
+    except Exception:
+        # Defensive: should not happen due to allowlist.
+        raise FileNotFoundError("Analytics artifact not found")
+    if not p.exists() or not p.is_file():
+        raise FileNotFoundError("Analytics artifact not found")
+    return _load_json(p)
+
+
+def parse_artifact_key(value: str) -> ArtifactKey:
+    v = str(value or "").strip()
+    if not v:
+        raise KeyError("Unknown analytics artifact key")
+    if v in _ARTIFACT_FILE_MAP:
+        return v  # type: ignore[return-value]
+    raise KeyError("Unknown analytics artifact key")
+
+
+def _split_product_ids(value: str | None) -> list[str]:
+    if not value:
+        return []
+    raw = re.split(r"[\s,，;；]+", str(value))
+    out: list[str] = []
+    seen: set[str] = set()
+    for x in raw:
+        s = str(x).strip()
+        if not s:
+            continue
+        k = s.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(s)
+        if len(out) >= 50:
+            break
+    return out
+
+
+def _matches_any_product_id(*haystacks: str, product_ids: list[str]) -> bool:
+    if not product_ids:
+        return True
+    combined = " ".join([h for h in haystacks if h]).lower()
+    needles = [p.lower() for p in product_ids]
+    return any(pid in combined for pid in needles)
+
+
+def _to_str(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _safe_number(value: Any) -> float:
+    try:
+        n = float(value)
+        return n if pd.notna(n) else 0.0
+    except Exception:
+        return 0.0
+
+
+def get_analytics_artifact_list_view(
+    key: ArtifactKey,
+    *,
+    product_ids: list[str] | None = None,
+    artifacts_dir: Path | None = None,
+) -> Any:
+    """Return a compact list view suitable for tables.
+
+    This intentionally avoids sending the entire raw artifact JSON to the frontend.
+    """
+
+    pids = product_ids or []
+    raw = load_analytics_artifact(key, artifacts_dir=artifacts_dir)
+
+    if key == "serialized_events":
+        if not isinstance(raw, list):
+            return []
+        out: list[dict[str, Any]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            event_id = _to_str(item.get("event_id")).strip() or _to_str(item.get("id")).strip()
+            event_date = item.get("event_date")
+            ctx = item.get("context") if isinstance(item.get("context"), dict) else {}
+            produce_no = _to_str(ctx.get("Produce_No.") or ctx.get("produce_no") or ctx.get("LOT NO.") or ctx.get("lot_no")).strip()
+            winder = _to_str(ctx.get("Winder number") or ctx.get("Winder") or "").strip()
+            slitting = _to_str(ctx.get("Slitting machine") or ctx.get("Slitting") or "").strip()
+
+            detected = item.get("detected_by_IQR") if isinstance(item.get("detected_by_IQR"), dict) else {}
+            iqr_count = len(detected)
+            ranked = item.get("ranked_features") if isinstance(item.get("ranked_features"), dict) else {}
+            t2 = ranked.get("T2_feature") if isinstance(ranked.get("T2_feature"), list) else []
+            spe = ranked.get("SPE_feature") if isinstance(ranked.get("SPE_feature"), list) else []
+
+            if not event_id:
+                continue
+            if not _matches_any_product_id(event_id, produce_no, product_ids=pids):
+                continue
+
+            out.append(
+                {
+                    "event_id": event_id,
+                    "event_date": event_date,
+                    "produce_no": produce_no,
+                    "winder": winder,
+                    "slitting": slitting,
+                    "iqr_count": int(iqr_count),
+                    "t2_count": int(len(t2)),
+                    "spe_count": int(len(spe)),
+                }
+            )
+        return out
+
+    if key == "aggregated_diagnostics":
+        if not isinstance(raw, list):
+            return []
+        out: list[dict[str, Any]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            summary_id = _to_str(item.get("summary_id") or item.get("id") or "").strip()
+            analysis_dimension = _to_str(item.get("analysis_dimension") or "").strip()
+            sample_count = int(_safe_number(item.get("sample_count")))
+            ctx = item.get("context") if isinstance(item.get("context"), dict) else {}
+            ctx_preview = " / ".join([f"{k}: {_to_str(v)}" for k, v in list(ctx.items())[:4]])
+            core_features = item.get("core_features") if isinstance(item.get("core_features"), list) else []
+            event_ids = item.get("event_ids") if isinstance(item.get("event_ids"), list) else []
+
+            if not summary_id:
+                continue
+            if not _matches_any_product_id(summary_id, analysis_dimension, ctx_preview, product_ids=pids):
+                continue
+
+            out.append(
+                {
+                    "summary_id": summary_id,
+                    "analysis_dimension": analysis_dimension,
+                    "sample_count": sample_count,
+                    "context_preview": ctx_preview,
+                    "core_feature_count": int(len(core_features)),
+                    "event_count": int(len(event_ids)),
+                }
+            )
+        return out
+
+    if key == "weighted_contributions":
+        if not isinstance(raw, dict):
+            return []
+        out: list[dict[str, Any]] = []
+        for k, v in raw.items():
+            event_id = _to_str(k).strip()
+            if not event_id:
+                continue
+            if not _matches_any_product_id(event_id, product_ids=pids):
+                continue
+
+            row = v if isinstance(v, dict) else {}
+            x_t2 = float(_safe_number(row.get("x_T2")))
+            x_spe = float(_safe_number(row.get("x_SPE")))
+            t2 = row.get("T2_feature") if isinstance(row.get("T2_feature"), list) else []
+            spe = row.get("SPE_feature") if isinstance(row.get("SPE_feature"), list) else []
+            t2_top = _to_str(t2[0].get("feature")) if t2 and isinstance(t2[0], dict) else ""
+            spe_top = _to_str(spe[0].get("feature")) if spe and isinstance(spe[0], dict) else ""
+            out.append(
+                {
+                    "id": event_id,
+                    "x_T2": x_t2,
+                    "x_SPE": x_spe,
+                    "t2_top": t2_top,
+                    "spe_top": spe_top,
+                }
+            )
+        out.sort(key=lambda r: max(float(r.get("x_T2") or 0), float(r.get("x_SPE") or 0)), reverse=True)
+        return out
+
+    if key == "rag_results":
+        if not isinstance(raw, dict):
+            return []
+        out: list[dict[str, Any]] = []
+        for event_id, value in raw.items():
+            eid = _to_str(event_id).strip()
+            if not eid:
+                continue
+            if not _matches_any_product_id(eid, product_ids=pids):
+                continue
+            feature_map = value if isinstance(value, dict) else {}
+            feature_count = len(feature_map)
+            sop_count = 0
+            for vv in feature_map.values():
+                if isinstance(vv, list):
+                    sop_count += len(vv)
+            out.append(
+                {
+                    "event_id": eid,
+                    "feature_count": int(feature_count),
+                    "sop_count": int(sop_count),
+                }
+            )
+        out.sort(key=lambda r: (int(r.get("sop_count") or 0), int(r.get("feature_count") or 0)), reverse=True)
+        return out
+
+    if key == "llm_reports":
+        # Accept either:
+        # 1) a single report dict with event_id
+        # 2) a list of report dicts
+        # 3) a mapping event_id -> report dict
+        def _summarize_report(report: dict[str, Any]) -> dict[str, Any] | None:
+            event_id = _to_str(report.get("event_id") or report.get("id") or "").strip()
+            if not event_id:
+                return None
+            event_time = report.get("event_time")
+            main = report.get("main_anomalies") if isinstance(report.get("main_anomalies"), dict) else {}
+            total = int(_safe_number(main.get("total_anomalies")))
+            return {"event_id": event_id, "event_time": event_time, "total_anomalies": total}
+
+        rows: list[dict[str, Any]] = []
+        if isinstance(raw, list):
+            for it in raw:
+                if isinstance(it, dict):
+                    s = _summarize_report(it)
+                    if s:
+                        rows.append(s)
+        elif isinstance(raw, dict):
+            if "event_id" in raw:
+                s = _summarize_report(raw)
+                if s:
+                    rows.append(s)
+            else:
+                for _, it in raw.items():
+                    if isinstance(it, dict):
+                        s = _summarize_report(it)
+                        if s:
+                            rows.append(s)
+
+        if pids:
+            rows = [r for r in rows if _matches_any_product_id(_to_str(r.get("event_id")), product_ids=pids)]
+        rows.sort(key=lambda r: int(r.get("total_anomalies") or 0), reverse=True)
+        return rows
+
+    return []
+
+
+def get_analytics_artifact_detail_view(
+    key: ArtifactKey,
+    item_id: str,
+    *,
+    artifacts_dir: Path | None = None,
+) -> Any:
+    """Return a compact detail view suitable for tables/charts only."""
+
+    raw = load_analytics_artifact(key, artifacts_dir=artifacts_dir)
+    want_id = str(item_id or "").strip()
+    if not want_id:
+        raise KeyError("Missing artifact item id")
+
+    if key == "serialized_events":
+        if not isinstance(raw, list):
+            raise KeyError("Event not found")
+        found: dict[str, Any] | None = None
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            eid = _to_str(item.get("event_id") or item.get("id") or "").strip()
+            if eid == want_id:
+                found = item
+                break
+        if not found:
+            raise KeyError("Event not found")
+
+        ctx = found.get("context") if isinstance(found.get("context"), dict) else {}
+        produce_no = _to_str(ctx.get("Produce_No.") or ctx.get("produce_no") or ctx.get("LOT NO.") or ctx.get("lot_no")).strip()
+        winder = _to_str(ctx.get("Winder number") or ctx.get("Winder") or "").strip()
+        slitting = _to_str(ctx.get("Slitting machine") or ctx.get("Slitting") or "").strip()
+
+        detected = found.get("detected_by_IQR") if isinstance(found.get("detected_by_IQR"), dict) else {}
+        iqr_features = sorted([_to_str(k).strip() for k in detected.keys() if _to_str(k).strip()])
+
+        ranked = found.get("ranked_features") if isinstance(found.get("ranked_features"), dict) else {}
+        t2 = ranked.get("T2_feature") if isinstance(ranked.get("T2_feature"), list) else []
+        spe = ranked.get("SPE_feature") if isinstance(ranked.get("SPE_feature"), list) else []
+
+        def _top_features(items: list[Any]) -> list[dict[str, Any]]:
+            out: list[dict[str, Any]] = []
+            for it in items[:20]:
+                if not isinstance(it, dict):
+                    continue
+                feat = _to_str(it.get("feature") or "").strip()
+                if not feat:
+                    continue
+                out.append(
+                    {
+                        "feature": feat,
+                        "final_score": float(_safe_number(it.get("final_score"))),
+                        "final_rank": int(_safe_number(it.get("final_rank"))),
+                    }
+                )
+            return out
+
+        return {
+            "event_id": want_id,
+            "event_date": found.get("event_date"),
+            "produce_no": produce_no,
+            "winder": winder,
+            "slitting": slitting,
+            "iqr_features": iqr_features,
+            "t2_features": _top_features(t2),
+            "spe_features": _top_features(spe),
+        }
+
+    if key == "aggregated_diagnostics":
+        if not isinstance(raw, list):
+            raise KeyError("Summary not found")
+        found: dict[str, Any] | None = None
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            sid = _to_str(item.get("summary_id") or item.get("id") or "").strip()
+            if sid == want_id:
+                found = item
+                break
+        if not found:
+            raise KeyError("Summary not found")
+
+        core = found.get("core_features") if isinstance(found.get("core_features"), list) else []
+        rows: list[dict[str, Any]] = []
+        for it in core:
+            if not isinstance(it, dict):
+                continue
+            feature = _to_str(it.get("feature") or "").strip()
+            if not feature:
+                continue
+            evidence = it.get("evidence") if isinstance(it.get("evidence"), dict) else {}
+            iqr = evidence.get("IQR") if isinstance(evidence.get("IQR"), (int, float, str, dict)) else evidence.get("iqr")
+
+            def _freq(v: Any) -> int:
+                if v is None:
+                    return 0
+                if isinstance(v, (int, float)):
+                    return int(v) if pd.notna(v) else 0
+                if isinstance(v, str):
+                    try:
+                        return int(float(v))
+                    except Exception:
+                        return 0
+                if isinstance(v, dict):
+                    if isinstance(v.get("frequency"), (int, float)):
+                        return int(v.get("frequency"))
+                    if isinstance(v.get("count"), (int, float)):
+                        return int(v.get("count"))
+                return 0
+
+            iqr_f = _freq(iqr)
+            ranked = evidence.get("ranked_features") if isinstance(evidence.get("ranked_features"), dict) else (
+                evidence.get("rank") if isinstance(evidence.get("rank"), dict) else {}
+            )
+            t2_f = _freq(ranked.get("T2_feature") or ranked.get("t2_feature") or ranked.get("T2") or ranked.get("t2"))
+            spe_f = _freq(ranked.get("SPE_feature") or ranked.get("spe_feature") or ranked.get("SPE") or ranked.get("spe"))
+            total = iqr_f + t2_f + spe_f
+            rows.append({"feature": feature, "iqr_freq": iqr_f, "t2_freq": t2_f, "spe_freq": spe_f, "total": total})
+
+        rows.sort(key=lambda r: (int(r.get("total") or 0), int(r.get("iqr_freq") or 0), str(r.get("feature") or "")), reverse=True)
+
+        ctx = found.get("context") if isinstance(found.get("context"), dict) else {}
+        ctx_preview = " / ".join([f"{k}: {_to_str(v)}" for k, v in list(ctx.items())[:8]])
+        event_ids = found.get("event_ids") if isinstance(found.get("event_ids"), list) else []
+
+        return {
+            "summary_id": want_id,
+            "analysis_dimension": _to_str(found.get("analysis_dimension") or "").strip(),
+            "sample_count": int(_safe_number(found.get("sample_count"))),
+            "context_preview": ctx_preview,
+            "event_count": int(len(event_ids)),
+            "core_features": rows,
+        }
+
+    if key == "weighted_contributions":
+        if not isinstance(raw, dict):
+            raise KeyError("Item not found")
+        row = raw.get(want_id)
+        if not isinstance(row, dict):
+            raise KeyError("Item not found")
+
+        def _top(items: Any) -> list[dict[str, Any]]:
+            if not isinstance(items, list):
+                return []
+            out: list[dict[str, Any]] = []
+            for it in items[:20]:
+                if not isinstance(it, dict):
+                    continue
+                feat = _to_str(it.get("feature") or "").strip()
+                if not feat:
+                    continue
+                out.append(
+                    {
+                        "feature": feat,
+                        "final_score": float(_safe_number(it.get("final_score"))),
+                        "final_rank": int(_safe_number(it.get("final_rank"))),
+                    }
+                )
+            return out
+
+        return {
+            "id": want_id,
+            "x_T2": float(_safe_number(row.get("x_T2"))),
+            "x_SPE": float(_safe_number(row.get("x_SPE"))),
+            "t2_features": _top(row.get("T2_feature")),
+            "spe_features": _top(row.get("SPE_feature")),
+        }
+
+    if key == "rag_results":
+        import csv
+        import io
+
+        if not isinstance(raw, dict):
+            raise KeyError("Item not found")
+        feature_map = raw.get(want_id)
+        if not isinstance(feature_map, dict):
+            raise KeyError("Item not found")
+
+        def _parse_line(line: str) -> dict[str, Any] | None:
+            s = str(line or "").strip()
+            if not s:
+                return None
+            try:
+                parts = next(csv.reader(io.StringIO(s)))
+            except Exception:
+                parts = [p.strip() for p in s.split(",")]
+            # Expected: code, station, feature, kind, problem, action, section
+            code = parts[0] if len(parts) > 0 else ""
+            station = parts[1] if len(parts) > 1 else ""
+            kind = parts[3] if len(parts) > 3 else ""
+            problem = parts[4] if len(parts) > 4 else ""
+            action = parts[5] if len(parts) > 5 else ""
+            section = parts[6] if len(parts) > 6 else ""
+            return {
+                "code": str(code or "").strip(),
+                "station": str(station or "").strip(),
+                "kind": str(kind or "").strip(),
+                "problem": str(problem or "").strip(),
+                "action": str(action or "").strip(),
+                "section": str(section or "").strip(),
+            }
+
+        out_features: dict[str, list[dict[str, Any]]] = {}
+        for feature, lines in feature_map.items():
+            if not isinstance(lines, list):
+                continue
+            rows: list[dict[str, Any]] = []
+            for raw_line in lines[:200]:
+                parsed = _parse_line(_to_str(raw_line))
+                if parsed:
+                    rows.append(parsed)
+            if rows:
+                out_features[_to_str(feature)] = rows
+
+        return {"event_id": want_id, "features": out_features}
+
+    if key == "llm_reports":
+        # Resolve report object by event_id from various shapes.
+        report: dict[str, Any] | None = None
+        if isinstance(raw, list):
+            for it in raw:
+                if isinstance(it, dict) and _to_str(it.get("event_id") or it.get("id") or "").strip() == want_id:
+                    report = it
+                    break
+        elif isinstance(raw, dict):
+            if "event_id" in raw:
+                if _to_str(raw.get("event_id")).strip() == want_id:
+                    report = raw
+            elif want_id in raw and isinstance(raw.get(want_id), dict):
+                report = raw.get(want_id)  # type: ignore[assignment]
+            else:
+                for _, it in raw.items():
+                    if isinstance(it, dict) and _to_str(it.get("event_id") or it.get("id") or "").strip() == want_id:
+                        report = it
+                        break
+
+        if not report:
+            raise KeyError("Report not found")
+
+        main = report.get("main_anomalies") if isinstance(report.get("main_anomalies"), dict) else {}
+        total = int(_safe_number(main.get("total_anomalies")))
+        by_station = main.get("by_station") if isinstance(main.get("by_station"), dict) else {}
+
+        stations_out: list[dict[str, Any]] = []
+        for station, payload in by_station.items():
+            if not isinstance(payload, dict):
+                continue
+            anomalies = payload.get("anomalies") if isinstance(payload.get("anomalies"), list) else []
+            rows: list[dict[str, Any]] = []
+            for it in anomalies[:200]:
+                if not isinstance(it, dict):
+                    continue
+                rows.append(
+                    {
+                        "feature_name": _to_str(it.get("feature_name") or "").strip(),
+                        "detection_method": _to_str(it.get("detection_method") or "").strip(),
+                        "problem_description": _to_str(it.get("problem_description") or "").strip(),
+                    }
+                )
+            if rows:
+                stations_out.append({"station": _to_str(station), "anomalies": rows})
+
+        stations_out.sort(key=lambda r: len(r.get("anomalies") or []), reverse=True)
+        return {
+            "event_id": want_id,
+            "event_time": report.get("event_time"),
+            "total_anomalies": total,
+            "by_station": stations_out,
+        }
+
+    raise KeyError("Unsupported artifact")
 
 
 def _ensure_analytical_four_importable(root: Path) -> None:
@@ -465,17 +1082,40 @@ def run_external_categorical_analysis(
             # If the merged CSV doesn't include this station's target, just skip.
             continue
 
+        present_categorical_cols = [c for c in categorical_cols if c in station_df.columns]
+        missing_categorical_cols = [c for c in categorical_cols if c not in station_df.columns]
+        if missing_categorical_cols:
+            logger.warning(
+                "Analytics categorical columns missing in merged CSV for %s: %s",
+                station,
+                missing_categorical_cols,
+            )
+        if not present_categorical_cols:
+            # Nothing to analyze for this station.
+            continue
+
         # Only keep rows with meaningful target (avoid NaN -> "nan").
         station_df = station_df[station_df[target_col].notna()].copy()
         if station_df.empty:
             continue
 
-        result = analyzer.analyze(
-            data=station_df,
-            target_col=target_col,
-            categorical_cols=categorical_cols,
-            normalize=True,
-        )
+        # Analytical-Four has had API variations across versions.
+        # Prefer the newer explicit method name if present.
+        if hasattr(analyzer, "analyze_target_distribution_by_category"):
+            result = analyzer.analyze_target_distribution_by_category(
+                data=station_df,
+                target_col=target_col,
+                categorical_cols=present_categorical_cols,
+                normalize=True,
+            )
+        else:
+            # Backward compatibility with older Analytical-Four versions.
+            result = analyzer.analyze(  # type: ignore[attr-defined]
+                data=station_df,
+                target_col=target_col,
+                categorical_cols=present_categorical_cols,
+                normalize=True,
+            )
 
         # Prefix keys if needed.
         if len(_station_codes_from_request(stations)) > 1:
