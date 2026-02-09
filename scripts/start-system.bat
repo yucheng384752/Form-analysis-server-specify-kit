@@ -1,6 +1,12 @@
 @echo off
-chcp 65001 > nul
+chcp 65001 >nul 2>&1
 setlocal EnableDelayedExpansion
+
+if /I "%DEBUG_START_SYSTEM%"=="1" (
+    echo [DEBUG] start-system.bat trace enabled
+    @echo on
+)
+
 echo.
 echo ========================================
 echo     表單分析系統 - 啟動腳本
@@ -8,9 +14,6 @@ echo ========================================
 echo.
 
 REM 設置工作目錄
-@echo off
-chcp 65001 >nul 2>&1
-setlocal enabledelayedexpansion
 cd /d "%~dp0"
 cd ..
 set "PROJECT_ROOT=%cd%"
@@ -29,7 +32,6 @@ if not exist "%SERVER_PATH%\.env" (
 )
 
 REM 產生 ADMIN_API_KEYS（僅用於本機 demo bootstrap：建立 tenant / 建立 tenant user）
-REM 若已存在 ADMIN_API_KEYS=（非註解），則不覆蓋。
 if exist "%SERVER_PATH%\.env" (
     findstr /R /B /C:"ADMIN_API_KEYS=" "%SERVER_PATH%\.env" >nul 2>&1
     if errorlevel 1 (
@@ -59,53 +61,17 @@ if exist "%SERVER_PATH%\.env" (
 )
 echo [0/6] API base URL: http://localhost:!HOST_API_PORT!
 echo [0/6] PowerShell 提示：請用 curl.exe 或 Invoke-RestMethod 傳 headers
-echo   curl.exe -H "X-Admin-API-Key: <key>" http://localhost:!HOST_API_PORT!/api/auth/whoami
-echo   Invoke-RestMethod http://localhost:!HOST_API_PORT!/api/auth/whoami -Headers @{"X-Admin-API-Key"="<key>"}
+echo   curl.exe -H "X-Admin-API-Key: {key}" http://localhost:!HOST_API_PORT!/api/auth/whoami
+echo   Invoke-RestMethod http://localhost:!HOST_API_PORT!/api/auth/whoami -Headers @{"X-Admin-API-Key"="{key}"}
 
 REM --------------------------------------------------------
-REM PDFtoCSV server 連線檢查（外部服務，可選）
-REM - 若未設定 PDF_SERVER_URL，則跳過
-REM - 設定 SKIP_PDF_SERVER_CHECK=1 可略過檢查
-REM - 設定 PDF_SERVER_CHECK_STRICT=1 則失敗直接中止（不詢問）
+REM PDFtoCSV server check (optional)
+REM Skipped by default to avoid Windows cmd encoding quirks.
 REM --------------------------------------------------------
-if /I "%SKIP_PDF_SERVER_CHECK%"=="1" (
+if /I "!SKIP_PDF_SERVER_CHECK!"=="1" (
     echo [0/6] 已略過 PDFtoCSV server 連線檢查（SKIP_PDF_SERVER_CHECK=1）
 ) else (
-    set "PDF_SERVER_URL_FROM_ENVFILE="
-    if exist "%SERVER_PATH%\.env" (
-        for /f "usebackq tokens=1* delims==" %%a in (`findstr /R /B /C:"PDF_SERVER_URL=" "%SERVER_PATH%\.env"`) do (
-            set "PDF_SERVER_URL_FROM_ENVFILE=%%b"
-        )
-    )
-
-    set "PDF_SERVER_URL_EFFECTIVE=%PDF_SERVER_URL%"
-    if "!PDF_SERVER_URL_EFFECTIVE!"=="" set "PDF_SERVER_URL_EFFECTIVE=!PDF_SERVER_URL_FROM_ENVFILE!"
-    set "PDF_SERVER_URL_EFFECTIVE=!PDF_SERVER_URL_EFFECTIVE:"=!"
-
-    if "!PDF_SERVER_URL_EFFECTIVE!"=="" (
-        echo [0/6] 未設定 PDF_SERVER_URL，略過 PDFtoCSV server 連線檢查
-    ) else (
-        echo [0/6] 檢查 PDFtoCSV server 連線：!PDF_SERVER_URL_EFFECTIVE!
-        powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $base=$env:PDF_SERVER_URL_EFFECTIVE; if([string]::IsNullOrWhiteSpace($base)){ exit 0 }; $base=$base.Trim(); $paths=@('/healthz','/health','/'); foreach($p in $paths){ try { $u=$base.TrimEnd('/') + $p; $r=Invoke-WebRequest -UseBasicParsing -Uri $u -TimeoutSec 3 -Method GET; if($r.StatusCode -ge 200 -and $r.StatusCode -lt 500){ exit 0 } } catch { } }; try { $uri=[Uri]$base; $port=$uri.Port; if($port -le 0){ $port = if($uri.Scheme -eq 'https'){443}else{80} }; $tcp=Test-NetConnection -ComputerName $uri.Host -Port $port -WarningAction SilentlyContinue; if($tcp.TcpTestSucceeded){ exit 0 } } catch { }; exit 1" >nul 2>&1
-        if errorlevel 1 (
-            echo  [WARN] 無法連線到 PDFtoCSV server（將影響 PDF 轉檔功能）
-            echo   - 建議確認 PDF_SERVER_URL 是否正確、服務是否已啟動
-            echo   - 若要略過此檢查：設定 SKIP_PDF_SERVER_CHECK=1
-            if /I "%PDF_SERVER_CHECK_STRICT%"=="1" (
-                echo  [ERROR] PDF_SERVER_CHECK_STRICT=1：中止啟動
-                pause
-                exit /b 1
-            )
-            choice /M "PDFtoCSV server 目前不可用，仍要繼續啟動嗎"
-            if errorlevel 2 (
-                echo  使用者選擇中止
-                exit /b 1
-            )
-            echo  使用者選擇繼續（PDF 轉檔可能失敗）
-        ) else (
-            echo  PDFtoCSV server 連線檢查通過
-        )
-    )
+    echo [0/6] 預設略過 PDFtoCSV server 連線檢查（如需啟用，請設定 PDF_SERVER_URL）
 )
 
 REM 檢查 Docker 是否執行
@@ -149,86 +115,53 @@ REM 預先診斷常見問題
 echo.
 echo  預先診斷檢查...
 
-REM 檢查端口佔用並自動處理
-set "port_conflict=false"
+REM 檢查端口佔用並自動處理（先嘗試停止占用端口的 Docker 容器；若仍占用，顯示 PID/程序名稱並提示處理）
 set "docker_port_conflict=false"
-set "non_docker_port_conflict=false"
 set "BLOCKING_PORTS="
+set "BLOCKING_PIDS="
 
-netstat -an | find ":!HOST_DB_PORT!" | find "LISTENING" >nul 2>&1
-if not errorlevel 1 (
-    echo   檢測到端口 !HOST_DB_PORT! PostgreSQL 被佔用
-    echo     檢查是否為其他 Docker 容器...
-    for /f "tokens=*" %%i in ('docker ps --filter "publish=!HOST_DB_PORT!" --format "{{.Names}}"') do (
-        echo     停止容器: %%i
-        docker stop %%i >nul 2>&1
-        set "docker_port_conflict=true"
-    )
-    set "port_conflict=true"
-    netstat -an | find ":!HOST_DB_PORT!" | find "LISTENING" >nul 2>&1
-    if not errorlevel 1 (
-        set "non_docker_port_conflict=true"
-        set "BLOCKING_PORTS=!BLOCKING_PORTS! !HOST_DB_PORT!"
-    )
-)
+call :CHECK_PORT !HOST_DB_PORT! "PostgreSQL"
+call :CHECK_PORT !HOST_API_PORT! "API"
+call :CHECK_PORT !HOST_FRONTEND_PORT! "前端"
+call :CHECK_PORT 3000 "3000"
 
-netstat -an | find ":!HOST_API_PORT!" | find "LISTENING" >nul 2>&1
-if not errorlevel 1 (
-    echo   檢測到端口 !HOST_API_PORT! API 被佔用
-    echo     檢查是否為其他 Docker 容器...
-    for /f "tokens=*" %%i in ('docker ps --filter "publish=!HOST_API_PORT!" --format "{{.Names}}"') do (
-        echo     停止容器: %%i
-        docker stop %%i >nul 2>&1
-        set "docker_port_conflict=true"
-    )
-    set "port_conflict=true"
-    netstat -an | find ":!HOST_API_PORT!" | find "LISTENING" >nul 2>&1
-    if not errorlevel 1 (
-        set "non_docker_port_conflict=true"
-        set "BLOCKING_PORTS=!BLOCKING_PORTS! !HOST_API_PORT!"
-    )
-)
-
-netstat -an | find ":3000" | find "LISTENING" >nul 2>&1
-if not errorlevel 1 (
-    echo   檢測到端口 3000 被佔用
-    echo     檢查是否為其他 Docker 容器...
-    for /f "tokens=*" %%i in ('docker ps --filter "publish=3000" --format "{{.Names}}"') do (
-        echo     停止容器: %%i
-        docker stop %%i >nul 2>&1
-    )
-    set "port_conflict=true"
-)
-
-netstat -an | find ":!HOST_FRONTEND_PORT!" | find "LISTENING" >nul 2>&1
-if not errorlevel 1 (
-    echo   檢測到端口 !HOST_FRONTEND_PORT! 前端被佔用
-    echo     檢查是否為其他 Docker 容器...
-    for /f "tokens=*" %%i in ('docker ps --filter "publish=!HOST_FRONTEND_PORT!" --format "{{.Names}}"') do (
-        echo     停止容器: %%i
-        docker stop %%i >nul 2>&1
-        set "docker_port_conflict=true"
-    )
-    set "port_conflict=true"
-    netstat -an | find ":!HOST_FRONTEND_PORT!" | find "LISTENING" >nul 2>&1
-    if not errorlevel 1 (
-        set "non_docker_port_conflict=true"
-        set "BLOCKING_PORTS=!BLOCKING_PORTS! !HOST_FRONTEND_PORT!"
-    )
-)
-
-if "!non_docker_port_conflict!"=="true" (
+if defined BLOCKING_PORTS (
     echo.
     echo  [ERROR] 仍有端口被「非 Docker 程序」占用，無法自動釋放：!BLOCKING_PORTS!
     echo    - 建議修改 %SERVER_PATH%\.env 中的 HOST_API_PORT/FRONTEND_PORT/POSTGRES_PORT
-    echo    - 或停止占用程序後再重試
+    echo    - 或結束占用程序後再重試
     echo.
-    echo  你可以用以下指令找出 PID：
-    echo    netstat -ano ^| findstr ":!HOST_FRONTEND_PORT!"
-    echo  再用以下指令結束程序（請自行確認 PID）：
-    echo    taskkill /PID ^<pid^> /F
-    pause
-    exit /b 1
+    echo  佔用明細（Port ^> PID ^> Process）：
+    powershell -NoProfile -Command "$ports=\"!BLOCKING_PORTS!\".Trim().Split(' ',[System.StringSplitOptions]::RemoveEmptyEntries); foreach($p in $ports){ $c=Get-NetTCPConnection -LocalPort ([int]$p) -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if(-not $c){ Write-Host ('  {0} > (no LISTEN now)' -f $p); continue }; $pid=$c.OwningProcess; $name=(Get-Process -Id $pid -ErrorAction SilentlyContinue).ProcessName; if(-not $name){$name='?'}; Write-Host ('  {0} > {1} > {2}' -f $p,$pid,$name) }"
+    echo.
+    choice /M "是否要嘗試自動結束上述占用程序（taskkill /F）"
+    if errorlevel 2 (
+        echo  使用者選擇不自動結束，請手動釋放端口後再重試。
+        pause
+        exit /b 1
+    )
+
+    for %%p in (!BLOCKING_PIDS!) do (
+        if not "%%p"=="" (
+            echo   嘗試結束 PID=%%p ...
+            taskkill /PID %%p /F >nul 2>&1
+        )
+    )
+    timeout /t 2 /nobreak >nul
+
+    REM 再次確認是否仍占用
+    set "REMAIN_PORTS="
+    for %%p in (!BLOCKING_PORTS!) do (
+        call :IS_PORT_LISTENING %%p
+        if not errorlevel 1 set "REMAIN_PORTS=!REMAIN_PORTS! %%p"
+    )
+    if defined REMAIN_PORTS (
+        echo.
+        echo  [ERROR] 仍有端口無法釋放：!REMAIN_PORTS!
+        echo    請以系統管理員權限重新執行，或改用其他端口（調整 %SERVER_PATH%\.env）。
+        pause
+        exit /b 1
+    )
 )
 
 if "!docker_port_conflict!"=="true" (
@@ -237,7 +170,6 @@ if "!docker_port_conflict!"=="true" (
     timeout /t 2 /nobreak >nul
 )
 
-REM 檢查 Docker 資源
 echo     端口檢查完成
 
 REM 檢查是否有殘留容器
@@ -564,56 +496,102 @@ echo ========================================
 echo             系統啟動完成！
 echo ========================================
 echo.
-echo  服務連結：
-echo     前端應用: http://localhost:!HOST_FRONTEND_PORT!/index.html
-echo     API 文檔: http://localhost:!HOST_API_PORT!/docs  
-echo     API 測試: http://localhost:!HOST_API_PORT!/redoc
-echo     資料庫: localhost:!HOST_DB_PORT! (PostgreSQL)
-echo     資料庫管理: http://localhost:18004 (可選)
+echo  Service links:
+echo    [Frontend] http://localhost:!HOST_FRONTEND_PORT!/index.html
+echo    [API Docs] http://localhost:!HOST_API_PORT!/docs
+echo    [API Redoc] http://localhost:!HOST_API_PORT!/redoc
+echo    [Postgres] localhost:!HOST_DB_PORT! (PostgreSQL)
+echo    [PgAdmin] http://localhost:18004 (optional)
 echo.
-echo  服務狀態：
+echo  Service status:
 docker-compose ps
 
 echo.
-echo  已開啟監控終端機：
-echo    後端監控 - 顯示 API 和資料庫日誌
-echo    前端監控 - 顯示前端應用日誌
+echo  Monitoring terminals opened:
+echo    Backend monitor - API and DB logs
+echo    Frontend monitor - frontend logs
 echo.
-echo  常用指令：
-echo     查看所有日誌: docker-compose logs -f
-echo     停止服務: docker-compose down
-echo     重啟服務: docker-compose restart
-echo     健康檢查: docker-compose ps
+echo  Common commands:
+echo    Show all logs: docker-compose logs -f
+echo    Stop services: docker-compose down
+echo    Restart: docker-compose restart
+echo    Health: docker-compose ps
 echo.
 
 REM 等待服務完全就緒
-echo  最終健康檢查...
+echo  Final health check...
 timeout /t 3 /nobreak > nul
 
 REM 測試服務連通性
-echo  測試服務連通性...
+echo  Connectivity test...
 curl -s http://localhost:!HOST_API_PORT!/healthz >nul 2>&1
 if not errorlevel 1 (
-    echo  後端 API 服務正常
+    echo  Backend API OK
 ) else (
-    echo   後端 API 可能尚未完全就緒
+    echo  Backend API may not be ready yet
 )
 
 curl -s http://localhost:!HOST_FRONTEND_PORT! >nul 2>&1
 if not errorlevel 1 (
-    echo  前端應用服務正常
+    echo  Frontend OK
 ) else (
-    echo   前端應用可能尚未完全就緒
+    echo  Frontend may not be ready yet
 )
 
 echo.
-set /p "open_browser= 是否立即開啟瀏覽器? (y/N): "
+set /p "open_browser= Open browser now? (y/N): "
 if /i "!open_browser!"=="y" (
-    echo 正在開啟瀏覽器...
+    echo Opening browser...
     start http://localhost:!HOST_FRONTEND_PORT!/index.html
     timeout /t 2 /nobreak > nul
     start http://localhost:!HOST_API_PORT!/docs
 )
 
-echo 按任意鍵結束啟動程序...
+echo Press any key to exit...
 pause > nul
+
+exit /b 0
+
+REM --------------------------------------------------------
+REM 子程序：端口檢查/釋放
+REM --------------------------------------------------------
+:CHECK_PORT
+set "_PORT=%~1"
+set "_LABEL=%~2"
+
+call :IS_PORT_LISTENING %_PORT%
+if errorlevel 1 goto :eof
+
+echo   檢測到端口 %_PORT% %_LABEL% 被佔用
+
+REM 先嘗試停止占用該端口的 Docker 容器
+for /f "usebackq tokens=* delims=" %%i in (`docker ps --filter "publish=%_PORT%" --format "{{.Names}}" 2^>nul`) do (
+    if not "%%i"=="" (
+        echo     停止容器: %%i
+        docker stop %%i >nul 2>&1
+        set "docker_port_conflict=true"
+    )
+)
+
+timeout /t 1 /nobreak >nul
+call :IS_PORT_LISTENING %_PORT%
+if errorlevel 1 goto :eof
+
+REM 仍占用：視為非 Docker 程序，收集 PID
+set "_PID="
+for /f "tokens=1,2,3,4,5" %%a in ('netstat -ano ^| findstr /R /C:":%_PORT% .*LISTENING"') do (
+    set "_PID=%%e"
+    goto _got_pid
+)
+
+:_got_pid
+if not defined _PID set "_PID=?"
+set "BLOCKING_PORTS=!BLOCKING_PORTS! %_PORT%"
+if not "!_PID!"=="?" set "BLOCKING_PIDS=!BLOCKING_PIDS! !_PID!"
+set "_PID="
+goto :eof
+
+:IS_PORT_LISTENING
+set "_P=%~1"
+netstat -ano | findstr /R /C:":%_P% .*LISTENING" >nul 2>&1
+exit /b %errorlevel%
