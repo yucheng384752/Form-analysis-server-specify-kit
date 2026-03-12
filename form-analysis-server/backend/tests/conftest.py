@@ -25,6 +25,11 @@ from app.models.core.schema_registry import SchemaVersion, TableRegistry  # noqa
 from app.models.core.tenant import Tenant  # noqa: F401
 from app.models.core.tenant_api_key import TenantApiKey  # noqa: F401
 from app.models.core.tenant_user import TenantUser  # noqa: F401
+from app.models.p1_record import P1Record  # noqa: F401
+from app.models.p2_item_v2 import P2ItemV2  # noqa: F401
+from app.models.p2_record import P2Record  # noqa: F401
+from app.models.p3_item_v2 import P3ItemV2  # noqa: F401
+from app.models.p3_record import P3Record  # noqa: F401
 
 # 測試資料庫引擎 (使用 shared-cache 記憶體 SQLite)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///file:memdb1?mode=memory&cache=shared"

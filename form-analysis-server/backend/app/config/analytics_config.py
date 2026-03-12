@@ -3,6 +3,8 @@ Analytics API 配置
 針對多 server 並發呼叫與大資料量查詢優化
 """
 
+import os
+
 
 class AnalyticsConfig:
     """分析 API 閥值與效能配置"""
@@ -24,7 +26,9 @@ class AnalyticsConfig:
     DB_MAX_OVERFLOW = 20  # 最大溢出連線
 
     # Rate Limiting（防止濫用）
-    RATE_LIMIT_REQUESTS_PER_MINUTE = 30  # 每分鐘最多 30 次請求
+    RATE_LIMIT_REQUESTS_PER_MINUTE = int(
+        os.getenv("ANALYTICS_RATE_LIMIT_REQUESTS_PER_MINUTE", "90")
+    )
     RATE_LIMIT_BURST = 10  # 允許短時爆發 10 次
 
     # 並發查詢鎖定機制（避免重複查詢）

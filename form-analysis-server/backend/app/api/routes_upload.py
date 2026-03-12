@@ -53,7 +53,10 @@ from app.schemas.upload import (
     UploadErrorResponse,
 )
 from app.services.audit_events import write_audit_event_best_effort
-from app.services.pdf_conversion import process_pdf_conversion_job_background
+from app.services.pdf_conversion import (
+    PdfServerNotConfigured,
+    process_pdf_conversion_job_background,
+)
 from app.services.validation import ValidationError, file_validation_service
 
 # 獲取日誌記錄器
@@ -62,6 +65,23 @@ logger = get_logger(__name__)
 
 # 建立路由器
 router = APIRouter(tags=["檔案上傳"])
+
+
+@router.get(
+    "/upload/pdf/service-status",
+    summary="檢查 PDF 轉檔服務可用性",
+    description="回傳 PDF 轉檔服務是否已配置並可使用。",
+)
+async def get_pdf_service_status() -> dict:
+    """Check if PDF conversion service is available."""
+    settings = get_settings()
+    pdf_url = (getattr(settings, "pdf_server_url", None) or "").strip()
+    return {
+        "available": bool(pdf_url),
+        "message": (
+            "PDF 轉檔服務已配置" if pdf_url else "PDF 轉檔服務未設定 (PDF_SERVER_URL)"
+        ),
+    }
 
 
 def _is_pdf_bytes(file_content: bytes) -> bool:
@@ -1137,6 +1157,15 @@ async def trigger_pdf_convert(
     tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
     if not tenant_id:
         raise HTTPException(status_code=500, detail="Tenant context missing")
+
+    # Pre-check: PDF server must be configured before creating conversion job
+    settings = get_settings()
+    pdf_url = (getattr(settings, "pdf_server_url", None) or "").strip()
+    if not pdf_url:
+        raise HTTPException(
+            status_code=503,
+            detail="PDF 轉檔服務未設定 (PDF_SERVER_URL is not configured)。請聯繫管理員配置外部 PDF 轉檔服務。",
+        )
 
     upload = (
         await db.execute(

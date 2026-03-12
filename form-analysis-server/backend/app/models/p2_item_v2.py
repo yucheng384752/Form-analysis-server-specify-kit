@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, Float, ForeignKey, Index, Integer, UniqueConstraint
+from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import relationship
 
@@ -25,6 +25,8 @@ class P2ItemV2(Base):
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
     )
     winder_number = Column(Integer, nullable=False)
+    production_date_yyyymmdd = Column(Integer, nullable=True)
+    trace_lot_no = Column(String(32), nullable=True)
 
     # P2 Data Fields
     sheet_width = Column(Float)
@@ -59,6 +61,9 @@ class P2ItemV2(Base):
         Index("ix_p2_items_v2_p2_record_id", "p2_record_id"),
         Index("ix_p2_items_v2_tenant_id", "tenant_id"),
         Index("ix_p2_items_v2_winder_number", "winder_number"),
+        Index("ix_p2_items_v2_production_date", "production_date_yyyymmdd"),
+        Index("ix_p2_items_v2_tenant_slitting_result", "tenant_id", "slitting_result"),
+        Index("ix_p2_items_v2_tenant_trace_lot_no", "tenant_id", "trace_lot_no"),
         Index("ix_p2_items_v2_row_data_gin", "row_data", postgresql_using="gin"),
         UniqueConstraint(
             "p2_record_id", "winder_number", name="uq_p2_items_v2_record_winder"

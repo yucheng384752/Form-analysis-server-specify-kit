@@ -147,17 +147,40 @@ async def test_admin_key_can_patch_user_without_x_api_key_when_auth_mode_api_key
 
     resp = await client.patch(
         f"/api/auth/users/{u1.id}",
-        json={"role": "admin"},
+        json={"role": "manager"},
         headers={"X-Admin-API-Key": "test-admin-key"},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["id"] == str(u1.id)
-    assert body["role"] == "admin"
+    assert body["role"] == "manager"
 
 
 @pytest.mark.asyncio
-async def test_tenant_admin_scoped_to_own_tenant_for_user_management(
+async def test_create_user_rejects_admin_role(client, db_session_clean):
+    from app.main import settings
+
+    settings.auth_mode = "api_key"
+    settings.auth_api_key_header = "X-API-Key"
+    settings.admin_api_keys_str = "test-admin-key"
+
+    await _create_tenant(db_session_clean, code="t1")
+
+    resp = await client.post(
+        "/api/auth/users",
+        json={
+            "tenant_code": "t1",
+            "username": "bad",
+            "password": "password123",
+            "role": "admin",
+        },
+        headers={"X-Admin-API-Key": "test-admin-key"},
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_tenant_manager_scoped_to_own_tenant_for_user_management(
     client, db_session_clean
 ):
     from app.main import settings
@@ -168,16 +191,16 @@ async def test_tenant_admin_scoped_to_own_tenant_for_user_management(
     t1 = await _create_tenant(db_session_clean, code="t1")
     t2 = await _create_tenant(db_session_clean, code="t2")
 
-    admin_user_t1 = await _create_user(
-        db_session_clean, tenant_id=t1.id, username="admin1", role="admin"
+    manager_user_t1 = await _create_user(
+        db_session_clean, tenant_id=t1.id, username="manager1", role="manager"
     )
     other_user_t2 = await _create_user(
         db_session_clean, tenant_id=t2.id, username="user2", role="user"
     )
 
-    raw_key = "tenant1-admin-key"
+    raw_key = "tenant1-manager-key"
     await _create_api_key(
-        db_session_clean, tenant_id=t1.id, user_id=admin_user_t1.id, raw_key=raw_key
+        db_session_clean, tenant_id=t1.id, user_id=manager_user_t1.id, raw_key=raw_key
     )
 
     # List should only include tenant t1.
@@ -185,7 +208,7 @@ async def test_tenant_admin_scoped_to_own_tenant_for_user_management(
     assert list_resp.status_code == 200, list_resp.text
     users = list_resp.json()
     assert isinstance(users, list)
-    assert any(u["id"] == str(admin_user_t1.id) for u in users)
+    assert any(u["id"] == str(manager_user_t1.id) for u in users)
     assert all(u["tenant_id"] == str(t1.id) for u in users)
 
     # Cross-tenant update must be forbidden.

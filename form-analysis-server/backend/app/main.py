@@ -20,7 +20,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import ProgrammingError
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -146,6 +146,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         await db.commit()
             except Exception as e:
                 print(f" Warning: failed to seed default tenant: {e}")
+
+            # 2.5) Normalize legacy roles (admin -> manager)
+            try:
+                async with async_session_factory() as db:
+                    result = await db.execute(
+                        update(TenantUser)
+                        .where(TenantUser.role == "admin")
+                        .values(role="manager")
+                    )
+                    await db.commit()
+                    if result.rowcount:
+                        print(
+                            f" Normalized tenant roles: admin -> manager ({result.rowcount})"
+                        )
+            except Exception as e:
+                print(f" Warning: failed to normalize tenant roles: {e}")
 
             # 3) Optional: bootstrap a manager user (for first-time setup)
             try:

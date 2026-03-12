@@ -1,4 +1,4 @@
-"""分析用 API 端點
+﻿"""分析用 API 端點
 
 提供追溯資料扁平化查詢（支援多 server 並發呼叫）
 
@@ -9,16 +9,26 @@
 """
 
 import logging
+import math
+import re
 import time
+import hashlib
 from datetime import UTC, datetime
 from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_tenant
 from app.config.analytics_config import AnalyticsConfig
 from app.core.database import get_db
+from app.models.core.tenant import Tenant
+from app.models.p2_item_v2 import P2ItemV2
+from app.models.p2_record import P2Record
+from app.models.p3_item_v2 import P3ItemV2
+from app.models.p3_record import P3Record
 from app.services.traceability_flattener import TraceabilityFlattener
 
 logger = logging.getLogger(__name__)
@@ -27,14 +37,14 @@ router = APIRouter(prefix="/api/v2/analytics")
 
 # ============ Rate Limiting（簡易實作）============
 # 生產環境建議使用 Redis + slowapi
-_rate_limit_store = {}  # {ip: [(timestamp, count), ...]}
+_rate_limit_store = {}  # {ip: [timestamp, ...]}
 
 
-def check_rate_limit(request: Request):
+def check_rate_limit(request: Request, *, endpoint: str | None = None):
     """
     簡易 rate limiting 檢查
 
-    限制：每 IP 每分鐘最多 30 次請求（支援多 server 並發）
+    限制：每 IP 每分鐘最多 RATE_LIMIT_REQUESTS_PER_MINUTE 次請求（支援多 server 並發）
     """
     client_ip = request.client.host
     current_time = time.time()
@@ -52,9 +62,25 @@ def check_rate_limit(request: Request):
 
     # 檢查是否超過限制
     if request_count >= AnalyticsConfig.RATE_LIMIT_REQUESTS_PER_MINUTE:
+        oldest_ts = (
+            min(_rate_limit_store.get(client_ip, []))
+            if _rate_limit_store.get(client_ip)
+            else current_time
+        )
+        retry_after_seconds = max(1, int(math.ceil((oldest_ts + 60) - current_time)))
+        endpoint_tag = endpoint or request.url.path
         raise HTTPException(
             status_code=429,
-            detail=f"Rate limit exceeded. Max {AnalyticsConfig.RATE_LIMIT_REQUESTS_PER_MINUTE} requests per minute.",
+            detail={
+                "code": "RATE_LIMIT_EXCEEDED",
+                "message": (
+                    f"Rate limit exceeded. Max {AnalyticsConfig.RATE_LIMIT_REQUESTS_PER_MINUTE} requests per minute."
+                ),
+                "endpoint": endpoint_tag,
+                "retry_after_seconds": retry_after_seconds,
+                "limit_per_minute": AnalyticsConfig.RATE_LIMIT_REQUESTS_PER_MINUTE,
+            },
+            headers={"Retry-After": str(retry_after_seconds)},
         )
 
     # 記錄本次請求時間戳
@@ -240,7 +266,7 @@ async def health_check():
       "timestamp": "2025-09-01T12:00:00Z",
       "config": {
         "max_records_per_request": 1500,
-        "rate_limit_per_minute": 30,
+        "rate_limit_per_minute": 90,
         "auto_gzip_threshold": 200
       }
     }
@@ -279,32 +305,255 @@ class ArtifactListItem(BaseModel):
     mtime_epoch: float | None = None
 
 
+class ArtifactInputResolveResponse(BaseModel):
+    requested: list[str]
+    requested_count: int | None = None
+    normalized_inputs: dict[str, list[str]] = Field(default_factory=dict)
+    resolved: list[str]
+    resolved_count: int | None = None
+    unmatched: list[str]
+    unmatched_count: int | None = None
+    matches: dict[str, list[str]]
+    match_diagnostics: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    trace_tokens: dict[str, list[str]] = Field(default_factory=dict)
+    trace_attempted_count: int | None = None
+    trace_resolved_count: int | None = None
+    unmatched_reason_counts: dict[str, int] = Field(default_factory=dict)
+    elapsed_ms: float | None = None
+
+
+class ArtifactSnapshotBucket(BaseModel):
+    name: str
+    count: int
+
+
+class ArtifactUnifiedSnapshotResponse(BaseModel):
+    artifact_key: str
+    sample_count: int
+    station_distribution: list[ArtifactSnapshotBucket] = Field(default_factory=list)
+    machine_distribution: list[ArtifactSnapshotBucket] = Field(default_factory=list)
+    top_features: list[ArtifactSnapshotBucket] = Field(default_factory=list)
+    metrics: dict[str, int] = Field(default_factory=dict)
+
+
+class ComplaintAnalysisRequest(BaseModel):
+    product_ids: list[str] = Field(default_factory=list, description="客訴 product_id 清單")
+    snapshot_artifact_key: str = Field(
+        default="serialized_events",
+        description="主分析快照來源 artifact key",
+    )
+    include_report_views: list[str] = Field(
+        default_factory=lambda: ["llm_reports", "rag_results"],
+        description="要附帶回傳的報告視圖 key",
+    )
+
+
+class ComplaintAnalysisResponse(BaseModel):
+    artifact_key: str
+    analysis_scope_id: str
+    scope_tokens_count: int = 0
+    input_summary: ArtifactInputResolveResponse
+    mapping: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    source_scope: dict[str, int] = Field(default_factory=dict)
+    report_input_scope: dict[str, Any] = Field(default_factory=dict)
+    snapshot: ArtifactUnifiedSnapshotResponse
+    report_payload: dict[str, ArtifactUnifiedSnapshotResponse] = Field(default_factory=dict)
+    report_composition: dict[str, Any] = Field(default_factory=dict)
+    consistency: dict[str, Any] = Field(default_factory=dict)
+    timing: dict[str, float] = Field(default_factory=dict)
+    elapsed_ms: float | None = None
+
+
+def _extract_trace_tokens(trace_payload: Any) -> list[str]:
+    if not isinstance(trace_payload, dict):
+        return []
+    p3 = trace_payload.get("p3")
+    if not isinstance(p3, dict):
+        return []
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: Any) -> None:
+        s = str(value or "").strip()
+        if not s:
+            return
+        k = s.lower()
+        if k in seen:
+            return
+        seen.add(k)
+        out.append(s)
+
+    lot_no = p3.get("lot_no")
+    source_winder = p3.get("source_winder")
+    if lot_no and source_winder is not None:
+        add(f"{lot_no}_{source_winder}")
+
+    add(p3.get("product_id"))
+
+    additional = p3.get("additional_data")
+    rows = additional.get("rows") if isinstance(additional, dict) else None
+    if isinstance(rows, list):
+        for row in rows[:50]:
+            if not isinstance(row, dict):
+                continue
+            add(row.get("Produce_No."))
+            add(row.get("Produce_No"))
+            add(row.get("produce_no"))
+            add(row.get("P3_No."))
+            add(row.get("lot no"))
+            add(row.get("Lot No"))
+            lot = str(row.get("lot") or "").strip()
+            if lot and lot_no:
+                add(f"{lot_no}_{lot}")
+
+    return out[:50]
+
+
+def _trace_rows_count(node: Any) -> int:
+    if not isinstance(node, dict):
+        return 0
+    additional = node.get("additional_data")
+    rows = additional.get("rows") if isinstance(additional, dict) else None
+    if isinstance(rows, list):
+        return len(rows)
+    return 1
+
+
+_LOT_WINDER_RE = re.compile(r"^\d{6,8}[-_]\d{2}[-_]\d+$")
+_P3_PRODUCE_NO_RE = re.compile(r"^\d{8}[-_][A-Za-z0-9]+[-_].+[-_]\d+(?:[-_]dup\d+)?$")
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+)
+
+
+def _looks_like_supported_product_id(pid: str) -> bool:
+    s = str(pid or "").strip()
+    if not s:
+        return False
+    if _LOT_WINDER_RE.fullmatch(s):
+        return True
+    if _P3_PRODUCE_NO_RE.fullmatch(s):
+        return True
+    if _UUID_RE.fullmatch(s):
+        return True
+    # minimal pragmatic fallback: contains separators and at least 3 segments
+    segs = [x for x in re.split(r"[-_]", s) if x]
+    return len(segs) >= 3
+
+
+def _classify_unmatched_reason(
+    *,
+    requested_id: str,
+    trace_candidates: list[str],
+    artifact_row_count: int,
+) -> tuple[str, str]:
+    if not _looks_like_supported_product_id(requested_id):
+        return ("invalid_format", "Input product_id format is not supported for artifact matching")
+    if not trace_candidates:
+        return ("no_trace", "No traceability tokens were found for this product_id")
+    if artifact_row_count <= 0:
+        return ("artifact_no_data", "Artifact has no rows for lookup")
+    return ("artifact_no_data", "Artifact rows exist, but no matched token was found")
+
+
+async def _resolve_trace_tokens_from_db(
+    *,
+    session: AsyncSession,
+    tenant_id: Any,
+    requested_ids: list[str],
+    normalized_inputs: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for pid in requested_ids:
+        candidates = [
+            str(x).strip()
+            for x in (normalized_inputs.get(pid, []) if isinstance(normalized_inputs, dict) else [])
+            if str(x).strip()
+        ]
+        if not candidates:
+            s = str(pid or "").strip()
+            if s:
+                candidates = [s]
+        if not candidates:
+            continue
+
+        stmt = (
+            select(P2ItemV2.trace_lot_no)
+            .select_from(P3Record)
+            .join(P3ItemV2, P3ItemV2.p3_record_id == P3Record.id)
+            .join(
+                P2Record,
+                and_(
+                    P2Record.tenant_id == P3Record.tenant_id,
+                    P2Record.lot_no_norm == P3Record.lot_no_norm,
+                    P2Record.winder_number == P3ItemV2.source_winder,
+                ),
+            )
+            .join(
+                P2ItemV2,
+                and_(
+                    P2ItemV2.p2_record_id == P2Record.id,
+                    P2ItemV2.winder_number == P2Record.winder_number,
+                ),
+            )
+            .where(
+                P3Record.tenant_id == tenant_id,
+                P3ItemV2.tenant_id == tenant_id,
+                P2Record.tenant_id == tenant_id,
+                P2ItemV2.tenant_id == tenant_id,
+                P3ItemV2.source_winder.is_not(None),
+                P2ItemV2.trace_lot_no.is_not(None),
+                or_(
+                    P3Record.product_id.in_(candidates),
+                    P3ItemV2.product_id.in_(candidates),
+                ),
+            )
+            .limit(50)
+        )
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+        seen: set[str] = set()
+        tokens: list[str] = []
+        for tok in rows:
+            s = str(tok or "").strip()
+            if not s:
+                continue
+            k = s.lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            tokens.append(s)
+        if tokens:
+            out[pid] = tokens[:50]
+    return out
+
+
 @router.post("/analyze")
 async def analyze(
     payload: AnalyzeRequest,
     request: Request = None,
     session: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
 ):
     """
     依照前端提供的篩選條件（含站點 P2/P3/ALL）準備 query 後內容，交由外部分析 package 產生分析結果 JSON。
 
-    目前先回傳內建範例 JSON（sample_analysis_p2.json），讓前端可自動化繪圖流程。
-    後續只要把此端點內部的 sample 替換為：
-    - DB query 結果整理
-    - 呼叫外部分析 package
-    - 回傳 package 的 JSON
+    此端點從資料庫撈取資料，確保直方圖顯示的資料與 NG drill-down 查詢的資料來源一致。
     """
 
     # Rate limiting（支援並發）
     if request:
         check_rate_limit(request)
 
-    # External analytics package integration (Analytical-Four).
-    # This endpoint returns the package-produced JSON directly, so the frontend doesn't need manual JSON paste.
+    # Use DB-based analysis to ensure data consistency with NG drill-down
     try:
-        from app.services.analytics_external import run_external_categorical_analysis
+        from app.services.analytics_external import run_external_categorical_analysis_from_db
 
-        data = run_external_categorical_analysis(
+        data = await run_external_categorical_analysis_from_db(
+            db=session,
+            tenant_id=current_tenant.id,
             start_date=payload.start_date,
             end_date=payload.end_date,
             product_id=payload.product_id,
@@ -341,7 +590,7 @@ async def list_artifacts(request: Request = None):
     """
 
     if request:
-        check_rate_limit(request)
+        check_rate_limit(request, endpoint="/api/v2/analytics/artifacts")
 
     from app.services.analytics_external import list_analytics_artifacts
 
@@ -367,7 +616,7 @@ async def get_artifact(artifact_key: str, request: Request = None) -> Any:
     """
 
     if request:
-        check_rate_limit(request)
+        check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}")
 
     try:
         from app.services.analytics_external import get_analytics_artifact_list_view, parse_artifact_key
@@ -400,7 +649,7 @@ async def get_artifact_list(
     """
 
     if request:
-        check_rate_limit(request)
+        check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/list")
 
     try:
         from app.services.analytics_external import get_analytics_artifact_list_view, parse_artifact_key, _split_product_ids
@@ -422,6 +671,586 @@ async def get_artifact_list(
         raise HTTPException(status_code=500, detail="Failed to load analytics artifact")
 
 
+@router.get(
+    "/artifacts/{artifact_key}/resolve-input",
+    response_model=ArtifactInputResolveResponse,
+)
+async def resolve_artifact_input(
+    artifact_key: str,
+    product_ids: str | None = None,
+    request: Request = None,
+    session: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+) -> ArtifactInputResolveResponse:
+    """Resolve user inputs into artifact-effective filter tokens."""
+    t0 = time.perf_counter()
+
+    if request:
+        check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/resolve-input")
+
+    try:
+        from app.services.analytics_external import (
+            _split_product_ids,
+            parse_artifact_key,
+            resolve_artifact_product_inputs,
+        )
+
+        key = parse_artifact_key(artifact_key)
+        pids = _split_product_ids(product_ids)
+        base = resolve_artifact_product_inputs(key, product_ids=pids)
+        base_normalized = (
+            base.get("normalized_inputs", {})
+            if isinstance(base.get("normalized_inputs", {}), dict)
+            else {}
+        )
+
+        trace_tokens: dict[str, list[str]] = {}
+        trace_token_source: dict[str, str] = {}
+        unresolved = [x for x in base.get("unmatched", []) if isinstance(x, str)]
+        trace_attempted_count = len(unresolved)
+        db_trace_tokens = await _resolve_trace_tokens_from_db(
+            session=session,
+            tenant_id=current_tenant.id,
+            requested_ids=unresolved,
+            normalized_inputs=base_normalized,
+        )
+        if unresolved:
+            from app.api.traceability import trace_by_product_id
+
+            for pid in unresolved:
+                if db_trace_tokens.get(pid):
+                    trace_tokens[pid] = list(db_trace_tokens.get(pid, []))
+                    trace_token_source[pid] = "db_trace_lot"
+                    continue
+                try:
+                    trace_payload = await trace_by_product_id(
+                        product_id=pid,
+                        db=session,
+                        current_tenant=current_tenant,
+                    )
+                    tokens = _extract_trace_tokens(trace_payload)
+                    if tokens:
+                        trace_tokens[pid] = tokens
+                        trace_token_source[pid] = "traceability"
+                except HTTPException:
+                    trace_tokens[pid] = []
+                except Exception:
+                    trace_tokens[pid] = []
+
+        if not trace_tokens:
+            artifact_row_count = int(base.get("artifact_row_count") or 0)
+            base_normalized = (
+                base_normalized
+            )
+            base_diag = (
+                base.get("match_diagnostics", {})
+                if isinstance(base.get("match_diagnostics", {}), dict)
+                else {}
+            )
+            base_unmatched = (
+                base.get("unmatched", [])
+                if isinstance(base.get("unmatched", []), list)
+                else []
+            )
+            enriched_diag: dict[str, dict[str, Any]] = {}
+            for pid in pids:
+                pid_base_diag = base_diag.get(pid) if isinstance(base_diag.get(pid), dict) else {}
+                reason_code = ""
+                reason_message = ""
+                if pid in base_unmatched:
+                    reason_code, reason_message = _classify_unmatched_reason(
+                        requested_id=pid,
+                        trace_candidates=[],
+                        artifact_row_count=artifact_row_count,
+                    )
+                enriched_diag[pid] = {
+                    "candidate_count": int(pid_base_diag.get("candidate_count") or len(base_normalized.get(pid, []))),
+                    "matched_by": pid_base_diag.get("matched_by", []) if isinstance(pid_base_diag.get("matched_by", []), list) else [],
+                    "reason_code": reason_code,
+                    "reason_message": reason_message,
+                    "trace_source": trace_token_source.get(pid, ""),
+                }
+
+            resolved_list = [
+                str(x).strip()
+                for x in (
+                    base.get("resolved", [])
+                    if isinstance(base.get("resolved", []), list)
+                    else []
+                )
+                if str(x).strip()
+            ]
+            unmatched_list = [str(x).strip() for x in base_unmatched if str(x).strip()]
+            reason_counts: dict[str, int] = {}
+            for pid in unmatched_list:
+                code = str((enriched_diag.get(pid) or {}).get("reason_code") or "").strip()
+                if not code:
+                    continue
+                reason_counts[code] = int(reason_counts.get(code, 0)) + 1
+
+            return ArtifactInputResolveResponse(
+                requested=pids,
+                requested_count=len(pids),
+                normalized_inputs={pid: list(base_normalized.get(pid, [])) for pid in pids},
+                resolved=resolved_list,
+                resolved_count=len(resolved_list),
+                unmatched=unmatched_list,
+                unmatched_count=len(unmatched_list),
+                matches={
+                    pid: [str(x).strip() for x in ((base.get("matches", {}) or {}).get(pid, []) if isinstance((base.get("matches", {}) or {}).get(pid, []), list) else []) if str(x).strip()][:20]
+                    for pid in pids
+                },
+                match_diagnostics=enriched_diag,
+                trace_tokens={},
+                trace_attempted_count=trace_attempted_count,
+                trace_resolved_count=0,
+                unmatched_reason_counts=reason_counts,
+                elapsed_ms=round((time.perf_counter() - t0) * 1000, 2),
+            )
+
+        # Re-run matching by using trace-derived candidates and map hits back to requested IDs.
+        token_order: list[str] = []
+        token_seen: set[str] = set()
+        for pid in unresolved:
+            for tok in trace_tokens.get(pid, []):
+                tk = tok.lower()
+                if tk in token_seen:
+                    continue
+                token_seen.add(tk)
+                token_order.append(tok)
+
+        token_result = (
+            resolve_artifact_product_inputs(key, product_ids=token_order)
+            if token_order
+            else {"matches": {}, "resolved": []}
+        )
+        token_matches = token_result.get("matches", {}) if isinstance(token_result, dict) else {}
+        artifact_row_count = int(base.get("artifact_row_count") or 0)
+        base_normalized = (
+            base_normalized
+        )
+        base_diag = (
+            base.get("match_diagnostics", {})
+            if isinstance(base.get("match_diagnostics", {}), dict)
+            else {}
+        )
+
+        merged_matches: dict[str, list[str]] = {}
+        merged_resolved: list[str] = []
+        merged_resolved_seen: set[str] = set()
+        for x in base.get("resolved", []):
+            s = str(x).strip()
+            if not s:
+                continue
+            k = s.lower()
+            if k in merged_resolved_seen:
+                continue
+            merged_resolved_seen.add(k)
+            merged_resolved.append(s)
+
+        base_matches = base.get("matches", {}) if isinstance(base.get("matches", {}), dict) else {}
+        for pid in pids:
+            direct = base_matches.get(pid, []) if isinstance(base_matches, dict) else []
+            hits: list[str] = []
+            hit_seen: set[str] = set()
+            for h in direct:
+                hs = str(h).strip()
+                if not hs:
+                    continue
+                hk = hs.lower()
+                if hk in hit_seen:
+                    continue
+                hit_seen.add(hk)
+                hits.append(hs)
+            if not hits:
+                for tok in trace_tokens.get(pid, []):
+                    for h in token_matches.get(tok, []):
+                        hs = str(h).strip()
+                        if not hs:
+                            continue
+                        hk = hs.lower()
+                        if hk in hit_seen:
+                            continue
+                        hit_seen.add(hk)
+                        hits.append(hs)
+            for h in hits:
+                hk = h.lower()
+                if hk not in merged_resolved_seen:
+                    merged_resolved_seen.add(hk)
+                    merged_resolved.append(h)
+            merged_matches[pid] = hits[:20]
+
+        merged_unmatched = [pid for pid in pids if not merged_matches.get(pid)]
+        merged_diag: dict[str, dict[str, Any]] = {}
+        for pid in pids:
+            pid_base_diag = base_diag.get(pid) if isinstance(base_diag.get(pid), dict) else {}
+            matched_by_raw = pid_base_diag.get("matched_by", [])
+            matched_by = [str(x).strip() for x in matched_by_raw if str(x).strip()] if isinstance(matched_by_raw, list) else []
+            if not matched_by and merged_matches.get(pid):
+                # Fallback path: direct match was empty, but trace token mapping resolved hits.
+                matched_by = trace_tokens.get(pid, [])[:20]
+            reason_code = ""
+            reason_message = ""
+            if pid in merged_unmatched:
+                reason_code, reason_message = _classify_unmatched_reason(
+                    requested_id=pid,
+                    trace_candidates=trace_tokens.get(pid, []),
+                    artifact_row_count=artifact_row_count,
+                )
+            merged_diag[pid] = {
+                "candidate_count": int(pid_base_diag.get("candidate_count") or len(base_normalized.get(pid, []))),
+                "matched_by": matched_by[:20],
+                "reason_code": reason_code,
+                "reason_message": reason_message,
+                "trace_source": trace_token_source.get(pid, ""),
+            }
+
+        trace_resolved_count = 0
+        for pid in unresolved:
+            if merged_matches.get(pid):
+                trace_resolved_count += 1
+
+        reason_counts: dict[str, int] = {}
+        for pid in merged_unmatched:
+            code = str((merged_diag.get(pid) or {}).get("reason_code") or "").strip()
+            if not code:
+                continue
+            reason_counts[code] = int(reason_counts.get(code, 0)) + 1
+
+        return ArtifactInputResolveResponse(
+            requested=pids,
+            requested_count=len(pids),
+            normalized_inputs={pid: list(base_normalized.get(pid, [])) for pid in pids},
+            resolved=merged_resolved[:100],
+            resolved_count=len(merged_resolved[:100]),
+            unmatched=merged_unmatched,
+            unmatched_count=len(merged_unmatched),
+            matches=merged_matches,
+            match_diagnostics=merged_diag,
+            trace_tokens=trace_tokens,
+            trace_attempted_count=trace_attempted_count,
+            trace_resolved_count=trace_resolved_count,
+            unmatched_reason_counts=reason_counts,
+            elapsed_ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Analytics artifact not found. "
+                "Please generate it with Analytical-Four and place it under SEPTEMBER_V2_PATH (or set ANALYTICS_ARTIFACTS_DIR)."
+            ),
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown analytics artifact key")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to resolve analytics artifact input")
+
+
+@router.get(
+    "/artifacts/{artifact_key}/snapshot",
+    response_model=ArtifactUnifiedSnapshotResponse,
+)
+async def get_artifact_unified_snapshot(
+    artifact_key: str,
+    product_ids: str | None = None,
+    request: Request = None,
+) -> ArtifactUnifiedSnapshotResponse:
+    """Get a unified aggregate snapshot for cross-view rendering."""
+
+    if request:
+        check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/snapshot")
+
+    try:
+        from app.services.analytics_external import (
+            _split_product_ids,
+            get_analytics_artifact_unified_snapshot,
+            parse_artifact_key,
+        )
+
+        key = parse_artifact_key(artifact_key)
+        pids = _split_product_ids(product_ids)
+        data = get_analytics_artifact_unified_snapshot(key, product_ids=pids)
+        return ArtifactUnifiedSnapshotResponse(**data)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Analytics artifact not found. "
+                "Please generate it with Analytical-Four and place it under SEPTEMBER_V2_PATH (or set ANALYTICS_ARTIFACTS_DIR)."
+            ),
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown analytics artifact key")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to build analytics unified snapshot")
+
+
+@router.post(
+    "/complaint-analysis",
+    response_model=ComplaintAnalysisResponse,
+)
+async def analyze_complaint_products(
+    payload: ComplaintAnalysisRequest,
+    request: Request = None,
+    session: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+) -> ComplaintAnalysisResponse:
+    """One-shot complaint analysis orchestration: resolve -> snapshot -> report payload."""
+
+    t0 = time.perf_counter()
+    if request:
+        check_rate_limit(request, endpoint="/api/v2/analytics/complaint-analysis")
+
+    try:
+        from app.services.analytics_external import get_analytics_artifact_unified_snapshot, parse_artifact_key
+        resolve_ms = 0.0
+        snapshot_ms = 0.0
+        report_ms = 0.0
+
+        requested_ids: list[str] = []
+        seen: set[str] = set()
+        for raw in payload.product_ids:
+            s = str(raw or "").strip()
+            if not s:
+                continue
+            k = s.lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            requested_ids.append(s)
+
+        main_key = parse_artifact_key(payload.snapshot_artifact_key)
+        include_keys: list[str] = []
+        for raw_key in payload.include_report_views:
+            s = str(raw_key or "").strip()
+            if not s:
+                continue
+            include_keys.append(str(parse_artifact_key(s)))
+
+        t_resolve = time.perf_counter()
+        resolved_input = await resolve_artifact_input(
+            artifact_key=str(main_key),
+            product_ids=",".join(requested_ids),
+            request=None,
+            session=session,
+            current_tenant=current_tenant,
+        )
+        resolve_ms = (time.perf_counter() - t_resolve) * 1000
+        resolved_tokens = [str(x).strip() for x in (resolved_input.resolved or []) if str(x).strip()]
+        scope_seed = "|".join(sorted({x.lower() for x in resolved_tokens}))
+        analysis_scope_id = hashlib.sha1(scope_seed.encode("utf-8")).hexdigest()[:12] if scope_seed else "empty"
+
+        # Build a DB-backed unified scope (P1/P2/P3) from complaint product_ids via traceability.
+        t_report = time.perf_counter()
+        source_scope = {"p1_count": 0, "p2_count": 0, "p3_count": 0, "total_records": 0}
+        unified_records: list[dict[str, Any]] = []
+        if requested_ids:
+            from app.api.traceability import trace_by_product_id
+
+            for pid in requested_ids[:50]:
+                try:
+                    trace_payload = await trace_by_product_id(
+                        product_id=pid,
+                        db=session,
+                        current_tenant=current_tenant,
+                    )
+                except HTTPException:
+                    continue
+                except Exception:
+                    continue
+
+                p1 = trace_payload.get("p1") if isinstance(trace_payload, dict) else None
+                p2 = trace_payload.get("p2") if isinstance(trace_payload, dict) else None
+                p3 = trace_payload.get("p3") if isinstance(trace_payload, dict) else None
+
+                if isinstance(p1, dict):
+                    c = _trace_rows_count(p1)
+                    source_scope["p1_count"] += c
+                    source_scope["total_records"] += c
+                    unified_records.append(
+                        {
+                            "requested_id": pid,
+                            "data_type": "P1",
+                            "product_id": str(p1.get("product_id") or "").strip(),
+                            "lot_no": str(p1.get("lot_no") or "").strip(),
+                            "rows_count": c,
+                        }
+                    )
+                if isinstance(p2, dict):
+                    c = _trace_rows_count(p2)
+                    source_scope["p2_count"] += c
+                    source_scope["total_records"] += c
+                    unified_records.append(
+                        {
+                            "requested_id": pid,
+                            "data_type": "P2",
+                            "product_id": str(p2.get("product_id") or "").strip(),
+                            "lot_no": str(p2.get("lot_no") or "").strip(),
+                            "rows_count": c,
+                        }
+                    )
+                if isinstance(p3, dict):
+                    c = _trace_rows_count(p3)
+                    source_scope["p3_count"] += c
+                    source_scope["total_records"] += c
+                    unified_records.append(
+                        {
+                            "requested_id": pid,
+                            "data_type": "P3",
+                            "product_id": str(p3.get("product_id") or "").strip(),
+                            "lot_no": str(p3.get("lot_no") or "").strip(),
+                            "rows_count": c,
+                        }
+                    )
+
+        # Diagnostics-only fallback: when nothing resolved, do not compute charts/reports from full dataset.
+        t_snapshot = time.perf_counter()
+        if not resolved_tokens:
+            snapshot = ArtifactUnifiedSnapshotResponse(
+                artifact_key=str(main_key),
+                sample_count=0,
+                station_distribution=[],
+                machine_distribution=[],
+                top_features=[],
+                metrics={},
+            )
+            report_payload: dict[str, ArtifactUnifiedSnapshotResponse] = {}
+        else:
+            snapshot_data = get_analytics_artifact_unified_snapshot(main_key, product_ids=resolved_tokens)
+            snapshot = ArtifactUnifiedSnapshotResponse(**snapshot_data)
+
+            report_payload = {}
+            for view_key in include_keys:
+                view_data = get_analytics_artifact_unified_snapshot(view_key, product_ids=resolved_tokens)
+                report_payload[view_key] = ArtifactUnifiedSnapshotResponse(**view_data)
+        snapshot_ms = (time.perf_counter() - t_snapshot) * 1000
+
+        mapping: dict[str, dict[str, Any]] = {}
+        for pid in (resolved_input.requested or []):
+            hits = [str(x).strip() for x in (resolved_input.matches.get(pid, []) if isinstance(resolved_input.matches, dict) else []) if str(x).strip()]
+            diag = resolved_input.match_diagnostics.get(pid, {}) if isinstance(resolved_input.match_diagnostics, dict) else {}
+            trace_candidates = resolved_input.trace_tokens.get(pid, []) if isinstance(resolved_input.trace_tokens, dict) else []
+            stage = "unmatched"
+            if hits:
+                trace_source = str(diag.get("trace_source") or "").strip()
+                if trace_source == "db_trace_lot":
+                    stage = "matched_trace_lot"
+                else:
+                    stage = "matched_trace" if trace_candidates else "matched_direct"
+            mapping[pid] = {
+                "matched_tokens": hits,
+                "reason_code": str(diag.get("reason_code") or "").strip(),
+                "reason_message": str(diag.get("reason_message") or "").strip(),
+                "matched_stage": stage,
+            }
+
+        summary_lines: list[str] = []
+        summary_lines.append(
+            f"Source scope P1/P2/P3: {source_scope['p1_count']}/{source_scope['p2_count']}/{source_scope['p3_count']}"
+        )
+        top_station = snapshot.station_distribution[0].name if snapshot.station_distribution else ""
+        top_machine = snapshot.machine_distribution[0].name if snapshot.machine_distribution else ""
+        top_feature = snapshot.top_features[0].name if snapshot.top_features else ""
+        if top_station:
+            summary_lines.append(f"Top station: {top_station}")
+        if top_machine:
+            summary_lines.append(f"Top machine: {top_machine}")
+        if top_feature:
+            summary_lines.append(f"Top feature: {top_feature}")
+        if not summary_lines:
+            summary_lines.append("No resolved data for complaint scope")
+
+        suggestions: list[str] = []
+        if top_feature:
+            suggestions.append(f"Prioritize SOP review for {top_feature}")
+        if top_station:
+            suggestions.append(f"Run station-level checklist for {top_station}")
+        if top_machine:
+            suggestions.append(f"Verify machine settings and maintenance for {top_machine}")
+        if not suggestions:
+            suggestions.append("Collect more traceable product IDs to generate actionable suggestions")
+
+        evidence_refs: list[dict[str, Any]] = []
+        for row in unified_records[:50]:
+            evidence_refs.append(
+                {
+                    "requested_id": str(row.get("requested_id") or "").strip(),
+                    "token": str(row.get("product_id") or row.get("lot_no") or "").strip(),
+                    "source": f"db_{str(row.get('data_type') or '').lower()}",
+                }
+            )
+        for pid, info in mapping.items():
+            tokens = info.get("matched_tokens") if isinstance(info, dict) else []
+            if not isinstance(tokens, list):
+                tokens = []
+            for tk in tokens[:5]:
+                s = str(tk).strip()
+                if not s:
+                    continue
+                evidence_refs.append(
+                    {
+                        "requested_id": pid,
+                        "token": s,
+                        "source": "mapping",
+                    }
+                )
+        evidence_refs = evidence_refs[:50]
+        report_ms = (time.perf_counter() - t_report) * 1000
+        total_ms = (time.perf_counter() - t0) * 1000
+
+        return ComplaintAnalysisResponse(
+            artifact_key=str(main_key),
+            analysis_scope_id=analysis_scope_id,
+            scope_tokens_count=len(resolved_tokens),
+            input_summary=resolved_input,
+            mapping=mapping,
+            source_scope=source_scope,
+            report_input_scope={
+                "mode": "db_unified_p1p2p3",
+                "requested_count": len(requested_ids),
+                "resolved_count": len(resolved_tokens),
+                "scope_tokens_count": len(resolved_tokens),
+            },
+            snapshot=snapshot,
+            report_payload=report_payload,
+            report_composition={
+                "summary": summary_lines,
+                "suggestions": suggestions,
+                "evidence_refs": evidence_refs,
+            },
+            consistency={
+                "snapshot_scope_locked": True,
+                "report_scope_locked": True,
+                "scope_tokens_count": len(resolved_tokens),
+                "snapshot_sample_count": int(snapshot.sample_count),
+                "report_sample_counts": {
+                    k: int(v.sample_count) for k, v in report_payload.items()
+                },
+            },
+            timing={
+                "resolve_ms": round(resolve_ms, 2),
+                "snapshot_ms": round(snapshot_ms, 2),
+                "report_ms": round(report_ms, 2),
+                "total_ms": round(total_ms, 2),
+            },
+            elapsed_ms=round(total_ms, 2),
+        )
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Analytics artifact not found. "
+                "Please generate it with Analytical-Four and place it under SEPTEMBER_V2_PATH (or set ANALYTICS_ARTIFACTS_DIR)."
+            ),
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown analytics artifact key")
+    except Exception:
+        logger.exception("complaint-analysis failed")
+        raise HTTPException(status_code=500, detail="Failed to build complaint analysis payload")
+
+
 @router.get("/artifacts/{artifact_key}/detail/{item_id}")
 async def get_artifact_detail(
     artifact_key: str,
@@ -434,7 +1263,7 @@ async def get_artifact_detail(
     """
 
     if request:
-        check_rate_limit(request)
+        check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/detail/{item_id}")
 
     try:
         from app.services.analytics_external import get_analytics_artifact_detail_view, parse_artifact_key

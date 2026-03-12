@@ -160,3 +160,45 @@ async def test_v2_advanced_query_normalizes_machine_and_product_id(client, db_se
     assert payload["total_count"] == 1
     assert payload["records"][0]["data_type"] == "P3"
     assert payload["records"][0]["lot_no"] == lot
+
+
+@pytest.mark.asyncio
+async def test_v2_advanced_query_normalizes_lot_no_hyphen_and_underscore(
+    client, db_session
+):
+    tenant = await _create_tenant(db_session)
+
+    lot = "2507173_02"
+    p3 = P3Record(
+        tenant_id=tenant.id,
+        lot_no_raw=lot,
+        lot_no_norm=normalize_lot_no(lot),
+        production_date_yyyymmdd=20250103,
+        machine_no="P24",
+        mold_no="M1",
+        product_id=f"2025-01-03-P24-M1-{lot}",
+        extras={"rows": [{"specification": "PE 32"}]},
+    )
+    p3.items_v2 = [
+        P3ItemV2(
+            tenant_id=tenant.id,
+            row_no=1,
+            lot_no=lot,
+            source_winder=5,
+            specification="PE 32",
+            row_data={"specification": "PE 32", "source_winder": 5},
+        )
+    ]
+    db_session.add(p3)
+    await db_session.commit()
+
+    headers = {"X-Tenant-Id": str(tenant.id)}
+    resp = await client.get(
+        "/api/v2/query/records/advanced",
+        params={"lot_no": "2507173-02"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["total_count"] == 1
+    assert payload["records"][0]["lot_no"] == lot

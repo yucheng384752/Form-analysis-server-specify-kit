@@ -371,7 +371,7 @@ class CSVFieldMapper:
         import re
 
         # P3 常見格式：114年09月02日（民國年中文格式）
-        chinese_match = re.match(r"^(\d{3})年(\d{1,2})月(\d{1,2})日$", s)
+        chinese_match = re.match(r"^(\d{3})年(\d{1,2})月(\d{1,2})日(?:\s*\d{1,2}:\d{1,2}(?::\d{1,2})?)?$", s)
         if chinese_match:
             try:
                 roc_year = int(chinese_match.group(1))

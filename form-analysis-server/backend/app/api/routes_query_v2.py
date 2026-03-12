@@ -75,7 +75,7 @@ class DynamicQueryRequest(BaseModel):
     and translates them to the existing strict v2 advanced query implementation.
     """
 
-    data_type: str = Field(..., description="P1|P2|P3")
+    data_type: str | None = Field(None, description="P1|P2|P3")
     filters: list[DynamicFilter] = Field(default_factory=list)
     page: int = Field(1, ge=1)
     page_size: int = Field(50, ge=1, le=200)
@@ -110,6 +110,53 @@ def _coerce_row_data_terms(value: Any) -> list[str]:
         return out
     s = str(value).strip()
     return [s] if s else []
+
+
+def _row_data_key_aliases(raw_key: str) -> list[str]:
+    base = (raw_key or "").strip()
+    if not base:
+        return []
+
+    normalized = re.sub(r"\s+", " ", base).strip()
+    aliases: list[str] = []
+    seen: set[str] = set()
+
+    def add(candidate: str) -> None:
+        value = re.sub(r"\s+", " ", (candidate or "").strip()).strip()
+        if not value or value in seen:
+            return
+        aliases.append(value)
+        seen.add(value)
+
+    add(normalized)
+
+    if normalized.replace(" ", "").lower() in {"stripedresults", "stripedresult"}:
+        add("Striped Results")
+        add("Striped results")
+        add("striped results")
+        add("striped result")
+        add("分條結果")
+
+    return aliases
+
+
+def _row_data_value_matches(raw_value: Any, op: str, value: Any) -> bool:
+    if raw_value is None:
+        return False
+
+    v_norm = normalize_search_term(raw_value) or ""
+    if op == "contains":
+        term_norm = normalize_search_term(value)
+        return bool(term_norm) and term_norm in v_norm
+    if op == "eq":
+        term_norm = normalize_search_term(value)
+        return bool(term_norm) and v_norm == term_norm
+    if op == "all_of":
+        terms = _coerce_row_data_terms(value)
+        norms = [normalize_search_term(t) for t in terms]
+        norms = [n for n in norms if n]
+        return bool(norms) and all(n in v_norm for n in norms)
+    return False
 
 
 # --- Legacy-compatible schemas (for frontend QueryPage) ---
@@ -457,6 +504,100 @@ def _extract_production_date_from_row(row: dict[str, Any] | None) -> str | None:
     return None
 
 
+def _to_yyyymmdd_from_record_production_date(value: Any) -> int | None:
+    normalized = _normalize_production_date(value)
+    if not normalized:
+        return None
+    try:
+        return int(date.fromisoformat(normalized).strftime("%Y%m%d"))
+    except Exception:
+        return None
+
+
+def _filter_records_by_production_date_range(
+    records: list["QueryRecordV2Compat"],
+    date_from_i: int | None,
+    date_to_i: int | None,
+) -> list["QueryRecordV2Compat"]:
+    # Apply the same date-range semantics to P1/P2/P3:
+    # - when date filter exists, records with missing/unparseable production_date are excluded
+    if date_from_i is None and date_to_i is None:
+        return records
+
+    filtered: list[QueryRecordV2Compat] = []
+    for rec in records:
+        rec_date_i = _to_yyyymmdd_from_record_production_date(rec.production_date)
+        if rec_date_i is None:
+            continue
+        if date_from_i is not None and rec_date_i < date_from_i:
+            continue
+        if date_to_i is not None and rec_date_i > date_to_i:
+            continue
+        filtered.append(rec)
+    return filtered
+
+
+def _extract_p2_item_date_yyyymmdd(item: Any) -> int | None:
+    # Prefer structured column populated at import time.
+    try:
+        ymd = getattr(item, "production_date_yyyymmdd", None)
+        if ymd is not None:
+            ymd_i = int(ymd)
+            if ymd_i > 0:
+                return ymd_i
+    except Exception:
+        pass
+
+    # Backward compatibility for legacy rows before structured date backfill.
+    raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else None
+    if not raw:
+        return None
+    row = dict(raw)
+    nested = raw.get("rows")
+    if isinstance(nested, list) and nested and isinstance(nested[0], dict):
+        row.update(nested[0])
+    return _to_yyyymmdd_from_record_production_date(_extract_production_date_from_row(row))
+
+
+def _extract_p2_item_slitting_result(item: Any) -> float | None:
+    # 優先使用已結構化欄位，否則回退到 row_data（含 aliases 與 rows[0]）做相容。
+    raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
+    if not raw and not isinstance(raw, dict):
+        raw = {}
+
+    if getattr(item, "slitting_result", None) is not None:
+        try:
+            return float(item.slitting_result)
+        except (TypeError, ValueError):
+            pass
+
+    row: dict[str, Any] = dict(raw)
+    nested = raw.get("rows")
+    if isinstance(nested, list) and nested and isinstance(nested[0], dict):
+        row.update(nested[0])
+
+    aliases = [
+        "Striped Results",
+        "Striped results",
+        "striped results",
+        "striped result",
+        "Slitting Result",
+        "slitting result",
+        "slitting_result",
+        "分條結果",
+        "分條結果(成品)",
+    ]
+    for alias in aliases:
+        if alias not in row:
+            continue
+        try:
+            return float(row[alias])
+        except (TypeError, ValueError):
+            continue
+
+    return None
+
+
 def _derive_machine_mold(
     record_machine: str | None, record_mold: str | None, extras: dict[str, Any]
 ) -> tuple[str | None, str | None]:
@@ -551,14 +692,20 @@ def _p2_to_query_record_with_items(
         }
     )
 
-    # 從第一個 item 提取生產日期
-    first_item = items[0] if items else None
-    production_date = None
-    if first_item and isinstance(first_item.row_data, dict):
-        for key in ["Production Date", "production_date", "生產日期", "date"]:
-            if key in first_item.row_data:
-                production_date = _normalize_production_date(first_item.row_data[key])
-                break
+    # 優先從已扁平化 rows 抽取日期，確保支援 row_data.rows[0] 形態。
+    production_date = _extract_production_date_from_row(
+        rows[0] if rows and isinstance(rows[0], dict) else None
+    )
+
+    # 相容舊資料：若 rows 仍無日期，再回頭看第一個 item 的原始 row_data。
+    if not production_date:
+        first_item = items[0] if items else None
+        if first_item and isinstance(first_item.row_data, dict):
+            production_date = _extract_production_date_from_row(first_item.row_data)
+        if not production_date and first_item is not None:
+            ymd = _extract_p2_item_date_yyyymmdd(first_item)
+            if ymd:
+                production_date = _yyyymmdd_to_yyyy_mm_dd(int(ymd))
 
     return QueryRecordV2Compat(
         id=str(p2_record.id),
@@ -675,11 +822,14 @@ def _p3_to_query_record_with_items(
     # 將 items 轉為 rows 格式
     rows = []
     for item in items:
-        row = item.row_data if isinstance(item.row_data, dict) else {}
+        row = dict(item.row_data) if isinstance(item.row_data, dict) else {}
         row["row_no"] = item.row_no
-        # Some datasets store product_id only on the record; legacy UI expects
-        # it to exist inside each row dict as well.
-        row["product_id"] = item.product_id or p3_record.product_id
+        # Keep row-level product_id semantics: never force record-level fallback here.
+        # Frontend can derive display id if this value is missing.
+        if item.product_id:
+            row["product_id"] = item.product_id
+        else:
+            row.pop("product_id", None)
         row["source_winder"] = item.source_winder
         row["specification"] = item.specification
         rows.append(row)
@@ -1667,6 +1817,8 @@ async def query_records_advanced_v2(
 
         records = [r for r in records if _matches_material(r)]
 
+    records = _filter_records_by_production_date_range(records, date_from_i, date_to_i)
+
     # Sort and paginate in memory (simple, OK for current UI)
     records.sort(key=lambda r: r.created_at, reverse=True)
     total_count = len(records)
@@ -1766,9 +1918,36 @@ async def query_records_dynamic_v2(
         "material": {"all_of"},
         "specification": {"all_of"},
         "winder_number": {"eq"},
+        "slitting_result": {"eq"},
         "thickness": {"between"},
     }
     row_data_ops = {"contains", "eq", "all_of"}
+    compatible_fields_by_data_type: dict[str, set[str]] = {
+        # P1 table supports lot/spec only in current implementation.
+        "P1": {"lot_no", "specification"},
+        # P2 data is item-centric; machine/mold/product are not available filters.
+        # production_date is supported for analytics date-range queries.
+        "P2": {
+            "lot_no",
+            "production_date",
+            "specification",
+            "material",
+            "winder_number",
+            "slitting_result",
+            "thickness",
+        },
+        # P3 supports station-level and item-level filters, but not thickness.
+        "P3": {
+            "lot_no",
+            "production_date",
+            "machine_no",
+            "mold_no",
+            "product_id",
+            "material",
+            "specification",
+            "winder_number",
+        },
+    }
 
     # Accumulate translated advanced-query params.
     lot_no: str | None = None
@@ -1782,7 +1961,9 @@ async def query_records_dynamic_v2(
     thickness_min: int | None = None
     thickness_max: int | None = None
     winder_number: str | None = None
+    slitting_result: float | None = None
     row_data_filters: list[dict[str, Any]] = []
+    requested_fields: set[str] = set()
 
     def _as_str_list(v: Any) -> list[str]:
         if v is None:
@@ -1853,6 +2034,7 @@ async def query_records_dynamic_v2(
             raise HTTPException(
                 status_code=400, detail=f"Invalid operator for {field}: {op}"
             )
+        requested_fields.add(field)
 
         if field == "lot_no":
             if lot_no is not None:
@@ -1950,6 +2132,18 @@ async def query_records_dynamic_v2(
                 )
             winder_number = str(w)
 
+        elif field == "slitting_result":
+            if slitting_result is not None:
+                raise HTTPException(
+                    status_code=400, detail="Duplicate slitting_result filter"
+                )
+            try:
+                slitting_result = float(f.value)
+            except Exception:
+                raise HTTPException(
+                    status_code=400, detail="Invalid slitting_result value"
+                )
+
         elif field == "thickness":
             if thickness_min is not None or thickness_max is not None:
                 raise HTTPException(
@@ -1958,6 +2152,21 @@ async def query_records_dynamic_v2(
             a, b = _as_int_pair(f.value)
             thickness_min = a
             thickness_max = b
+
+    if dt is not None:
+        unsupported = sorted(
+            field
+            for field in requested_fields
+            if field not in compatible_fields_by_data_type[dt]
+        )
+        if unsupported:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unsupported field(s) for data_type {dt}: "
+                    + ", ".join(unsupported)
+                ),
+            )
 
     # If caller doesn't specify data_type, keep behavior aligned with GET /records/advanced.
     # row_data filters require an explicit station because P1 has no row_data.
@@ -2119,44 +2328,65 @@ async def query_records_dynamic_v2(
         return func.json_extract(cast(col, JSON), f"$.{key}")
 
     def _row_data_sql_predicates(row_data_col, key: str, op: str, value: Any):
-        expr = _json_key_text(row_data_col, key)
-        if op == "contains":
-            return _normalized_like(expr, value)
-        if op == "eq":
-            variants = normalize_search_term_variants(value)
-            variants = [v for v in variants if v]
-            if not variants:
-                return None
-            return or_(*[_canon_sql(expr) == v for v in variants])
-        if op == "all_of":
-            terms = _coerce_row_data_terms(value)
-            norms = [normalize_search_term(t) for t in terms]
-            norms = [n for n in norms if n]
-            preds = []
-            for n in norms:
-                preds.append(_canon_sql(expr).like(f"%{_escape_like(n)}%", escape="\\"))
-            return and_(*preds) if preds else None
-        return None
+        keys = _row_data_key_aliases(key)
+        if not keys:
+            return None
+
+        preds: list[Any] = []
+        for row_key in keys:
+            expr = _json_key_text(row_data_col, row_key)
+            if op == "contains":
+                pred = _normalized_like(expr, value)
+                if pred is not None:
+                    preds.append(pred)
+                continue
+
+            if op == "eq":
+                variants = normalize_search_term_variants(value)
+                variants = [v for v in variants if v]
+                if not variants:
+                    continue
+                preds.append(or_(*[_canon_sql(expr) == v for v in variants]))
+                continue
+
+            if op == "all_of":
+                terms = _coerce_row_data_terms(value)
+                norms = [normalize_search_term(t) for t in terms]
+                norms = [n for n in norms if n]
+                if not norms:
+                    continue
+                preds.append(
+                    and_(*[_canon_sql(expr).like(f"%{_escape_like(n)}%", escape="\\") for n in norms])
+                )
+                continue
+
+        if not preds:
+            return None
+        return or_(*preds) if len(preds) > 1 else preds[0]
 
     def _row_data_item_matches(item: Any, key: str, op: str, value: Any) -> bool:
         raw = item.row_data if isinstance(getattr(item, "row_data", None), dict) else {}
         if not isinstance(raw, dict):
             return False
-        v = raw.get(key)
-        if v is None:
+        aliases = _row_data_key_aliases(key)
+        if not aliases:
             return False
-        v_norm = normalize_search_term(v) or ""
-        if op == "contains":
-            term_norm = normalize_search_term(value)
-            return bool(term_norm) and term_norm in v_norm
-        if op == "eq":
-            term_norm = normalize_search_term(value)
-            return bool(term_norm) and v_norm == term_norm
-        if op == "all_of":
-            terms = _coerce_row_data_terms(value)
-            norms = [normalize_search_term(t) for t in terms]
-            norms = [n for n in norms if n]
-            return bool(norms) and all(n in v_norm for n in norms)
+
+        raw_lookup = {
+            (str(raw_key).strip().lower()): raw_value
+            for raw_key, raw_value in raw.items()
+            if isinstance(raw_key, str) and raw_key.strip()
+        }
+
+        for alias_key in aliases:
+            v = raw.get(alias_key)
+            if v is None:
+                v = raw_lookup.get(alias_key.strip().lower())
+            if v is None:
+                continue
+            if _row_data_value_matches(v, op, value):
+                return True
+
         return False
 
     for rf in row_data_filters:
@@ -2211,7 +2441,11 @@ async def query_records_dynamic_v2(
         elif lot_no_raw:
             p2_stmt = p2_stmt.where(P2Record.lot_no_raw.ilike(f"%{lot_no_raw}%"))
 
-        if (specification_terms or row_data_filters) and dialect_name != "sqlite":
+        if (
+            specification_terms
+            or row_data_filters
+            or slitting_result is not None
+        ) and dialect_name != "sqlite":
             p2_stmt = p2_stmt.join(P2ItemV2, P2Record.id == P2ItemV2.p2_record_id)
             for spec in specification_terms:
                 preds = [
@@ -2232,6 +2466,9 @@ async def query_records_dynamic_v2(
                 )
                 if pred is not None:
                     p2_stmt = p2_stmt.where(pred)
+
+            if slitting_result is not None:
+                p2_stmt = p2_stmt.where(P2ItemV2.slitting_result == slitting_result)
 
             p2_stmt = p2_stmt.distinct()
 
@@ -2306,6 +2543,17 @@ async def query_records_dynamic_v2(
                     return True
             return False
 
+        def _p2_item_matches_slitting_result(item: Any) -> bool:
+            if slitting_result is None:
+                return True
+            actual = _extract_p2_item_slitting_result(item)
+            if actual is None:
+                return False
+            try:
+                return float(actual) == slitting_result
+            except Exception:
+                return False
+
         def _p2_item_matches_row_data(item: Any) -> bool:
             if not row_data_filters:
                 return True
@@ -2314,6 +2562,18 @@ async def query_records_dynamic_v2(
                     item, str(rf.get("key")), str(rf.get("op")), rf.get("value")
                 ):
                     return False
+            return True
+
+        def _p2_item_matches_date(item: Any) -> bool:
+            if date_from_i is None and date_to_i is None:
+                return True
+            ymd = _extract_p2_item_date_yyyymmdd(item)
+            if ymd is None:
+                return False
+            if date_from_i is not None and ymd < date_from_i:
+                return False
+            if date_to_i is not None and ymd > date_to_i:
+                return False
             return True
 
         p2_items_by_lot: dict[int, list[Any]] = {}
@@ -2326,12 +2586,16 @@ async def query_records_dynamic_v2(
                 items = [
                     item for item in items if item.winder_number == winder_requested
                 ]
+            if date_from_i is not None or date_to_i is not None:
+                items = [item for item in items if _p2_item_matches_date(item)]
             if specification_norms:
                 items = [item for item in items if _p2_item_matches_spec(item)]
             if material_norms:
                 items = [item for item in items if _p2_item_matches_material(item)]
             if thickness_min_f is not None and thickness_max_f is not None:
                 items = [item for item in items if _p2_item_matches_thickness(item)]
+            if slitting_result is not None:
+                items = [item for item in items if _p2_item_matches_slitting_result(item)]
             if row_data_filters:
                 items = [item for item in items if _p2_item_matches_row_data(item)]
 
@@ -2536,6 +2800,8 @@ async def query_records_dynamic_v2(
             return False
 
         records = [r for r in records if _matches_material(r)]
+
+    records = _filter_records_by_production_date_range(records, date_from_i, date_to_i)
 
     records.sort(key=lambda r: r.created_at, reverse=True)
     total_count = len(records)

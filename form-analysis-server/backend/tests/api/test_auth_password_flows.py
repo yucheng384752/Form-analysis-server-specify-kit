@@ -103,29 +103,32 @@ async def _login(
 
 
 @pytest.mark.asyncio
-async def test_admin_reset_forces_password_change_flow(client, db_session_clean):
+async def test_manager_reset_forces_password_change_flow(client, db_session_clean):
     from app.main import settings
 
     settings.auth_mode = "api_key"
     settings.auth_api_key_header = "X-API-Key"
 
     tenant = await _create_tenant(db_session_clean, code="t1")
-    admin = await _create_user(
-        db_session_clean, tenant_id=tenant.id, username="admin", role="admin"
+    manager = await _create_user(
+        db_session_clean, tenant_id=tenant.id, username="manager", role="manager"
     )
     user = await _create_user(
         db_session_clean, tenant_id=tenant.id, username="user", role="user"
     )
 
-    admin_login = await _login(
-        client, tenant_code=tenant.code, username=admin.username, password="password123"
+    manager_login = await _login(
+        client,
+        tenant_code=tenant.code,
+        username=manager.username,
+        password="password123",
     )
-    admin_key = admin_login["api_key"]
+    manager_key = manager_login["api_key"]
 
     reset_resp = await client.post(
         f"/api/auth/users/{user.id}/password-reset",
         json={},
-        headers={"X-API-Key": admin_key},
+        headers={"X-API-Key": manager_key},
     )
     assert reset_resp.status_code == 200, reset_resp.text
     reset_body = reset_resp.json()
@@ -172,31 +175,31 @@ async def test_admin_reset_forces_password_change_flow(client, db_session_clean)
 
 
 @pytest.mark.asyncio
-async def test_manager_cannot_reset_admin_user(client, db_session_clean):
+async def test_user_cannot_reset_other_user(client, db_session_clean):
     from app.main import settings
 
     settings.auth_mode = "api_key"
     settings.auth_api_key_header = "X-API-Key"
 
     tenant = await _create_tenant(db_session_clean, code="t1")
-    manager = await _create_user(
-        db_session_clean, tenant_id=tenant.id, username="mgr", role="manager"
+    user = await _create_user(
+        db_session_clean, tenant_id=tenant.id, username="u1", role="user"
     )
-    admin = await _create_user(
-        db_session_clean, tenant_id=tenant.id, username="admin", role="admin"
+    target = await _create_user(
+        db_session_clean, tenant_id=tenant.id, username="u2", role="user"
     )
 
-    mgr_login = await _login(
+    user_login = await _login(
         client,
         tenant_code=tenant.code,
-        username=manager.username,
+        username=user.username,
         password="password123",
     )
-    mgr_key = mgr_login["api_key"]
+    user_key = user_login["api_key"]
 
     resp = await client.post(
-        f"/api/auth/users/{admin.id}/password-reset",
+        f"/api/auth/users/{target.id}/password-reset",
         json={},
-        headers={"X-API-Key": mgr_key},
+        headers={"X-API-Key": user_key},
     )
     assert resp.status_code == 403, resp.text

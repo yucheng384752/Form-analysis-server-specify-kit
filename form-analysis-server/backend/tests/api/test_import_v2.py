@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.main import app
 from app.models.core.schema_registry import TableRegistry
 from app.models.core.tenant import Tenant
+from app.models.p2_item_v2 import P2ItemV2
 from app.models.p1_record import P1Record
 from app.models.p2_record import P2Record
 
@@ -238,6 +239,69 @@ async def test_validate_import_job(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_validate_import_job_ignores_leading_blank_rows(client, db_session):
+    tenant = Tenant(
+        name="Test Tenant Blank Rows",
+        code=f"test_tenant_blank_rows_{uuid.uuid4()}",
+        is_default=True,
+    )
+    db_session.add(tenant)
+
+    stmt = select(TableRegistry).where(TableRegistry.table_code == "P1")
+    result = await db_session.execute(stmt)
+    table = result.scalar_one_or_none()
+    if not table:
+        table = TableRegistry(table_code="P1", display_name="P1 Records")
+        db_session.add(table)
+
+    await db_session.commit()
+    await db_session.refresh(tenant)
+
+    # Include multiple blank rows before the first valid row.
+    csv_content = (
+        "lot_no,Any,Other\n"
+        ",,\n"
+        " , , \n"
+        ",,\n"
+        "2503033_01,10.5,abc\n"
+    )
+    files = [("files", ("P1_2503033_01.csv", csv_content.encode("utf-8"), "text/csv"))]
+    data = {"table_code": "P1"}
+    headers = {"X-Tenant-Id": str(tenant.id)}
+
+    response = await client.post(
+        "/api/v2/import/jobs", files=files, data=data, headers=headers
+    )
+    assert response.status_code == 201, response.text
+    job_id = response.json()["id"]
+
+    service = ImportService(db_session)
+    await service.parse_job(uuid.UUID(job_id))
+    job = await service.validate_job(uuid.UUID(job_id))
+
+    assert job.status == ImportJobStatus.READY
+    assert int(job.error_count or 0) == 0
+    assert int(job.total_rows or 0) == 1
+
+    stmt = (
+        select(StagingRow)
+        .where(StagingRow.job_id == uuid.UUID(job_id))
+        .order_by(StagingRow.row_index)
+    )
+    result = await db_session.execute(stmt)
+    rows = result.scalars().all()
+
+    assert len(rows) == 1
+    assert rows[0].is_valid is True
+    assert rows[0].errors_json == []
+    assert rows[0].parsed_json.get("lot_no") == "2503033_01"
+
+    upload_dir = Path(settings.upload_temp_dir) / job_id
+    if upload_dir.exists():
+        shutil.rmtree(upload_dir)
+
+
+@pytest.mark.asyncio
 async def test_commit_import_job(client, db_session):
     # Setup Tenant
     tenant = Tenant(name="Test Tenant 5", code="test_tenant_5", is_default=True)
@@ -354,9 +418,10 @@ async def test_commit_import_job_p1_business_key_merge(client, db_session):
 
 @pytest.mark.asyncio
 async def test_commit_import_job_p2_business_key_merge(client, db_session):
+    suffix = uuid.uuid4()
     tenant = Tenant(
-        name="Test Tenant P2 Merge",
-        code=f"test_tenant_p2_merge_{uuid.uuid4()}",
+        name=f"Test Tenant P2 Merge {suffix}",
+        code=f"test_tenant_p2_merge_{suffix}",
         is_default=True,
     )
     db_session.add(tenant)
@@ -412,6 +477,12 @@ async def test_commit_import_job_p2_business_key_merge(client, db_session):
     row = record.extras["rows"][0]
     assert row.get("sheet_width") == "100"
     assert row.get("appearance") == "OK"
+
+    item_stmt = select(P2ItemV2).where(P2ItemV2.p2_record_id == record.id)
+    item_result = await db_session.execute(item_stmt)
+    item = item_result.scalar_one_or_none()
+    assert item is not None
+    assert item.trace_lot_no == "2503033_01_05"
 
 
 @pytest.mark.asyncio

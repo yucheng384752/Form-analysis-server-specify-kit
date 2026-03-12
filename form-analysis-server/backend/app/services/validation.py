@@ -39,8 +39,8 @@ class FileValidationService:
     # 批號正規表示式：7位數字_2位數字（標準格式）
     LOT_NO_PATTERN = re.compile(r"^\d{7}_\d{2}$")
 
-    # 批號彈性格式：支援 7+2 或 7+2+任意後續 (例如 7+2+2, 7+2+2+3)
-    LOT_NO_FLEXIBLE_PATTERN = re.compile(r"^(\d{7}_\d{2})(?:_.+)?$")
+    # 批號彈性格式：支援 -/_ 分隔，與 7+2+任意後續
+    LOT_NO_FLEXIBLE_PATTERN = re.compile(r"^(\d{7})[-_](\d{1,2})(?:[-_].+)?$")
 
     # P3檔案名稱檢測模式
     P3_PATTERN = re.compile(r"P3_")
@@ -162,8 +162,8 @@ class FileValidationService:
             return ""
 
         stem = Path(name).stem
-        # Find 7-digit + '_' + 1~2-digit (and ignore any trailing segments)
-        m = re.search(r"(\d{7}_\d{1,2})(?:_.+)?$", stem)
+        # Find 7-digit + ('_' or '-') + 1~2-digit (and ignore trailing segments)
+        m = re.search(r"(\d{7}[-_]\d{1,2})(?:[-_].+)?$", stem)
         if not m:
             return ""
         return self.normalize_lot_no(m.group(1))
@@ -184,18 +184,9 @@ class FileValidationService:
 
         p3_str = str(p3_no_value).strip()
 
-        # 使用正則表達式擷取開頭的批號部分 (7位數字_2位數字)
-        match = self.LOT_NO_PATTERN.match(p3_str)
-        if match:
-            return match.group(0)  # 返回匹配的完整批號
-
-        # 如果沒有完全匹配，嘗試找到符合格式的前綴
-        # 檢查是否以 7位數字_ 開頭，後面跟2位數字
-        if len(p3_str) >= 10:  # 至少需要 7+1+2=10 個字元
-            potential_lot_no = p3_str[:10]  # 取前10碼 (7位數字_2位數字)
-            if self.LOT_NO_PATTERN.match(potential_lot_no):
-                return potential_lot_no
-
+        normalized = self.normalize_lot_no(p3_str)
+        if normalized and self.LOT_NO_PATTERN.match(normalized):
+            return normalized
         return ""
 
     def normalize_lot_no(self, lot_no_value: Any) -> str:
@@ -218,9 +209,9 @@ class FileValidationService:
 
         lot_no_str = str(lot_no_value).strip()
 
-        # 支援格式：7位數字_(1~2位數字)(_*...)
-        # 例：2507173_02_17 / 2507173_2_17 / 2507173_02
-        m = re.match(r"^(\d{7})_(\d{1,2})(?:_.+)?$", lot_no_str)
+        # 支援格式：7位數字[-_](1~2位數字)([-_]*...)
+        # 例：2507173_02_17 / 2507173-2-17 / 2507173-02
+        m = re.match(r"^(\d{7})[-_](\d{1,2})(?:[-_].+)?$", lot_no_str)
         if m:
             head = m.group(1)
             tail = m.group(2).zfill(2)
@@ -262,7 +253,7 @@ class FileValidationService:
                 row_index,
                 "lot_no",
                 "INVALID_FORMAT",
-                f"批號格式錯誤，應為 7位數字_2位數字 格式（或 7位數字_2位數字_其他），實際值：{lot_no_str}",
+                f"批號格式錯誤，應為 7位數字[-_]2位數字 格式（可帶後綴），實際值：{lot_no_str}",
             )
             return False
 
@@ -577,7 +568,7 @@ class FileValidationService:
                             row_index,
                             source_field,
                             "INVALID_FORMAT",
-                            f"批號格式錯誤，應為 7位數字_2位數字 格式（或 7位數字_2位數字_其他），實際值：{lot_no_value}",
+                            f"批號格式錯誤，應為 7位數字[-_]2位數字 格式（可帶後綴），實際值：{lot_no_value}",
                         )
                         row_has_error.add(row_index)
             else:
@@ -605,7 +596,7 @@ class FileValidationService:
                             row_index,
                             source_field,
                             "INVALID_FORMAT",
-                            f"批號格式錯誤，應為 7位數字_2位數字 格式（或 7位數字_2位數字_其他），實際值：{lot_no_value}",
+                            f"批號格式錯誤，應為 7位數字[-_]2位數字 格式（可帶後綴），實際值：{lot_no_value}",
                         )
                         row_has_error.add(row_index)
 

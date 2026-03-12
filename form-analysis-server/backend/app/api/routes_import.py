@@ -41,6 +41,43 @@ def _pick_first_non_empty(row: dict, keys: list[str]):
     return None
 
 
+def _parse_int_like(value) -> int | None:
+    try:
+        if value is None:
+            return None
+        s = str(value).strip()
+        if s == "":
+            return None
+        return int(float(s))
+    except (ValueError, TypeError):
+        return None
+
+
+def _extract_production_lot(row: dict) -> int | None:
+    raw = _pick_first_non_empty(
+        row,
+        ["lot", "Lot", "LOT", "Production Lot", "production_lot"],
+    )
+    return _parse_int_like(raw)
+
+
+def _compose_p3_product_id(
+    production_date,
+    machine_no,
+    mold_no,
+    production_lot: int | None,
+) -> str | None:
+    if production_date is None or machine_no is None or mold_no is None:
+        return None
+    if production_lot is None:
+        return None
+    machine = str(machine_no).strip()
+    mold = str(mold_no).strip()
+    if not machine or not mold:
+        return None
+    return f"{production_date.strftime('%Y%m%d')}_{machine}_{mold}_{int(production_lot)}"
+
+
 def _build_p3_extras_rows(all_rows: list[dict]) -> list[dict]:
     rows: list[dict] = []
     for r in all_rows:
@@ -147,23 +184,7 @@ async def _upsert_p3_record_for_analytics(
     machine_no_str = str(machine_no).strip() if machine_no is not None else "UNKNOWN"
     mold_no_str = str(mold_no).strip() if mold_no is not None else "UNKNOWN"
 
-    lot_part_raw = _pick_first_non_empty(
-        first_row,
-        [
-            "lot",
-            "Lot",
-            "LOT",
-            "Production Lot",
-            "production_lot",
-            "Produce_No.",
-            "Produce No.",
-            "produce_no",
-        ],
-    )
-    try:
-        lot_part = int(float(lot_part_raw)) if lot_part_raw is not None else 0
-    except (ValueError, TypeError):
-        lot_part = 0
+    lot_part = _extract_production_lot(first_row) or 0
     product_id = f"{production_date_yyyymmdd}-{machine_no_str}-{mold_no_str}-{lot_part}"
 
     specification = _pick_first_non_empty(
@@ -231,27 +252,7 @@ async def _upsert_p3_record_for_analytics(
         if not isinstance(row, dict):
             continue
 
-        item_production_lot_raw = _pick_first_non_empty(
-            row,
-            [
-                "lot",
-                "Lot",
-                "LOT",
-                "Production Lot",
-                "production_lot",
-                "Produce_No.",
-                "Produce No.",
-                "produce_no",
-            ],
-        )
-        try:
-            item_production_lot = (
-                int(float(item_production_lot_raw))
-                if item_production_lot_raw is not None
-                else None
-            )
-        except (ValueError, TypeError):
-            item_production_lot = None
+        item_production_lot = _extract_production_lot(row)
 
         item_source_winder_raw = _pick_first_non_empty(
             row,
@@ -294,21 +295,17 @@ async def _upsert_p3_record_for_analytics(
             ],
         )
 
-        # NOTE: P3ItemV2.product_id is globally unique in the schema.
-        # Avoid guessing derived IDs here to prevent cross-tenant collisions.
-        item_product_id = _pick_first_non_empty(
-            row,
-            [
-                "P3_No.",
-                "P3 No.",
-                "P3_No",
-                "P3 No",
-                "p3_no",
-                "product_id",
-            ],
+        item_machine_no = _pick_first_non_empty(
+            row, ["Machine NO", "Machine No", "Machine", "machine_no", "machine"]
         )
-        item_product_id_s = (
-            str(item_product_id).strip() if item_product_id is not None else None
+        item_mold_no = _pick_first_non_empty(
+            row, ["Mold NO", "Mold No", "Mold", "mold_no", "mold"]
+        )
+        item_product_id_s = _compose_p3_product_id(
+            prod_date,
+            item_machine_no or machine_no_str,
+            item_mold_no or mold_no_str,
+            item_production_lot,
         )
 
         db.add(
@@ -1114,15 +1111,7 @@ async def import_data(
                             or first_row.get("mold")
                         )
 
-                        production_lot_val = first_row.get("lot")
-                        try:
-                            production_lot_val = (
-                                int(production_lot_val)
-                                if production_lot_val is not None
-                                else None
-                            )
-                        except (ValueError, TypeError):
-                            production_lot_val = None
+                        production_lot_val = _extract_production_lot(first_row)
 
                         existing_record.machine_no = machine_no_val
                         existing_record.mold_no = mold_no_val
@@ -1149,23 +1138,10 @@ async def import_data(
 
                         # 為每一行創建或更新 P3Item
                         for row_no, row_data in enumerate(all_rows, start=1):
-                            date_str = None
                             # 提取欄位
                             # row_data['lot'] 是生產序號 (production_lot)，批號應使用父表 lot_no
                             item_lot_no = lot_no
-                            item_production_lot = (
-                                row_data.get("lot")
-                                or row_data.get("LOT")
-                                or row_data.get("Lot")
-                            )
-                            try:
-                                item_production_lot = (
-                                    int(float(item_production_lot))
-                                    if item_production_lot is not None
-                                    else None
-                                )
-                            except (ValueError, TypeError):
-                                item_production_lot = None
+                            item_production_lot = _extract_production_lot(row_data)
                             item_machine_no = (
                                 row_data.get("Machine NO")
                                 or row_data.get("Machine No")
@@ -1208,80 +1184,8 @@ async def import_data(
                                 or row_data.get("下膠")
                             )
 
-                            # 提取 P3_No. 來組成 product_id
-                            p3_no_raw = (
-                                row_data.get("P3_No.")
-                                or row_data.get("P3 No.")
-                                or row_data.get("p3_no")
-                                or row_data.get("P3NO")
-                            )
-
-                            item_product_id = None
-                            if p3_no_raw:
-                                # P3_No. 格式：XXXXXXXX_XX_YY (lot_no_機台_批次)
-                                # 組合成 product_id: YYYYMMDD_XX_YY_Z (日期_機台_模具_批次)
-                                p3_no_str = str(p3_no_raw).strip()
-                                parts = p3_no_str.split("_")
-
-                                if len(parts) >= 3:
-                                    machine_from_p3 = parts[1]  # 機台編號
-                                    lot_from_p3 = parts[2]  # 批次
-
-                                    # 組成完整的 product_id
-                                    # 優先使用 row_data 中的日期 (year-month-day)，如果沒有則使用 record 的 production_date
-                                    # 嘗試從 row_data 提取日期
-                                    row_date_str = row_data.get("year-month-day")
-                                    if row_date_str:
-                                        try:
-                                            # 處理 "114年09月01日" 格式
-                                            if (
-                                                "年" in str(row_date_str)
-                                                and "月" in str(row_date_str)
-                                                and "日" in str(row_date_str)
-                                            ):
-                                                y_str = str(row_date_str).split("年")[0]
-                                                m_str = (
-                                                    str(row_date_str)
-                                                    .split("年")[1]
-                                                    .split("月")[0]
-                                                )
-                                                d_str = (
-                                                    str(row_date_str)
-                                                    .split("月")[1]
-                                                    .split("日")[0]
-                                                )
-                                                # 民國年轉西元
-                                                if len(y_str) < 4:
-                                                    y_val = int(y_str) + 1911
-                                                else:
-                                                    y_val = int(y_str)
-                                                date_str = f"{y_val}{int(m_str):02d}{int(d_str):02d}"
-                                        except:
-                                            pass
-
-                                    # 如果無法從 row 提取，則使用 record 的日期
-                                    if not date_str and existing_record.production_date:
-                                        date_str = (
-                                            existing_record.production_date.strftime(
-                                                "%Y%m%d"
-                                            )
-                                        )
-
-                                    # 使用 item_mold_no (如果有的話)，否則嘗試使用 mold_no_val (從第一行提取的)
-                                    target_mold_no = item_mold_no or mold_no_val
-
-                                    if date_str and target_mold_no:
-                                        item_product_id = f"{date_str}_{machine_from_p3}_{target_mold_no}_{lot_from_p3}"
-
                             # 以 row_data 為優先推導此 item 的生產日期；若無法推導則 fallback 到 record.production_date
                             item_date = None
-                            if date_str:
-                                try:
-                                    item_date = datetime.strptime(
-                                        date_str, "%Y%m%d"
-                                    ).date()
-                                except Exception:
-                                    item_date = None
                             if not item_date:
                                 try:
                                     item_date = production_date_extractor.extract_production_date(
@@ -1292,21 +1196,12 @@ async def import_data(
                             if not item_date:
                                 item_date = existing_record.production_date
 
-                            # 若沒有 P3_No.，則從 row_data 動態產生（YYYYMMDD_Machine_Mold_Lot）
-                            if not item_product_id:
-                                if (
-                                    item_date
-                                    and item_machine_no
-                                    and item_mold_no
-                                    and item_production_lot is not None
-                                ):
-                                    date_str = item_date.strftime("%Y%m%d")
-                                    machine_str = str(item_machine_no).strip()
-                                    mold_str = str(item_mold_no).strip()
-                                    lot_str = str(int(item_production_lot)).strip()
-                                    item_product_id = (
-                                        f"{date_str}_{machine_str}_{mold_str}_{lot_str}"
-                                    )
+                            item_product_id = _compose_p3_product_id(
+                                item_date,
+                                item_machine_no,
+                                item_mold_no,
+                                item_production_lot,
+                            )
 
                             # 檢查是否已存在 (透過 product_id)
                             if (
@@ -1440,15 +1335,7 @@ async def import_data(
                             or first_row.get("mold")
                         )
 
-                        production_lot_val = first_row.get("lot")
-                        try:
-                            production_lot_val = (
-                                int(production_lot_val)
-                                if production_lot_val is not None
-                                else None
-                            )
-                        except (ValueError, TypeError):
-                            production_lot_val = None
+                        production_lot_val = _extract_production_lot(first_row)
 
                         record_kwargs.update(
                             {
@@ -1487,19 +1374,7 @@ async def import_data(
                             # 提取其他欄位
                             # row_data['lot'] 是生產序號 (production_lot)，批號應使用父表 lot_no
                             item_lot_no = lot_no
-                            item_production_lot = (
-                                row_data.get("lot")
-                                or row_data.get("LOT")
-                                or row_data.get("Lot")
-                            )
-                            try:
-                                item_production_lot = (
-                                    int(float(item_production_lot))
-                                    if item_production_lot is not None
-                                    else None
-                                )
-                            except (ValueError, TypeError):
-                                item_production_lot = None
+                            item_production_lot = _extract_production_lot(row_data)
                             item_machine_no = (
                                 row_data.get("Machine NO")
                                 or row_data.get("Machine No")
@@ -1563,19 +1438,12 @@ async def import_data(
                             if not item_date:
                                 item_date = record.production_date
 
-                            if (
-                                item_date
-                                and item_machine_no
-                                and item_mold_no
-                                and item_production_lot is not None
-                            ):
-                                date_str = item_date.strftime("%Y%m%d")
-                                machine_str = str(item_machine_no).strip()
-                                mold_str = str(item_mold_no).strip()
-                                lot_str = str(int(item_production_lot)).strip()
-                                item_product_id = (
-                                    f"{date_str}_{machine_str}_{mold_str}_{lot_str}"
-                                )
+                            item_product_id = _compose_p3_product_id(
+                                item_date,
+                                item_machine_no,
+                                item_mold_no,
+                                item_production_lot,
+                            )
 
                             if item_product_id:
                                 candidate = item_product_id

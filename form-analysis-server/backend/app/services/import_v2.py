@@ -41,10 +41,26 @@ class ImportService:
         s = str(val or "").strip()
         if not s:
             return None
-        m = re.match(r"^(\d{7})_(\d{1,2})(?:_.+)?$", s)
+        m = re.match(r"^(\d{7})[-_](\d{1,2})(?:[-_].+)?$", s)
         if not m:
             return None
         return f"{m.group(1)}_{m.group(2).zfill(2)}"
+
+    def _compose_p2_trace_lot_no(
+        self, lot_no_norm: int | str | None, winder_number: int | str | None
+    ) -> str | None:
+        if lot_no_norm is None or winder_number is None:
+            return None
+        lot = str(lot_no_norm).strip()
+        if not lot:
+            return None
+        try:
+            w = int(winder_number)
+        except (TypeError, ValueError):
+            return None
+        if w <= 0:
+            return None
+        return f"{lot}_{w:02d}"
 
     def _extract_file_lot_no_raw_or_raise(
         self, row_data: list[dict[str, Any]], *, table_code: str
@@ -94,6 +110,33 @@ class ImportService:
         if len(parts) >= 2 and len(parts[0]) >= 6 and len(parts[1]) <= 2:
             return f"{parts[0]}_{parts[1].zfill(2)}"
         return s
+
+    def _compose_p3_item_product_id(
+        self,
+        production_date_yyyymmdd: int | None,
+        machine_no: Any,
+        mold_no: Any,
+        production_lot: Any,
+    ) -> str | None:
+        """Compose canonical per-row P3 product_id: YYYYMMDD_machine_mold_lot."""
+        try:
+            ymd_i = int(production_date_yyyymmdd or 0)
+        except (TypeError, ValueError):
+            return None
+        if ymd_i <= 0:
+            return None
+
+        machine = str(machine_no or "").strip()
+        mold = str(mold_no or "").strip()
+        if not machine or not mold:
+            return None
+
+        try:
+            lot_i = int(float(production_lot))
+        except (TypeError, ValueError):
+            return None
+
+        return f"{ymd_i:08d}_{machine}_{mold}_{lot_i}"
 
     def _row_signature_for_dedupe(self, row: dict[str, Any]) -> str:
         """Compute a stable signature for a parsed CSV row.
@@ -146,6 +189,11 @@ class ImportService:
         if v is None:
             return ""
         return str(v).strip()
+
+    def _is_blank_row_dict(self, row: dict[str, Any] | None) -> bool:
+        if not row or not isinstance(row, dict):
+            return True
+        return all(self._is_empty_value(v) for v in row.values())
 
     def _row_completeness_score(self, row: dict[str, Any]) -> int:
         if not isinstance(row, dict):
@@ -267,6 +315,8 @@ class ImportService:
                             clean_row = {
                                 k.strip(): v.strip() for k, v in row.items() if k
                             }
+                            if self._is_blank_row_dict(clean_row):
+                                continue
 
                             staging_row = StagingRow(
                                 id=uuid.uuid4(),
@@ -305,6 +355,8 @@ class ImportService:
                             clean_row = {
                                 k.strip(): v.strip() for k, v in row.items() if k
                             }
+                            if self._is_blank_row_dict(clean_row):
+                                continue
                             staging_row = StagingRow(
                                 id=uuid.uuid4(),
                                 job_id=job.id,
@@ -436,7 +488,7 @@ class ImportService:
 
         # lot_no 驗證：一律從內容欄位抓取
         lot_no_pattern = re.compile(r"^\d{7}_\d{2}$")
-        lot_no_flexible_pattern = re.compile(r"^(\d{7})_(\d{1,2})(?:_.+)?$")
+        lot_no_flexible_pattern = re.compile(r"^(\d{7})[-_](\d{1,2})(?:[-_].+)?$")
 
         # 3. Iterate and Validate Staging Rows
         offset = 0
@@ -460,6 +512,10 @@ class ImportService:
                 errors = []
                 data = row.parsed_json
                 _filename = file_map.get(row.file_id, "")
+                if self._is_blank_row_dict(data if isinstance(data, dict) else None):
+                    row.is_valid = True
+                    row.errors_json = []
+                    continue
 
                 # LOT NO validation (all tables): extract from row content
                 lot_no_val = self._extract_lot_no_from_row_dict(
@@ -927,6 +983,26 @@ class ImportService:
                                         pass
                                     break
 
+                            # If source CSV doesn't provide row product_id, compose one
+                            # from per-row attributes to keep row-level identity stable.
+                            if not item_product_id:
+                                item_ymd = None
+                                if item_production_date is not None:
+                                    item_ymd = (
+                                        item_production_date.year * 10000
+                                        + item_production_date.month * 100
+                                        + item_production_date.day
+                                    )
+                                if not item_ymd:
+                                    item_ymd = p3_info.get("production_date_yyyymmdd")
+
+                                item_product_id = self._compose_p3_item_product_id(
+                                    item_ymd,
+                                    item_machine_no,
+                                    item_mold_no,
+                                    item_production_lot,
+                                )
+
                             for field in CSVFieldMapper.SOURCE_WINDER_FIELD_NAMES:
                                 if field in row and row[field]:
                                     try:
@@ -1054,13 +1130,23 @@ class ImportService:
                     await self.db.flush()
 
                     row = merged_rows[0]
+                    p2_item_ymd = self._extract_p2_item_production_date_yyyymmdd(row)
+                    trace_lot_no = self._compose_p2_trace_lot_no(
+                        p2_record.lot_no_raw, int(winder_num)
+                    )
                     p2_item = P2ItemV2(
                         id=uuid.uuid4(),
                         p2_record_id=p2_record.id,
                         tenant_id=job.tenant_id,
                         winder_number=int(winder_num),
+                        production_date_yyyymmdd=p2_item_ymd,
+                        trace_lot_no=trace_lot_no,
                         row_data=row,
                     )
+
+                    slitting_result = self._extract_p2_item_slitting_result(row)
+                    if slitting_result is not None:
+                        p2_item.slitting_result = slitting_result
 
                     for field in [
                         "sheet_width",
@@ -1073,7 +1159,6 @@ class ImportService:
                         "thickness7",
                         "appearance",
                         "rough_edge",
-                        "slitting_result",
                     ]:
                         if field in row and row[field]:
                             try:
@@ -1209,6 +1294,107 @@ class ImportService:
             f"Could not extract winder number for {filename}, defaulting to 1"
         )
         return 1
+
+    def _extract_p2_item_production_date_yyyymmdd(
+        self, row: dict[str, Any] | None
+    ) -> int | None:
+        if not isinstance(row, dict):
+            return None
+
+        candidates: list[Any] = []
+        for key in [
+            "Slitting date",
+            "Slitting Date",
+            "slitting date",
+            "slitting_date",
+            "Slitting Time",
+            "slitting_time",
+            "分條時間",
+            "production_date",
+            "Production Date",
+            "生產日期",
+            "date",
+            "Date",
+        ]:
+            if key in row and row[key] is not None and str(row[key]).strip():
+                candidates.append(row[key])
+
+        nested_rows = row.get("rows")
+        if isinstance(nested_rows, list):
+            for nested in nested_rows:
+                if not isinstance(nested, dict):
+                    continue
+                for key in [
+                    "Slitting date",
+                    "Slitting Date",
+                    "slitting date",
+                    "slitting_date",
+                    "Slitting Time",
+                    "slitting_time",
+                    "分條時間",
+                    "production_date",
+                    "Production Date",
+                    "生產日期",
+                    "date",
+                    "Date",
+                ]:
+                    if key in nested and nested[key] is not None and str(nested[key]).strip():
+                        candidates.append(nested[key])
+
+        for v in candidates:
+            ymd = csv_field_mapper._normalize_date_to_yyyymmdd(str(v))
+            if ymd:
+                return int(ymd)
+        return None
+
+    def _extract_p2_item_slitting_result(self, row: dict[str, Any] | None) -> float | None:
+        if not isinstance(row, dict):
+            return None
+
+        candidates: list[Any] = []
+        for key in [
+            "Striped Results",
+            "Striped results",
+            "striped results",
+            "striped result",
+            "Slitting Result",
+            "slitting result",
+            "Slitting result",
+            "slitting_result",
+            "分條結果",
+            "分條結果(成品)",
+        ]:
+            if key in row and row[key] is not None and str(row[key]).strip():
+                candidates.append(row[key])
+
+        nested_rows = row.get("rows")
+        if isinstance(nested_rows, list):
+            for nested in nested_rows:
+                if not isinstance(nested, dict):
+                    continue
+                for key in [
+                    "Striped Results",
+                    "Striped results",
+                    "striped results",
+                    "striped result",
+                    "Slitting Result",
+                    "slitting result",
+                    "slitting_result",
+                    "分條結果",
+                    "分條結果(成品)",
+                ]:
+                    if key in nested and nested[key] is not None and str(nested[key]).strip():
+                        candidates.append(nested[key])
+
+        for v in candidates:
+            try:
+                value = float(v)
+                if value.is_integer():
+                    return int(value)
+                return value
+            except (ValueError, TypeError):
+                continue
+        return None
 
     def _extract_p3_info(
         self, filename: str, row_data: list[dict[str, Any]]

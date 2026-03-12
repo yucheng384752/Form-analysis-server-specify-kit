@@ -90,6 +90,16 @@ class TestValidationService:
         result = validation_service.normalize_lot_no("2507173_02")
         assert result == "2507173_02"
 
+    def test_normalize_lot_no_hyphen_separator(self, validation_service):
+        """測試連字號分隔批號可正規化"""
+        result = validation_service.normalize_lot_no("2507173-02")
+        assert result == "2507173_02"
+
+    def test_normalize_lot_no_hyphen_with_suffix(self, validation_service):
+        """測試連字號分隔且帶後綴可正規化"""
+        result = validation_service.normalize_lot_no("2507173-2-17")
+        assert result == "2507173_02"
+
     def test_normalize_lot_no_empty(self, validation_service):
         """測試空批號"""
         result = validation_service.normalize_lot_no("")

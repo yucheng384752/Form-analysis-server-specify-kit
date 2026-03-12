@@ -5,7 +5,7 @@ import time
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,8 @@ from app.models.core.tenant_user import TenantUser
 from app.services.audit_events import write_audit_event_best_effort
 
 router = APIRouter()
+
+_ALLOWED_TENANT_ROLES = {"manager", "user"}
 
 
 class LoginRequest(BaseModel):
@@ -49,6 +51,14 @@ class CreateUserRequest(BaseModel):
     )
     role: str = Field(default="user", min_length=1, max_length=30)
 
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, value: str) -> str:
+        role = (value or "").strip() or "user"
+        if role not in _ALLOWED_TENANT_ROLES:
+            raise ValueError("role must be manager or user")
+        return role
+
 
 class CreateUserResponse(BaseModel):
     id: str
@@ -77,6 +87,16 @@ class UpdateUserRequest(BaseModel):
     username: str | None = Field(default=None, min_length=1, max_length=100)
     role: str | None = Field(default=None, min_length=1, max_length=30)
     is_active: bool | None = None
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        role = value.strip() or "user"
+        if role not in _ALLOWED_TENANT_ROLES:
+            raise ValueError("role must be manager or user")
+        return role
 
 
 class RebindUserTenantRequest(BaseModel):
@@ -127,8 +147,28 @@ def _is_admin_key(request: Request) -> bool:
 
 def _is_tenant_privileged(actor_role: str | None, auth_tenant_id) -> bool:
     # Tenant-scoped privileged roles (day-to-day operations).
-    # NOTE: 'admin' here is a tenant role, not the break-glass admin API key.
-    return bool(auth_tenant_id and actor_role in {"admin", "manager"})
+    # NOTE: 'admin' is not a tenant role; break-glass admin uses X-Admin-API-Key.
+    return bool(auth_tenant_id and actor_role in {"manager"})
+
+
+def _ensure_manager_not_targeting_admin(
+    *,
+    is_admin_key: bool,
+    actor_role: str | None,
+    target_role: str | None,
+    action: str,
+) -> None:
+    """Disallow manager from creating/updating/deleting admin users.
+
+    This is a centralized guard to avoid scattered role checks.
+    """
+    if is_admin_key or actor_role != "manager":
+        return
+    if str(target_role or "").strip() == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Manager cannot {action} admin users",
+        )
 
 
 async def _count_other_active_privileged_users(
@@ -137,7 +177,7 @@ async def _count_other_active_privileged_users(
     stmt = select(func.count(TenantUser.id)).where(
         TenantUser.tenant_id == tenant_id,
         TenantUser.is_active == True,
-        TenantUser.role.in_(["admin", "manager"]),
+        TenantUser.role.in_(["manager"]),
         TenantUser.id != exclude_user_id,
     )
     return int((await db.execute(stmt)).scalar_one() or 0)
@@ -360,7 +400,7 @@ async def create_user(
 
     Allowed callers:
     - Break-glass bootstrap: valid ADMIN_API_KEYS (X-Admin-API-Key), can target any tenant by tenant_code.
-    - Day-to-day: authenticated API key whose linked user has role=admin/manager, can only create users in its own tenant.
+    - Day-to-day: authenticated API key whose linked user has role=manager, can only create users in its own tenant.
     """
 
     is_admin_key = _is_admin_key(request)
@@ -372,17 +412,18 @@ async def create_user(
     if not is_admin_key and not is_tenant_privileged:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin/manager privileges required",
+            detail="Manager privileges required",
         )
 
-    # Managers may not mint tenant 'admin' users.
+    # Managers may not mint tenant 'admin' users (legacy safeguard).
     if not is_admin_key and actor_role == "manager":
         requested_role = (payload.role or "").strip() or "user"
-        if requested_role == "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager cannot create admin users",
-            )
+        _ensure_manager_not_targeting_admin(
+            is_admin_key=is_admin_key,
+            actor_role=actor_role,
+            target_role=requested_role,
+            action="create",
+        )
 
     tenant: Tenant | None = None
     if is_admin_key:
@@ -413,7 +454,7 @@ async def create_user(
                 )
             tenant = tenants[0]
     else:
-        # role=admin/manager via API key: tenant is bound by middleware
+        # role=manager via API key: tenant is bound by middleware
         tenant = (
             await db.execute(
                 select(Tenant).where(
@@ -472,7 +513,7 @@ async def list_users(
 
     Allowed callers:
     - Break-glass bootstrap: valid ADMIN_API_KEYS (X-Admin-API-Key), can list across tenants.
-    - Day-to-day: authenticated API key whose linked user has role=admin/manager, lists only its own tenant.
+    - Day-to-day: authenticated API key whose linked user has role=manager, lists only its own tenant.
     """
 
     is_admin_key = _is_admin_key(request)
@@ -483,7 +524,7 @@ async def list_users(
     if not is_admin_key and not is_tenant_privileged:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin/manager privileges required",
+            detail="Manager privileges required",
         )
 
     stmt = select(TenantUser, Tenant.code).join(
@@ -569,7 +610,7 @@ async def update_user(
     if not is_admin_key and not is_tenant_privileged:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin/manager privileges required",
+            detail="Manager privileges required",
         )
 
     row = (
@@ -595,17 +636,21 @@ async def update_user(
             detail="Cannot manage users in another tenant",
         )
 
-    # Managers may not manage tenant admins, and may not assign role=admin.
+    # Managers may not manage tenant admins, and may not assign role=admin (legacy safeguard).
     if not is_admin_key and actor_role == "manager":
-        if str(user.role).strip() == "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager cannot manage admin users",
-            )
-        if payload.role is not None and (payload.role.strip() or "user") == "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager cannot assign admin role",
+        _ensure_manager_not_targeting_admin(
+            is_admin_key=is_admin_key,
+            actor_role=actor_role,
+            target_role=getattr(user, "role", None),
+            action="manage",
+        )
+        if payload.role is not None:
+            next_role = payload.role.strip() or "user"
+            _ensure_manager_not_targeting_admin(
+                is_admin_key=is_admin_key,
+                actor_role=actor_role,
+                target_role=next_role,
+                action="assign",
             )
 
     did_change = False
@@ -650,13 +695,9 @@ async def update_user(
     # Prevent lockout: do not allow removing the last active privileged user
     # via tenant-scoped calls. Break-glass admin key can override.
     if not is_admin_key:
-        before_privileged = bool(orig_is_active) and orig_role.strip() in {
-            "admin",
-            "manager",
-        }
+        before_privileged = bool(orig_is_active) and orig_role.strip() in {"manager"}
         after_privileged = bool(user.is_active) and str(user.role).strip() in {
-            "admin",
-            "manager",
+            "manager"
         }
         if before_privileged and not after_privileged:
             other_count = await _count_other_active_privileged_users(
@@ -665,7 +706,7 @@ async def update_user(
             if other_count <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Cannot remove the last admin/manager user in this tenant",
+            detail="Cannot remove the last manager user in this tenant",
                 )
 
     if not did_change:
@@ -731,7 +772,7 @@ async def delete_user(
     if not is_admin_key and not is_tenant_privileged:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin/manager privileges required",
+            detail="Manager privileges required",
         )
 
     row = (
@@ -754,22 +795,19 @@ async def delete_user(
             detail="Cannot manage users in another tenant",
         )
 
-    # Managers may not manage tenant admins.
-    if (
-        not is_admin_key
-        and actor_role == "manager"
-        and str(user.role).strip() == "admin"
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Manager cannot manage admin users",
+    # Managers may not manage tenant admins (legacy safeguard).
+    if not is_admin_key and actor_role == "manager":
+        _ensure_manager_not_targeting_admin(
+            is_admin_key=is_admin_key,
+            actor_role=actor_role,
+            target_role=getattr(user, "role", None),
+            action="manage",
         )
 
     # Prevent lockout: do not allow deactivating the last active privileged user.
     if not is_admin_key:
         before_privileged = bool(user.is_active) and str(user.role).strip() in {
-            "admin",
-            "manager",
+            "manager"
         }
         if before_privileged:
             other_count = await _count_other_active_privileged_users(
@@ -778,7 +816,7 @@ async def delete_user(
             if other_count <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Cannot remove the last admin/manager user in this tenant",
+            detail="Cannot remove the last manager user in this tenant",
                 )
 
     if bool(user.is_active):
@@ -1273,10 +1311,10 @@ async def reset_user_password(
     payload: ResetUserPasswordRequest = Body(...),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin/manager reset another user's password.
+    """Manager reset another user's password.
 
     Behavior:
-    - Requires tenant-scoped admin/manager API key OR break-glass admin API key.
+    - Requires tenant-scoped manager API key OR break-glass admin API key.
     - Revokes all active API keys for the target user.
     - Sets must_change_password=True.
     - Returns a generated temporary password if new_password is omitted.
@@ -1291,7 +1329,7 @@ async def reset_user_password(
     if not is_admin_key and not is_tenant_privileged:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin/manager privileges required",
+            detail="Manager privileges required",
         )
 
     if not is_admin_key and not getattr(state, "actor_user_id", None):
@@ -1327,15 +1365,13 @@ async def reset_user_password(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Use /api/auth/me/password"
         )
 
-    # Managers may not manage tenant admins.
-    if (
-        not is_admin_key
-        and actor_role == "manager"
-        and str(target.role).strip() == "admin"
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Manager cannot manage admin users",
+    # Managers may not manage tenant admins (legacy safeguard).
+    if not is_admin_key and actor_role == "manager":
+        _ensure_manager_not_targeting_admin(
+            is_admin_key=is_admin_key,
+            actor_role=actor_role,
+            target_role=getattr(target, "role", None),
+            action="manage",
         )
 
     new_password = (payload.new_password or "").strip() or None
