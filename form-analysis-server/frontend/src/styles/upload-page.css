@@ -252,3 +252,46 @@
   font-size: 0.75rem;
   color: #9ca3af;
 }
+
+/* Batch import confirmation modal: keep long filenames usable */
+.batch-import-confirm {
+  display: grid;
+  gap: 12px;
+}
+
+.batch-import-confirm__list-wrap {
+  margin-top: 4px;
+}
+
+.batch-import-confirm__list {
+  margin: 0;
+  padding: 8px 0 0 20px;
+  font-size: 14px;
+  max-height: min(45vh, 320px);
+  overflow: auto;
+}
+
+.batch-import-confirm__item {
+  margin-bottom: 6px;
+}
+
+.batch-import-confirm__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.batch-import-confirm__type {
+  color: #6366f1;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.batch-import-confirm__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #374151;
+}

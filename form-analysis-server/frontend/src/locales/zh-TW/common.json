@@ -14,6 +14,63 @@
     "cancel": "取消",
     "close": "關閉"
   },
+  "roles": {
+    "user": "使用者",
+    "manager": "管理者",
+    "globalAdmin": "全域管理者"
+  },
+  "fields": {
+    "tenantId": "區域 ID",
+    "actorRole": "角色",
+    "apiKeyLabel": "API 金鑰標籤"
+  },
+  "manager": {
+    "title": "場域管理",
+    "subtitle": "使用一般 API 金鑰（不需要管理者金鑰）",
+    "notManager": "目前角色不是管理者，無法管理使用者。",
+    "hint": "註：管理者可管理同場域使用者。",
+    "actions": {
+      "refreshIdentity": "更新身分",
+      "refreshUsers": "刷新使用者",
+      "createUser": "建立使用者",
+      "save": "儲存",
+      "deactivate": "停用"
+    },
+    "labels": {
+      "username": "帳號",
+      "password": "密碼",
+      "role": "角色",
+      "includeInactive": "包含已停用"
+    },
+    "table": {
+      "username": "帳號",
+      "role": "角色",
+      "active": "狀態",
+      "createdAt": "建立時間",
+      "lastLoginAt": "最後登入",
+      "actions": "操作"
+    },
+    "toast": {
+      "whoamiFailed": "讀取身分失敗（尚未登入或權限不足）",
+      "whoamiFailedNetwork": "讀取身分失敗（網路或伺服器未啟動）",
+      "fetchUsersFailedHttp": "取得使用者清單失敗 (HTTP {{status}})",
+      "fetchUsersFailedNetwork": "取得使用者清單失敗（網路或伺服器未啟動）",
+      "usernameRequired": "請輸入帳號",
+      "passwordMin": "密碼至少 8 碼",
+      "createUserFailedHttp": "建立使用者失敗 (HTTP {{status}})",
+      "createUserFailedNetwork": "建立使用者失敗（網路或伺服器未啟動）",
+      "createUserSuccess": "已建立使用者",
+      "updateUserFailedHttp": "更新使用者失敗 (HTTP {{status}})",
+      "updateUserFailedNetwork": "更新使用者失敗（網路或伺服器未啟動）",
+      "updateUserSuccess": "已更新使用者",
+      "deactivateUserFailedHttp": "停用使用者失敗 (HTTP {{status}})",
+      "deactivateUserFailedNetwork": "停用使用者失敗（網路或伺服器未啟動）",
+      "deactivateUserSuccess": "已停用使用者"
+    },
+    "confirm": {
+      "deactivateUser": "確定要停用使用者「{{username}}」嗎？"
+    }
+  },
   "tabs": {
     "register": "登入",
     "upload": "檔案上傳",
@@ -29,7 +86,7 @@
   "language": {
     "label": "語言",
     "zhTW": "繁體中文",
-    "en": "English"
+    "en": "英文（English）"
   },
   "a11y": {
     "fontSize": {
@@ -65,9 +122,9 @@
     "tenantSelected": "目前已選擇的區域（區域 ID）",
     "none": "（無）",
     "clearTenantId": "清除區域 ID",
-    "refreshTenants": "刷新 areas 列表",
-    "tenantsNeedAuth": "（此環境需要 key 才能讀取 areas）",
-    "tenants": "areas",
+    "refreshTenants": "刷新區域列表",
+    "tenantsNeedAuth": "（此環境需要金鑰才能讀取區域）",
+    "tenants": "區域",
     "tenantsEmpty": "（目前為空）",
     "useTenant": "使用此區域",
     "adminTips": "提示（管理者）",
@@ -143,7 +200,7 @@
       "needsFix": "需要修正"
     },
     "editDisabledNotice": "此版本上傳流程不提供編輯；如需修正請修改 CSV 後重新上傳。",
-    "lotNoLabel": "Lot No",
+    "lotNoLabel": "批號（Lot No）",
     "validationErrors": {
       "count": "{{count}} 個錯誤"
     },
@@ -293,14 +350,14 @@
   },
   "query": {
     "title": "資料查詢",
-    "descLotTitle": "批號查詢：",
-    "descLot": "輸入批號進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料",
+    "descLotTitle": "批號（Lot No）查詢：",
+    "descLot": "輸入批號（Lot No）進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料",
     "descProductTitle": "產品編號查詢：",
-    "descProduct": "直接輸入 Product ID 會顯示該筆的 P1/P2/P3 追溯結果",
+    "descProduct": "直接輸入產品編號（Product ID）會顯示該筆的 P1/P2/P3 追溯結果",
     "descAdvancedTitle": "進階搜尋：",
     "descAdvanced": "可依日期範圍、機台號碼、下膠編號、產品編號、P3規格等條件進行多條件組合搜尋",
     "noTenantWarning": "尚未選擇區域。請先到上方「登入」頁籤選擇區域；若尚未初始化，請先驗證管理者金鑰以解鎖「管理者」頁籤。",
-    "searchPlaceholder": "輸入 Lot No(批號) 或 Product ID 查詢",
+    "searchPlaceholder": "輸入批號（Lot No）或產品編號（Product ID）查詢",
     "suggestionLoading": "載入建議中...",
     "suggestionNoResults": "沒有找到相符的建議",
     "search": "查詢",
@@ -318,17 +375,17 @@
     },
     "tableHeaders": {
       "clickToSort": "點擊排序",
-      "winder": "Winder",
+      "winder": "收卷機（Winder）",
       "linkSearch": "關聯查詢",
-      "lotNo": "Lot No",
+      "lotNo": "批號（Lot No）",
       "dataType": "資料類型",
       "productionDate": "生產日期",
       "createdAt": "建立時間",
       "actions": "操作"
     },
     "fields": {
-      "lotNo": "批號",
-      "productId": "Product ID",
+      "lotNo": "批號（Lot No）",
+      "productId": "產品編號（Product ID）",
       "productName": "產品名稱",
       "quantity": "數量",
       "productionDate": "生產日期",
@@ -425,13 +482,13 @@
       "fields": {
         "p3No": "P3編號"
       },
-      "rowHeader": "第 {{index}} 筆 - Product ID: {{productId}}"
+      "rowHeader": "第 {{index}} 筆 - 產品編號（Product ID）：{{productId}}"
     },
     "errors": {
       "productNotFound": "查無此產品",
       "lotInfoMissing": "缺少批號資訊，無法追溯",
-      "winderMissing": "缺少 winder 資訊，無法追溯",
-      "p2NotFound": "查無對應的 P2（批號 {{lotNo}} / winder {{winder}}）",
+      "winderMissing": "缺少收卷機（Winder）資訊，無法追溯",
+      "p2NotFound": "查無對應的 P2（批號 {{lotNo}} / 收卷機（Winder） {{winder}}）",
       "traceFailedWithStatus": "追溯查詢失敗（HTTP {{status}}）：{{statusText}}",
       "unknownDataType": "未知的資料類型",
       "searchFailedWithDetail": "查詢失敗: {{detail}}",
@@ -439,7 +496,7 @@
     },
     "advanced": {
       "validationAtLeastOne": "請至少填寫一個搜尋條件",
-      "lotNo": "批號",
+      "lotNo": "批號（Lot No）",
       "lotNoPlaceholder": "輸入批號 (模糊搜尋)",
       "productionDateFrom": "生產日期 (起始)",
       "productionDateTo": "生產日期 (結束)",
@@ -450,7 +507,7 @@
       "machineNoPlaceholder": "輸入機台號碼 (模糊搜尋)",
       "moldNo": "模具號碼",
       "moldNoPlaceholder": "輸入模具號碼 (模糊搜尋)",
-      "productId": "產品編號",
+      "productId": "產品編號（Product ID）",
       "productIdPlaceholder": "輸入產品編號 (模糊搜尋)",
       "specification": "規格",
       "specificationPlaceholder": "輸入規格",
@@ -460,13 +517,13 @@
       "thicknessMinPlaceholder": "例如 30 表示 0.30mm",
       "thicknessMax": "厚度 (最大, 0.01mm)",
       "thicknessMaxPlaceholder": "例如 33 表示 0.33mm",
-      "winderNumber": "Winder Number",
+      "winderNumber": "收卷機號碼（Winder Number）",
       "winderAll": "全部",
       "winderDrawerSet": "已設定（點擊修改）",
       "winderDrawerOpen": "點擊展開",
-      "winderDrawerTitle": "Winder Number",
-      "winderInputLabel": "輸入 Winder Number",
-      "winderInputPlaceholder": "輸入 Winder Number",
+      "winderDrawerTitle": "收卷機號碼（Winder Number）",
+      "winderInputLabel": "輸入收卷機號碼（Winder Number）",
+      "winderInputPlaceholder": "輸入收卷機號碼（Winder Number）",
       "winderDone": "完成",
       "dataType": "資料類型",
       "dataTypeAll": "全部",
@@ -538,6 +595,16 @@
     "featurePct": {
       "title": "Feature 重要度（feature_pct）",
       "percent": "{{percent}}%"
+    },
+    "views": {
+      "heatmap": "熱區圖",
+      "bar": "長條圖"
+    },
+    "heatmap": {
+      "category": "分類",
+      "value": "值",
+      "ngRate": "NG 比率",
+      "sample": "樣本數"
     }
   },
   "errors": {

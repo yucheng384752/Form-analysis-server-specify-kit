@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useToast } from '../components/common/ToastContext'
 import './../styles/manager-page.css'
 
@@ -28,6 +29,7 @@ async function readErrorDetail(res: Response): Promise<string> {
 }
 
 export function ManagerPage() {
+  const { t } = useTranslation()
   const { showToast } = useToast()
 
   const [whoami, setWhoami] = useState<WhoAmI | null>(null)
@@ -48,7 +50,7 @@ export function ManagerPage() {
 
   const canManage = useMemo(() => {
     const r = String(whoami?.actor_role || '').trim()
-    return r === 'admin' || r === 'manager'
+    return r === 'manager'
   }, [whoami?.actor_role])
 
   const refreshWhoami = async () => {
@@ -57,14 +59,14 @@ export function ManagerPage() {
       const res = await fetch('/api/auth/whoami')
       if (!res.ok) {
         const detail = await readErrorDetail(res)
-        showToast('error', detail || '讀取身分失敗（可能尚未登入）')
+        showToast('error', detail || t('manager.toast.whoamiFailed'))
         setWhoami(null)
         return
       }
       const body = (await res.json().catch(() => ({}))) as WhoAmI
       setWhoami(body)
     } catch {
-      showToast('error', '讀取身分失敗（網路或伺服器未啟動）')
+      showToast('error', t('manager.toast.whoamiFailedNetwork'))
       setWhoami(null)
     } finally {
       setLoadingWhoami(false)
@@ -79,7 +81,10 @@ export function ManagerPage() {
       const res = await fetch(`/api/auth/users?${params.toString()}`)
       if (!res.ok) {
         const detail = await readErrorDetail(res)
-        showToast('error', detail || `讀取使用者失敗（HTTP ${res.status}）`)
+        showToast(
+          'error',
+          detail || t('manager.toast.fetchUsersFailedHttp', { status: res.status }),
+        )
         setUsers(null)
         return
       }
@@ -96,7 +101,7 @@ export function ManagerPage() {
       setPendingRoleById(nextRole)
       setPendingActiveById(nextActive)
     } catch {
-      showToast('error', '讀取使用者失敗（網路或伺服器未啟動）')
+      showToast('error', t('manager.toast.fetchUsersFailedNetwork'))
       setUsers(null)
     } finally {
       setLoadingUsers(false)
@@ -117,11 +122,11 @@ export function ManagerPage() {
     const password = createPassword
 
     if (!username) {
-      showToast('error', '請輸入帳號')
+      showToast('error', t('manager.toast.usernameRequired'))
       return
     }
     if (!password || password.length < 8) {
-      showToast('error', '密碼至少 8 碼')
+      showToast('error', t('manager.toast.passwordMin'))
       return
     }
 
@@ -134,16 +139,19 @@ export function ManagerPage() {
       })
       if (!res.ok) {
         const detail = await readErrorDetail(res)
-        showToast('error', detail || `建立使用者失敗（HTTP ${res.status}）`)
+        showToast(
+          'error',
+          detail || t('manager.toast.createUserFailedHttp', { status: res.status }),
+        )
         return
       }
-      showToast('success', '建立使用者成功')
+      showToast('success', t('manager.toast.createUserSuccess'))
       setCreateUsername('')
       setCreatePassword('')
       setCreateRole('user')
       await refreshUsers()
     } catch {
-      showToast('error', '建立使用者失敗（網路或伺服器未啟動）')
+      showToast('error', t('manager.toast.createUserFailedNetwork'))
     } finally {
       setCreating(false)
     }
@@ -168,33 +176,44 @@ export function ManagerPage() {
       })
       if (!res.ok) {
         const detail = await readErrorDetail(res)
-        showToast('error', detail || `更新失敗（HTTP ${res.status}）`)
+        showToast(
+          'error',
+          detail || t('manager.toast.updateUserFailedHttp', { status: res.status }),
+        )
         return
       }
-      showToast('success', '更新成功')
+      showToast('success', t('manager.toast.updateUserSuccess'))
       await refreshUsers()
     } catch {
-      showToast('error', '更新失敗（網路或伺服器未啟動）')
+      showToast('error', t('manager.toast.updateUserFailedNetwork'))
     } finally {
       setSavingUserId(null)
     }
   }
 
   const handleDeactivateUser = async (u: TenantUserRow) => {
-    if (!confirm(`確定要停用使用者「${u.username}」？`)) return
+    if (
+      !confirm(
+        t('manager.confirm.deactivateUser', { username: u.username }),
+      )
+    )
+      return
 
     setSavingUserId(u.id)
     try {
       const res = await fetch(`/api/auth/users/${u.id}`, { method: 'DELETE' })
       if (!res.ok) {
         const detail = await readErrorDetail(res)
-        showToast('error', detail || `停用失敗（HTTP ${res.status}）`)
+        showToast(
+          'error',
+          detail || t('manager.toast.deactivateUserFailedHttp', { status: res.status }),
+        )
         return
       }
-      showToast('success', '已停用')
+      showToast('success', t('manager.toast.deactivateUserSuccess'))
       await refreshUsers()
     } catch {
-      showToast('error', '停用失敗（網路或伺服器未啟動）')
+      showToast('error', t('manager.toast.deactivateUserFailedNetwork'))
     } finally {
       setSavingUserId(null)
     }
@@ -204,92 +223,91 @@ export function ManagerPage() {
     <div className="manager-page">
       <div className="manager-header">
         <div>
-          <h2 className="manager-title">場域使用者管理</h2>
-          <div className="manager-subtitle">使用一般 API key（不需要管理者金鑰）</div>
+          <h2 className="manager-title">{t('manager.title')}</h2>
+          <div className="manager-subtitle">{t('manager.subtitle')}</div>
         </div>
         <div className="manager-actions">
           <button className="btn-secondary" disabled={loadingWhoami} onClick={() => void refreshWhoami()}>
-            {loadingWhoami ? '讀取中…' : '刷新身分'}
+            {loadingWhoami ? t('common.loading') : t('manager.actions.refreshIdentity')}
           </button>
           <button className="btn-secondary" disabled={loadingUsers || !canManage} onClick={() => void refreshUsers()}>
-            {loadingUsers ? '讀取中…' : '刷新使用者'}
+            {loadingUsers ? t('common.loading') : t('manager.actions.refreshUsers')}
           </button>
         </div>
       </div>
 
       <div className="manager-card">
         <div className="manager-kv">
-          <div className="k">tenant_id</div>
+          <div className="k">{t('fields.tenantId')}</div>
           <div className="v"><code>{whoami?.tenant_id || '—'}</code></div>
         </div>
         <div className="manager-kv">
-          <div className="k">actor_role</div>
+          <div className="k">{t('fields.actorRole')}</div>
           <div className="v"><code>{whoami?.actor_role || '—'}</code></div>
         </div>
         <div className="manager-kv">
-          <div className="k">api_key_label</div>
+          <div className="k">{t('fields.apiKeyLabel')}</div>
           <div className="v"><code>{whoami?.api_key_label || '—'}</code></div>
         </div>
       </div>
 
       {!canManage ? (
-        <div className="manager-empty">目前角色不是 admin/manager，無法管理使用者。</div>
+        <div className="manager-empty">{t('manager.notManager')}</div>
       ) : (
         <>
           <div className="manager-card">
             <div className="manager-row">
               <label className="manager-label">
-                帳號
+                {t('manager.labels.username')}
                 <input className="manager-input" value={createUsername} onChange={(e) => setCreateUsername(e.target.value)} />
               </label>
               <label className="manager-label">
-                密碼
+                {t('manager.labels.password')}
                 <input className="manager-input" type="password" value={createPassword} onChange={(e) => setCreatePassword(e.target.value)} />
               </label>
               <label className="manager-label">
-                角色
+                {t('manager.labels.role')}
                 <select className="manager-select" value={createRole} onChange={(e) => setCreateRole(e.target.value as any)}>
-                  <option value="user">user</option>
-                  <option value="manager">manager</option>
+                  <option value="user">{t('roles.user')}</option>
+                  <option value="manager">{t('roles.manager')}</option>
                 </select>
               </label>
               <div className="manager-row-actions">
                 <button className="btn-secondary" disabled={creating} onClick={() => void handleCreateUser()}>
-                  {creating ? '建立中…' : '建立使用者'}
+                  {creating ? t('common.loading') : t('manager.actions.createUser')}
                 </button>
               </div>
             </div>
-            <div className="manager-hint muted">註：manager 無法建立/指派 admin；也無法停用 admin 使用者。</div>
+            <div className="manager-hint muted">{t('manager.hint')}</div>
           </div>
 
           <div className="manager-card">
             <label className="manager-checkbox">
               <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
-              顯示停用使用者
+              {t('manager.labels.includeInactive')}
             </label>
           </div>
 
           <div className="manager-card">
             {users === null ? (
-              <div className="muted">尚未載入</div>
+              <div className="muted">{t('common.loading')}</div>
             ) : users.length === 0 ? (
-              <div className="muted">無使用者</div>
+              <div className="muted">{t('common.noData')}</div>
             ) : (
               <div className="manager-table-wrap">
                 <table className="manager-table">
                   <thead>
                     <tr>
-                      <th>帳號</th>
-                      <th>角色</th>
-                      <th>啟用</th>
-                      <th>建立時間</th>
-                      <th>最後登入</th>
-                      <th style={{ width: 220 }}>操作</th>
+                      <th>{t('manager.table.username')}</th>
+                      <th>{t('manager.table.role')}</th>
+                      <th>{t('manager.table.active')}</th>
+                      <th>{t('manager.table.createdAt')}</th>
+                      <th>{t('manager.table.lastLoginAt')}</th>
+                      <th style={{ width: 220 }}>{t('manager.table.actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {users.map((u) => {
-                      const isAdminUser = String(u.role).trim() === 'admin'
                       const pendingRole = pendingRoleById[u.id] ?? u.role
                       const pendingActive = pendingActiveById[u.id] ?? Boolean(u.is_active)
                       const dirty = pendingRole !== u.role || Boolean(pendingActive) !== Boolean(u.is_active)
@@ -302,24 +320,19 @@ export function ManagerPage() {
                             <div className="muted small"><code>{u.id}</code></div>
                           </td>
                           <td>
-                            {isAdminUser ? (
-                              <code>admin</code>
-                            ) : (
-                              <select
-                                className="manager-select"
-                                value={pendingRole}
-                                onChange={(e) => setPendingRoleById((p) => ({ ...p, [u.id]: e.target.value }))}
-                              >
-                                <option value="user">user</option>
-                                <option value="manager">manager</option>
-                              </select>
-                            )}
+                            <select
+                              className="manager-select"
+                              value={pendingRole}
+                              onChange={(e) => setPendingRoleById((p) => ({ ...p, [u.id]: e.target.value }))}
+                            >
+                              <option value="user">{t('roles.user')}</option>
+                              <option value="manager">{t('roles.manager')}</option>
+                            </select>
                           </td>
                           <td>
                             <input
                               type="checkbox"
                               checked={Boolean(pendingActive)}
-                              disabled={isAdminUser}
                               onChange={(e) => setPendingActiveById((p) => ({ ...p, [u.id]: e.target.checked }))}
                             />
                           </td>
@@ -327,11 +340,11 @@ export function ManagerPage() {
                           <td><span className="small">{u.last_login_at || '—'}</span></td>
                           <td>
                             <div className="row-actions">
-                              <button className="btn-secondary" disabled={!dirty || busy || isAdminUser} onClick={() => void handleSaveUser(u)}>
-                                {busy ? '處理中…' : '更新'}
+                              <button className="btn-secondary" disabled={!dirty || busy} onClick={() => void handleSaveUser(u)}>
+                                {busy ? t('common.loading') : t('manager.actions.save')}
                               </button>
-                              <button className="btn-danger" disabled={busy || isAdminUser || !u.is_active} onClick={() => void handleDeactivateUser(u)}>
-                                {busy ? '處理中…' : '停用'}
+                              <button className="btn-danger" disabled={busy || !u.is_active} onClick={() => void handleDeactivateUser(u)}>
+                                {busy ? t('common.loading') : t('manager.actions.deactivate')}
                               </button>
                             </div>
                           </td>
@@ -348,3 +361,9 @@ export function ManagerPage() {
     </div>
   )
 }
+
+
+
+
+
+

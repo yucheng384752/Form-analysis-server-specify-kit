@@ -118,7 +118,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
 
   const [createUsername, setCreateUsername] = useState('')
   const [createPassword, setCreatePassword] = useState('')
-  const [createRole, setCreateRole] = useState<'user' | 'manager' | 'admin'>('user')
+  const [createRole, setCreateRole] = useState<'user' | 'manager'>('user')
   const [creatingUser, setCreatingUser] = useState(false)
 
   const getAdminHeaders = () => {
@@ -250,7 +250,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       setStoredTenantIdState(id)
       showToast('success', `區域已就緒：${getTenantLabelById(id) || '（未知）'}`)
     } catch {
-      showToast('error', '初始化 tenant 失敗')
+      showToast('error', '初始化場域（tenant）失敗')
     }
   }
 
@@ -279,7 +279,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       if (!res.ok) {
         showToast(
           'error',
-          typeof (body as any)?.detail === 'string' ? (body as any).detail : `取得 API key 失敗 (HTTP ${res.status})`,
+          typeof (body as any)?.detail === 'string' ? (body as any).detail : `取得 API 金鑰（API key）失敗 (HTTP ${res.status})`,
         )
         return
       }
@@ -287,7 +287,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       const apiKey = String((body as any)?.api_key || '').trim()
       if (apiKey) setApiKeyValue(apiKey)
 
-      showToast('success', `已切換區域：${tenant.code} (${tenant.name})，並取得可用 API key`)
+      showToast('success', `已切換區域：${tenant.code} (${tenant.name})，並取得可用 API 金鑰（API key）`)
     } catch {
       showToast('error', '切換區域失敗（網路或伺服器未啟動）')
     }
@@ -302,7 +302,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       const res = await fetch(`/api/tenants${suffix}`, { headers: getAdminHeaders() })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `取得 tenants 失敗 (HTTP ${res.status})`)
+      showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `取得場域（tenants）失敗 (HTTP ${res.status})`)
         setTenants(null)
         return
       }
@@ -313,7 +313,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
         setSelectedTenantCode(rows[0].code)
       }
     } catch {
-      showToast('error', '取得 tenants 失敗（網路或伺服器未啟動）')
+    showToast('error', '取得場域（tenants）失敗（網路或伺服器未啟動）')
       setTenants(null)
     } finally {
       setLoadingTenants(false)
@@ -329,13 +329,13 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `更新 tenant 失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `更新場域（tenant）失敗 (HTTP ${res.status})`)
         return
       }
-      showToast('success', '已更新 tenant')
+      showToast('success', '已更新場域（tenant）')
       await refreshTenants()
     } catch {
-      showToast('error', '更新 tenant 失敗（網路或伺服器未啟動）')
+    showToast('error', '更新場域（tenant）失敗（網路或伺服器未啟動）')
     }
   }
 
@@ -401,7 +401,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
   const refreshUsers = async () => {
     const code = selectedTenantCode.trim()
     if (!code) {
-      showToast('error', '請先選擇 tenant')
+      showToast('error', '請先選擇場域（tenant）')
       return
     }
 
@@ -446,15 +446,15 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
   const moveUserToTenant = async (user: TenantUserRow) => {
     const targetCode = (moveUserTargets[user.id] || '').trim()
     if (!targetCode) {
-      showToast('error', '請先選擇要綁定的 tenant')
+      showToast('error', '請先選擇要綁定的場域（tenant）')
       return
     }
     if (targetCode === (user.tenant_code || '')) {
-      showToast('info', '使用者已在此 tenant，不需修改')
+      showToast('info', '使用者已在此場域（tenant），不需修改')
       return
     }
 
-    if (!confirm(`確定要將使用者 ${user.username} 改綁定到 tenant ${targetCode}？\n\n注意：會撤銷此使用者現有的登入 API key，需要重新登入。`)) return
+    if (!confirm(`確定要將使用者 ${user.username} 改綁定到場域（tenant） ${targetCode}？\n\n注意：會撤銷此使用者現有的登入 API 金鑰（API key），需要重新登入。`)) return
 
     setMovingUserId(user.id)
     try {
@@ -507,7 +507,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
     const password = createPassword
 
     if (!code) {
-      showToast('error', '請先選擇 tenant')
+      showToast('error', '請先選擇場域（tenant）')
       return
     }
     if (!username) {
@@ -599,7 +599,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
 
             {whoami && storedTenantId && String(whoami.tenant_id || '') && String(whoami.tenant_id || '') !== storedTenantId ? (
               <p className="register-hint" style={{ color: '#b45309' }}>
-                提醒：目前 localStorage 的區域為 <code>{storedTenantLabel || '（未知）'}</code>，但 whoami 回報的 tenant 為 <code>{whoamiTenantLabel || '—'}</code>。
+                提醒：目前瀏覽器儲存（localStorage）的區域為 <code>{storedTenantLabel || '（未知）'}</code>，但身分（whoami）回報的場域（tenant）為 <code>{whoamiTenantLabel || '—'}</code>。
                 若要同步，請到下方「區域管理」點「套用為目前區域」。
               </p>
             ) : null}
@@ -665,7 +665,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
                 </button>
               </div>
             ) : (
-              <p className="register-hint">已偵測到有效區域，此 bootstrap 按鈕已隱藏（避免誤建）。</p>
+              <p className="register-hint">已偵測到有效區域，此初始化（bootstrap）按鈕已隱藏（避免誤建）。</p>
             )}
           </details>
         </div>
@@ -700,18 +700,18 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
               <input className="register-input" value={createTenantName} onChange={(e) => setCreateTenantName(e.target.value)} />
             </label>
             <label className="register-label">
-              code
+              代碼（Code）
               <input className="register-input" value={createTenantCode} onChange={(e) => setCreateTenantCode(e.target.value)} />
             </label>
             <label className="register-label">
-              default
+              預設（Default）
               <select
                 className="register-input"
                 value={createTenantDefault ? 'yes' : 'no'}
                 onChange={(e) => setCreateTenantDefault(e.target.value === 'yes')}
               >
-                <option value="no">no</option>
-                <option value="yes">yes</option>
+                <option value="no">否（No）</option>
+                <option value="yes">是（Yes）</option>
               </select>
             </label>
           </div>
@@ -726,12 +726,12 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
           <table className="admin-table">
             <thead>
               <tr>
-                <th>area</th>
-                <th>code</th>
-                <th>name</th>
-                <th>default</th>
-                <th>active</th>
-                <th>actions</th>
+                <th>區域（Area）</th>
+                <th>代碼（Code）</th>
+                <th>名稱（Name）</th>
+                <th>預設（Default）</th>
+                <th>狀態（Active）</th>
+                <th>操作（Actions）</th>
               </tr>
             </thead>
             <tbody>
@@ -750,7 +750,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
                     />
                   </td>
                   <td>
-                    <span className={t.is_default ? 'pill pill-ok' : 'pill pill-off'}>{t.is_default ? 'default' : '—'}</span>
+                    <span className={t.is_default ? 'pill pill-ok' : 'pill pill-off'}>{t.is_default ? '預設（Default）' : '—'}</span>
                   </td>
                   <td>
                     <span className={t.is_active ? 'pill pill-ok' : 'pill pill-off'}>{t.is_active ? '啟用' : '停用'}</span>
@@ -792,7 +792,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
               {!tenants?.length && (
                 <tr>
                   <td colSpan={6} className="admin-empty">
-                    {tenants === null ? '尚未載入' : '沒有 tenants'}
+                    {tenants === null ? '尚未載入' : '沒有場域（tenants）'}
                   </td>
                 </tr>
               )}
@@ -804,8 +804,8 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       <section className="register-card">
         <div className="admin-header-row">
           <div>
-            <h2 className="register-title">Tenant 使用者管理</h2>
-            <p className="register-hint">可修改 username / role / 啟用停用；密碼修改先不做（TODO）。</p>
+            <h2 className="register-title">場域（Tenant）使用者管理</h2>
+            <p className="register-hint">可修改帳號（Username）/ 角色（Role）/ 啟用停用；密碼修改先不做（待辦，TODO）。</p>
           </div>
           <div className="admin-header-actions">
             <select
@@ -813,7 +813,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
               value={selectedTenantCode}
               onChange={(e) => setSelectedTenantCode(e.target.value)}
             >
-              <option value="">選擇 tenant…</option>
+              <option value="">選擇場域（Tenant）…</option>
               {(tenants || []).map((t) => (
                 <option key={t.id} value={t.code}>
                   {t.code} ({t.name})
@@ -827,14 +827,14 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
         </div>
 
         <details className="register-details">
-          <summary className="register-summary">新增使用者（需密碼；密碼修改仍為 TODO）</summary>
+          <summary className="register-summary">新增使用者（需密碼；密碼修改仍為待辦，TODO）</summary>
           <div className="admin-form-grid">
             <label className="register-label">
-              username
+              帳號（Username）
               <input className="register-input" value={createUsername} onChange={(e) => setCreateUsername(e.target.value)} />
             </label>
             <label className="register-label">
-              password
+              密碼（Password）
               <input
                 className="register-input"
                 type="password"
@@ -844,11 +844,10 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
               />
             </label>
             <label className="register-label">
-              role
+              角色（Role）
               <select className="register-input" value={createRole} onChange={(e) => setCreateRole(e.target.value as any)}>
-                <option value="user">user</option>
-                <option value="manager">manager</option>
-                <option value="admin">admin</option>
+                <option value="user">使用者（User）</option>
+                <option value="manager">管理者（Manager）</option>
               </select>
             </label>
           </div>
@@ -863,12 +862,12 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
           <table className="admin-table">
             <thead>
               <tr>
-                <th>username</th>
-                <th>tenant</th>
-                <th>role</th>
-                <th>active</th>
-                <th>last_login</th>
-                <th>actions</th>
+                <th>帳號（Username）</th>
+                <th>場域（Tenant）</th>
+                <th>角色（Role）</th>
+                <th>狀態（Active）</th>
+                <th>最後登入（Last login）</th>
+                <th>操作（Actions）</th>
               </tr>
             </thead>
             <tbody>
@@ -918,9 +917,8 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
                         if (v !== u.role) patchUser(u.id, { role: v })
                       }}
                     >
-                      <option value="user">user</option>
-                      <option value="manager">manager</option>
-                      <option value="admin">admin</option>
+                      <option value="user">使用者（User）</option>
+                      <option value="manager">管理者（Manager）</option>
                     </select>
                   </td>
                   <td>

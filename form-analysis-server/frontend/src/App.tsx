@@ -35,7 +35,7 @@ function App() {
   const [actorRole, setActorRole] = useState<string | null>(null);
   const canShowManager = useMemo(() => {
     const r = String(actorRole || '').trim();
-    return r === 'admin' || r === 'manager';
+    return r === 'manager';
   }, [actorRole]);
 
   useEffect(() => {

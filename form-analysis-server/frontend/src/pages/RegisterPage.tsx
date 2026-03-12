@@ -443,7 +443,11 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void; o
                 <div className="register-k">{t('register.role')}</div>
                 <div className="register-v">
                   {whoami ? (
-                    <code>{whoami.is_admin ? 'admin' : (whoami.actor_role || 'user')}</code>
+                    <code>
+                      {whoami.is_admin
+                        ? t('roles.globalAdmin')
+                        : t(`roles.${String(whoami.actor_role || 'user').trim() || 'user'}`)}
+                    </code>
                   ) : (
                     <span className="muted">{t('register.roleLoading')}</span>
                   )}

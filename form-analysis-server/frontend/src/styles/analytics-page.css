@@ -557,6 +557,44 @@
   margin-top: 0.75rem;
 }
 
+.analytics-heatmap {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.analytics-heatmap-head,
+.analytics-heatmap-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 120px 90px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+}
+
+.analytics-heatmap-head {
+  background: #f3f4f6;
+  font-weight: 700;
+  color: #0f172a;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.analytics-heatmap-row {
+  border-bottom: 1px solid #e5e7eb;
+  color: #111827;
+}
+
+.analytics-heatmap-row:last-child {
+  border-bottom: none;
+}
+
+.analytics-heatmap-row > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .analytics-empty {
   border: 1px dashed #d1d5db;
   border-radius: 0.9rem;

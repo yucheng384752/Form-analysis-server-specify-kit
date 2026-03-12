@@ -266,10 +266,24 @@ export function UploadPage() {
         return;
       }
       
-      // 檢查是否重複上傳
-      if (files.some(f => f.name === file.name) || newFiles.some(f => f.name === file.name)) {
+      // 本機快篩：疑似重複（同檔名+同大小+同最後修改時間）
+      const isLikelyDuplicate = [...files, ...newFiles].some(
+        (f) =>
+          f.name === file.name &&
+          f.size === file.size &&
+          f.file.lastModified === file.lastModified
+      );
+      if (isLikelyDuplicate) {
+        const proceed = window.confirm(
+          `偵測到疑似重複檔案：${file.name}\n是否仍要加入上傳清單？`
+        );
+        if (!proceed) {
+          showToast('info', `已略過疑似重複檔案：${file.name}`);
+          return;
+        }
+      } else if (files.some((f) => f.name === file.name) || newFiles.some((f) => f.name === file.name)) {
+        // 同名但內容可能不同，提醒後仍允許加入
         showToast('info', t('upload.toast.fileAlreadyExists', { fileName: file.name }));
-        return;
       }
 
       if (file.size > MAX_SIZE_BYTES) {
@@ -420,10 +434,17 @@ export function UploadPage() {
         ? new File([buildCsvText(target.csvData)], target.name, { type: 'text/csv' })
         : target.file;
 
-      const formData = new FormData();
-      formData.append('table_code', target.type);
-      formData.append('allow_duplicate', 'true');
-      formData.append('files', fileToUpload, target.name);
+      const createImportJob = async (allowDuplicate: boolean) => {
+        const formData = new FormData();
+        formData.append('table_code', target.type);
+        formData.append('allow_duplicate', allowDuplicate ? 'true' : 'false');
+        formData.append('files', fileToUpload, target.name);
+        return fetch('/api/v2/import/jobs', {
+          method: 'POST',
+          headers: buildTenantHeaders(),
+          body: formData,
+        });
+      };
 
       // 讓後續流程（解析/重驗證）以最新內容為準
       setFiles((prev) =>
@@ -436,15 +457,39 @@ export function UploadPage() {
 
       setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, validateProgress: 25 } : f)));
 
-      const createJobResponse = await fetch('/api/v2/import/jobs', {
-        method: 'POST',
-        headers: buildTenantHeaders(),
-        body: formData,
-      });
+      let createJobResponse = await createImportJob(false);
 
       if (!createJobResponse.ok) {
-        const errorData = await createJobResponse.json().catch(() => ({ detail: t('upload.errors.uploadFailed') }));
-        const message = typeof errorData.detail === 'string' ? errorData.detail : (errorData.detail?.detail || t('upload.errors.uploadFailed'));
+        const errorData = await createJobResponse
+          .json()
+          .catch(() => ({ detail: t('upload.errors.uploadFailed') }));
+        const detailObj =
+          typeof errorData?.detail === 'object' && errorData?.detail
+            ? errorData.detail
+            : null;
+        const duplicateDetected =
+          detailObj?.error_code === 'DUPLICATE_FILE_CONTENT';
+
+        if (duplicateDetected) {
+          const duplicateOf = detailObj?.duplicate_of?.uploaded_filename || '未知檔案';
+          const proceed = window.confirm(
+            `此檔案內容與既有資料重複（${duplicateOf}）。\n是否仍要建立新匯入工作並覆蓋匯入？`
+          );
+          if (!proceed) {
+            throw new Error('使用者取消重複檔案匯入');
+          }
+          createJobResponse = await createImportJob(true);
+        }
+      }
+
+      if (!createJobResponse.ok) {
+        const errorData = await createJobResponse
+          .json()
+          .catch(() => ({ detail: t('upload.errors.uploadFailed') }));
+        const message =
+          typeof errorData.detail === 'string'
+            ? errorData.detail
+            : (errorData.detail?.detail || t('upload.errors.uploadFailed'));
         throw new Error(message);
       }
 
@@ -1330,6 +1375,7 @@ export function UploadPage() {
         onClose={() => setShowBatchImportConfirm(false)}
         onConfirm={performBatchImport}
         confirmText={t('upload.batchImport.confirm.confirmText')}
+        maxWidth="min(720px, 92vw)"
       >
         {(() => {
           const validFilesWithoutErrors = files.filter(f => 
@@ -1344,7 +1390,7 @@ export function UploadPage() {
           );
           
           return (
-            <div>
+            <div className="batch-import-confirm">
               <p style={{ marginBottom: '12px' }}>
                 {t('upload.batchImport.confirm.summary', { count: validFilesWithoutErrors.length })}
               </p>
@@ -1364,12 +1410,15 @@ export function UploadPage() {
                 </p>
               )}
               {validFilesWithoutErrors.length > 0 && (
-                <div style={{ marginTop: '12px' }}>
+                <div className="batch-import-confirm__list-wrap">
                   <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>{t('upload.batchImport.confirm.pendingListTitle')}</p>
-                  <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px' }}>
+                  <ul className="batch-import-confirm__list">
                     {validFilesWithoutErrors.map(f => (
-                      <li key={f.id} style={{ marginBottom: '4px' }}>
-                        <span style={{ color: '#6366f1', fontWeight: 'bold' }}>{f.type}</span> - {f.name}
+                      <li key={f.id} className="batch-import-confirm__item">
+                        <div className="batch-import-confirm__row">
+                          <span className="batch-import-confirm__type">{f.type}</span>
+                          <span className="batch-import-confirm__name" title={f.name}>{f.name}</span>
+                        </div>
                       </li>
                     ))}
                   </ul>

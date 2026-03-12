@@ -99,6 +99,29 @@
   min-height: 6.5rem;
 }
 
+.multi-checkbox-list {
+  max-height: 6.5rem;
+  overflow: auto;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  padding: 0.4rem 0.5rem;
+  background: #fff;
+}
+
+.multi-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  padding: 0.1rem 0;
+  color: #212529;
+}
+
+.multi-checkbox-item input[type="checkbox"] {
+  margin: 0;
+}
+
 .search-field input:focus,
 .search-field select:focus {
   outline: none;

@@ -14,6 +14,63 @@
     "cancel": "Cancel",
     "close": "Close"
   },
+  "roles": {
+    "user": "User",
+    "manager": "Manager",
+    "globalAdmin": "Global admin"
+  },
+  "fields": {
+    "tenantId": "Area ID",
+    "actorRole": "Role",
+    "apiKeyLabel": "API key label"
+  },
+  "manager": {
+    "title": "Tenant management",
+    "subtitle": "Use a regular API key (no admin key required)",
+    "notManager": "Current role is not manager, cannot manage users.",
+    "hint": "Note: Managers can manage users in the same area.",
+    "actions": {
+      "refreshIdentity": "Refresh identity",
+      "refreshUsers": "Refresh users",
+      "createUser": "Create user",
+      "save": "Save",
+      "deactivate": "Deactivate"
+    },
+    "labels": {
+      "username": "Username",
+      "password": "Password",
+      "role": "Role",
+      "includeInactive": "Include inactive"
+    },
+    "table": {
+      "username": "Username",
+      "role": "Role",
+      "active": "Status",
+      "createdAt": "Created at",
+      "lastLoginAt": "Last login",
+      "actions": "Actions"
+    },
+    "toast": {
+      "whoamiFailed": "Failed to load identity (not logged in or no permission)",
+      "whoamiFailedNetwork": "Failed to load identity (network/server not running)",
+      "fetchUsersFailedHttp": "Failed to fetch users (HTTP {{status}})",
+      "fetchUsersFailedNetwork": "Failed to fetch users (network/server not running)",
+      "usernameRequired": "Please enter username",
+      "passwordMin": "Password must be at least 8 characters",
+      "createUserFailedHttp": "Failed to create user (HTTP {{status}})",
+      "createUserFailedNetwork": "Failed to create user (network/server not running)",
+      "createUserSuccess": "User created",
+      "updateUserFailedHttp": "Failed to update user (HTTP {{status}})",
+      "updateUserFailedNetwork": "Failed to update user (network/server not running)",
+      "updateUserSuccess": "User updated",
+      "deactivateUserFailedHttp": "Failed to deactivate user (HTTP {{status}})",
+      "deactivateUserFailedNetwork": "Failed to deactivate user (network/server not running)",
+      "deactivateUserSuccess": "User deactivated"
+    },
+    "confirm": {
+      "deactivateUser": "Deactivate user \"{{username}}\"?"
+    }
+  },
   "tabs": {
     "register": "Login",
     "upload": "Upload",
@@ -725,6 +782,16 @@
     "featurePct": {
       "title": "Feature importance (feature_pct)",
       "percent": "{{percent}}%"
+    },
+    "views": {
+      "heatmap": "Heatmap",
+      "bar": "Bar chart"
+    },
+    "heatmap": {
+      "category": "Category",
+      "value": "Value",
+      "ngRate": "NG rate",
+      "sample": "Samples"
     }
   }
 }

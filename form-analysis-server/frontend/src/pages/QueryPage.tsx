@@ -612,10 +612,17 @@ export function QueryPage() {
 
   // 輔助函數：產生 P3 Row 的 Product ID
   const generateRowProductId = (record: QueryRecord, row: any): string => {
-    // 如果後端已經提供了 product_id，直接使用
-    if (row['product_id']) {
-      return row['product_id'];
-    }
+    const normalizeLotToken = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const s = String(value).trim();
+      if (!s) return '';
+      if (/^\d+(\.\d+)?$/.test(s)) {
+        const n = Number(s);
+        if (Number.isFinite(n)) return String(Math.trunc(n));
+      }
+      const m = s.match(/(\d{2,4})$/);
+      return m ? m[1] : s;
+    };
 
     // 1. 取得日期 (YYYYMMDD)
     let dateStr = '';
@@ -634,13 +641,23 @@ export function QueryPage() {
     }
 
     // 2. 機台
-    const machine = record.machine_no || row['machine'] || row['Machine'] || 'Unknown';
+    const machine = record.machine_no || row['Machine NO'] || row['Machine No'] || row['machine'] || row['Machine'] || 'Unknown';
 
     // 3. 模具號碼
-    const mold = record.mold_no || row['mold'] || row['Mold'] || 'Unknown';
+    const mold = record.mold_no || row['Mold NO'] || row['Mold No'] || row['mold'] || row['Mold'] || 'Unknown';
 
     // 4. Lot (優先使用 row 中的 lot 資訊)
-    const lot = row['lot'] || row['Lot'] || row['production_lot'] || row['Production Lot'] || row['lot_no'] || row['Lot No'] || '0';
+    const lotRaw = row['lot'] || row['Lot'] || row['production_lot'] || row['Production Lot'] || row['lot_no'] || row['Lot No'] || '0';
+    const lot = normalizeLotToken(lotRaw) || '0';
+
+    // 若後端已提供 product_id，僅在與 row 的 lot 一致時採用，避免 record-level fallback 蓋掉 row-level 值。
+    const providedId = String(row['product_id'] || '').trim();
+    if (providedId) {
+      const suffix = providedId.split('_').pop() || '';
+      if (!lot || suffix === lot) {
+        return providedId;
+      }
+    }
 
     return `${dateStr}_${machine}_${mold}_${lot}`;
   };
@@ -1776,7 +1793,7 @@ export function QueryPage() {
         </div>
         {Array.isArray((record as any).winder_numbers) && (record as any).winder_numbers.length > 0 && (
           <div className="detail-row">
-            <strong>符合的 Winder：</strong>
+          <strong>符合的收卷機（Winder）：</strong>
             <span>{(record as any).winder_numbers.join(', ')}</span>
           </div>
         )}

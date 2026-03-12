@@ -107,6 +107,18 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     );
   };
 
+  const toggleMultiValue = (
+    value: string,
+    setter: React.Dispatch<React.SetStateAction<string[]>>
+  ) => {
+    setter((prev) => {
+      if (prev.includes(value)) {
+        return prev.filter((v) => v !== value);
+      }
+      return [...prev, value];
+    });
+  };
+
   // 組合日期字串
   const buildDateString = (year: string, month: string, day: string): string | undefined => {
     if (!year && !month && !day) return undefined;
@@ -286,32 +298,36 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
             {/* 機台號碼 */}
             <div className="search-field">
-              <label htmlFor="adv-machine-no">{t('query.advanced.machineNo')}</label>
-              <select
-                id="adv-machine-no"
-                multiple
-                value={machineNos}
-                onChange={(e) => setMachineNos(Array.from(e.target.selectedOptions, (o) => o.value))}
-              >
-                {machineOptions.map((opt, idx) => (
-                  <option key={idx} value={opt}>{opt}</option>
+              <label>{t('query.advanced.machineNo')}</label>
+              <div className="multi-checkbox-list" role="group" aria-label={t('query.advanced.machineNo')}>
+                {machineOptions.map((opt) => (
+                  <label key={opt} className="multi-checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={machineNos.includes(opt)}
+                      onChange={() => toggleMultiValue(opt, setMachineNos)}
+                    />
+                    <span>{opt}</span>
+                  </label>
                 ))}
-              </select>
+              </div>
             </div>
 
             {/* 下膠編號 (Bottom Tape) */}
             <div className="search-field">
-              <label htmlFor="adv-mold-no">{t('query.advanced.moldNo')}</label>
-              <select
-                id="adv-mold-no"
-                multiple
-                value={moldNos}
-                onChange={(e) => setMoldNos(Array.from(e.target.selectedOptions, (o) => o.value))}
-              >
-                {moldOptions.map((opt, idx) => (
-                  <option key={idx} value={opt}>{opt}</option>
+              <label>{t('query.advanced.moldNo')}</label>
+              <div className="multi-checkbox-list" role="group" aria-label={t('query.advanced.moldNo')}>
+                {moldOptions.map((opt) => (
+                  <label key={opt} className="multi-checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={moldNos.includes(opt)}
+                      onChange={() => toggleMultiValue(opt, setMoldNos)}
+                    />
+                    <span>{opt}</span>
+                  </label>
                 ))}
-              </select>
+              </div>
             </div>
 
             {/* 產品編號 */}
@@ -328,32 +344,36 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
             {/* 統一規格 (P1/P2/P3) */}
             <div className="search-field">
-              <label htmlFor="adv-specification">{t('query.advanced.specification')}</label>
-              <select
-                id="adv-specification"
-                multiple
-                value={specifications}
-                onChange={(e) => setSpecifications(Array.from(e.target.selectedOptions, (o) => o.value))}
-              >
-                {specOptions.map((opt, idx) => (
-                  <option key={idx} value={opt}>{opt}</option>
+              <label>{t('query.advanced.specification')}</label>
+              <div className="multi-checkbox-list" role="group" aria-label={t('query.advanced.specification')}>
+                {specOptions.map((opt) => (
+                  <label key={opt} className="multi-checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={specifications.includes(opt)}
+                      onChange={() => toggleMultiValue(opt, setSpecifications)}
+                    />
+                    <span>{opt}</span>
+                  </label>
                 ))}
-              </select>
+              </div>
             </div>
 
             {/* 材料代號 (P1/P2) */}
             <div className="search-field">
-              <label htmlFor="adv-material">{t('query.advanced.material')}</label>
-              <select
-                id="adv-material"
-                multiple
-                value={materials}
-                onChange={(e) => setMaterials(Array.from(e.target.selectedOptions, (o) => o.value))}
-              >
-                {materialOptions.map((opt, idx) => (
-                  <option key={idx} value={opt}>{opt}</option>
+              <label>{t('query.advanced.material')}</label>
+              <div className="multi-checkbox-list" role="group" aria-label={t('query.advanced.material')}>
+                {materialOptions.map((opt) => (
+                  <label key={opt} className="multi-checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={materials.includes(opt)}
+                      onChange={() => toggleMultiValue(opt, setMaterials)}
+                    />
+                    <span>{opt}</span>
+                  </label>
                 ))}
-              </select>
+              </div>
             </div>
 
             {/* 厚度篩選（整數輸入，單位 0.01mm） */}
