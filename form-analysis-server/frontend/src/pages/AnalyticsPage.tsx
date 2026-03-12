@@ -7,8 +7,6 @@ import { ResponsiveContainer, Pie, PieChart, Cell, Tooltip, Legend, ComposedChar
 import { getTenantId } from '../services/tenant'
 import { getTenantLabelById, writeTenantMap } from '../services/tenantMap'
 import { clampCustomRange, normalizeDayPickerRange } from '../utils/analyticsDateRange'
-import { Drawer, DrawerContent } from '../components/ui/drawer'
-import { TraceabilityFlow } from '../components/TraceabilityFlow'
 import { ArtifactsView, type ViewKey } from '../components/analytics/ArtifactsView'
 
 import './../styles/analytics-page.css'
@@ -58,6 +56,37 @@ type TraceabilityData = {
   p1: any
   trace_complete: boolean
   missing_links: string[]
+}
+
+function extractProduceNosFromTrace(data: TraceabilityData | null): string[] {
+  if (!data || !data.p3 || typeof data.p3 !== 'object') return []
+
+  const out: string[] = []
+  const seen = new Set<string>()
+  const push = (value: unknown) => {
+    const s = String(value ?? '').trim()
+    if (!s) return
+    const key = s.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(s)
+  }
+
+  const p3: any = data.p3
+  const rows = p3?.additional_data?.rows
+  if (Array.isArray(rows)) {
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue
+      const r: any = row
+      push(r['Produce_No.'])
+      push(r['Produce_No'])
+      push(r['produce_no'])
+      push(r['P3_No.'])
+      if (out.length >= 10) break
+    }
+  }
+
+  return out
 }
 
 type TenantRow = {
@@ -221,6 +250,40 @@ function normalizeAnalysisResult(input: unknown): AnalysisResult | null {
   return Object.keys(result).length > 0 ? result : null
 }
 
+function mergeAnalysisResults(parts: AnalysisResult[]): AnalysisResult | null {
+  if (!Array.isArray(parts) || parts.length === 0) return null
+
+  const toNum = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0)
+  const merged: AnalysisResult = {}
+
+  for (const part of parts) {
+    for (const [category, bucket] of Object.entries(part || {})) {
+      if (!merged[category]) merged[category] = {}
+      for (const [key, node] of Object.entries(bucket || {})) {
+        const prev = merged[category][key] || {}
+        const prevTotal = toNum(prev.total_count)
+        const prevNg = toNum(prev.count_0 ?? prev['0'])
+        const prevZero = toNum(prev['0'] ?? prev.count_0)
+        const prevOne = toNum(prev['1'])
+
+        const currTotal = toNum(node?.total_count)
+        const currNg = toNum(node?.count_0 ?? node?.['0'])
+        const currZero = toNum(node?.['0'] ?? node?.count_0)
+        const currOne = toNum(node?.['1'])
+
+        merged[category][key] = {
+          total_count: prevTotal + currTotal,
+          count_0: prevNg + currNg,
+          '0': prevZero + currZero,
+          '1': prevOne + currOne,
+        }
+      }
+    }
+  }
+
+  return Object.keys(merged).length > 0 ? merged : null
+}
+
 function pickOverallNode(result: AnalysisResult): { category: string; key: string; node: RatioNode } | null {
   let best: { category: string; key: string; node: RatioNode } | null = null
   let bestTotal = -1
@@ -286,9 +349,6 @@ export function AnalyticsPage() {
   const [tenantMapVersion, setTenantMapVersion] = useState(0)
 
   const [traceData, setTraceData] = useState<TraceabilityData | null>(null)
-  const [traceLoading, setTraceLoading] = useState(false)
-  const [traceError, setTraceError] = useState('')
-  const [traceDrawerOpen, setTraceDrawerOpen] = useState(false)
 
   const [ngMode, setNgMode] = useState(false)
   const [ngRecords, setNgRecords] = useState<QueryRecordLite[]>([])
@@ -297,10 +357,27 @@ export function AnalyticsPage() {
   const [ngWinderNumber, setNgWinderNumber] = useState<number | null>(null)
 
   const [artifactView, setArtifactView] = useState<ViewKey>('events')
+  const [analysisChartMode, setAnalysisChartMode] = useState<'heatmap' | 'bar'>('heatmap')
 
   const artifactsSectionRef = useRef<HTMLDivElement | null>(null)
 
   const productIds = useMemo(() => parseProductIds(productIdCommitted), [productIdCommitted])
+  const traceProduceNos = useMemo(() => extractProduceNosFromTrace(traceData), [traceData])
+  const artifactProductFilters = useMemo(() => {
+    const merged = [...productIds, ...traceProduceNos]
+    const uniq: string[] = []
+    const seen = new Set<string>()
+    for (const x of merged) {
+      const s = String(x || '').trim()
+      if (!s) continue
+      const k = s.toLowerCase()
+      if (seen.has(k)) continue
+      seen.add(k)
+      uniq.push(s)
+      if (uniq.length >= 50) break
+    }
+    return uniq
+  }, [productIds, traceProduceNos])
   const artifactsMode = productIds.length > 0
 
   const ngFeaturePctEntries = useMemo(() => {
@@ -350,6 +427,7 @@ export function AnalyticsPage() {
   const autoRunTimerRef = useRef<number | null>(null)
   const lastAutoRunKeyRef = useRef<string>('')
   const pendingAutoRunKeyRef = useRef<string>('')
+  const analyzeRequestIdRef = useRef(0)
 
   const tenantId = useMemo(() => getTenantId(), [])
   const tenantLabelRaw = useMemo(() => getTenantLabelById(tenantId), [tenantId, tenantMapVersion])
@@ -369,8 +447,6 @@ export function AnalyticsPage() {
     const pid = productIds[0]?.trim() ?? ''
     if (!pid) {
       setTraceData(null)
-      setTraceError('')
-      setTraceLoading(false)
       return
     }
 
@@ -379,9 +455,6 @@ export function AnalyticsPage() {
 
     void (async () => {
       try {
-        setTraceLoading(true)
-        setTraceError('')
-
         const res = await fetch(`/api/traceability/product/${encodeURIComponent(pid)}`, {
           headers,
           signal: controller.signal,
@@ -394,11 +467,6 @@ export function AnalyticsPage() {
       } catch (err: any) {
         if (controller.signal.aborted) return
         setTraceData(null)
-        setTraceError(String(err?.message || t('analytics.traceabilityFetchFailed')))
-      } finally {
-        if (!controller.signal.aborted) {
-          setTraceLoading(false)
-        }
       }
     })()
 
@@ -496,11 +564,20 @@ export function AnalyticsPage() {
   }
 
   const clearDateFilter = () => {
-    autoRunArmedRef.current = true
+    // 清除日期時不觸發 auto-run，避免查詢所有資料
+    autoRunArmedRef.current = false
     setStartDate('')
     setEndDate('')
     setAnchorDate(undefined)
     setCustomRange(undefined)
+    // Keep complaint(product_id)-driven state untouched.
+    // Date clear should only reset date-mode outputs.
+    setAnalysisResult(null)
+    setRan(false)
+    setNgMode(false)
+    setNgRecords([])
+    setNgError('')
+    setNgWinderNumber(null)
   }
 
   const handleSelectCustomRange = (range: DateRange | undefined) => {
@@ -589,6 +666,37 @@ export function AnalyticsPage() {
     return categories
   }, [analysisResult])
 
+  const analysisHeatmapRows = useMemo(() => {
+    const rows: Array<{
+      category: string
+      key: string
+      ok: number
+      ng: number
+      total: number
+      ngRate: number
+    }> = []
+    for (const cat of categoryCards) {
+      for (const item of cat.items) {
+        rows.push({
+          category: cat.category,
+          key: item.key,
+          ok: item.ok,
+          ng: item.ng,
+          total: item.total,
+          ngRate: item.total > 0 ? item.ng / item.total : 0,
+        })
+      }
+    }
+    rows.sort((a, b) => b.ngRate - a.ngRate || b.total - a.total)
+    return rows.slice(0, 80)
+  }, [categoryCards])
+
+  const heatColor = useCallback((rate: number) => {
+    const r = Math.max(0, Math.min(1, Number.isFinite(rate) ? rate : 0))
+    const lightness = 96 - r * 42
+    return `hsl(0 82% ${lightness}%)`
+  }, [])
+
   const computeAutoRunKey = useCallback(() => {
     // Date analysis key should not depend on product_id; product_id switches to Artifacts mode.
     return JSON.stringify({ startDate, endDate, stations })
@@ -601,6 +709,10 @@ export function AnalyticsPage() {
       setNgMode(false)
       setNgRecords([])
       setNgError('')
+      
+      // Race condition prevention: increment request ID and capture it
+      const currentRequestId = ++analyzeRequestIdRef.current
+      
       try {
         const chosenStations: Array<'P2' | 'P3' | 'ALL'> = []
         if (stations.all) {
@@ -615,40 +727,41 @@ export function AnalyticsPage() {
           return
         }
 
-        const res = await fetch('/api/v2/analytics/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...buildTenantHeaders() },
-          body: JSON.stringify({
-            start_date: startDate || null,
-            end_date: endDate || null,
-            product_id: null,
-            stations: chosenStations,
-          }),
-        })
+        const requestAnalyze = async (stationsParam: Array<'P2' | 'P3' | 'ALL'>): Promise<AnalysisResult | null> => {
+          console.log('[Analytics] Sending request:', { requestId: currentRequestId, startDate, endDate, stations: stationsParam })
+          const res = await fetch('/api/v2/analytics/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...buildTenantHeaders() },
+            body: JSON.stringify({
+              start_date: startDate || null,
+              end_date: endDate || null,
+              product_id: null,
+              stations: stationsParam,
+            }),
+          })
 
-        if (!res.ok) {
-          const text = await res.text().catch(() => '')
-          setParseError(text || t('analytics.analyzeRequestFailed', { status: res.status }))
+          if (!res.ok) {
+            const text = await res.text().catch(() => '')
+            throw new Error(text || t('analytics.analyzeRequestFailed', { status: res.status }))
+          }
+
+          const json = (await res.json()) as unknown
+          return normalizeAnalysisResult(json)
+        }
+
+        const shouldSplitStations = !stations.all && stations.p2 && stations.p3
+        const normalized = shouldSplitStations
+          ? mergeAnalysisResults((await Promise.all([requestAnalyze(['P2']), requestAnalyze(['P3'])])).filter(Boolean) as AnalysisResult[])
+          : await requestAnalyze(chosenStations)
+
+        // Race condition check: ignore stale responses
+        if (currentRequestId !== analyzeRequestIdRef.current) {
+          console.log('[Analytics] Ignoring stale response, requestId:', currentRequestId, 'current:', analyzeRequestIdRef.current)
           return
         }
 
-        const json = (await res.json()) as unknown
-        const normalized = normalizeAnalysisResult(json)
         if (!normalized) {
-          // empty object/empty buckets -> treat as not found
-          const isEmptyObject =
-            json && typeof json === 'object' && !Array.isArray(json) && Object.keys(json as Record<string, unknown>).length === 0
-
-          const isEmptyBuckets =
-            isPlainObject(json) &&
-            Object.values(json).length > 0 &&
-            Object.values(json).every((v) => isPlainObject(v) && Object.keys(v).length === 0)
-
-          if (isEmptyObject || isEmptyBuckets) {
-            setParseError(t('analytics.notFound'))
-          } else {
-            setParseError(t('analytics.invalidResponse'))
-          }
+          setParseError(t('analytics.notFound'))
           setAnalysisResult(null)
           setRan(false)
           return
@@ -707,8 +820,8 @@ export function AnalyticsPage() {
     if (typeof value === 'number') return value === 0
     const s = String(value).trim()
     if (!s) return false
-    const upper = s.toUpperCase()
-    return upper === 'X' || upper === 'NG' || upper.includes('NG') || upper === '0'
+    const n = Number(s)
+    return Number.isFinite(n) && n === 0
   }, [])
 
   const normalizeRowKey = useCallback((key: string): string => {
@@ -748,16 +861,18 @@ export function AnalyticsPage() {
         'striped results',
         'striped result',
         '分條結果',
-        'Appearance',
-        'appearance',
-        'rough edge',
-        'rough_edge',
       ]
     }
-    if (record.data_type === 'P3') {
-      return ['Finish', 'finish', '結果', 'result']
-    }
     return []
+  }, [])
+
+  const parseWinderCategoryKey = useCallback((key: unknown): number | null => {
+    const s = String(key ?? '').trim()
+    if (!s) return null
+    const matched = s.match(/-?\d+/)
+    if (!matched) return null
+    const n = Number.parseInt(matched[0], 10)
+    return Number.isFinite(n) ? n : null
   }, [])
 
   const sortRowsNgFirst = useCallback((rows: unknown[], keys: string[]) => {
@@ -784,15 +899,8 @@ export function AnalyticsPage() {
           'striped results',
           'striped result',
           '分條結果',
-          'Appearance',
-          'appearance',
-          'rough edge',
-          'rough_edge',
         ]),
       )
-    }
-    if (record.data_type === 'P3') {
-      return rows.some((r) => rowHasNg(r, ['Finish', 'finish', '結果', 'result']))
     }
     return false
   }, [rowHasNg])
@@ -801,53 +909,111 @@ export function AnalyticsPage() {
     setNgError('')
     setNgLoading(true)
     try {
-      const wantedTypes: DataType[] = stations.all
-        ? ['P2', 'P3']
-        : ([stations.p2 ? 'P2' : null, stations.p3 ? 'P3' : null].filter(Boolean) as DataType[])
-
+      // Use user-selected stations instead of hardcoded P2
+      const wantedTypes: DataType[] = []
+      if (stations.all) {
+        wantedTypes.push('P2', 'P3')
+      } else {
+        if (stations.p2) wantedTypes.push('P2')
+        if (stations.p3) wantedTypes.push('P3')
+      }
+      
       if (wantedTypes.length === 0) {
         setNgError(t('analytics.stationPickError'))
-        setNgRecords([])
+        setNgLoading(false)
         return
       }
 
       const results = await Promise.all(
         wantedTypes.map(async (dt) => {
-          const filters: Array<{ field: string; op: string; value: any }> = []
+          const baseFilters: Array<{ field: string; op: string; value: any }> = []
 
           if (startDate && endDate) {
             if (startDate === endDate) {
-              filters.push({ field: 'production_date', op: 'eq', value: startDate })
+              baseFilters.push({ field: 'production_date', op: 'eq', value: startDate })
             } else {
-              filters.push({ field: 'production_date', op: 'between', value: [startDate, endDate] })
+              baseFilters.push({ field: 'production_date', op: 'between', value: [startDate, endDate] })
             }
           } else if (startDate) {
-            filters.push({ field: 'production_date', op: 'eq', value: startDate })
+            baseFilters.push({ field: 'production_date', op: 'gte', value: startDate })
           } else if (endDate) {
-            filters.push({ field: 'production_date', op: 'eq', value: endDate })
+            baseFilters.push({ field: 'production_date', op: 'lte', value: endDate })
           }
 
           // product_id is reserved for Artifacts mode; keep NG query date-based.
 
-          if (opts?.winderNumber) {
-            filters.push({ field: 'winder_number', op: 'eq', value: String(opts.winderNumber) })
+          // winder_number filter only applies to P2
+          if (dt === 'P2' && opts?.winderNumber !== undefined && opts.winderNumber !== null) {
+            baseFilters.push({ field: 'winder_number', op: 'eq', value: String(opts.winderNumber) })
           }
 
-          const res = await fetch(`/api/v2/query/records/dynamic`, {
-            method: 'POST',
-            headers: { ...buildTenantHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              data_type: dt,
-              filters,
-              page: 1,
-              page_size: 200,
-            }),
-          })
-          if (!res.ok) {
-            const text = await res.text().catch(() => '')
-            throw new Error(text || `HTTP ${res.status}`)
+          const queryDynamic = async (filters: Array<{ field: string; op: string; value: any }>) => {
+            const res = await fetch(`/api/v2/query/records/dynamic`, {
+              method: 'POST',
+              headers: { ...buildTenantHeaders(), 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                data_type: dt,
+                filters,
+                page: 1,
+                page_size: 200,
+              }),
+            })
+            if (!res.ok) {
+              const text = await res.text().catch(() => '')
+              throw new Error(text || `HTTP ${res.status}`)
+            }
+            return (await res.json()) as QueryResponseLite
           }
-          return (await res.json()) as QueryResponseLite
+
+          // P2 uses slitting_result, P3 uses Finish for NG detection
+          if (dt === 'P2') {
+            try {
+              // Prefer materialized column for better index usage.
+              return await queryDynamic([
+                ...baseFilters,
+                { field: 'slitting_result', op: 'eq', value: 0 },
+              ])
+            } catch (e) {
+              const msg = String(e)
+              const unsupportedSlittingResult =
+                msg.includes('Unsupported field(s)') && msg.includes('slitting_result')
+              const invalidSlittingResultField = msg.includes('Invalid field: slitting_result')
+              const invalidSlittingResultOp = msg.includes('Invalid operator for slitting_result')
+              if (
+                !unsupportedSlittingResult &&
+                !invalidSlittingResultField &&
+                !invalidSlittingResultOp
+              ) {
+                throw e
+              }
+              // Backward-compatible fallback for older backends.
+              return await queryDynamic([
+                ...baseFilters,
+                { field: 'row_data.Striped Results', op: 'eq', value: 0 },
+              ])
+            }
+          } else if (dt === 'P3') {
+            // P3 uses Finish field for NG (0 = NG)
+            try {
+              return await queryDynamic([
+                ...baseFilters,
+                { field: 'row_data.Finish', op: 'eq', value: 0 },
+              ])
+            } catch (e) {
+              const msg = String(e)
+              // Try lowercase variant if needed
+              if (msg.includes('Invalid') || msg.includes('Unsupported')) {
+                return await queryDynamic([
+                  ...baseFilters,
+                  { field: 'row_data.finish', op: 'eq', value: 0 },
+                ])
+              }
+              throw e
+            }
+          }
+          
+          // Fallback: return empty result for unknown data type
+          return { records: [], total_count: 0, page: 1, page_size: 200 } as QueryResponseLite
         }),
       )
 
@@ -1238,31 +1404,7 @@ export function AnalyticsPage() {
               onKeyDown={handleFilterKeyDown}
             />
 
-            <div className="analytics-artifacts-hint" style={{ marginTop: 8 }}>
-              {artifactsMode ? (
-                <>
-                  目前為 改善報告 模式（{productIds.length} 筆）：{productIds.slice(0, 6).join('、')}{productIds.length > 6 ? '…' : ''}
-                </>
-              ) : (
-                <>預設為日期分析；輸入 產品編號 後會切換到 改善報告。</>
-              )}
-            </div>
-
             <div className="analytics-trace-actions">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  commitProductId()
-                  const pid = parseProductIds(productIdDraft)[0] ?? ''
-                  if (!pid) return
-                  setTraceDrawerOpen(true)
-                }}
-                disabled={!parseProductIds(productIdDraft).length}
-              >
-                {t('analytics.traceabilityOpen')}
-              </button>
-
               {productIdDraft.trim() ? (
                 <button
                   type="button"
@@ -1277,38 +1419,6 @@ export function AnalyticsPage() {
                 </button>
               ) : null}
             </div>
-
-            {productIdCommitted ? (
-              <div className="analytics-trace-panel">
-                <div className="analytics-trace-title">{t('analytics.traceabilityTitle')}</div>
-                {traceLoading ? <div className="muted">{t('analytics.loading')}</div> : null}
-                {traceError ? <div className="analytics-error">{traceError}</div> : null}
-                {!traceLoading && !traceError && traceData ? (
-                  <div className="analytics-trace-grid">
-                    <div className="analytics-trace-item">
-                      <div className="analytics-trace-label">P1</div>
-                      <div className="analytics-trace-value">{traceData.p1?.lot_no ?? t('common.noData')}</div>
-                    </div>
-                    <div className="analytics-trace-item">
-                      <div className="analytics-trace-label">P2</div>
-                      <div className="analytics-trace-value">
-                        {traceData.p2?.lot_no ?? t('common.noData')}
-                        {traceData.p2?.winder_number ? ` · W${traceData.p2.winder_number}` : ''}
-                      </div>
-                    </div>
-                    <div className="analytics-trace-item">
-                      <div className="analytics-trace-label">P3</div>
-                      <div className="analytics-trace-value">{traceData.p3?.product_id ?? t('common.noData')}</div>
-                    </div>
-                    {!traceData.trace_complete ? (
-                      <div className="analytics-trace-warning">
-                        {t('analytics.traceabilityIncomplete', { missing: (traceData.missing_links || []).join(', ') })}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
           </div>
 
           <div className="analytics-filter-block">
@@ -1372,21 +1482,14 @@ export function AnalyticsPage() {
                 ))}
               </div>
 
-              <ArtifactsView view={artifactView} tenantHeaders={buildTenantHeaders()} productIds={productIds} />
+              <ArtifactsView
+                view={artifactView}
+                tenantHeaders={buildTenantHeaders()}
+                productIds={artifactProductFilters}
+              />
             </section>
           </>
         ) : null}
-
-      <Drawer open={traceDrawerOpen} onOpenChange={setTraceDrawerOpen}>
-        <DrawerContent>
-          <TraceabilityFlow
-            productId={productIds[0] || parseProductIds(productIdDraft)[0] || ''}
-            {...(traceData ? { preloadedData: traceData } : {})}
-            tenantId={tenantId}
-            onClose={() => setTraceDrawerOpen(false)}
-          />
-        </DrawerContent>
-      </Drawer>
 
       {ngMode ? (
         <>
@@ -1399,7 +1502,7 @@ export function AnalyticsPage() {
               </button>
 
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {ngWinderNumber ? (
+                {ngWinderNumber !== null ? (
                   <button
                     type="button"
                     className="btn-secondary"
@@ -1675,7 +1778,52 @@ export function AnalyticsPage() {
           <div className="analytics-section-header">{t('analytics.moldingAnalysis')}</div>
 
           <section className="analytics-card">
-            {categoryCards.length > 0 ? (
+            <div className="analytics-actions" style={{ justifyContent: 'flex-start', marginTop: 0, gap: 8 }}>
+              <button
+                type="button"
+                className={analysisChartMode === 'heatmap' ? 'btn-primary' : 'btn-secondary'}
+                onClick={() => setAnalysisChartMode('heatmap')}
+              >
+                {t('analytics.views.heatmap')}
+              </button>
+              <button
+                type="button"
+                className={analysisChartMode === 'bar' ? 'btn-primary' : 'btn-secondary'}
+                onClick={() => setAnalysisChartMode('bar')}
+              >
+                {t('analytics.views.bar')}
+              </button>
+            </div>
+
+            {analysisChartMode === 'heatmap' ? (
+              analysisHeatmapRows.length > 0 ? (
+                <div className="analytics-heatmap">
+                  <div className="analytics-heatmap-head">
+                    <div>{t('analytics.heatmap.category')}</div>
+                    <div>{t('analytics.heatmap.value')}</div>
+                    <div>{t('analytics.heatmap.ngRate')}</div>
+                    <div>{t('analytics.heatmap.sample')}</div>
+                  </div>
+                  {analysisHeatmapRows.map((row) => (
+                    <div
+                      key={`${row.category}:${row.key}`}
+                      className="analytics-heatmap-row"
+                      style={{ background: heatColor(row.ngRate) }}
+                    >
+                      <div title={row.category}>{row.category}</div>
+                      <div title={row.key}>{row.key}</div>
+                      <div>{pct(row.ng, row.total)}%</div>
+                      <div>{row.total}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="analytics-empty">{t('analytics.noData')}</div>
+              )
+            ) : null}
+
+            {analysisChartMode === 'bar' ? (
+            categoryCards.length > 0 ? (
               categoryCards.map((cat) => {
                 const title = cat.category
                 const isWinderCategory = /winder/i.test(String(title))
@@ -1703,15 +1851,16 @@ export function AnalyticsPage() {
                                   <Tooltip />
                                   <Bar
                                     dataKey="value"
-                                    onClick={(data: any) => {
-                                      if (data?.payload?.name !== 'NG') return
-                                      if (isWinderCategory) {
-                                        const w = parseInt(String(item.key), 10)
-                                        enterNgMode({ winderNumber: Number.isFinite(w) ? w : null })
-                                        return
-                                      }
-                                      enterNgMode()
-                                    }}
+                                onClick={(data: any) => {
+                                  if (data?.payload?.name !== 'NG') return
+                                  if (isWinderCategory) {
+                                    const winderNumber = parseWinderCategoryKey(item.key)
+                                    if (winderNumber === null) return
+                                    enterNgMode({ winderNumber })
+                                    return
+                                  }
+                                  enterNgMode()
+                                }}
                                   >
                                     {barData.map((entry, idx) => (
                                       <Cell
@@ -1732,7 +1881,8 @@ export function AnalyticsPage() {
               })
             ) : (
               <div className="analytics-empty">{t('analytics.noData')}</div>
-            )}
+            )
+            ) : null}
           </section>
 
         </>
