@@ -17,7 +17,7 @@
 
 - 選擇 Tenant（保存 tenant_id 到 localStorage）
 - 帳密登入取得 API key（若後端啟用 `AUTH_MODE=api_key`）
-- 查 whoami（判斷自己是否為 tenant admin）
+- 查 whoami（判斷自己是否為 tenant manager）
 
 對應程式：
 
@@ -29,7 +29,7 @@
 
 - 先貼上 admin key（保存於 localStorage）
 - 空資料庫時建立 Tenant（bootstrap）
-- 建立第一個 tenant admin（role=admin）
+- 建立第一個 tenant manager（role=manager）
 
 對應程式：
 
@@ -96,18 +96,18 @@
 - `DELETE /api/tenants/{tenant_id}`
   - 安全刪除（soft delete）：`is_active=false`，並清掉 `is_default`
 
-### Tenant users（包含 tenant admin）
+### Tenant users（包含 tenant manager）
 
 - `GET /api/auth/users`
-  - tenant admin 只會拿到自己 tenant 的 users
+  - tenant manager 只會拿到自己 tenant 的 users
   - admin key 可用 `tenant_code=` 切換查看/管理不同 tenant
 
 - `POST /api/auth/users`
-  - 建立使用者（`role=user|admin`）
+  - 建立使用者（`role=user|manager`）
 
 - `PATCH /api/auth/users/{user_id}`
   - 更新 `username` / `role` / `is_active`
-  - tenant admin 只能修改自己 tenant 的 user
+  - tenant manager 只能修改自己 tenant 的 user
 
 - `DELETE /api/auth/users/{user_id}`
   - 安全刪除（soft delete）：`is_active=false`
@@ -130,6 +130,6 @@
 
 1. 內部維運：到「初始化」貼上 admin key
 2. 建立/選擇 Tenant（必要時 bootstrap）
-3. 建立第一個 tenant admin（role=admin）
+3. 建立第一個 tenant manager（role=manager）
 4. 外部使用者：到「登入」選 Tenant + 帳密登入取得 API key
-5. 日常管理：到「管理者」進行 tenant/users CRUD（仍需 admin key 或 tenant admin 身分）
+5. 日常管理：到「管理者」進行 tenant/users CRUD（仍需 admin key 或 tenant manager 身分）

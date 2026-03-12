@@ -28,11 +28,11 @@
 
 第一次啟動後，請到前端 `http://localhost:18003` 依序完成「初始化 → 登入」：
 
-- 「初始化」：第一次建立 Tenant / 建立 Tenant 管理者（需要 admin key，通常由內部維運操作）
+- 「初始化」：第一次建立 Tenant / 建立 Tenant manager（需要 admin key，通常由內部維運操作）
 - 「登入」：選擇 Tenant、用帳密登入取得 API key（若後端啟用 `AUTH_MODE=api_key`）
 - （可選）「管理者」：日常 CRUD（Tenant / Tenant users）
 
-- 空資料庫：先到「初始化」貼上 admin key → 建立/選擇 Tenant → 建立第一個 tenant admin
+- 空資料庫：先到「初始化」貼上 admin key → 建立/選擇 Tenant → 建立第一個 tenant manager
 - 有 tenant：到「登入」選擇 Tenant → 帳密登入取得 API key
 
 完整流程與常見問題：getting-started/REGISTRATION_FLOW.md

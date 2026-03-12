@@ -38,7 +38,7 @@
 
 - `tenant_users.role`（既有）：
   - `user`：一般使用者，只能操作單 tenant
-  - `admin`：場區管理者，可管理該 tenant 使用者
+  - `manager`：場區管理者，可管理該 tenant 使用者
 
 - **新增（MVP）**：`org_users`（或 `global_users`）
   - `gm`：總經理/區域總管，可跨多 tenant 查詢（read-only）

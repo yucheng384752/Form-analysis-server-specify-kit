@@ -5,11 +5,19 @@
 ## P0：入口（先看）
 
 - [README.md](README.md)（專案總覽/快速入口）
+- [README_DEMO.md](README_DEMO.md)（Demo 環境使用說明）
 - [getting-started/QUICK_START.md](getting-started/QUICK_START.md)（最快啟動）
 - [getting-started/MANUAL_STARTUP_GUIDE.md](getting-started/MANUAL_STARTUP_GUIDE.md)（手動啟動流程）
 - [getting-started/POSTGRESQL_SETUP.md](getting-started/POSTGRESQL_SETUP.md)（資料庫安裝/設定）
 - [getting-started/DBEAVER_CONNECTION_GUIDE.md](getting-started/DBEAVER_CONNECTION_GUIDE.md)（DB GUI 連線）
 - [getting-started/REGISTRATION_FLOW.md](getting-started/REGISTRATION_FLOW.md)（外部上線版：初始化/登入/tenant/API key）
+
+## P0：Demo/Dev 環境分離（2026-03 新增）
+
+- [dev-guides/DUAL_ENV_STARTUP_CHECKLIST.md](dev-guides/DUAL_ENV_STARTUP_CHECKLIST.md)（雙環境啟動檢查清單）
+- [dev-guides/ENV_SEPARATION_OPERATIONS_GUIDE.md](dev-guides/ENV_SEPARATION_OPERATIONS_GUIDE.md)（環境分離操作指南）
+- [scripts/start-demo.bat](scripts/start-demo.bat)（Demo 啟動腳本，Port 181xx）
+- [scripts/start-dev.bat](scripts/start-dev.bat)（Dev 啟動腳本，Port 180xx）
 
 ## P1：開發指南（規格/設計/待辦）
 
