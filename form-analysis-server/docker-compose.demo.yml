@@ -1,20 +1,29 @@
+# ============================================================================
+# Docker Compose - DEMO Environment (Stable)
+# ============================================================================
+# 此檔案用於 DEMO/正式環境：
+# - 使用 production target，代碼打包進 image
+# - 不掛載源碼，更新代碼需重新 build image
+# - 獨立的 volume 與 container 名稱，與開發環境隔離
+# ============================================================================
+
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database (Demo)
   db:
     image: postgres:16
-    container_name: form_analysis_db
+    container_name: demo_form_analysis_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-strong}
       POSTGRES_DB: ${POSTGRES_DB:-form_analysis_db}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
     ports:
-      - "${POSTGRES_PORT:-18001}:5432"
+      - "${POSTGRES_PORT:-18101}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_demo_data:/var/lib/postgresql/data
       - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
-      - app-network
+      - demo-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-form_analysis_db}"]
       interval: 10s
@@ -22,13 +31,14 @@ services:
       retries: 5
       start_period: 30s
 
-  # Backend API Service
+  # Backend API Service (Demo - Production Build)
   backend:
+    image: form-analysis-backend:demo
     build:
       context: ./backend
       dockerfile: Dockerfile
-      target: development
-    container_name: form_analysis_api
+      target: production
+    container_name: demo_form_analysis_api
     depends_on:
       db:
         condition: service_healthy
@@ -37,42 +47,37 @@ services:
       - API_HOST=${API_HOST:-0.0.0.0}
       - API_PORT=8000
       - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-10}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:18003,http://localhost:3001,http://localhost:3000}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:18103,http://localhost:3001,http://localhost:3000}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - DEBUG=${DEBUG:-false}
-      - RELOAD=${RELOAD:-true}
+      - DEBUG=false
+      - RELOAD=false
       - UPLOAD_TEMP_DIR=/app/uploads
-      # Deployment defaults: enable API key auth in Docker WITHOUT changing backend code defaults.
-      # Override by setting AUTH_MODE=off in your environment or .env.
+      # Auth settings
       - AUTH_MODE=${AUTH_MODE:-api_key}
       - AUTH_API_KEY_HEADER=${AUTH_API_KEY_HEADER:-X-API-Key}
       - AUTH_PROTECT_PREFIXES=${AUTH_PROTECT_PREFIXES:-/api}
       - AUTH_EXEMPT_PATHS=${AUTH_EXEMPT_PATHS:-/healthz,/docs,/redoc,/openapi.json,/api/auth/login}
-      # Admin keys are optional; set ADMIN_API_KEYS to enable privileged ops like creating tenants.
       - ADMIN_API_KEYS=${ADMIN_API_KEYS:-}
       - ADMIN_API_KEY_HEADER=${ADMIN_API_KEY_HEADER:-X-Admin-API-Key}
-
       # External PDF conversion server (optional)
       - PDF_SERVER_URL=${PDF_SERVER_URL:-}
       - PDF_SERVER_CONVERT_PATH=${PDF_SERVER_CONVERT_PATH:-/convert}
       - PDF_SERVER_TIMEOUT_SECONDS=${PDF_SERVER_TIMEOUT_SECONDS:-60}
       - PDF_SERVER_TABLE=${PDF_SERVER_TABLE:-}
-
-      # External analytics inputs (Analytical-Four + september_v2)
-      # In Docker on Windows, mount host folders and point the backend to container paths.
+      # External analytics (mounted read-only)
       - ANALYTICAL_FOUR_PATH=${ANALYTICAL_FOUR_PATH:-/external/Analytical-Four}
       - SEPTEMBER_V2_PATH=${SEPTEMBER_V2_PATH:-/external/september_v2}
       - ANALYTICS_CONFIG_PATH=${ANALYTICS_CONFIG_PATH:-/external/september_v2/config/ut_config_v3.json}
       - ANALYTICS_MERGED_CSV_PATH=${ANALYTICS_MERGED_CSV_PATH:-/external/september_v2/merged_p1_p2_p3.csv}
     ports:
-      - "${HOST_API_PORT:-18002}:8000"
+      - "${HOST_API_PORT:-18102}:8000"
     volumes:
-      - ./backend:/app
-      - upload_data:/app/uploads
+      # Demo 環境不掛載源碼，只掛載必要的資料目錄
+      - upload_demo_data:/app/uploads
       - ${SEPTEMBER_V2_HOST_PATH:-C:/Users/yucheng/Desktop/september_v2}:/external/september_v2:ro
       - ${ANALYTICAL_FOUR_HOST_PATH:-C:/Users/yucheng/Desktop/Analytical/Analytical-Four}:/external/Analytical-Four:ro
     networks:
-      - app-network
+      - demo-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 30s
@@ -80,67 +85,63 @@ services:
       retries: 3
       start_period: 45s
 
-  # Frontend Service
+  # Frontend Service (Demo - Production Build with Nginx)
   frontend:
+    image: form-analysis-frontend:demo
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: development
-    container_name: form_analysis_frontend
+      target: production
+      args:
+        - VITE_API_URL=${VITE_API_URL:-http://127.0.0.1:18102}
+        - VITE_MAX_FILE_SIZE=${VITE_MAX_FILE_SIZE:-10485760}
+        - VITE_ENABLE_CSV_EDIT=${VITE_ENABLE_CSV_EDIT:-true}
+        - VITE_API_KEY=${VITE_API_KEY:-}
+        - VITE_API_KEY_HEADER=${VITE_API_KEY_HEADER:-X-API-Key}
+    container_name: demo_form_analysis_frontend
     depends_on:
       backend:
         condition: service_healthy
-    environment:
-      - VITE_API_URL=${VITE_API_URL:-http://127.0.0.1:18002}
-      - VITE_MAX_FILE_SIZE=${VITE_MAX_FILE_SIZE:-10485760}
-      - VITE_ENABLE_CSV_EDIT=${VITE_ENABLE_CSV_EDIT:-true}
-      - VITE_API_KEY=${VITE_API_KEY:-}
-      - VITE_API_KEY_HEADER=${VITE_API_KEY_HEADER:-X-API-Key}
-      - DOCKER_ENV=true
     ports:
-      - "${FRONTEND_PORT:-18003}:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - "${FRONTEND_PORT:-18103}:80"
     networks:
-      - app-network
+      - demo-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5173"]
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 30s
 
   # pgAdmin (Optional - for database management)
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: form_analysis_pgadmin
+    container_name: demo_form_analysis_pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-change-me-strong}
       PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:
-      - "${PGADMIN_PORT:-18004}:80"
+      - "${PGADMIN_PORT:-18104}:80"
     volumes:
-      - pgadmin_data:/var/lib/pgadmin
+      - pgadmin_demo_data:/var/lib/pgadmin
     depends_on:
       - db
     networks:
-      - app-network
+      - demo-network
     profiles:
       - tools
-    # Only start when specifically requested with --profile tools
 
-# Persistent data volumes
+# Persistent data volumes (Demo - 獨立於開發環境)
 volumes:
-  postgres_data:
+  postgres_demo_data:
     driver: local
-  upload_data:
+  upload_demo_data:
     driver: local
-  pgadmin_data:
+  pgadmin_demo_data:
     driver: local
 
-# Network for service communication
+# Network for service communication (Demo)
 networks:
-  app-network:
+  demo-network:
     driver: bridge
