@@ -1805,13 +1805,13 @@ export function AnalyticsPage() {
                       cx="50%"
                       cy="50%"
                       outerRadius={90}
-                      label={({ name, percent }) => `${name}`}
+                      label={({ name }) => `${name}`}
                     >
                       {pieData.map((_, i) => (
                         <Cell key={i} fill={colors[i % colors.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number) => [value, '']} />
+                    <Tooltip formatter={(value) => [value ?? 0, '']} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>

@@ -76,8 +76,8 @@ export type ComplaintAnalysisResult = {
     merged_rows: number
   }
   analysis: Record<string, unknown>
-  machine_distribution?: MachineDistributionBucket[]
-  winder_distribution?: MachineDistributionBucket[]
+  machine_distribution: MachineDistributionBucket[]
+  winder_distribution: MachineDistributionBucket[]
   timing: {
     trace_ms: number
     scope_ms: number
