@@ -343,7 +343,35 @@ flowchart LR
 
 ---
 
-## 4) 文件對照
+## 4) Analytics 分析頁面（Product ID / 日期分析）
+
+```mermaid
+flowchart TD
+  S([進入 Analytics 分析頁]) --> T{是否已選擇 Tenant / API key?}
+  T -- 否 --> T1[阻擋：請先完成登入與 Tenant 選擇] --> S
+  T -- 是 --> M{分析模式}
+
+  %% Product ID (客訴追溯) 分支
+  M -- Product ID --> P1[輸入 product_id 列表] --> P2[POST /api/v2/analytics/complaint-analysis]
+  P2 --> B1[backend: analyze_complaint_products]
+  B1 --> B2[fetch_merged_by_product_ids + write_complain_csv_from_df]
+  B2 --> AF1[Analytical-Four 讀取 config current_data.descriptive]
+  AF1 --> AF2[產出 ut_bou_spe_t2_extration_result.json]
+  AF2 --> P3[回傳分析結果 + diagnostics]
+  P3 --> UI1[前端渲染圖表/改善報告]
+
+  %% 日期分析分支
+  M -- 日期範圍 --> D1[選擇日期範圍/站別] --> D2[POST /api/v2/analytics/realtime-analysis]
+  D2 --> B3[backend: run_realtime_analysis]
+  B3 --> B4[fetch_merged_p1p2p3_from_db]
+  B4 --> B5[run_unified_analysis_from_db]
+  B5 --> D3[回傳分析結果]
+  D3 --> UI2[前端渲染圖表/統計]
+```
+
+---
+
+## 5) 文件對照
 
 - 上傳：dev-guides/USER_UPLOAD_FLOW.md
 - 查詢：dev-guides/USER_QUERY_FLOW.md
