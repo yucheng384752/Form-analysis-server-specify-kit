@@ -82,6 +82,7 @@ Thumbs.db
 tmp/
 temp/
 .cache/
+.claude/worktrees/
 
 # 忽略編譯產出
 dist/
