@@ -17,6 +17,7 @@ type RatioNode = {
   '1'?: number
   total_count?: number
   count_0?: number
+  label?: string
 }
 
 type AnalysisResult = Record<string, Record<string, RatioNode>>
@@ -95,20 +96,6 @@ type TenantRow = {
   code?: string
 }
 
-const UT_FEATURE_PCT_DEMO: ReadonlyArray<{ name: string; pct: number }> = [
-  { name: 'Thickness diff', pct: 16.66666666666669 },
-  { name: 'Semi-finished impedance', pct: 16.666666666666686 },
-  { name: 'Board Width(mm)', pct: 16.666666666666675 },
-  { name: 'Thicknessss Low(μm)', pct: 16.666666666666664 },
-  { name: 'Thicknessss High(μm)', pct: 16.666666666666657 },
-  { name: 'Rubber wheel gasket thickness (in)', pct: 16.66666666666663 },
-  { name: 'Heat gun temperature', pct: 8.758818145756964e-31 },
-  { name: 'Slitting speed', pct: 2.0941660441376297e-31 },
-  { name: 'Rubber wheel gasket thickness (out)', pct: 1.4956287073050555e-31 },
-  { name: 'Rewind torque', pct: 5.235325593684113e-32 },
-  { name: 'rough edge', pct: 0.0 },
-  { name: 'Appearance', pct: 0.0 },
-]
 
 // Preset modes are week/month/quarter/half-year; custom supports day-level.
 type RangeMode = 'week' | 'month' | 'quarter' | 'halfYear' | 'custom'
@@ -250,39 +237,6 @@ function normalizeAnalysisResult(input: unknown): AnalysisResult | null {
   return Object.keys(result).length > 0 ? result : null
 }
 
-function mergeAnalysisResults(parts: AnalysisResult[]): AnalysisResult | null {
-  if (!Array.isArray(parts) || parts.length === 0) return null
-
-  const toNum = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0)
-  const merged: AnalysisResult = {}
-
-  for (const part of parts) {
-    for (const [category, bucket] of Object.entries(part || {})) {
-      if (!merged[category]) merged[category] = {}
-      for (const [key, node] of Object.entries(bucket || {})) {
-        const prev = merged[category][key] || {}
-        const prevTotal = toNum(prev.total_count)
-        const prevNg = toNum(prev.count_0 ?? prev['0'])
-        const prevZero = toNum(prev['0'] ?? prev.count_0)
-        const prevOne = toNum(prev['1'])
-
-        const currTotal = toNum(node?.total_count)
-        const currNg = toNum(node?.count_0 ?? node?.['0'])
-        const currZero = toNum(node?.['0'] ?? node?.count_0)
-        const currOne = toNum(node?.['1'])
-
-        merged[category][key] = {
-          total_count: prevTotal + currTotal,
-          count_0: prevNg + currNg,
-          '0': prevZero + currZero,
-          '1': prevOne + currOne,
-        }
-      }
-    }
-  }
-
-  return Object.keys(merged).length > 0 ? merged : null
-}
 
 function pickOverallNode(result: AnalysisResult): { category: string; key: string; node: RatioNode } | null {
   let best: { category: string; key: string; node: RatioNode } | null = null
@@ -356,6 +310,14 @@ export function AnalyticsPage() {
   const [ngError, setNgError] = useState('')
   const [ngWinderNumber, setNgWinderNumber] = useState<number | null>(null)
 
+  const [extractionData, setExtractionData] = useState<{
+    final_raw_score: Record<string, number>
+    boundary_count: Record<string, number>
+    spe_score: Record<string, number>
+    t2_score: Record<string, number>
+  } | null>(null)
+  const [extractionLoading, setExtractionLoading] = useState(false)
+
   const [artifactView, setArtifactView] = useState<ViewKey>('events')
   const [analysisChartMode, setAnalysisChartMode] = useState<'heatmap' | 'bar'>('heatmap')
 
@@ -378,7 +340,8 @@ export function AnalyticsPage() {
     }
     return uniq
   }, [productIds, traceProduceNos])
-  const artifactsMode = productIds.length > 0
+  const productIdMode = productIds.length > 0
+  const artifactsMode = false
 
   const ngFeaturePctEntries = useMemo(() => {
     const aggregate = new Map<string, { sum: number; count: number }>()
@@ -412,10 +375,6 @@ export function AnalyticsPage() {
     return toCumsumSeries(top)
   }, [ngFeaturePctEntries])
 
-  const utFeaturePctChartData = useMemo(() => {
-    const sorted = [...UT_FEATURE_PCT_DEMO].sort((a, b) => b.pct - a.pct)
-    return toCumsumSeries(sorted)
-  }, [])
 
   const ngFeaturePctChartHeight = useMemo(() => {
     const count = Math.min(10, ngFeaturePctEntries.length)
@@ -476,16 +435,10 @@ export function AnalyticsPage() {
   const commitProductId = useCallback(() => {
     const next = productIdDraft.trim()
     if (next === productIdCommitted) return
-    // Default behavior: date-based analysis auto-run. If user provides product_id(s), switch to Artifacts mode.
+    // Default behavior: date-based analysis auto-run. product_id input switches to manual run.
     autoRunArmedRef.current = parseProductIds(next).length === 0
     setProductIdCommitted(next)
   }, [productIdCommitted, productIdDraft])
-
-  useEffect(() => {
-    if (!artifactsMode) return
-    // When switching into artifacts mode, keep the artifacts view visible and predictable.
-    setArtifactView('events')
-  }, [artifactsMode])
 
   useEffect(() => {
     if (!tenantId) return
@@ -504,6 +457,16 @@ export function AnalyticsPage() {
       }
     })()
   }, [tenantId])
+
+  useEffect(() => {
+    if (!productIdMode) return
+    setStations({ p2: true, p3: true, all: false })
+  }, [productIdMode])
+
+  useEffect(() => {
+    if (!productIdMode) return
+    setAnalysisChartMode('bar')
+  }, [productIdMode])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -627,6 +590,7 @@ export function AnalyticsPage() {
   }
 
   const handleToggleStation = (key: keyof StationSelection) => {
+    if (productIdMode) return
     autoRunArmedRef.current = true
     setStations((prev) => {
       const next = { ...prev }
@@ -647,7 +611,7 @@ export function AnalyticsPage() {
     if (!result) return []
     const categories: Array<{
       category: string
-      items: Array<{ key: string; ok: number; ng: number; total: number }>
+      items: Array<{ key: string; label: string; ok: number; ng: number; total: number }>
     }> = []
     for (const [category, bucket] of Object.entries(result)) {
       const keys = Object.keys(bucket)
@@ -660,7 +624,11 @@ export function AnalyticsPage() {
         if (isNumA && isNumB) return na - nb
         return a.localeCompare(b)
       })
-      const items = sortedKeys.map((k) => ({ key: k, ...parseCounts(bucket[k]) }))
+      const items = sortedKeys.map((k) => ({
+        key: k,
+        label: String(bucket[k]?.label ?? k),
+        ...parseCounts(bucket[k]),
+      }))
       categories.push({ category, items })
     }
     return categories
@@ -691,6 +659,21 @@ export function AnalyticsPage() {
     return rows.slice(0, 80)
   }, [categoryCards])
 
+  const winderChartData = useMemo(() => {
+    const winderCat = categoryCards.find((cat) => /winder/i.test(cat.category))
+    if (!winderCat) return []
+    const sorted = winderCat.items
+      .map((item) => ({ name: item.label || item.key, count: item.ng, total: item.total }))
+      .filter((d) => d.name)
+      .sort((a, b) => b.count - a.count)
+    const totalNg = sorted.reduce((s, d) => s + d.count, 0)
+    let cum = 0
+    return sorted.map((d) => {
+      cum += d.count
+      return { ...d, cumPct: totalNg > 0 ? round3((cum / totalNg) * 100) : 0 }
+    })
+  }, [categoryCards])
+
   const heatColor = useCallback((rate: number) => {
     const r = Math.max(0, Math.min(1, Number.isFinite(rate) ? rate : 0))
     const lightness = 96 - r * 42
@@ -698,7 +681,7 @@ export function AnalyticsPage() {
   }, [])
 
   const computeAutoRunKey = useCallback(() => {
-    // Date analysis key should not depend on product_id; product_id switches to Artifacts mode.
+    // Date analysis key should not depend on product_id; product_id uses manual run.
     return JSON.stringify({ startDate, endDate, stations })
   }, [startDate, endDate, stations])
 
@@ -727,15 +710,23 @@ export function AnalyticsPage() {
           return
         }
 
+        const overrideInput = String(_opts?.productIdOverride ?? '').trim()
+        const committedInput = productIdCommitted.trim()
+        const productInput = overrideInput || committedInput
+        const effectiveProductIds = parseProductIds(productInput)
+        const hasProductIds = effectiveProductIds.length > 0
+        console.log('[Analytics] product_id count:', effectiveProductIds.length)
+
         const requestAnalyze = async (stationsParam: Array<'P2' | 'P3' | 'ALL'>): Promise<AnalysisResult | null> => {
           console.log('[Analytics] Sending request:', { requestId: currentRequestId, startDate, endDate, stations: stationsParam })
           const res = await fetch('/api/v2/analytics/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...buildTenantHeaders() },
             body: JSON.stringify({
-              start_date: startDate || null,
-              end_date: endDate || null,
+              start_date: hasProductIds ? null : startDate || null,
+              end_date: hasProductIds ? null : endDate || null,
               product_id: null,
+              product_ids: hasProductIds ? effectiveProductIds : [],
               stations: stationsParam,
             }),
           })
@@ -745,14 +736,17 @@ export function AnalyticsPage() {
             throw new Error(text || t('analytics.analyzeRequestFailed', { status: res.status }))
           }
 
-          const json = (await res.json()) as unknown
-          return normalizeAnalysisResult(json)
+          const json = (await res.json()) as Record<string, unknown>
+          console.log('[Analytics] response keys:', Object.keys(json || {}))
+          const p2Keys = Object.keys(json || {}).filter((key) => key.startsWith('P2.'))
+          console.log('[Analytics] P2 keys (raw):', p2Keys)
+          const normalized = normalizeAnalysisResult(json)
+          const normalizedP2 = normalized ? Object.keys(normalized).filter((key) => key.startsWith('P2.')) : []
+          console.log('[Analytics] P2 keys (normalized):', normalizedP2)
+          return normalized
         }
 
-        const shouldSplitStations = !stations.all && stations.p2 && stations.p3
-        const normalized = shouldSplitStations
-          ? mergeAnalysisResults((await Promise.all([requestAnalyze(['P2']), requestAnalyze(['P3'])])).filter(Boolean) as AnalysisResult[])
-          : await requestAnalyze(chosenStations)
+        const normalized = await requestAnalyze(hasProductIds ? ['P2', 'P3'] : chosenStations)
 
         // Race condition check: ignore stale responses
         if (currentRequestId !== analyzeRequestIdRef.current) {
@@ -789,7 +783,7 @@ export function AnalyticsPage() {
         setIsLoading(false)
       }
     })()
-  }, [buildTenantHeaders, endDate, startDate, stations, t])
+  }, [buildTenantHeaders, endDate, productIdCommitted, startDate, stations, t])
 
   const runNow = useCallback(() => {
     const overrideProductId = productIdDraft.trim()
@@ -798,9 +792,7 @@ export function AnalyticsPage() {
 
     if (nextIds.length > 0) {
       autoRunArmedRef.current = false
-      window.setTimeout(() => {
-        artifactsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 0)
+      handleRun({ productIdOverride: overrideProductId })
       return
     }
 
@@ -940,7 +932,7 @@ export function AnalyticsPage() {
             baseFilters.push({ field: 'production_date', op: 'lte', value: endDate })
           }
 
-          // product_id is reserved for Artifacts mode; keep NG query date-based.
+          // Keep NG query date-based; product_id is handled via manual run.
 
           // winder_number filter only applies to P2
           if (dt === 'P2' && opts?.winderNumber !== undefined && opts.winderNumber !== null) {
@@ -1031,24 +1023,57 @@ export function AnalyticsPage() {
     }
   }, [buildTenantHeaders, endDate, recordHasNg, startDate, stations, t])
 
+  const fetchExtractionAnalysis = useCallback(async () => {
+    setExtractionLoading(true)
+    setExtractionData(null)
+    try {
+      const station = stations.p2 || stations.all ? 'P2' : stations.p3 ? 'P3' : 'P2'
+      const res = await fetch('/api/v2/analytics/extraction-analysis', {
+        method: 'POST',
+        headers: { ...buildTenantHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          start_date: startDate || undefined,
+          end_date: endDate || undefined,
+          station,
+        }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (data.final_raw_score && Object.keys(data.final_raw_score).length > 0) {
+        setExtractionData({
+          final_raw_score: data.final_raw_score,
+          boundary_count: data.boundary_count ?? {},
+          spe_score: data.spe_score ?? {},
+          t2_score: data.t2_score ?? {},
+        })
+      }
+    } catch (e) {
+      console.warn('Extraction analysis failed:', e)
+    } finally {
+      setExtractionLoading(false)
+    }
+  }, [buildTenantHeaders, startDate, endDate, stations])
+
   const enterNgMode = useCallback((opts?: { winderNumber?: number | null }) => {
     autoRunArmedRef.current = true
     setNgMode(true)
     const nextWinder = opts?.winderNumber ?? null
     setNgWinderNumber(nextWinder)
     void fetchNgRecords({ winderNumber: nextWinder })
-  }, [fetchNgRecords])
+    void fetchExtractionAnalysis()
+  }, [fetchNgRecords, fetchExtractionAnalysis])
 
   const exitNgMode = useCallback(() => {
     setNgMode(false)
     setNgRecords([])
     setNgError('')
     setNgWinderNumber(null)
+    setExtractionData(null)
   }, [])
 
   useEffect(() => {
     if (!autoRunArmedRef.current) return
-    if (artifactsMode) return
+    if (productIdMode) return
     if (isLoading) return
 
     const key = computeAutoRunKey()
@@ -1069,20 +1094,13 @@ export function AnalyticsPage() {
         autoRunTimerRef.current = null
       }
     }
-  }, [artifactsMode, computeAutoRunKey, handleRun, isLoading])
+  }, [productIdMode, computeAutoRunKey, handleRun, isLoading])
 
   const handleFilterKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
     if (e.key !== 'Enter' || e.shiftKey) return
     e.preventDefault()
     if (isLoading) return
     commitProductId()
-    // If product_id is provided, enter artifacts mode instead of running date analysis.
-    if (parseProductIds(productIdDraft).length > 0) {
-      window.setTimeout(() => {
-        artifactsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 0)
-      return
-    }
     runNow()
   }
 
@@ -1393,7 +1411,7 @@ export function AnalyticsPage() {
               ref={productIdTextareaRef}
               className="register-input analytics-product-textarea"
               rows={1}
-              placeholder="輸入 產品編號（可多筆，以逗號/空白/換行分隔）→ 觸發 改善報告"
+              placeholder="輸入 產品編號（可多筆，以逗號/空白/換行分隔）→ 觸發 分析"
               value={productIdDraft}
               onChange={(e) => {
                 setProductIdDraft(e.target.value)
@@ -1425,18 +1443,21 @@ export function AnalyticsPage() {
             <div className="analytics-filter-title">{t('analytics.stations')}</div>
             <div className="analytics-checkbox-row">
               <label className="analytics-checkbox">
-                <input type="checkbox" checked={stations.p2} onChange={() => handleToggleStation('p2')} />
+                <input type="checkbox" checked={stations.p2} onChange={() => handleToggleStation('p2')} disabled={productIdMode} />
                 P2
               </label>
               <label className="analytics-checkbox">
-                <input type="checkbox" checked={stations.p3} onChange={() => handleToggleStation('p3')} />
+                <input type="checkbox" checked={stations.p3} onChange={() => handleToggleStation('p3')} disabled={productIdMode} />
                 P3
               </label>
-              <label className="analytics-checkbox">
-                <input type="checkbox" checked={stations.all} onChange={() => handleToggleStation('all')} />
-                ALL
-              </label>
+              {productIdMode ? null : (
+                <label className="analytics-checkbox">
+                  <input type="checkbox" checked={stations.all} onChange={() => handleToggleStation('all')} />
+                  ALL
+                </label>
+              )}
             </div>
+            {productIdMode ? <div className="analytics-date-preview">product_id 模式固定使用 P2 + P3</div> : null}
           </div>
         </div>
 
@@ -1444,15 +1465,11 @@ export function AnalyticsPage() {
           <button
             className="btn-primary"
             onClick={() => {
-              if (artifactsMode) {
-                artifactsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                return
-              }
               runNow()
             }}
-            disabled={isLoading && !artifactsMode}
+            disabled={isLoading}
           >
-            {isLoading && !artifactsMode ? t('analytics.analyzing') : artifactsMode ? '查看改善報告' : t('analytics.analyze')}
+            {isLoading ? t('analytics.analyzing') : t('analytics.analyze')}
           </button>
         </div>
 
@@ -1461,7 +1478,7 @@ export function AnalyticsPage() {
 
         {artifactsMode ? (
           <>
-            <div ref={artifactsSectionRef} className="analytics-section-header">改善報告（由 產品編號 觸發）</div>
+            <div ref={artifactsSectionRef} className="analytics-section-header">改善報告</div>
             <section className="analytics-card">
               <div className="analytics-actions" style={{ justifyContent: 'flex-start', marginTop: 0, gap: 8, flexWrap: 'wrap' }}>
                 {([
@@ -1522,81 +1539,79 @@ export function AnalyticsPage() {
               </div>
             </div>
 
-            {ngFeaturePctEntries.length > 0 ? (
-              <div className="analytics-ng-feature-chart" aria-label={t('analytics.featurePct.title')}>
-                <div className="analytics-ng-feature-chart-title">{t('analytics.featurePct.title')}</div>
-                <div className="analytics-ng-feature-chart-body" style={{ height: ngFeaturePctChartHeight }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart
-                      data={ngFeaturePctChartData}
-                      margin={{ top: 8, right: 16, bottom: 80, left: 12 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        type="category"
-                        dataKey="name"
-                        interval={0}
-                        angle={-35}
-                        height={80}
-                        textAnchor="end"
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                      <Tooltip
-                        formatter={(value, name) => {
-                          const n = typeof value === 'number' ? value : Number(value)
-                          const label = name === 'cumPct' ? '累積' : '占比'
-                          if (!Number.isFinite(n)) return [String(value), label]
-                          return [`${round3(n).toFixed(3)}%`, label]
-                        }}
-                      />
-                      <Legend />
-                      <Bar dataKey="pct" name="占比" fill="#2563eb" radius={[6, 6, 0, 0]} />
-                      <Line dataKey="cumPct" name="累積" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="analytics-ng-extra">
-              <div className="analytics-ng-feature-chart" aria-label={t('analytics.featurePct.title')}>
-                <div className="analytics-ng-feature-chart-title">{t('analytics.featurePct.title')}（UT）</div>
-                <div className="analytics-ng-feature-chart-body" style={{ height: 380 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart
-                      data={utFeaturePctChartData}
-                      margin={{ top: 8, right: 16, bottom: 90, left: 12 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        type="category"
-                        dataKey="name"
-                        interval={0}
-                        angle={-35}
-                        height={90}
-                        textAnchor="end"
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                      <Tooltip
-                        formatter={(value, name) => {
-                          const n = typeof value === 'number' ? value : Number(value)
-                          const label = name === 'cumPct' ? '累積' : '占比'
-                          if (!Number.isFinite(n)) return [String(value), label]
-                          return [`${round3(n).toFixed(3)}%`, label]
-                        }}
-                      />
-                      <Legend />
-                      <Bar dataKey="pct" name="占比" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
-                      <Line dataKey="cumPct" name="累積" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-
             {ngError ? <div className="analytics-error">{ngError}</div> : null}
+
+            {/* Extraction Analysis: Feature Importance (final_raw_score) */}
+            {extractionLoading ? (
+              <div className="analytics-empty" style={{ margin: '12px 0' }}>
+                {t('analytics.loading')} (Extraction Analysis)
+              </div>
+            ) : extractionData ? (() => {
+              const entries = Object.entries(extractionData.final_raw_score)
+                .filter(([, v]) => v > 0)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 15)
+              if (entries.length === 0) return null
+              const maxScore = entries[0][1]
+              const chartData = entries.map(([name, score]) => ({
+                name,
+                score: Math.round(score * 1000) / 1000,
+                boundary: extractionData.boundary_count[name] ?? 0,
+                spe: Math.round((extractionData.spe_score[name] ?? 0) * 100) / 100,
+                t2: Math.round((extractionData.t2_score[name] ?? 0) * 100) / 100,
+              }))
+              const chartHeight = Math.max(200, entries.length * 32 + 40)
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <h4 style={{ margin: '8px 0', fontWeight: 600, fontSize: '0.95rem' }}>
+                    Feature Importance (IQR + PCA)
+                  </h4>
+                  <div style={{ width: '100%', height: chartHeight }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData} layout="vertical" margin={{ left: 140, right: 20, top: 5, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                        <XAxis type="number" domain={[0, Math.ceil(maxScore * 1.1)]} />
+                        <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
+                        <Tooltip
+                          formatter={((value: any, name: any) => {
+                            const labels: Record<string, string> = { score: 'Final Score', boundary: 'Boundary Count', spe: 'SPE Score', t2: 'T² Score' }
+                            return [value ?? 0, labels[name] ?? name]
+                          }) as any}
+                        />
+                        <Bar dataKey="score" fill="#ef4444" name="Final Score" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <details style={{ marginTop: 4 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: '#666' }}>
+                      {t('analytics.viewDetails')}
+                    </summary>
+                    <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse', marginTop: 4 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #ddd' }}>
+                          <th style={{ textAlign: 'left', padding: '4px 8px' }}>Feature</th>
+                          <th style={{ textAlign: 'right', padding: '4px 8px' }}>Boundary</th>
+                          <th style={{ textAlign: 'right', padding: '4px 8px' }}>SPE</th>
+                          <th style={{ textAlign: 'right', padding: '4px 8px' }}>T²</th>
+                          <th style={{ textAlign: 'right', padding: '4px 8px' }}>Final</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {chartData.map((row) => (
+                          <tr key={row.name} style={{ borderBottom: '1px solid #eee' }}>
+                            <td style={{ padding: '3px 8px' }}>{row.name}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{row.boundary}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{row.spe}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{row.t2}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 8px', fontWeight: 600 }}>{row.score}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </details>
+                </div>
+              )
+            })() : null}
 
             <div className="analytics-ng-results">
               {ngLoading && ngRecords.length === 0 ? <div className="analytics-empty">{t('analytics.loading')}</div> : null}
@@ -1731,61 +1746,90 @@ export function AnalyticsPage() {
                 </div>
               ))}
             </div>
+
+            {ngFeaturePctEntries.length > 0 ? (
+              <div className="analytics-ng-feature-chart" aria-label={t('analytics.featurePct.title')} style={{ marginTop: 16 }}>
+                <div className="analytics-ng-feature-chart-title">{t('analytics.featurePct.title')}</div>
+                <div className="analytics-ng-feature-chart-body" style={{ height: ngFeaturePctChartHeight }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart
+                      data={ngFeaturePctChartData}
+                      margin={{ top: 8, right: 16, bottom: 80, left: 12 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        type="category"
+                        dataKey="name"
+                        interval={0}
+                        angle={-35}
+                        height={80}
+                        textAnchor="end"
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                      <Tooltip
+                        formatter={(value, name) => {
+                          const n = typeof value === 'number' ? value : Number(value)
+                          const label = name === 'cumPct' ? '累積' : '占比'
+                          if (!Number.isFinite(n)) return [String(value), label]
+                          return [`${round3(n).toFixed(3)}%`, label]
+                        }}
+                      />
+                      <Legend />
+                      <Bar dataKey="pct" name="占比" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                      <Line dataKey="cumPct" name="累積" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ) : null}
           </section>
         </>
       ) : ran ? (
         <>
-          <div className="analytics-section-header">{t('analytics.yield')}</div>
+          <div className="analytics-section-header">{t('analytics.moldingAnalysis')}</div>
 
-          <div className="analytics-note">{t('analytics.ngDrilldownHint')}</div>
-
-          <section className="analytics-card">
-            <div className="analytics-card-title">{t('analytics.totalProducts')}</div>
-            <div className="analytics-grid-2">
-              <div>
-                <div className="analytics-kv">
-                  <div className="analytics-k">{t('analytics.ok')}</div>
-                  <div className="analytics-v">{overall.ok}</div>
-                  <div className="analytics-k">{t('analytics.ng')}</div>
-                  <div className="analytics-v">{overall.ng}</div>
-                </div>
-              </div>
-              <div className="analytics-chart-wrap">
-                <ResponsiveContainer>
+          {/* OK/NG 圓餅圖 */}
+          {overall.total > 0 ? (
+            <section className="analytics-card" style={{ marginBottom: 16 }}>
+              <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>
+                OK / NG ({overall.total} {t('analytics.totalRecords', 'pcs')})
+              </h4>
+              <div style={{ width: '100%', height: 260, display: 'flex', justifyContent: 'center' }}>
+                <ResponsiveContainer width={360} height="100%">
                   <PieChart>
                     <Pie
                       data={pieData}
                       dataKey="value"
                       nameKey="name"
+                      cx="50%"
+                      cy="50%"
                       outerRadius={90}
-                      label
-                      onClick={(data: any) => {
-                        if (data?.payload?.kind === 'NG') enterNgMode()
-                      }}
+                      label={({ name, percent }) => `${name}`}
                     >
-                      {pieData.map((_, idx) => (
-                        <Cell key={idx} fill={colors[idx % colors.length]} />
+                      {pieData.map((_, i) => (
+                        <Cell key={i} fill={colors[i % colors.length]} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip formatter={(value: number) => [value, '']} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-            </div>
-          </section>
-
-          <div className="analytics-section-header">{t('analytics.moldingAnalysis')}</div>
+            </section>
+          ) : null}
 
           <section className="analytics-card">
             <div className="analytics-actions" style={{ justifyContent: 'flex-start', marginTop: 0, gap: 8 }}>
-              <button
-                type="button"
-                className={analysisChartMode === 'heatmap' ? 'btn-primary' : 'btn-secondary'}
-                onClick={() => setAnalysisChartMode('heatmap')}
-              >
-                {t('analytics.views.heatmap')}
-              </button>
+              {!productIdMode ? (
+                <button
+                  type="button"
+                  className={analysisChartMode === 'heatmap' ? 'btn-primary' : 'btn-secondary'}
+                  onClick={() => setAnalysisChartMode('heatmap')}
+                >
+                  {t('analytics.views.heatmap')}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className={analysisChartMode === 'bar' ? 'btn-primary' : 'btn-secondary'}
@@ -1795,7 +1839,7 @@ export function AnalyticsPage() {
               </button>
             </div>
 
-            {analysisChartMode === 'heatmap' ? (
+            {!productIdMode && analysisChartMode === 'heatmap' ? (
               analysisHeatmapRows.length > 0 ? (
                 <div className="analytics-heatmap">
                   <div className="analytics-heatmap-head">
@@ -1827,6 +1871,40 @@ export function AnalyticsPage() {
               categoryCards.map((cat) => {
                 const title = cat.category
                 const isWinderCategory = /winder/i.test(String(title))
+                if (productIdMode) {
+                  const barData = cat.items
+                    .map((item) => ({ name: item.label, count: item.total }))
+                    .filter((item) => item.name)
+                    .sort((a, b) => b.count - a.count)
+                  const maxCount = barData.reduce((acc, item) => Math.max(acc, item.count), 0)
+                  return (
+                    <div key={cat.category} style={{ marginBottom: '1.5rem' }}>
+                      <div className="analytics-card-title">{title}</div>
+                      {barData.length > 0 ? (
+                        <div className="analytics-chart-wrap" style={{ height: 260, minHeight: 260, marginTop: '0.75rem' }}>
+                          <ResponsiveContainer width="100%" height={260}>
+                            <BarChart data={barData} margin={{ top: 10, right: 20, left: 0, bottom: 60 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="name" interval={0} angle={-20} height={60} textAnchor="end" />
+                              <YAxis allowDecimals={false} />
+                              <Tooltip />
+                              <Bar dataKey="count">
+                                {barData.map((entry, idx) => (
+                                  <Cell
+                                    key={`cell-${idx}`}
+                                    fill={entry.count === maxCount ? '#dc2626' : '#2563eb'}
+                                  />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <div className="analytics-empty">{t('analytics.noData')}</div>
+                      )}
+                    </div>
+                  )
+                }
                 return (
                   <div key={cat.category} style={{ marginBottom: '1.5rem' }}>
                     <div className="analytics-card-title">{title}</div>
@@ -1842,8 +1920,8 @@ export function AnalyticsPage() {
                             <div className="muted" style={{ fontSize: '0.9rem' }}>
                               {t('analytics.summary.productionNg', { total: item.total, ng: item.ng, percent: pct(item.ng, item.total) })}
                             </div>
-                            <div className="analytics-chart-wrap">
-                              <ResponsiveContainer>
+                            <div className="analytics-chart-wrap" style={{ height: 220, minHeight: 220 }}>
+                              <ResponsiveContainer width="100%" height={220}>
                                 <BarChart data={barData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis dataKey="name" />
@@ -1882,6 +1960,31 @@ export function AnalyticsPage() {
             ) : (
               <div className="analytics-empty">{t('analytics.noData')}</div>
             )
+            ) : null}
+
+            {winderChartData.length > 0 ? (
+              <div style={{ marginTop: '1.5rem' }}>
+                <div className="analytics-card-title">Winder Number 累積直方圖</div>
+                <div className="analytics-chart-wrap" style={{ height: 280, minHeight: 280, marginTop: '0.75rem' }}>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <ComposedChart data={winderChartData} margin={{ top: 10, right: 40, left: 0, bottom: 60 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" interval={0} angle={-20} height={60} textAnchor="end" />
+                      <YAxis yAxisId="left" allowDecimals={false} />
+                      <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
+                      <Tooltip
+                        formatter={(value: any, name: any) => {
+                          if (name === '累積%') return [`${round3(Number(value)).toFixed(1)}%`, name]
+                          return [value, name]
+                        }}
+                      />
+                      <Legend />
+                      <Bar yAxisId="left" dataKey="count" name="NG數量" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                      <Line yAxisId="right" dataKey="cumPct" name="累積%" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             ) : null}
           </section>
 

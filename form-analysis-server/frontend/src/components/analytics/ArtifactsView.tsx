@@ -4,14 +4,10 @@ import {
   fetchArtifactDetailView,
   fetchArtifactList,
   fetchArtifactListView,
-  fetchArtifactSnapshotView,
   type ArtifactKey,
-  type ArtifactInputResolveResult,
   type ComplaintAnalysisResult,
-  type ArtifactUnifiedSnapshot,
   type ArtifactListItem,
 } from '../../services/analyticsArtifacts'
-import { useToast } from '../common/ToastContext'
 import {
   ResponsiveContainer,
   BarChart,
@@ -21,6 +17,8 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ComposedChart,
+  Line,
   ScatterChart,
   Scatter,
   ZAxis,
@@ -48,6 +46,107 @@ function toStr(value: unknown): string {
 function safeNumber(value: unknown): number {
   const n = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(n) ? n : 0
+}
+
+function isNumberLike(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function pickOutlierLabel(row: Record<string, unknown>): string {
+  const keys = ['feature', 'column', 'name', 'dimension', 'id', 'key']
+  for (const k of keys) {
+    const v = row[k]
+    if (typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return ''
+}
+
+function extractOutlierCounts(raw: unknown): Array<{ name: string; count: number }> {
+  if (!raw) return []
+  const candidates: Array<{ name: string; count: number }> = []
+
+  const pushEntry = (name: string, count: number) => {
+    const n = String(name || '').trim()
+    if (!n) return
+    const c = Number(count)
+    candidates.push({ name: n, count: Number.isFinite(c) ? c : 0 })
+  }
+
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (!isPlainObject(item)) continue
+      const label = pickOutlierLabel(item)
+      const count = isNumberLike(item.count) ? item.count : 1
+      pushEntry(label, count)
+    }
+  } else if (isPlainObject(raw)) {
+    const nestedKeys = ['outliers', 'result', 'data', 'records', 'rows']
+    for (const k of nestedKeys) {
+      if (raw[k]) {
+        return extractOutlierCounts(raw[k])
+      }
+    }
+    for (const [key, value] of Object.entries(raw)) {
+      if (isNumberLike(value)) {
+        pushEntry(key, value)
+        continue
+      }
+      if (Array.isArray(value)) {
+        pushEntry(key, value.length)
+        continue
+      }
+      if (isPlainObject(value)) {
+        const label = pickOutlierLabel(value)
+        const count = isNumberLike(value.count) ? value.count : undefined
+        if (label && count !== undefined) {
+          pushEntry(label, count)
+        } else if (count !== undefined) {
+          pushEntry(key, count)
+        }
+      }
+    }
+  }
+
+  const byName = new Map<string, number>()
+  for (const row of candidates) {
+    byName.set(row.name, (byName.get(row.name) ?? 0) + row.count)
+  }
+  return [...byName.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+}
+
+function extractBasicStatsTopN(
+  raw: unknown,
+  topN = 8,
+  preferMetric: 'std' | 'mean' = 'std',
+): Array<{ name: string; value: number; metric: string }> {
+  if (!isPlainObject(raw)) return []
+  const rows: Array<{ name: string; value: number; metric: string }> = []
+  for (const [key, value] of Object.entries(raw)) {
+    if (!isPlainObject(value)) continue
+    const stats = value as Record<string, unknown>
+    const std = stats.std ?? stats.stdev ?? stats.std_dev
+    const mean = stats.mean ?? stats.avg ?? stats.average
+    const max = stats.max
+    const min = stats.min
+    if (preferMetric === 'mean' && isNumberLike(mean)) {
+      rows.push({ name: key, value: Number(mean), metric: 'mean' })
+      continue
+    }
+    if (isNumberLike(std)) {
+      rows.push({ name: key, value: Number(std), metric: 'std' })
+      continue
+    }
+    if (isNumberLike(max) && isNumberLike(min)) {
+      rows.push({ name: key, value: Math.abs(Number(max) - Number(min)), metric: 'range' })
+      continue
+    }
+    if (isNumberLike(mean)) {
+      rows.push({ name: key, value: Number(mean), metric: 'mean' })
+    }
+  }
+  return rows.sort((a, b) => b.value - a.value).slice(0, topN)
 }
 
 function tryParseIsoDate(value: unknown): Date | null {
@@ -80,7 +179,6 @@ function pickId(item: unknown): string {
 
 export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<string, string>; productIds?: string[] }) {
   const artifactKey = VIEW_TO_ARTIFACT[props.view]
-  const { showToast } = useToast()
 
   const productIdFilters = useMemo(() => {
     const ids = (props.productIds ?? []).map((s) => s.trim()).filter(Boolean)
@@ -118,8 +216,6 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
   const [listData, setListData] = useState<unknown>(null)
   const [listDataError, setListDataError] = useState('')
   const [loadingListData, setLoadingListData] = useState(false)
-  const [resolveMeta, setResolveMeta] = useState<ArtifactInputResolveResult | null>(null)
-  const [snapshotData, setSnapshotData] = useState<ArtifactUnifiedSnapshot | null>(null)
   const [complaintAnalysis, setComplaintAnalysis] = useState<ComplaintAnalysisResult | null>(null)
 
   const [detailData, setDetailData] = useState<unknown>(null)
@@ -128,13 +224,9 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
 
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string>('')
-  const [mappingNotice, setMappingNotice] = useState('')
 
   const [sortMode, setSortMode] = useState<'dateDesc' | 'anomaliesDesc' | 'sampleDesc' | 'alphaAsc'>('dateDesc')
-  const [showDiagnosticsPanel, setShowDiagnosticsPanel] = useState(false)
-  const [complaintRunPending, setComplaintRunPending] = useState(false)
   const listDataReqSeqRef = useRef(0)
-  const unmatchedToastSigRef = useRef('')
 
   const selectedInfo = useMemo(() => list.find((x) => String(x.key) === artifactKey) ?? null, [artifactKey, list])
 
@@ -160,32 +252,14 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
       try {
         setLoadingListData(true)
         setListDataError('')
-        setResolveMeta(null)
-        setSnapshotData(null)
         setComplaintAnalysis(null)
         let effectiveProductIds = productIdFilters
         if (productIdFilters.length > 0) {
           const complaint = await fetchComplaintAnalysis(requestOpts, {
             productIds: productIdFilters,
-            snapshotArtifactKey: artifactKey,
-            includeReportViews: ['llm_reports', 'rag_results'],
           })
-          const resolved = complaint.input_summary
           if (reqSeq !== listDataReqSeqRef.current) return
-          setResolveMeta(resolved)
           setComplaintAnalysis(complaint)
-          if (resolved.resolved.length > 0) {
-            effectiveProductIds = resolved.resolved
-          } else {
-            if (reqSeq !== listDataReqSeqRef.current) return
-            setListData([])
-            return
-          }
-          setSnapshotData(complaint.snapshot)
-        } else {
-          const snapshot = await fetchArtifactSnapshotView(artifactKey, requestOpts, { productIds: productIdFilters })
-          if (reqSeq !== listDataReqSeqRef.current) return
-          setSnapshotData(snapshot)
         }
         if (reqSeq !== listDataReqSeqRef.current) return
         const json = await fetchArtifactListView(artifactKey, requestOpts, { productIds: effectiveProductIds })
@@ -195,8 +269,6 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
         if (reqSeq !== listDataReqSeqRef.current) return
         setListData(null)
         setListDataError(String(e?.message || e))
-        setResolveMeta(null)
-        setSnapshotData(null)
         setComplaintAnalysis(null)
       } finally {
         if (reqSeq !== listDataReqSeqRef.current) return
@@ -205,85 +277,6 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
     })()
   }, [artifactKey, productIdFilters, requestOpts])
 
-  const unmatchedDiagnostics = useMemo(() => {
-    if (!resolveMeta || !Array.isArray(resolveMeta.unmatched)) return [] as Array<{
-      productId: string
-      reasonCode: string
-      reasonMessage: string
-      normalized: string[]
-      traceTokens: string[]
-    }>
-    return resolveMeta.unmatched.map((pid) => {
-      const diag = resolveMeta.match_diagnostics?.[pid]
-      return {
-        productId: pid,
-        reasonCode: diag?.reason_code || '',
-        reasonMessage: diag?.reason_message || '',
-        normalized: Array.isArray(resolveMeta.normalized_inputs?.[pid]) ? resolveMeta.normalized_inputs[pid] : [],
-        traceTokens: Array.isArray(resolveMeta.trace_tokens?.[pid]) ? resolveMeta.trace_tokens[pid] : [],
-      }
-    })
-  }, [resolveMeta])
-
-  const inputMatchSummary = useMemo(() => {
-    if (!resolveMeta) return [] as Array<{
-      productId: string
-      matched: boolean
-      hitCount: number
-      matchedStage: string
-      reasonCode: string
-      reasonMessage: string
-      matchedTokens: string[]
-      matchedBy: string[]
-    }>
-    const requested = Array.isArray(resolveMeta.requested) ? resolveMeta.requested : []
-    const mapping = complaintAnalysis?.mapping && typeof complaintAnalysis.mapping === 'object' ? complaintAnalysis.mapping : {}
-    return requested.map((pid) => {
-      const hits = Array.isArray(resolveMeta.matches?.[pid]) ? resolveMeta.matches[pid] : []
-      const diag = resolveMeta.match_diagnostics?.[pid]
-      const mapRow = mapping?.[pid]
-      const mapTokens =
-        mapRow && Array.isArray((mapRow as any).matched_tokens)
-          ? ((mapRow as any).matched_tokens as string[]).map((x) => String(x).trim()).filter(Boolean)
-          : []
-      const stage =
-        mapRow && typeof (mapRow as any).matched_stage === 'string'
-          ? String((mapRow as any).matched_stage)
-          : hits.length > 0
-            ? 'matched_direct'
-            : 'unmatched'
-      return {
-        productId: pid,
-        matched: hits.length > 0,
-        hitCount: hits.length,
-        matchedStage: stage,
-        reasonCode: diag?.reason_code || '',
-        reasonMessage: diag?.reason_message || '',
-        matchedTokens: mapTokens.length > 0 ? mapTokens : hits,
-        matchedBy: Array.isArray(diag?.matched_by) ? diag.matched_by : [],
-      }
-    })
-  }, [complaintAnalysis?.mapping, resolveMeta])
-
-  useEffect(() => {
-    if (!resolveMeta) return
-    const unmatchedCount = Number(resolveMeta.unmatched_count ?? 0)
-    if (unmatchedCount <= 0) return
-    const reasonPairs = Object.entries(resolveMeta.unmatched_reason_counts || {})
-      .filter(([, v]) => Number(v) > 0)
-      .map(([k, v]) => `${k}:${Number(v)}`)
-      .join(', ')
-    const sig = `${unmatchedCount}|${reasonPairs}`
-    if (unmatchedToastSigRef.current === sig) return
-    unmatchedToastSigRef.current = sig
-    showToast(
-      'info',
-      reasonPairs
-        ? `未命中 ${unmatchedCount} 筆（${reasonPairs}）`
-        : `未命中 ${unmatchedCount} 筆`,
-      { key: 'complaint-unmatched-summary', durationMs: 3000 },
-    )
-  }, [resolveMeta, showToast])
 
   const refreshDetailData = useCallback(
     (itemId: string) => {
@@ -316,28 +309,17 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
   }, [refreshList])
 
   useEffect(() => {
-    if (productIdFilters.length > 0) {
-      setComplaintRunPending(true)
-    } else {
-      setComplaintRunPending(false)
-    }
-  }, [productIdFilters])
-
-  useEffect(() => {
     setSelectedId('')
     setQuery('')
     setDetailData(null)
     setDetailError('')
-    if (productIdFilters.length > 0 && complaintRunPending) {
-      return
-    }
     const timer = window.setTimeout(() => {
       refreshListData()
     }, 350)
     return () => {
       window.clearTimeout(timer)
     }
-  }, [artifactKey, complaintRunPending, productIdFilters.length, refreshListData])
+  }, [artifactKey, productIdFilters, refreshListData])
 
   useEffect(() => {
     if (!selectedId) {
@@ -720,85 +702,16 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
     props.view,
   ])
 
-  const resolveDetailIdFromToken = useCallback(
-    (token: string): string => {
-      const t = String(token || '').trim()
-      if (!t) return ''
-      const low = t.toLowerCase()
-
-      if (props.view === 'events') {
-        for (const row of filteredEventRows) {
-          if (row.event_id.toLowerCase() === low) return row.event_id
-          if (row.produce_no && row.produce_no.toLowerCase() === low) return row.event_id
-        }
-        return ''
-      }
-      if (props.view === 'aggregated') {
-        for (const row of filteredAggRows) {
-          if (row.summary_id.toLowerCase() === low) return row.summary_id
-          if (row.analysis_dimension && row.analysis_dimension.toLowerCase() === low) return row.summary_id
-        }
-        return ''
-      }
-      if (props.view === 'weighted') {
-        for (const row of filteredWeightedItems) {
-          if (row.id.toLowerCase() === low) return row.id
-        }
-        return ''
-      }
-      if (props.view === 'rag') {
-        for (const row of filteredRagEvents) {
-          if (row.event_id.toLowerCase() === low) return row.event_id
-        }
-        return ''
-      }
-      if (props.view === 'llm') {
-        for (const row of filteredLlmItems) {
-          if (row.event_id.toLowerCase() === low) return row.event_id
-        }
-        return ''
-      }
-      return ''
-    },
-    [
-      filteredAggRows,
-      filteredEventRows,
-      filteredLlmItems,
-      filteredRagEvents,
-      filteredWeightedItems,
-      props.view,
-    ],
-  )
-
-  const jumpToMappedDetail = useCallback(
-    (tokens: string[]) => {
-      setMappingNotice('')
-      for (const token of tokens) {
-        const id = resolveDetailIdFromToken(token)
-        if (!id) continue
-        setSelectedId(id)
-        setMappingNotice(`已定位到 ${id}`)
-        return
-      }
-      const preview = tokens.slice(0, 3).join(', ')
-      setMappingNotice(
-        preview
-          ? `目前視圖無法定位這些 token：${preview}。可切換 artifacts 視圖再試。`
-          : '目前視圖找不到可關聯 token。',
-      )
-    },
-    [resolveDetailIdFromToken],
-  )
 
   const emptyHint = useMemo(() => {
     const hasFilters = productIdFilters.length > 0
     const allUnmatched =
       hasFilters &&
-      !!resolveMeta &&
-      Number(resolveMeta.requested_count ?? 0) > 0 &&
-      Number(resolveMeta.resolved_count ?? 0) === 0
+      !!complaintAnalysis &&
+      Number(complaintAnalysis.source_scope?.requested_count ?? 0) > 0 &&
+      Number(complaintAnalysis.source_scope?.resolved_count ?? 0) === 0
     if (allUnmatched) {
-      return '此批輸入皆未命中。系統已切換為 diagnostics-only 模式，僅顯示未命中診斷。'
+      return '此批輸入皆未命中（Trace 失敗）。請確認 product_id 是否存在於 P3。'
     }
     if (productIdFilters.length === 0) {
       return '目前沒有可顯示的表格資料（或檔案不存在）。'
@@ -813,375 +726,198 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
       return '目前 product_id 過濾後為 0 筆。此視圖主要索引 summary_id/analysis_dimension。'
     }
     return '目前沒有可顯示的表格資料（或檔案不存在）。'
-  }, [productIdFilters.length, props.view, resolveMeta])
+  }, [complaintAnalysis, productIdFilters.length, props.view])
 
-  const localCrossComplaintSnapshot = useMemo(() => {
-    const stationMap = new Map<string, number>()
-    const machineMap = new Map<string, number>()
-    const featureMap = new Map<string, number>()
-    let sampleCount = 0
 
-    if (props.view === 'events') {
-      for (const row of filteredEventRows) {
-        sampleCount += 1
-        const station = (row.slitting || '').trim() || 'Unknown'
-        const machine = (row.winder || '').trim() || 'Unknown'
-        stationMap.set(station, (stationMap.get(station) ?? 0) + 1)
-        machineMap.set(machine, (machineMap.get(machine) ?? 0) + 1)
-        featureMap.set('IQR', (featureMap.get('IQR') ?? 0) + Number(row.iqr_count || 0))
-        featureMap.set('T2', (featureMap.get('T2') ?? 0) + Number(row.t2_count || 0))
-        featureMap.set('SPE', (featureMap.get('SPE') ?? 0) + Number(row.spe_count || 0))
-      }
-    } else if (props.view === 'weighted') {
-      for (const row of filteredWeightedItems) {
-        sampleCount += 1
-        const t2 = (row.t2_top || '').trim()
-        const spe = (row.spe_top || '').trim()
-        if (t2) featureMap.set(`T2:${t2}`, (featureMap.get(`T2:${t2}`) ?? 0) + 1)
-        if (spe) featureMap.set(`SPE:${spe}`, (featureMap.get(`SPE:${spe}`) ?? 0) + 1)
-      }
-    } else if (props.view === 'llm') {
-      for (const row of filteredLlmItems) {
-        sampleCount += 1
-        featureMap.set('LLM:anomalies', (featureMap.get('LLM:anomalies') ?? 0) + Number(row.total_anomalies || 0))
-      }
-    }
+  const complaintAnalysisCharts = useMemo(() => {
+    const analysis = complaintAnalysis?.analysis
+    if (!analysis || typeof analysis !== 'object') return [] as Array<{
+      station: string
+      basicTop: Array<{ name: string; value: number; metric: string }>
+      outlierTop: Array<{ name: string; count: number }>
+    }>
+    const stations = ['P1', 'P2', 'P3']
+    return stations.map((station) => {
+      const block = (analysis as Record<string, any>)[station] || {}
+      const basicTop =
+        station === 'P3'
+          ? extractBasicStatsTopN(block?.basic_statistics, 8, 'mean')
+          : extractBasicStatsTopN(block?.basic_statistics, 8)
+      const outlierTop = extractOutlierCounts(block?.outliers).slice(0, 8)
+      return { station, basicTop, outlierTop }
+    })
+  }, [complaintAnalysis?.analysis])
 
-    const stationRows = [...stationMap.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count)
-    const machineRows = [...machineMap.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count)
-    const featureRows = [...featureMap.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count)
+  const complaintMachineRows = useMemo(() => {
+    const rows = complaintAnalysis?.machine_distribution ?? []
+    return rows
+      .filter((x) => x && typeof x.name === 'string')
+      .map((x) => ({ name: x.name, count: Number(x.count) || 0 }))
+      .filter((x) => x.name.trim() && x.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12)
+  }, [complaintAnalysis?.machine_distribution])
 
-    return {
-      sampleCount,
-      stationRows,
-      machineRows,
-      featureRows,
-      metrics: {} as Record<string, number>,
-    }
-  }, [filteredEventRows, filteredLlmItems, filteredWeightedItems, props.view])
+  const complaintWinderRows = useMemo(() => {
+    const rows = complaintAnalysis?.winder_distribution ?? []
+    const base = rows
+      .filter((x) => x && typeof x.name === 'string')
+      .map((x) => ({ name: x.name, count: Number(x.count) || 0 }))
+      .filter((x) => x.name.trim() && x.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12)
+    const total = base.reduce((acc, item) => acc + item.count, 0) || 1
+    let running = 0
+    return base.map((item) => {
+      running += item.count
+      return { ...item, cumPct: (running / total) * 100 }
+    })
+  }, [complaintAnalysis?.winder_distribution])
 
-  const crossComplaintSnapshot = useMemo(() => {
-    if (!snapshotData) return localCrossComplaintSnapshot
-    return {
-      sampleCount: Number(snapshotData.sample_count || 0),
-      stationRows: snapshotData.station_distribution.map((x) => ({ name: x.name, count: Number(x.count || 0) })),
-      machineRows: snapshotData.machine_distribution.map((x) => ({ name: x.name, count: Number(x.count || 0) })),
-      featureRows: snapshotData.top_features.map((x) => ({ name: x.name, count: Number(x.count || 0) })),
-      metrics: snapshotData.metrics || {},
-    }
-  }, [localCrossComplaintSnapshot, snapshotData])
-
-  const complaintReportSnapshot = useMemo(() => {
-    const payload = complaintAnalysis?.report_payload
-    if (!payload || typeof payload !== 'object') {
-      return { llm: null as ArtifactUnifiedSnapshot | null, rag: null as ArtifactUnifiedSnapshot | null }
-    }
-    const llm = payload['llm_reports'] ?? null
-    const rag = payload['rag_results'] ?? null
-    return { llm, rag }
-  }, [complaintAnalysis])
-
-  const complaintReportComposition = useMemo(() => {
-    const c = complaintAnalysis?.report_composition
-    if (!c || typeof c !== 'object') {
-      return { summary: [] as string[], suggestions: [] as string[], evidence_refs: [] as Array<{ requested_id: string; token: string; source: string }> }
-    }
-    return {
-      summary: Array.isArray(c.summary) ? c.summary.map((x) => String(x).trim()).filter(Boolean) : [],
-      suggestions: Array.isArray(c.suggestions) ? c.suggestions.map((x) => String(x).trim()).filter(Boolean) : [],
-      evidence_refs: Array.isArray(c.evidence_refs)
-        ? c.evidence_refs
-            .filter((x) => x && typeof x === 'object')
-            .map((x: any) => ({
-              requested_id: String(x.requested_id ?? '').trim(),
-              token: String(x.token ?? '').trim(),
-              source: String(x.source ?? '').trim(),
-            }))
-            .filter((x) => x.token)
-        : [],
-    }
-  }, [complaintAnalysis?.report_composition])
+  const complaintOnlyView = productIdFilters.length > 0
 
   return (
     <div className="analytics-artifacts-root" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="register-block" style={{ width: '100%' }}>
         <div className="register-title" style={{ marginBottom: 8 }}>改善報告</div>
-        <div className="analytics-artifacts-hint" style={{ marginBottom: 10 }}>
-          這些內容來自 Analytical-Four pipeline 產出的 JSON 檔案；若顯示 404，請先在外部產生檔案並放在 `september_v2`（或設定 `ANALYTICS_ARTIFACTS_DIR`）。
-        </div>
-
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button type="button" className="btn-secondary" disabled={loadingList} onClick={refreshList}>
-            {loadingList ? '更新中…' : '刷新清單'}
-          </button>
-          {productIdFilters.length > 0 ? (
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={loadingListData || loadingDetail}
-              onClick={() => {
-                setComplaintRunPending(false)
-                refreshListData()
-              }}
-            >
-              {loadingListData || loadingDetail ? '分析中…' : '開始客訴分析'}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={loadingListData || loadingDetail}
-            onClick={() => {
-              refreshListData()
-              if (selectedId) refreshDetailData(selectedId)
-            }}
-          >
-            {loadingListData || loadingDetail ? '載入中…' : '重新載入（清單/明細）'}
-          </button>
-          <div className="analytics-artifacts-hint">目前：<code>{artifactKey}</code></div>
-          {selectedInfo ? (
-            <div className="analytics-artifacts-hint">
-              檔名：<code>{selectedInfo.filename}</code> / {selectedInfo.exists ? '存在' : '不存在'}
+        {!complaintOnlyView ? (
+          <>
+            <div className="analytics-artifacts-hint" style={{ marginBottom: 10 }}>
+              這些內容來自 Analytical-Four pipeline 產出的 JSON 檔案；若顯示 404，請先在外部產生檔案並放在 `september_v2`（或設定 `ANALYTICS_ARTIFACTS_DIR`）。
             </div>
-          ) : null}
-        </div>
 
-        {productIdFilters.length > 0 ? (
-          <div style={{ marginTop: 10 }}>
-            <div className="analytics-artifacts-hint" style={{ marginBottom: 6 }}>產品編號（{productIdFilters.length}）：</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {productIdFilters.slice(0, 12).map((pid) => (
-                <span key={pid} className="analytics-pill">{pid}</span>
-              ))}
-              {productIdFilters.length > 12 ? <span className="analytics-artifacts-hint">…</span> : null}
-            </div>
-            {complaintRunPending ? (
-              <div className="analytics-artifacts-hint" style={{ marginTop: 6 }}>
-                已更新客訴輸入，請按「開始客訴分析」執行。
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {resolveMeta ? (
-          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <span className="analytics-pill">requested: {Number(resolveMeta.requested_count ?? 0)}</span>
-            <span className="analytics-pill">resolved: {Number(resolveMeta.resolved_count ?? 0)}</span>
-            <span className="analytics-pill">unmatched: {Number(resolveMeta.unmatched_count ?? 0)}</span>
-            <span className="analytics-pill">trace_attempted: {Number(resolveMeta.trace_attempted_count ?? 0)}</span>
-            <span className="analytics-pill">trace_resolved: {Number(resolveMeta.trace_resolved_count ?? 0)}</span>
-            {Object.entries(resolveMeta.unmatched_reason_counts || {}).map(([k, v]) => (
-              <span key={k} className="analytics-pill">{k}: {Number(v || 0)}</span>
-            ))}
-          </div>
-        ) : null}
-
-        {resolveMeta && Number(resolveMeta.requested_count ?? 0) > 0 && Number(resolveMeta.resolved_count ?? 0) === 0 ? (
-          <div style={{ marginTop: 10, border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 8, padding: 10 }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>Diagnostics-only 模式</div>
-            <div className="analytics-artifacts-hint">
-              本次客訴 product_id 全部未命中，已停用圖表/報告資料計算，僅保留未命中原因與 trace 診斷資訊。
-            </div>
-          </div>
-        ) : null}
-
-        {productIdFilters.length > 0 ? (
-          <div style={{ marginTop: 10, border: '1px solid #d1fae5', background: '#ecfdf5', borderRadius: 8, padding: 10 }}>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>跨客訴彙總快照</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-              <span className="analytics-pill">samples: {crossComplaintSnapshot.sampleCount}</span>
-              <span className="analytics-pill">stations: {crossComplaintSnapshot.stationRows.length}</span>
-              <span className="analytics-pill">machines: {crossComplaintSnapshot.machineRows.length}</span>
-              <span className="analytics-pill">features: {crossComplaintSnapshot.featureRows.length}</span>
-              {Object.entries(crossComplaintSnapshot.metrics || {}).slice(0, 4).map(([k, v]) => (
-                <span key={k} className="analytics-pill">{k}: {Number(v || 0)}</span>
-              ))}
-            </div>
-            {(crossComplaintSnapshot.stationRows.length > 0 || crossComplaintSnapshot.machineRows.length > 0) ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10 }}>
-                {crossComplaintSnapshot.stationRows.length > 0 ? (
-                  <div>
-                    <div className="analytics-artifacts-hint" style={{ marginBottom: 6 }}>站點分布 Top</div>
-                    <div className="analytics-chart-wrap" style={{ height: 220, marginTop: 0 }}>
-                      <ResponsiveContainer>
-                        <BarChart data={crossComplaintSnapshot.stationRows.slice(0, 8)}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                          <YAxis allowDecimals={false} />
-                          <Tooltip />
-                          <Bar dataKey="count" fill="#10b981" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                ) : null}
-                {crossComplaintSnapshot.machineRows.length > 0 ? (
-                  <div>
-                    <div className="analytics-artifacts-hint" style={{ marginBottom: 6 }}>機台分布 Top</div>
-                    <div className="analytics-chart-wrap" style={{ height: 220, marginTop: 0 }}>
-                      <ResponsiveContainer>
-                        <BarChart data={crossComplaintSnapshot.machineRows.slice(0, 8)}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                          <YAxis allowDecimals={false} />
-                          <Tooltip />
-                          <Bar dataKey="count" fill="#2563eb" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="analytics-artifacts-hint" style={{ marginBottom: 8 }}>
-                目前 view 沒有可聚合的站點/機台欄位（可切換至 Events 視圖）。
-              </div>
-            )}
-            {crossComplaintSnapshot.featureRows.length > 0 ? (
-              <div style={{ marginTop: 8 }}>
-                <div className="analytics-artifacts-hint" style={{ marginBottom: 6 }}>Top Features</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {crossComplaintSnapshot.featureRows.slice(0, 12).map((x) => (
-                    <span key={x.name} className="analytics-pill">{x.name}: {x.count}</span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {(complaintReportSnapshot.llm || complaintReportSnapshot.rag) ? (
-              <div style={{ marginTop: 10 }}>
-                <div className="analytics-artifacts-hint" style={{ marginBottom: 6 }}>改善報告摘要（complaint-analysis.report_payload）</div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {complaintReportSnapshot.llm ? (
-                    <>
-                      <span className="analytics-pill">llm.samples: {Number(complaintReportSnapshot.llm.sample_count || 0)}</span>
-                      {Object.entries(complaintReportSnapshot.llm.metrics || {}).slice(0, 4).map(([k, v]) => (
-                        <span key={`llm-${k}`} className="analytics-pill">llm.{k}: {Number(v || 0)}</span>
-                      ))}
-                    </>
-                  ) : null}
-                  {complaintReportSnapshot.rag ? (
-                    <>
-                      <span className="analytics-pill">rag.samples: {Number(complaintReportSnapshot.rag.sample_count || 0)}</span>
-                      {Object.entries(complaintReportSnapshot.rag.metrics || {}).slice(0, 4).map(([k, v]) => (
-                        <span key={`rag-${k}`} className="analytics-pill">rag.{k}: {Number(v || 0)}</span>
-                      ))}
-                    </>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-            {(complaintReportComposition.summary.length > 0 ||
-              complaintReportComposition.suggestions.length > 0 ||
-              complaintReportComposition.evidence_refs.length > 0) ? (
-              <div style={{ marginTop: 10, border: '1px solid #dbeafe', background: '#eff6ff', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>改善報告（標準化）</div>
-                {complaintReportComposition.summary.length > 0 ? (
-                  <div style={{ marginBottom: 6 }}>
-                    <div className="analytics-artifacts-hint" style={{ marginBottom: 4 }}>Summary</div>
-                    <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      {complaintReportComposition.summary.slice(0, 5).map((x, idx) => (
-                        <li key={`s-${idx}`}>{x}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                {complaintReportComposition.suggestions.length > 0 ? (
-                  <div style={{ marginBottom: 6 }}>
-                    <div className="analytics-artifacts-hint" style={{ marginBottom: 4 }}>Suggestions</div>
-                    <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      {complaintReportComposition.suggestions.slice(0, 5).map((x, idx) => (
-                        <li key={`g-${idx}`}>{x}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                {complaintReportComposition.evidence_refs.length > 0 ? (
-                  <div>
-                    <div className="analytics-artifacts-hint" style={{ marginBottom: 4 }}>Evidence refs</div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {complaintReportComposition.evidence_refs.slice(0, 10).map((x, idx) => (
-                        <span key={`e-${idx}`} className="analytics-pill">
-                          {x.requested_id ? `${x.requested_id} -> ` : ''}{x.token}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {(inputMatchSummary.length > 0 || unmatchedDiagnostics.length > 0) ? (
-          <div style={{ marginTop: 10, border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 8, padding: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-              <div style={{ fontWeight: 700 }}>診斷摘要</div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button type="button" className="btn-secondary" disabled={loadingList} onClick={refreshList}>
+                {loadingList ? '更新中…' : '刷新清單'}
+              </button>
               <button
                 type="button"
-                className="btn-secondary"
-                onClick={() => setShowDiagnosticsPanel((v) => !v)}
+                className="btn-primary"
+                disabled={loadingListData || loadingDetail}
+                onClick={() => {
+                  refreshListData()
+                  if (selectedId) refreshDetailData(selectedId)
+                }}
               >
-                {showDiagnosticsPanel ? '收合診斷' : '展開診斷'}
+                {loadingListData || loadingDetail ? '載入中…' : '重新載入（清單/明細）'}
               </button>
+              <div className="analytics-artifacts-hint">目前：<code>{artifactKey}</code></div>
+              {selectedInfo ? (
+                <div className="analytics-artifacts-hint">
+                  檔名：<code>{selectedInfo.filename}</code> / {selectedInfo.exists ? '存在' : '不存在'}
+                </div>
+              ) : null}
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <span className="analytics-pill">輸入: {inputMatchSummary.length}</span>
-              <span className="analytics-pill">未命中: {unmatchedDiagnostics.length}</span>
-              <span className="analytics-pill">可關聯: {inputMatchSummary.filter((x) => x.matchedTokens.length > 0).length}</span>
-            </div>
-            {mappingNotice ? (
-              <div className="analytics-artifacts-hint" style={{ marginTop: 6 }}>
-                {mappingNotice}
+
+            {productIdFilters.length > 0 ? (
+              <div style={{ marginTop: 10 }}>
+                <div className="analytics-artifacts-hint" style={{ marginBottom: 6 }}>產品編號（{productIdFilters.length}）：</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {productIdFilters.slice(0, 12).map((pid) => (
+                    <span key={pid} className="analytics-pill">{pid}</span>
+                  ))}
+                  {productIdFilters.length > 12 ? <span className="analytics-artifacts-hint">…</span> : null}
+                </div>
               </div>
             ) : null}
-            {showDiagnosticsPanel ? (
-              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {complaintAnalysis ? (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <span className="analytics-pill">scope_id: {complaintAnalysis.analysis_scope_id}</span>
-                    <span className="analytics-pill">scope_tokens: {Number(complaintAnalysis.scope_tokens_count || 0)}</span>
-                    <span className="analytics-pill">
-                      scope_lock: {complaintAnalysis.consistency?.snapshot_scope_locked && complaintAnalysis.consistency?.report_scope_locked ? 'yes' : 'no'}
-                    </span>
-                    <span className="analytics-pill">t.resolve: {Number(complaintAnalysis.timing?.resolve_ms || 0)}ms</span>
-                    <span className="analytics-pill">t.snapshot: {Number(complaintAnalysis.timing?.snapshot_ms || 0)}ms</span>
-                    <span className="analytics-pill">t.report: {Number(complaintAnalysis.timing?.report_ms || 0)}ms</span>
-                    <span className="analytics-pill">t.total: {Number(complaintAnalysis.timing?.total_ms || 0)}ms</span>
-                  </div>
-                ) : null}
-                {inputMatchSummary.slice(0, 20).map((x) => (
-                  <div key={x.productId} style={{ borderTop: '1px dashed #bfdbfe', paddingTop: 6 }}>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <code>{x.productId}</code>
-                      <span className="analytics-pill">{x.matchedStage || '-'}</span>
-                      <span className="analytics-pill">hit:{x.hitCount}</span>
-                    </div>
-                    {x.matchedTokens.length > 0 ? (
-                      <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {x.matchedTokens.slice(0, 5).map((tk) => (
-                          <span key={`${x.productId}:${tk}`} className="analytics-pill">{tk}</span>
-                        ))}
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => jumpToMappedDetail(x.matchedTokens)}
-                        >
-                          關聯查詢
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="analytics-artifacts-hint" style={{ marginTop: 4 }}>
-                        {x.reasonCode ? `${x.reasonCode}${x.reasonMessage ? ` - ${x.reasonMessage}` : ''}` : '無可用 token'}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          </>
         ) : null}
 
-        <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        {complaintOnlyView ? (
+          complaintAnalysisCharts.length > 0 ? (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {complaintMachineRows.length > 0 ? (
+                <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Machine NO 分布（客訴模式）</div>
+                  <div className="analytics-chart-wrap" style={{ height: 240, marginTop: 0 }}>
+                    <ResponsiveContainer>
+                      <BarChart data={complaintMachineRows} layout="vertical" margin={{ left: 80, right: 12 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" allowDecimals={false} />
+                        <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
+                        <Tooltip />
+                        <Bar dataKey="count" fill="#2563eb" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              ) : null}
+              {complaintAnalysisCharts.map((row) => (
+                <div key={row.station} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>{row.station} 即時分析視覺化</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+                    {row.station === 'P2' && complaintWinderRows.length > 0 ? (
+                      <div>
+                        <div className="analytics-artifacts-hint" style={{ marginBottom: 6 }}>Winder number 累積直方圖</div>
+                        <div className="analytics-chart-wrap" style={{ height: 220, marginTop: 0 }}>
+                          <ResponsiveContainer>
+                            <ComposedChart data={complaintWinderRows} margin={{ left: 40, right: 12 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="name" interval={0} angle={-20} height={60} textAnchor="end" />
+                              <YAxis yAxisId="left" allowDecimals={false} />
+                              <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                              <Tooltip
+                                formatter={(value, name) => {
+                                  const n = typeof value === 'number' ? value : Number(value)
+                                  if (name === 'cumPct') return [`${n.toFixed(2)}%`, '累積']
+                                  return [Number.isFinite(n) ? n : value, '筆數']
+                                }}
+                              />
+                              <Legend />
+                              <Bar yAxisId="left" dataKey="count" name="筆數" fill="#2563eb" />
+                              <Line yAxisId="right" dataKey="cumPct" name="累積" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div>
+                      <div className="analytics-artifacts-hint" style={{ marginBottom: 6 }}>Basic stats Top N（依 {row.basicTop[0]?.metric || 'std'}）</div>
+                      {row.basicTop.length > 0 ? (
+                        <div className="analytics-chart-wrap" style={{ height: 220, marginTop: 0 }}>
+                          <ResponsiveContainer>
+                            <BarChart data={row.basicTop} layout="vertical" margin={{ left: 80 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis type="number" allowDecimals={false} />
+                              <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
+                              <Tooltip />
+                              <Bar dataKey="value" fill="#0ea5e9" />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <div className="analytics-artifacts-hint">尚無 basic stats 資料</div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="analytics-artifacts-hint" style={{ marginBottom: 6 }}>Outliers 分布 Top N</div>
+                      {row.outlierTop.length > 0 ? (
+                        <div className="analytics-chart-wrap" style={{ height: 220, marginTop: 0 }}>
+                          <ResponsiveContainer>
+                            <BarChart data={row.outlierTop} layout="vertical" margin={{ left: 80 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis type="number" allowDecimals={false} />
+                              <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
+                              <Tooltip />
+                              <Bar dataKey="count" fill="#f97316" />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <div className="analytics-artifacts-hint">尚無 outliers 資料</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="analytics-artifacts-hint" style={{ marginTop: 10 }}>尚無即時分析視覺化資料</div>
+          )
+        ) : null}
+
+        {!complaintOnlyView ? (
+          <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             className="register-input"
             placeholder={props.view === 'events' ? '搜尋 event_id / Produce_No. / Winder…' : '搜尋 id / 維度 / key…'}
@@ -1224,14 +960,16 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
             ) : null}
           </div>
         </div>
+        ) : null}
 
         {listError ? <div className="error" style={{ marginTop: 10 }}>{listError}</div> : null}
         {listDataError ? <div className="error" style={{ marginTop: 10 }}>{listDataError}</div> : null}
         {detailError ? <div className="error" style={{ marginTop: 10 }}>{detailError}</div> : null}
       </div>
 
-      {props.view === 'events' && eventRows.length > 0 ? (
-        <div className="analytics-report-grid">
+      {!complaintOnlyView ? (
+        props.view === 'events' && eventRows.length > 0 ? (
+          <div className="analytics-report-grid">
           <div className="register-block">
             <div className="register-title" style={{ marginBottom: 8 }}>事件清單（{filteredEventRows.length}）</div>
             {eventTrendData.length > 0 ? (
@@ -1763,7 +1501,8 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
             </div>
           ) : null}
         </div>
-      )}
+      )
+      ) : null}
     </div>
   )
 }

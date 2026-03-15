@@ -51,42 +51,37 @@ export type ArtifactUnifiedSnapshot = {
   metrics: Record<string, number>
 }
 
+export type MachineDistributionBucket = {
+  name: string
+  count: number
+}
+
 export type ComplaintAnalysisResult = {
-  artifact_key: string
-  analysis_scope_id: string
-  scope_tokens_count: number
-  input_summary: ArtifactInputResolveResult
+  requested_ids: string[]
   mapping: Record<
     string,
     {
-      matched_tokens: string[]
-      reason_code: string
-      reason_message: string
-      matched_stage: 'matched_direct' | 'matched_trace' | 'unmatched' | string
+      matched_stage: string
+      missing_stages?: string[]
+      trace_status?: {
+        p1: boolean
+        p2: boolean
+        p3: boolean
+      }
     }
   >
-  snapshot: ArtifactUnifiedSnapshot
-  report_payload: Record<string, ArtifactUnifiedSnapshot>
-  report_composition: {
-    summary: string[]
-    suggestions: string[]
-    evidence_refs: Array<{
-      requested_id: string
-      token: string
-      source: string
-    }>
+  source_scope: {
+    requested_count: number
+    resolved_count: number
+    merged_rows: number
   }
-  consistency: {
-    snapshot_scope_locked: boolean
-    report_scope_locked: boolean
-    scope_tokens_count: number
-    snapshot_sample_count: number
-    report_sample_counts: Record<string, number>
-  }
+  analysis: Record<string, unknown>
+  machine_distribution?: MachineDistributionBucket[]
+  winder_distribution?: MachineDistributionBucket[]
   timing: {
-    resolve_ms: number
-    snapshot_ms: number
-    report_ms: number
+    trace_ms: number
+    scope_ms: number
+    analysis_ms: number
     total_ms: number
   }
   elapsed_ms?: number
@@ -313,7 +308,7 @@ export async function fetchArtifactSnapshotView(
 
 export async function fetchComplaintAnalysis(
   opts?: { headers?: Record<string, string> },
-  payload?: { productIds?: string[]; snapshotArtifactKey?: ArtifactKey; includeReportViews?: ArtifactKey[] },
+  payload?: { productIds?: string[]; includeBasicStats?: boolean; includeOutliers?: boolean; includeContribution?: boolean },
 ): Promise<ComplaintAnalysisResult> {
   const init: RequestInit = {
     method: 'POST',
@@ -323,8 +318,9 @@ export async function fetchComplaintAnalysis(
     },
     body: JSON.stringify({
       product_ids: (payload?.productIds ?? []).map((s) => s.trim()).filter(Boolean),
-      snapshot_artifact_key: payload?.snapshotArtifactKey ?? 'serialized_events',
-      include_report_views: (payload?.includeReportViews ?? ['llm_reports', 'rag_results']).map(String),
+      include_basic_stats: payload?.includeBasicStats ?? true,
+      include_outliers: payload?.includeOutliers ?? true,
+      include_contribution: payload?.includeContribution ?? false,
     }),
   }
 
@@ -341,62 +337,30 @@ export async function fetchComplaintAnalysis(
 
   const json = (await res.json()) as Partial<ComplaintAnalysisResult> & Record<string, any>
   return {
-    artifact_key: typeof json.artifact_key === 'string' ? json.artifact_key : String(payload?.snapshotArtifactKey ?? 'serialized_events'),
-    analysis_scope_id: typeof json.analysis_scope_id === 'string' ? json.analysis_scope_id : 'empty',
-    scope_tokens_count: Number(json.scope_tokens_count) || 0,
-    input_summary: (json.input_summary || {
-      requested: [],
-      requested_count: 0,
-      normalized_inputs: {},
-      resolved: [],
-      resolved_count: 0,
-      unmatched: [],
-      unmatched_count: 0,
-      matches: {},
-      match_diagnostics: {},
-      trace_tokens: {},
-      trace_attempted_count: 0,
-      trace_resolved_count: 0,
-      unmatched_reason_counts: {},
-    }) as ArtifactInputResolveResult,
+    requested_ids: Array.isArray(json.requested_ids) ? (json.requested_ids as string[]) : [],
     mapping: json.mapping && typeof json.mapping === 'object' ? (json.mapping as ComplaintAnalysisResult['mapping']) : {},
-    snapshot: (json.snapshot || {
-      artifact_key: String(payload?.snapshotArtifactKey ?? 'serialized_events'),
-      sample_count: 0,
-      station_distribution: [],
-      machine_distribution: [],
-      top_features: [],
-      metrics: {},
-    }) as ArtifactUnifiedSnapshot,
-    report_payload:
-      json.report_payload && typeof json.report_payload === 'object'
-        ? (json.report_payload as Record<string, ArtifactUnifiedSnapshot>)
-        : {},
-    report_composition:
-      json.report_composition && typeof json.report_composition === 'object'
-        ? (json.report_composition as ComplaintAnalysisResult['report_composition'])
+    source_scope:
+      json.source_scope && typeof json.source_scope === 'object'
+        ? (json.source_scope as ComplaintAnalysisResult['source_scope'])
         : {
-            summary: [],
-            suggestions: [],
-            evidence_refs: [],
+            requested_count: 0,
+            resolved_count: 0,
+            merged_rows: 0,
           },
-    consistency:
-      json.consistency && typeof json.consistency === 'object'
-        ? (json.consistency as ComplaintAnalysisResult['consistency'])
-        : {
-            snapshot_scope_locked: false,
-            report_scope_locked: false,
-            scope_tokens_count: 0,
-            snapshot_sample_count: 0,
-            report_sample_counts: {},
-          },
+    analysis: json.analysis && typeof json.analysis === 'object' ? (json.analysis as Record<string, unknown>) : {},
+    machine_distribution: Array.isArray(json.machine_distribution)
+      ? (json.machine_distribution as ComplaintAnalysisResult['machine_distribution'])
+      : [],
+    winder_distribution: Array.isArray(json.winder_distribution)
+      ? (json.winder_distribution as ComplaintAnalysisResult['winder_distribution'])
+      : [],
     timing:
       json.timing && typeof json.timing === 'object'
         ? (json.timing as ComplaintAnalysisResult['timing'])
         : {
-            resolve_ms: 0,
-            snapshot_ms: 0,
-            report_ms: 0,
+            trace_ms: 0,
+            scope_ms: 0,
+            analysis_ms: 0,
             total_ms: 0,
           },
     elapsed_ms: Number(json.elapsed_ms) || 0,
