@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import re
@@ -24,6 +25,19 @@ logger = get_logger(__name__)
 
 
 MAX_CSV_BYTES = 10 * 1024 * 1024
+
+# Concurrency limiter: prevent overwhelming the external PDF server
+# when multiple conversion jobs run in parallel (BackgroundTasks are concurrent).
+_pdf_convert_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_pdf_convert_semaphore() -> asyncio.Semaphore:
+    """Lazy-init semaphore (must be created inside a running event loop)."""
+    global _pdf_convert_semaphore
+    if _pdf_convert_semaphore is None:
+        max_concurrent = int(getattr(get_settings(), "pdf_server_max_concurrent", 3))
+        _pdf_convert_semaphore = asyncio.Semaphore(max_concurrent)
+    return _pdf_convert_semaphore
 
 
 class PdfServerNotConfigured(RuntimeError):
@@ -71,22 +85,18 @@ async def _call_pdf_server_convert(
     options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
-    base_url = (getattr(settings, "pdf_server_url", None) or "").strip()
-    if not base_url:
+    url = (getattr(settings, "pdf_server_url", None) or "").strip()
+    if not url:
         raise PdfServerNotConfigured("PDF_SERVER_URL is not configured")
+    # Append /process if the URL doesn't already end with a path segment
+    if url.rstrip("/").count("/") <= 2:
+        # e.g., "http://host:port" -> "http://host:port/process"
+        url = url.rstrip("/") + "/process"
 
-    convert_path = (
-        getattr(settings, "pdf_server_convert_path", None) or "/convert"
-    ).strip() or "/convert"
-    url = base_url.rstrip("/") + (
-        convert_path if convert_path.startswith("/") else ("/" + convert_path)
-    )
-
-    timeout_seconds = int(getattr(settings, "pdf_server_timeout_seconds", 60))
+    timeout_seconds = int(getattr(settings, "pdf_server_timeout_seconds", 300))
 
     async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-        is_process_endpoint = url.rstrip("/").lower().endswith("/process")
-        if is_process_endpoint:
+        if url.rstrip("/").lower().endswith("/process"):
             # Legacy/LLM Table Processor style: /process expects multipart fields:
             # - table: required (P1/P2/P3)
             # - files: array of PDF files
@@ -361,14 +371,24 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
             job.progress = 45
             await db.commit()
 
-            # Call external server
-            result = await _call_pdf_server_convert(
-                pdf_bytes=pdf_bytes,
-                filename=upload.filename,
-                options={
-                    "output_format": "csv",
-                },
-            )
+            # Call external server (with concurrency limiter to avoid overwhelming it)
+            sem = _get_pdf_convert_semaphore()
+            async with sem:
+                logger.info(
+                    "Calling PDF server for conversion",
+                    job_id=str(job_id),
+                    filename=upload.filename,
+                )
+                result = await _call_pdf_server_convert(
+                    pdf_bytes=pdf_bytes,
+                    filename=upload.filename,
+                    options={
+                        "output_format": "csv",
+                    },
+                )
+
+            job.progress = 70
+            await db.commit()
 
             csvs, selected_name = _extract_csv_texts(
                 result, pdf_filename=upload.filename

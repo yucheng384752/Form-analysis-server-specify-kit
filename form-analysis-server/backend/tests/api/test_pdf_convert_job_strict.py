@@ -1,5 +1,6 @@
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -57,10 +58,14 @@ async def test_pdf_convert_status_not_started(client, db_session_clean):
 
 
 @pytest.mark.asyncio
-async def test_pdf_convert_trigger_creates_job_and_status(client, db_session_clean):
+async def test_pdf_convert_trigger_creates_job_and_status(client, db_session_clean, monkeypatch):
     tenant = Tenant(name="T1", code="t1", is_default=True, is_active=True)
     db_session_clean.add(tenant)
     await db_session_clean.commit()
+
+    # Mock pdf_server_url so endpoint doesn't return 503
+    settings = get_settings()
+    monkeypatch.setattr(settings, "pdf_server_url", "http://fake-pdf-server:8080")
 
     files = {"file": (_pdf_filename(), _pdf_bytes(), "application/pdf")}
     upload_resp = await client.post(
@@ -88,7 +93,6 @@ async def test_pdf_convert_trigger_creates_job_and_status(client, db_session_cle
     assert body["job_id"] == trigger_body["job_id"]
 
     # Cleanup uploaded file to keep workspace tidy
-    settings = get_settings()
     pdf_path = Path(settings.upload_temp_dir) / "pdf" / f"{process_id}.pdf"
     try:
         pdf_path.unlink(missing_ok=True)
@@ -98,11 +102,15 @@ async def test_pdf_convert_trigger_creates_job_and_status(client, db_session_cle
 
 
 @pytest.mark.asyncio
-async def test_pdf_convert_is_tenant_scoped(client, db_session_clean):
+async def test_pdf_convert_is_tenant_scoped(client, db_session_clean, monkeypatch):
     t1 = Tenant(name="T1", code="t1", is_default=False, is_active=True)
     t2 = Tenant(name="T2", code="t2", is_default=True, is_active=True)
     db_session_clean.add_all([t1, t2])
     await db_session_clean.commit()
+
+    # Mock pdf_server_url so endpoint doesn't return 503 before tenant check
+    settings = get_settings()
+    monkeypatch.setattr(settings, "pdf_server_url", "http://fake-pdf-server:8080")
 
     files = {"file": (_pdf_filename(), _pdf_bytes(), "application/pdf")}
     upload_resp = await client.post(
@@ -118,7 +126,6 @@ async def test_pdf_convert_is_tenant_scoped(client, db_session_clean):
     assert other_tenant_trigger.status_code == 404, other_tenant_trigger.text
 
     # Cleanup
-    settings = get_settings()
     pdf_path = Path(settings.upload_temp_dir) / "pdf" / f"{process_id}.pdf"
     try:
         pdf_path.unlink(missing_ok=True)

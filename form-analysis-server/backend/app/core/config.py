@@ -55,17 +55,24 @@ class Settings(BaseSettings):
         description="Base URL of external PDF conversion service (optional)",
         alias="PDF_SERVER_URL",
     )
-    pdf_server_convert_path: str = Field(
-        default="/convert",
-        description="Convert endpoint path on PDF server",
-        alias="PDF_SERVER_CONVERT_PATH",
-    )
+    # pdf_server_convert_path: str = Field(
+    #     default="/process",
+    #     description="Convert endpoint path on PDF server",
+    #     alias="PDF_SERVER_CONVERT_PATH",
+    # )
     pdf_server_timeout_seconds: int = Field(
-        default=60,
+        default=300,
         ge=1,
         le=600,
         description="Timeout (seconds) for PDF server requests",
         alias="PDF_SERVER_TIMEOUT_SECONDS",
+    )
+    pdf_server_max_concurrent: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Max concurrent PDF conversion requests to external server",
+        alias="PDF_SERVER_MAX_CONCURRENT",
     )
 
     pdf_server_table: str = Field(
