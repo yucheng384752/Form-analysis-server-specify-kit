@@ -1,3 +1,4 @@
+import { ParetoChart } from '../components/analytics/ParetoChart'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEventHandler } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DayPicker, type DateRange } from 'react-day-picker'
@@ -272,6 +273,55 @@ function toCumsumSeries(items: ReadonlyArray<{ name: string; pct: number }>): Ar
     cum = Math.min(100, round3(cum + pct3))
     return { name: x.name, pct: pct3, cumPct: cum }
   })
+}
+
+type ParetoItem = { name: string; value: number }
+type ParetoPoint = { name: string; value: number; cumPct: number }
+
+const PARETO_ENABLED_DAILY = true
+const PARETO_TOP_N = 12
+const PARETO_CUM_THRESHOLD = 0.8
+const PARETO_MIN_COUNT = 1
+const PARETO_SHOW_ZERO = false
+const PARETO_SOURCE_NG = true
+const PARETO_SOURCE_FEATURE = true
+
+function buildParetoSeries(
+  items: ReadonlyArray<ParetoItem>,
+  options: {
+    topN?: number
+    cumThreshold?: number
+    minValue?: number
+    showZero?: boolean
+  }
+): ParetoPoint[] {
+  const minValue = options.minValue ?? 0
+  const showZero = options.showZero ?? false
+  const topN = options.topN
+  const cumThreshold = options.cumThreshold
+
+  const filtered = items
+    .map((item) => ({
+      name: String(item.name || '').trim(),
+      value: Number(item.value) || 0,
+    }))
+    .filter((item) => item.name && (showZero ? item.value >= minValue : item.value >= minValue))
+    .sort((a, b) => b.value - a.value)
+
+  if (filtered.length === 0) return []
+
+  const total = filtered.reduce((acc, item) => acc + item.value, 0) || 0
+  let running = 0
+  const out: ParetoPoint[] = []
+  for (const item of filtered) {
+    running += item.value
+    const cumPct = total > 0 ? round3((running / total) * 100) : 0
+    out.push({ name: item.name, value: item.value, cumPct })
+    if (topN && out.length >= topN) break
+    if (cumThreshold && total > 0 && running / total >= cumThreshold) break
+  }
+
+  return out
 }
 
 export function AnalyticsPage() {
@@ -673,6 +723,44 @@ export function AnalyticsPage() {
       return { ...d, cumPct: totalNg > 0 ? round3((cum / totalNg) * 100) : 0 }
     })
   }, [categoryCards])
+
+  const ngParetoData = useMemo(() => {
+    if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_NG || !analysisResult) return [] as ParetoPoint[]
+    const candidates = ['P2.NG_code', 'NG_code', 'P3.NG_code']
+    let bucket: Record<string, RatioNode> | null = null
+    for (const key of candidates) {
+      const entry = analysisResult[key]
+      if (entry && typeof entry === 'object') {
+        bucket = entry as Record<string, RatioNode>
+        break
+      }
+    }
+    if (!bucket) return []
+    const items: ParetoItem[] = Object.entries(bucket)
+      .map(([name, node]) => ({
+        name,
+        value: Number(node?.count_0 ?? 0) || 0,
+      }))
+    return buildParetoSeries(items, {
+      topN: PARETO_TOP_N,
+      cumThreshold: PARETO_CUM_THRESHOLD,
+      minValue: PARETO_MIN_COUNT,
+      showZero: PARETO_SHOW_ZERO,
+    })
+  }, [analysisResult])
+
+  const featureParetoData = useMemo(() => {
+    if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_FEATURE || !extractionData) return [] as ParetoPoint[]
+    const items: ParetoItem[] = Object.entries(extractionData.final_raw_score || {}).map(
+      ([name, value]) => ({ name, value: Number(value) || 0 })
+    )
+    return buildParetoSeries(items, {
+      topN: PARETO_TOP_N,
+      cumThreshold: PARETO_CUM_THRESHOLD,
+      minValue: PARETO_MIN_COUNT,
+      showZero: PARETO_SHOW_ZERO,
+    })
+  }, [extractionData])
 
   const heatColor = useCallback((rate: number) => {
     const r = Math.max(0, Math.min(1, Number.isFinite(rate) ? rate : 0))
@@ -1541,48 +1629,46 @@ export function AnalyticsPage() {
 
             {ngError ? <div className="analytics-error">{ngError}</div> : null}
 
-            {/* Extraction Analysis: Feature Importance (final_raw_score) */}
-            {extractionLoading ? (
-              <div className="analytics-empty" style={{ margin: '12px 0' }}>
-                {t('analytics.loading')} (Extraction Analysis)
-              </div>
-            ) : extractionData ? (() => {
-              const entries = Object.entries(extractionData.final_raw_score)
-                .filter(([, v]) => v > 0)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 15)
-              if (entries.length === 0) return null
-              const maxScore = entries[0][1]
-              const chartData = entries.map(([name, score]) => ({
-                name,
-                score: Math.round(score * 1000) / 1000,
-                boundary: extractionData.boundary_count[name] ?? 0,
-                spe: Math.round((extractionData.spe_score[name] ?? 0) * 100) / 100,
-                t2: Math.round((extractionData.t2_score[name] ?? 0) * 100) / 100,
-              }))
-              const chartHeight = Math.max(200, entries.length * 32 + 40)
-              return (
-                <div style={{ marginBottom: 16 }}>
-                  <h4 style={{ margin: '8px 0', fontWeight: 600, fontSize: '0.95rem' }}>
-                    Feature Importance (IQR + PCA)
-                  </h4>
-                  <div style={{ width: '100%', height: chartHeight }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} layout="vertical" margin={{ left: 140, right: 20, top: 5, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                        <XAxis type="number" domain={[0, Math.ceil(maxScore * 1.1)]} />
-                        <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
-                        <Tooltip
-                          formatter={((value: any, name: any) => {
-                            const labels: Record<string, string> = { score: 'Final Score', boundary: 'Boundary Count', spe: 'SPE Score', t2: 'T² Score' }
-                            return [value ?? 0, labels[name] ?? name]
-                          }) as any}
-                        />
-                        <Bar dataKey="score" fill="#ef4444" name="Final Score" radius={[0, 4, 4, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <details style={{ marginTop: 4 }}>
+            {PARETO_ENABLED_DAILY ? (
+              <div style={{ marginBottom: 16 }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                    gap: 12,
+                  }}
+                >
+                  {PARETO_SOURCE_NG ? (
+                    ngParetoData.length > 0 ? (
+                      <ParetoChart
+                        title="NG Pareto (count_0)"
+                        data={ngParetoData}
+                        valueLabel="NG數量"
+                        cumLabel="累積%"
+                      />
+                    ) : (
+                      <div className="analytics-empty">NG Pareto 暫無資料</div>
+                    )
+                  ) : null}
+
+                  {PARETO_SOURCE_FEATURE ? (
+                    extractionLoading ? (
+                      <div className="analytics-empty">{t('analytics.loading')} (Feature Pareto)</div>
+                    ) : featureParetoData.length > 0 ? (
+                      <ParetoChart
+                        title="Feature Pareto (final_raw_score)"
+                        data={featureParetoData}
+                        valueLabel="Final Score"
+                        cumLabel="累積%"
+                      />
+                    ) : (
+                      <div className="analytics-empty">Feature Pareto 暫無資料</div>
+                    )
+                  ) : null}
+                </div>
+
+                {PARETO_SOURCE_FEATURE && extractionData ? (
+                  <details style={{ marginTop: 8 }}>
                     <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: '#666' }}>
                       {t('analytics.viewDetails')}
                     </summary>
@@ -1597,21 +1683,21 @@ export function AnalyticsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {chartData.map((row) => (
-                          <tr key={row.name} style={{ borderBottom: '1px solid #eee' }}>
-                            <td style={{ padding: '3px 8px' }}>{row.name}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{row.boundary}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{row.spe}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{row.t2}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 8px', fontWeight: 600 }}>{row.score}</td>
+                        {Object.entries(extractionData.final_raw_score).map(([name, score]) => (
+                          <tr key={name} style={{ borderBottom: '1px solid #eee' }}>
+                            <td style={{ padding: '3px 8px' }}>{name}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{extractionData.boundary_count[name] ?? 0}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{round3(extractionData.spe_score[name] ?? 0)}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{round3(extractionData.t2_score[name] ?? 0)}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 8px', fontWeight: 600 }}>{round3(score)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </details>
-                </div>
-              )
-            })() : null}
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="analytics-ng-results">
               {ngLoading && ngRecords.length === 0 ? <div className="analytics-empty">{t('analytics.loading')}</div> : null}

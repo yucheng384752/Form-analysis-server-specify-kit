@@ -12,6 +12,7 @@
 -  **檔案上傳與驗證** - 支援 CSV、Excel (.xlsx) 格式，即時驗證資料格式（不支援 .xls）
 -  **資料預覽與編輯** - 上傳後即時預覽，支援錯誤修正
 -  **生產鏈追蹤** - P1→P2→P3 完整生產流程管理
+-  **資料分析** - 日常分析/客訴追溯、NG 鑽取、Pareto 分析
 -  **PostgreSQL 資料庫** - 高效能、可擴展的關聯式資料庫
 -  **現代化介面** - 基於 Figma 設計系統的響應式介面
 -  **Docker 容器化** - 一鍵啟動，環境隔離
@@ -28,7 +29,8 @@
 ├── 後端 (FastAPI + Python)
 │   ├── 非同步 API 處理
 │   ├── 資料驗證與轉換
-│   └── 檔案處理服務
+│   ├── 檔案處理服務
+│   └── Analytical-Four Adapter（即時分析/客訴分析）
 └── 資料庫 (PostgreSQL 16)
     ├── 擠出記錄 (P1)
     ├── 分條記錄 (P2)
@@ -220,6 +222,10 @@ docker-compose down
 # 完全清理（包含資料）
 docker-compose down -v --remove-orphans
 ```
+
+##  相關文件
+
+- 資料分析操作：dev-guides/DATA_ANALYSIS_GUIDE.md
 
 ##  資料庫結構
 
