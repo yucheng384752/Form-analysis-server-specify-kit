@@ -247,6 +247,16 @@
   background-color: #ffffff;
 }
 
+.csv-editor__cell-input--star {
+  background-color: #fefce8;
+  border-color: #eab308;
+}
+
+.csv-editor__cell-input--star:focus {
+  border-color: #ca8a04;
+  background-color: #fefce8;
+}
+
 .csv-editor__hint {
   margin-top: 0.35rem;
   font-size: 0.75rem;

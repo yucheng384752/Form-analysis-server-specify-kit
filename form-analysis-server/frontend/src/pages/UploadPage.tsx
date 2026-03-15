@@ -1,5 +1,5 @@
 // src/pages/UploadPage.tsx
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useToast } from "../components/common/ToastContext";
 import { ProgressBar } from "../components/common/ProgressBar";
@@ -16,6 +16,7 @@ export interface CsvData {
   headers: string[];
   rows: string[][];
   colWidths: number[];
+  starCells: Set<string>;
 }
 
 export interface UploadedFile {
@@ -97,11 +98,35 @@ async function parseCsv(file: File): Promise<CsvData> {
   const text = await file.text();
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (!lines.length) {
-    return { headers: [], rows: [], colWidths: [] };
+    return { headers: [], rows: [], colWidths: [], starCells: new Set() };
   }
   const rows = lines.map((line) => line.split(","));
   const headers = rows[0];
   const dataRows = rows.slice(1);
+
+  // 偵測帶 * 或前後空格的儲存格，標記為顯著值
+  const starCells = new Set<string>();
+  for (let r = 0; r < dataRows.length; r++) {
+    for (let c = 0; c < dataRows[r].length; c++) {
+      const raw = dataRows[r][c];
+      if (!raw) continue;
+      let marked = false;
+      let cleaned = raw;
+      // 偵測 *
+      if (cleaned.includes('*')) {
+        marked = true;
+        cleaned = cleaned.replace(/\*/g, '');
+      }
+      // 偵測前後空格（不含中間正常空格）
+      if (cleaned !== cleaned.trim()) {
+        marked = true;
+      }
+      if (marked) {
+        starCells.add(`${r}_${c}`);
+        dataRows[r][c] = cleaned;
+      }
+    }
+  }
 
   const colCount = headers.length;
   const colWidths = new Array(colCount).fill(0);
@@ -120,7 +145,7 @@ async function parseCsv(file: File): Promise<CsvData> {
     Math.max(80, Math.min(len * 10, 260))
   );
 
-  return { headers, rows: dataRows, colWidths: pixelWidths };
+  return { headers, rows: dataRows, colWidths: pixelWidths, starCells };
 }
 
 export function UploadPage() {
@@ -1790,6 +1815,35 @@ interface CsvEditorProps {
 
 function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
   const { t } = useTranslation();
+  const termMap = useMemo(() => {
+    const raw = t('專有名詞對照表', { returnObjects: true }) as Record<string, string> | string;
+    if (!raw || typeof raw !== 'object') return {} as Record<string, string>;
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      out[String(key)] = String(value);
+    }
+    return out;
+  }, [t]);
+  const termMapLower = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(termMap)) {
+      out[key.trim().toLowerCase()] = value;
+    }
+    return out;
+  }, [termMap]);
+  const getHeaderLabel = useCallback((header: string) => {
+    const raw = String(header ?? '');
+    if (!raw) return '';
+    if (raw.trim().toLowerCase() === 'specification') {
+      if (file.type === 'P1') return termMap['P1.Specification'] || 'P1.Specification';
+      if (file.type === 'P2') return termMap['P2.Specification'] || 'Specification';
+      if (file.type === 'P3') return termMap['P3.Specification'] || 'P3.Specification';
+    }
+    const direct = termMap[raw];
+    if (direct) return direct;
+    const normalized = raw.trim().toLowerCase();
+    return termMapLower[normalized] || raw;
+  }, [file.type, termMap, termMapLower]);
 
   // 創建錯誤映射表，以便快速查找特定行/列的錯誤
   const errorMap = new Map<string, ValidationError>();
@@ -1855,7 +1909,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                   key={idx}
                   style={{ width: `${csv.colWidths[idx]}px` }}
                 >
-                  {h}
+                  {getHeaderLabel(h)}
                 </th>
               ))}
             </tr>
@@ -1872,18 +1926,19 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                   {row.map((cell, cIdx) => {
                     const cellError = getCellError(originalRowIndex, cIdx);
                     const hasError = !!cellError;
-                    
+                    const isStar = csv.starCells?.has(`${originalRowIndex}_${cIdx}`);
+
                     return (
                       <td
                         key={cIdx}
-                        style={{ 
+                        style={{
                           width: `${csv.colWidths[cIdx] ?? 160}px`,
                           position: 'relative'
                         }}
-                        title={hasError ? t('upload.csvEditor.cellErrorTitle', { message: cellError.message }) : ''}
+                        title={hasError ? t('upload.csvEditor.cellErrorTitle', { message: cellError.message }) : isStar ? t('upload.csvEditor.starCellTitle', { defaultValue: '此欄位為顯著值 (原始資料含 * 或前後空格)' }) : ''}
                       >
                         <input
-                          className={`csv-editor__cell-input ${hasError ? 'csv-editor__cell-input--error' : ''}`}
+                          className={`csv-editor__cell-input ${hasError ? 'csv-editor__cell-input--error' : isStar ? 'csv-editor__cell-input--star' : ''}`}
                           value={cell ?? ''}
                           readOnly={!EDIT_ENABLED}
                           onChange={(e) => {
@@ -1894,6 +1949,9 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                             backgroundColor: '#fecaca',
                             borderColor: '#dc2626',
                             color: '#dc2626'
+                          } : isStar ? {
+                            backgroundColor: '#fefce8',
+                            borderColor: '#eab308',
                           } : {}}
                         />
                         {hasError && (
