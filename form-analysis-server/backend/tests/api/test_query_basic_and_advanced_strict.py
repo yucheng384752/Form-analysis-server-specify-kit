@@ -553,6 +553,7 @@ async def test_legacy_advanced_p3_filters_machine_and_specification(
             lot_no=lot_no,
             source_winder=5,
             specification="PE 32",
+            product_id=product_id,
             row_data={
                 "specification": "PE 32",
                 "machine_no": "P24",

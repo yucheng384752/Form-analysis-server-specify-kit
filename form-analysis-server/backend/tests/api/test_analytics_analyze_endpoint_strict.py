@@ -39,8 +39,8 @@ async def _create_tenant(db_session) -> Tenant:
 async def test_v2_analytics_analyze_success(client, db_session, monkeypatch):
     tenant = await _create_tenant(db_session)
 
-    def fake_run_external_categorical_analysis(
-        *, start_date, end_date, product_id, stations
+    async def fake_run_external_categorical_analysis_from_db(
+        *, db, tenant_id, start_date, end_date, product_id, product_ids=None, stations
     ):
         assert start_date == "2025-09-01"
         assert end_date == "2025-09-01"
@@ -61,8 +61,8 @@ async def test_v2_analytics_analyze_success(client, db_session, monkeypatch):
 
     monkeypatch.setattr(
         analytics_external,
-        "run_external_categorical_analysis",
-        fake_run_external_categorical_analysis,
+        "run_external_categorical_analysis_from_db",
+        fake_run_external_categorical_analysis_from_db,
     )
 
     headers = {"X-Tenant-Id": str(tenant.id)}
@@ -88,8 +88,8 @@ async def test_v2_analytics_analyze_file_not_found_does_not_leak_paths(
 ):
     tenant = await _create_tenant(db_session)
 
-    def fake_run_external_categorical_analysis(
-        *, start_date, end_date, product_id, stations
+    async def fake_run_external_categorical_analysis_from_db(
+        *, db, tenant_id, start_date, end_date, product_id, product_ids=None, stations
     ):
         raise FileNotFoundError(
             "C:/Users/example/Desktop/september_v2/merged_p1_p2_p3.csv"
@@ -99,8 +99,8 @@ async def test_v2_analytics_analyze_file_not_found_does_not_leak_paths(
 
     monkeypatch.setattr(
         analytics_external,
-        "run_external_categorical_analysis",
-        fake_run_external_categorical_analysis,
+        "run_external_categorical_analysis_from_db",
+        fake_run_external_categorical_analysis_from_db,
     )
 
     headers = {"X-Tenant-Id": str(tenant.id)}
@@ -123,8 +123,8 @@ async def test_v2_analytics_analyze_unexpected_error_is_generic(
 ):
     tenant = await _create_tenant(db_session)
 
-    def fake_run_external_categorical_analysis(
-        *, start_date, end_date, product_id, stations
+    async def fake_run_external_categorical_analysis_from_db(
+        *, db, tenant_id, start_date, end_date, product_id, product_ids=None, stations
     ):
         raise RuntimeError("boom")
 
@@ -132,8 +132,8 @@ async def test_v2_analytics_analyze_unexpected_error_is_generic(
 
     monkeypatch.setattr(
         analytics_external,
-        "run_external_categorical_analysis",
-        fake_run_external_categorical_analysis,
+        "run_external_categorical_analysis_from_db",
+        fake_run_external_categorical_analysis_from_db,
     )
 
     headers = {"X-Tenant-Id": str(tenant.id)}

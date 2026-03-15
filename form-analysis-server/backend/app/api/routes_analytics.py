@@ -12,7 +12,8 @@ import logging
 import math
 import re
 import time
-import hashlib
+import pandas as pd
+import pandas as pd
 from datetime import UTC, datetime
 from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -291,6 +292,7 @@ class AnalyzeRequest(BaseModel):
     start_date: str | None = Field(default=None, description="YYYY-MM-DD")
     end_date: str | None = Field(default=None, description="YYYY-MM-DD")
     product_id: str | None = Field(default=None, description="客戶退貨產品編號")
+    product_ids: list[str] = Field(default_factory=list, description="客訴 product_id 清單")
     stations: list[Literal["P2", "P3", "ALL"]] = Field(
         default_factory=list,
         description="站點篩選（作為 query 參數傳給分析 package）",
@@ -338,28 +340,27 @@ class ArtifactUnifiedSnapshotResponse(BaseModel):
 
 class ComplaintAnalysisRequest(BaseModel):
     product_ids: list[str] = Field(default_factory=list, description="客訴 product_id 清單")
-    snapshot_artifact_key: str = Field(
-        default="serialized_events",
-        description="主分析快照來源 artifact key",
+    include_basic_stats: bool = Field(
+        default=True,
+        description="是否包含基本統計",
     )
-    include_report_views: list[str] = Field(
-        default_factory=lambda: ["llm_reports", "rag_results"],
-        description="要附帶回傳的報告視圖 key",
+    include_outliers: bool = Field(
+        default=True,
+        description="是否包含異常檢測",
+    )
+    include_contribution: bool = Field(
+        default=False,
+        description="是否包含 PCA 貢獻度分析（較耗時）",
     )
 
 
 class ComplaintAnalysisResponse(BaseModel):
-    artifact_key: str
-    analysis_scope_id: str
-    scope_tokens_count: int = 0
-    input_summary: ArtifactInputResolveResponse
+    requested_ids: list[str] = Field(default_factory=list)
     mapping: dict[str, dict[str, Any]] = Field(default_factory=dict)
     source_scope: dict[str, int] = Field(default_factory=dict)
-    report_input_scope: dict[str, Any] = Field(default_factory=dict)
-    snapshot: ArtifactUnifiedSnapshotResponse
-    report_payload: dict[str, ArtifactUnifiedSnapshotResponse] = Field(default_factory=dict)
-    report_composition: dict[str, Any] = Field(default_factory=dict)
-    consistency: dict[str, Any] = Field(default_factory=dict)
+    analysis: dict[str, Any] = Field(default_factory=dict)
+    machine_distribution: list[dict[str, Any]] = Field(default_factory=list)
+    winder_distribution: list[dict[str, Any]] = Field(default_factory=list)
     timing: dict[str, float] = Field(default_factory=dict)
     elapsed_ms: float | None = None
 
@@ -418,6 +419,74 @@ def _trace_rows_count(node: Any) -> int:
     if isinstance(rows, list):
         return len(rows)
     return 1
+
+
+def _build_machine_distribution(df: pd.DataFrame) -> list[dict[str, Any]]:
+    if df is None or df.empty:
+        return []
+
+    candidates = [
+        "Machine No.",
+        "Machine NO",
+        "Machine_No.",
+        "Machine_No",
+        "machine_no",
+        "machine",
+    ]
+    machine_col = next((c for c in candidates if c in df.columns), None)
+    if not machine_col:
+        return []
+
+    series = df[machine_col].dropna().astype(str).map(lambda x: x.strip())
+    series = series[series != ""]
+    if series.empty:
+        return []
+
+    counts = series.value_counts()
+    return [
+        {"name": str(name), "count": int(count)}
+        for name, count in counts.items()
+    ]
+
+
+def _build_winder_distribution(df: pd.DataFrame) -> list[dict[str, Any]]:
+    if df is None or df.empty:
+        return []
+
+    p2_markers = [
+        "Slitting date",
+        "Slitting machine",
+        "Striped Results",
+        "Semi-finished No.",
+    ]
+    present_markers = [c for c in p2_markers if c in df.columns]
+    if present_markers:
+        df = df[df[present_markers].notna().any(axis=1)]
+        if df.empty:
+            return []
+
+    candidates = [
+        "Winder number",
+        "Winder Number",
+        "Winder No.",
+        "Winder_No",
+        "winder_number",
+        "winder",
+    ]
+    winder_col = next((c for c in candidates if c in df.columns), None)
+    if not winder_col:
+        return []
+
+    series = df[winder_col].dropna().astype(str).map(lambda x: x.strip())
+    series = series[series != ""]
+    if series.empty:
+        return []
+
+    counts = series.value_counts()
+    return [
+        {"name": str(name), "count": int(count)}
+        for name, count in counts.items()
+    ]
 
 
 _LOT_WINDER_RE = re.compile(r"^\d{6,8}[-_]\d{2}[-_]\d+$")
@@ -551,12 +620,16 @@ async def analyze(
     try:
         from app.services.analytics_external import run_external_categorical_analysis_from_db
 
+        product_ids = [str(pid).strip() for pid in (payload.product_ids or []) if str(pid or "").strip()]
+        product_id = payload.product_id
+
         data = await run_external_categorical_analysis_from_db(
             db=session,
             tenant_id=current_tenant.id,
             start_date=payload.start_date,
             end_date=payload.end_date,
-            product_id=payload.product_id,
+            product_id=product_id,
+            product_ids=product_ids,
             stations=payload.stations,
         )
         return data
@@ -986,6 +1059,70 @@ async def get_artifact_unified_snapshot(
         raise HTTPException(status_code=500, detail="Failed to build analytics unified snapshot")
 
 
+class RealtimeAnalysisRequest(BaseModel):
+    """即時 Analytical-Four 分析請求"""
+    station: str = Field(default="P2", description="分析站點 (P1/P2/P3)")
+    start_date: str | None = Field(default=None, description="開始日期 (YYYY-MM-DD)")
+    end_date: str | None = Field(default=None, description="結束日期 (YYYY-MM-DD)")
+    include_basic_stats: bool = Field(default=True, description="包含基本統計")
+    include_outliers: bool = Field(default=True, description="包含異常檢測")
+    include_contribution: bool = Field(default=False, description="包含 PCA 貢獻度分析（較耗時）")
+
+
+@router.post(
+    "/realtime-analysis",
+    response_model=dict[str, Any],
+    summary="即時 Analytical-Four 分析",
+)
+async def run_realtime_analysis(
+    payload: RealtimeAnalysisRequest,
+    request: Request = None,
+    session: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+) -> dict[str, Any]:
+    """
+    即時執行 Analytical-Four 分析
+    
+    從 DB 撈取資料，直接呼叫 Analytical-Four 函式進行分析。
+    這個端點不依賴預生成的 JSON 檔案，可即時取得分析結果。
+    
+    支援的分析：
+    - basic_statistics: 基本統計（mean, std, min, max, Q1, Q2, Q3）
+    - outliers: 異常檢測（IQR / 3sigma）
+    - contribution: PCA 貢獻度分析（T²/SPE）
+    """
+    import time
+    t0 = time.perf_counter()
+    
+    if request:
+        check_rate_limit(request, endpoint="/api/v2/analytics/realtime-analysis")
+    
+    try:
+        from app.services.analytical_four_adapter import run_unified_analysis_from_db
+        
+        result = await run_unified_analysis_from_db(
+            db=session,
+            tenant_id=current_tenant.id,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            station=payload.station,
+            include_basic_stats=payload.include_basic_stats,
+            include_outliers=payload.include_outliers,
+            include_contribution=payload.include_contribution,
+        )
+        
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        result["elapsed_ms"] = round(elapsed_ms, 2)
+        
+        return result
+        
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception("Realtime analysis failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Realtime analysis failed: {e}")
+
+
 @router.post(
     "/complaint-analysis",
     response_model=ComplaintAnalysisResponse,
@@ -996,17 +1133,17 @@ async def analyze_complaint_products(
     session: AsyncSession = Depends(get_db),
     current_tenant: Tenant = Depends(get_current_tenant),
 ) -> ComplaintAnalysisResponse:
-    """One-shot complaint analysis orchestration: resolve -> snapshot -> report payload."""
+    """One-shot complaint analysis: trace by product_id -> DB unified analysis -> results."""
 
     t0 = time.perf_counter()
     if request:
         check_rate_limit(request, endpoint="/api/v2/analytics/complaint-analysis")
 
     try:
-        from app.services.analytics_external import get_analytics_artifact_unified_snapshot, parse_artifact_key
-        resolve_ms = 0.0
-        snapshot_ms = 0.0
-        report_ms = 0.0
+        from app.api.traceability import trace_by_product_id
+        from app.services.analytical_four_adapter import run_unified_analysis_from_db
+        from app.services.analytics_data_fetcher import fetch_merged_by_product_ids, _normalize_product_id
+        from app.services.analytics_external import write_complain_csv_from_df
 
         requested_ids: list[str] = []
         seen: set[str] = set()
@@ -1020,235 +1157,189 @@ async def analyze_complaint_products(
             seen.add(k)
             requested_ids.append(s)
 
-        main_key = parse_artifact_key(payload.snapshot_artifact_key)
-        include_keys: list[str] = []
-        for raw_key in payload.include_report_views:
-            s = str(raw_key or "").strip()
-            if not s:
-                continue
-            include_keys.append(str(parse_artifact_key(s)))
+        normalized_lookup: dict[str, str] = {}
+        for pid in requested_ids:
+            normalized = _normalize_product_id(pid) or pid
+            normalized_lookup[pid] = normalized
 
-        t_resolve = time.perf_counter()
-        resolved_input = await resolve_artifact_input(
-            artifact_key=str(main_key),
-            product_ids=",".join(requested_ids),
-            request=None,
-            session=session,
-            current_tenant=current_tenant,
-        )
-        resolve_ms = (time.perf_counter() - t_resolve) * 1000
-        resolved_tokens = [str(x).strip() for x in (resolved_input.resolved or []) if str(x).strip()]
-        scope_seed = "|".join(sorted({x.lower() for x in resolved_tokens}))
-        analysis_scope_id = hashlib.sha1(scope_seed.encode("utf-8")).hexdigest()[:12] if scope_seed else "empty"
-
-        # Build a DB-backed unified scope (P1/P2/P3) from complaint product_ids via traceability.
-        t_report = time.perf_counter()
-        source_scope = {"p1_count": 0, "p2_count": 0, "p3_count": 0, "total_records": 0}
-        unified_records: list[dict[str, Any]] = []
-        if requested_ids:
-            from app.api.traceability import trace_by_product_id
-
-            for pid in requested_ids[:50]:
-                try:
-                    trace_payload = await trace_by_product_id(
-                        product_id=pid,
-                        db=session,
-                        current_tenant=current_tenant,
-                    )
-                except HTTPException:
-                    continue
-                except Exception:
-                    continue
-
-                p1 = trace_payload.get("p1") if isinstance(trace_payload, dict) else None
-                p2 = trace_payload.get("p2") if isinstance(trace_payload, dict) else None
-                p3 = trace_payload.get("p3") if isinstance(trace_payload, dict) else None
-
-                if isinstance(p1, dict):
-                    c = _trace_rows_count(p1)
-                    source_scope["p1_count"] += c
-                    source_scope["total_records"] += c
-                    unified_records.append(
-                        {
-                            "requested_id": pid,
-                            "data_type": "P1",
-                            "product_id": str(p1.get("product_id") or "").strip(),
-                            "lot_no": str(p1.get("lot_no") or "").strip(),
-                            "rows_count": c,
-                        }
-                    )
-                if isinstance(p2, dict):
-                    c = _trace_rows_count(p2)
-                    source_scope["p2_count"] += c
-                    source_scope["total_records"] += c
-                    unified_records.append(
-                        {
-                            "requested_id": pid,
-                            "data_type": "P2",
-                            "product_id": str(p2.get("product_id") or "").strip(),
-                            "lot_no": str(p2.get("lot_no") or "").strip(),
-                            "rows_count": c,
-                        }
-                    )
-                if isinstance(p3, dict):
-                    c = _trace_rows_count(p3)
-                    source_scope["p3_count"] += c
-                    source_scope["total_records"] += c
-                    unified_records.append(
-                        {
-                            "requested_id": pid,
-                            "data_type": "P3",
-                            "product_id": str(p3.get("product_id") or "").strip(),
-                            "lot_no": str(p3.get("lot_no") or "").strip(),
-                            "rows_count": c,
-                        }
-                    )
-
-        # Diagnostics-only fallback: when nothing resolved, do not compute charts/reports from full dataset.
-        t_snapshot = time.perf_counter()
-        if not resolved_tokens:
-            snapshot = ArtifactUnifiedSnapshotResponse(
-                artifact_key=str(main_key),
-                sample_count=0,
-                station_distribution=[],
-                machine_distribution=[],
-                top_features=[],
-                metrics={},
-            )
-            report_payload: dict[str, ArtifactUnifiedSnapshotResponse] = {}
-        else:
-            snapshot_data = get_analytics_artifact_unified_snapshot(main_key, product_ids=resolved_tokens)
-            snapshot = ArtifactUnifiedSnapshotResponse(**snapshot_data)
-
-            report_payload = {}
-            for view_key in include_keys:
-                view_data = get_analytics_artifact_unified_snapshot(view_key, product_ids=resolved_tokens)
-                report_payload[view_key] = ArtifactUnifiedSnapshotResponse(**view_data)
-        snapshot_ms = (time.perf_counter() - t_snapshot) * 1000
-
+        t_trace = time.perf_counter()
         mapping: dict[str, dict[str, Any]] = {}
-        for pid in (resolved_input.requested or []):
-            hits = [str(x).strip() for x in (resolved_input.matches.get(pid, []) if isinstance(resolved_input.matches, dict) else []) if str(x).strip()]
-            diag = resolved_input.match_diagnostics.get(pid, {}) if isinstance(resolved_input.match_diagnostics, dict) else {}
-            trace_candidates = resolved_input.trace_tokens.get(pid, []) if isinstance(resolved_input.trace_tokens, dict) else []
-            stage = "unmatched"
-            if hits:
-                trace_source = str(diag.get("trace_source") or "").strip()
-                if trace_source == "db_trace_lot":
-                    stage = "matched_trace_lot"
-                else:
-                    stage = "matched_trace" if trace_candidates else "matched_direct"
+        resolved_count = 0
+        for pid in requested_ids:
+            normalized_pid = normalized_lookup.get(pid, pid)
+            try:
+                trace_payload = await trace_by_product_id(
+                    product_id=normalized_pid,
+                    db=session,
+                    current_tenant=current_tenant,
+                )
+            except Exception:
+                mapping[pid] = {
+                    "matched_stage": "trace_error",
+                    "missing_stages": ["P3", "P2", "P1"],
+                    "trace_status": {"p3": False, "p2": False, "p1": False},
+                }
+                continue
+
+            p1 = trace_payload.get("p1") if isinstance(trace_payload, dict) else None
+            p2 = trace_payload.get("p2") if isinstance(trace_payload, dict) else None
+            p3 = trace_payload.get("p3") if isinstance(trace_payload, dict) else None
+
+            status = {
+                "p1": isinstance(p1, dict),
+                "p2": isinstance(p2, dict),
+                "p3": isinstance(p3, dict),
+            }
+            if any(status.values()):
+                resolved_count += 1
+
+            missing_stages: list[str] = []
+            if not status["p3"]:
+                missing_stages.append("P3")
+            if not status["p2"]:
+                missing_stages.append("P2")
+            if not status["p1"]:
+                missing_stages.append("P1")
+
             mapping[pid] = {
-                "matched_tokens": hits,
-                "reason_code": str(diag.get("reason_code") or "").strip(),
-                "reason_message": str(diag.get("reason_message") or "").strip(),
-                "matched_stage": stage,
+                "matched_stage": "trace_ok" if any(status.values()) else "trace_missing",
+                "missing_stages": missing_stages,
+                "trace_status": status,
             }
 
-        summary_lines: list[str] = []
-        summary_lines.append(
-            f"Source scope P1/P2/P3: {source_scope['p1_count']}/{source_scope['p2_count']}/{source_scope['p3_count']}"
+        trace_ms = (time.perf_counter() - t_trace) * 1000
+
+        t_scope = time.perf_counter()
+        df = await fetch_merged_by_product_ids(
+            db=session,
+            tenant_id=current_tenant.id,
+            product_ids=requested_ids,
         )
-        top_station = snapshot.station_distribution[0].name if snapshot.station_distribution else ""
-        top_machine = snapshot.machine_distribution[0].name if snapshot.machine_distribution else ""
-        top_feature = snapshot.top_features[0].name if snapshot.top_features else ""
-        if top_station:
-            summary_lines.append(f"Top station: {top_station}")
-        if top_machine:
-            summary_lines.append(f"Top machine: {top_machine}")
-        if top_feature:
-            summary_lines.append(f"Top feature: {top_feature}")
-        if not summary_lines:
-            summary_lines.append("No resolved data for complaint scope")
+        scope_ms = (time.perf_counter() - t_scope) * 1000
 
-        suggestions: list[str] = []
-        if top_feature:
-            suggestions.append(f"Prioritize SOP review for {top_feature}")
-        if top_station:
-            suggestions.append(f"Run station-level checklist for {top_station}")
-        if top_machine:
-            suggestions.append(f"Verify machine settings and maintenance for {top_machine}")
-        if not suggestions:
-            suggestions.append("Collect more traceable product IDs to generate actionable suggestions")
+        try:
+            if df is not None and not df.empty:
+                write_complain_csv_from_df(df)
+        except Exception:
+            logger.exception("Failed to write complaint CSV")
 
-        evidence_refs: list[dict[str, Any]] = []
-        for row in unified_records[:50]:
-            evidence_refs.append(
-                {
-                    "requested_id": str(row.get("requested_id") or "").strip(),
-                    "token": str(row.get("product_id") or row.get("lot_no") or "").strip(),
-                    "source": f"db_{str(row.get('data_type') or '').lower()}",
-                }
+        machine_distribution = _build_machine_distribution(df)
+        winder_distribution = _build_winder_distribution(df)
+
+        source_scope = {
+            "requested_count": len(requested_ids),
+            "resolved_count": resolved_count,
+            "merged_rows": int(len(df.index)) if df is not None else 0,
+        }
+
+        t_analysis = time.perf_counter()
+        analysis: dict[str, Any] = {}
+        for station in ("P1", "P2", "P3"):
+            analysis[station] = await run_unified_analysis_from_db(
+                db=session,
+                tenant_id=current_tenant.id,
+                product_ids=requested_ids,
+                start_date=None,
+                end_date=None,
+                station=station,
+                include_basic_stats=payload.include_basic_stats,
+                include_outliers=payload.include_outliers,
+                include_contribution=payload.include_contribution,
             )
-        for pid, info in mapping.items():
-            tokens = info.get("matched_tokens") if isinstance(info, dict) else []
-            if not isinstance(tokens, list):
-                tokens = []
-            for tk in tokens[:5]:
-                s = str(tk).strip()
-                if not s:
-                    continue
-                evidence_refs.append(
-                    {
-                        "requested_id": pid,
-                        "token": s,
-                        "source": "mapping",
-                    }
-                )
-        evidence_refs = evidence_refs[:50]
-        report_ms = (time.perf_counter() - t_report) * 1000
+        analysis_ms = (time.perf_counter() - t_analysis) * 1000
+
         total_ms = (time.perf_counter() - t0) * 1000
 
         return ComplaintAnalysisResponse(
-            artifact_key=str(main_key),
-            analysis_scope_id=analysis_scope_id,
-            scope_tokens_count=len(resolved_tokens),
-            input_summary=resolved_input,
+            requested_ids=requested_ids,
             mapping=mapping,
             source_scope=source_scope,
-            report_input_scope={
-                "mode": "db_unified_p1p2p3",
-                "requested_count": len(requested_ids),
-                "resolved_count": len(resolved_tokens),
-                "scope_tokens_count": len(resolved_tokens),
-            },
-            snapshot=snapshot,
-            report_payload=report_payload,
-            report_composition={
-                "summary": summary_lines,
-                "suggestions": suggestions,
-                "evidence_refs": evidence_refs,
-            },
-            consistency={
-                "snapshot_scope_locked": True,
-                "report_scope_locked": True,
-                "scope_tokens_count": len(resolved_tokens),
-                "snapshot_sample_count": int(snapshot.sample_count),
-                "report_sample_counts": {
-                    k: int(v.sample_count) for k, v in report_payload.items()
-                },
-            },
+            analysis=analysis,
+            machine_distribution=machine_distribution,
+            winder_distribution=winder_distribution,
             timing={
-                "resolve_ms": round(resolve_ms, 2),
-                "snapshot_ms": round(snapshot_ms, 2),
-                "report_ms": round(report_ms, 2),
+                "trace_ms": round(trace_ms, 2),
+                "scope_ms": round(scope_ms, 2),
+                "analysis_ms": round(analysis_ms, 2),
                 "total_ms": round(total_ms, 2),
             },
             elapsed_ms=round(total_ms, 2),
         )
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                "Analytics artifact not found. "
-                "Please generate it with Analytical-Four and place it under SEPTEMBER_V2_PATH (or set ANALYTICS_ARTIFACTS_DIR)."
-            ),
-        )
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Unknown analytics artifact key")
     except Exception:
         logger.exception("complaint-analysis failed")
         raise HTTPException(status_code=500, detail="Failed to build complaint analysis payload")
+
+
+class ExtractionAnalysisRequest(BaseModel):
+    product_ids: list[str] = Field(default_factory=list, description="product_id 清單")
+    start_date: str | None = Field(default=None, description="開始日期 YYYY-MM-DD")
+    end_date: str | None = Field(default=None, description="結束日期 YYYY-MM-DD")
+    station: str = Field(default="P2", description="站點代碼 (P1/P2/P3)")
+
+
+class ExtractionAnalysisResponse(BaseModel):
+    station: str
+    boundary_count: dict[str, int] = Field(default_factory=dict)
+    spe_score: dict[str, float] = Field(default_factory=dict)
+    t2_score: dict[str, float] = Field(default_factory=dict)
+    final_raw_score: dict[str, float] = Field(default_factory=dict)
+    features_used: list[str] = Field(default_factory=list)
+    sample_counts: dict[str, int] = Field(default_factory=dict)
+    elapsed_ms: float | None = None
+
+
+@router.post(
+    "/extraction-analysis",
+    response_model=ExtractionAnalysisResponse,
+)
+async def run_extraction_analysis(
+    payload: ExtractionAnalysisRequest,
+    request: Request = None,
+    session: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+) -> ExtractionAnalysisResponse:
+    """
+    Extraction analysis: IQR boundary + PCA T²/SPE → final_raw_score per feature.
+    用於識別最影響品質的特徵。
+    """
+    t0 = time.perf_counter()
+    if request:
+        check_rate_limit(request, endpoint="/api/v2/analytics/extraction-analysis")
+
+    try:
+        from app.services.analytical_four_adapter import run_extraction_analysis_from_db
+
+        result = await run_extraction_analysis_from_db(
+            db=session,
+            tenant_id=current_tenant.id,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            station=payload.station.upper(),
+            product_ids=payload.product_ids if payload.product_ids else None,
+        )
+
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+        if not result or "error" in result:
+            return ExtractionAnalysisResponse(
+                station=payload.station.upper(),
+                elapsed_ms=elapsed_ms,
+            )
+
+        return ExtractionAnalysisResponse(
+            station=result.get("station", payload.station.upper()),
+            boundary_count=result.get("boundary_count", {}),
+            spe_score=result.get("spe_score", {}),
+            t2_score=result.get("t2_score", {}),
+            final_raw_score=result.get("final_raw_score", {}),
+            features_used=result.get("features_used", []),
+            sample_counts=result.get("sample_counts", {}),
+            elapsed_ms=elapsed_ms,
+        )
+
+    except Exception:
+        logger.exception("extraction-analysis failed")
+        raise HTTPException(status_code=500, detail="Failed to run extraction analysis")
 
 
 @router.get("/artifacts/{artifact_key}/detail/{item_id}")

@@ -124,6 +124,49 @@ def resolve_artifacts_dir(*, paths: AnalyticsExternalPaths | None = None) -> Pat
     return paths.september_v2_root
 
 
+def _resolve_analytical_four_config_path(paths: AnalyticsExternalPaths) -> Path:
+    preferred = paths.analytical_four_root / "data" / "raw" / "config" / "ut_config_v5.json"
+    if preferred.exists():
+        return preferred
+    return paths.config_path
+
+
+def _resolve_complain_csv_path(*, config: dict[str, Any], analytical_four_root: Path) -> Path:
+    data_source = config.get("data_source", {}) if isinstance(config, dict) else {}
+    current_data = data_source.get("current_data", {}) if isinstance(data_source, dict) else {}
+    raw_path = str(current_data.get("descriptive") or "").strip()
+    if not raw_path:
+        raise ValueError("Missing data_source.current_data.descriptive in analytics config")
+
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = analytical_four_root / path
+    return path.resolve()
+
+
+def write_complain_csv_from_df(
+    df: pd.DataFrame,
+    *,
+    paths: AnalyticsExternalPaths | None = None,
+) -> Path:
+    """Write complaint-mode CSV to the path specified by Analytical-Four config.
+
+    This is a best-effort helper for the product_id complaint workflow.
+    """
+    paths = paths or resolve_external_paths()
+    config_path = _resolve_analytical_four_config_path(paths)
+    config = _load_json(config_path)
+    output_path = _resolve_complain_csv_path(
+        config=config,
+        analytical_four_root=paths.analytical_four_root,
+    )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_path, index=False, encoding="utf-8-sig")
+    logger.info("Complaint CSV written", extra={"path": str(output_path), "rows": int(len(df.index))})
+    return output_path
+
+
 def list_analytics_artifacts(*, artifacts_dir: Path | None = None) -> list[AnalyticsArtifactInfo]:
     paths = resolve_external_paths()
     base = artifacts_dir or resolve_artifacts_dir(paths=paths)
@@ -528,6 +571,7 @@ def get_analytics_artifact_unified_snapshot(
     *,
     product_ids: list[str] | None = None,
     artifacts_dir: Path | None = None,
+    topn: int | None = 12,
 ) -> dict[str, Any]:
     """Return a unified aggregate snapshot across artifact views.
 
@@ -686,18 +730,18 @@ def get_analytics_artifact_unified_snapshot(
         metrics["total_events"] = int(total_events)
         metrics["total_core_features"] = int(total_core_features)
 
-    def _to_sorted_rows(counter: dict[str, int], *, topn: int = 12) -> list[dict[str, Any]]:
-        return [
-            {"name": name, "count": int(count)}
-            for name, count in sorted(counter.items(), key=lambda kv: kv[1], reverse=True)[:topn]
-        ]
+    def _to_sorted_rows(counter: dict[str, int], *, limit: int | None) -> list[dict[str, Any]]:
+        items = sorted(counter.items(), key=lambda kv: kv[1], reverse=True)
+        if limit is not None:
+            items = items[:limit]
+        return [{"name": name, "count": int(count)} for name, count in items]
 
     out = {
         "artifact_key": key,
         "sample_count": int(len(rows)),
-        "station_distribution": _to_sorted_rows(station_counter),
-        "machine_distribution": _to_sorted_rows(machine_counter),
-        "top_features": _to_sorted_rows(feature_counter),
+        "station_distribution": _to_sorted_rows(station_counter, limit=topn),
+        "machine_distribution": _to_sorted_rows(machine_counter, limit=topn),
+        "top_features": _to_sorted_rows(feature_counter, limit=topn),
         "metrics": metrics,
     }
     return out
@@ -1374,6 +1418,12 @@ def _pick_date_column_for_station(
                 best_count = count
         return best_col, best_count
 
+    # P3-specific date columns (from P3 row_data, NOT P1's "Production Date")
+    p3_production_like = [
+        "Production Date_x",
+        "Production Date_y",
+    ]
+    # P1 production date (used as fallback only, not for P3-specific filtering)
     production_like = [
         "Production Date",
         "Production Date_x",
@@ -1384,7 +1434,10 @@ def _pick_date_column_for_station(
     ]
 
     if station == "P3":
-        prod_col, prod_count = _best_from_candidates(production_like)
+        # Always prefer P3-specific date columns (Production Date_x / _y)
+        # to avoid using P1's "Production Date" which has different semantics
+        # and may not align with P3 production dates.
+        prod_col, prod_count = _best_from_candidates(p3_production_like)
         if prod_col and prod_count > 0:
             return prod_col
         slit_col, slit_count = _best_from_candidates(slitting_like)
@@ -1449,6 +1502,11 @@ def _filter_df(
     )
     start_i = _parse_ymd_to_yyyymmdd(start_date) if start_date else None
     end_i = _parse_ymd_to_yyyymmdd(end_date) if end_date else None
+
+    logger.info(
+        "[DEBUG] _filter_df station=%s: date_col=%s, start=%s, end=%s, input_rows=%d",
+        station, date_col, start_i, end_i, len(out),
+    )
 
     if date_col and (start_i or end_i):
         date_series = out[date_col].map(_parse_date_to_yyyymmdd)
@@ -1613,6 +1671,7 @@ async def run_external_categorical_analysis_from_db(
     start_date: str | None,
     end_date: str | None,
     product_id: str | None,
+    product_ids: list[str] | None,
     stations: list[StationCode],
 ) -> dict[str, Any]:
     """
@@ -1627,14 +1686,20 @@ async def run_external_categorical_analysis_from_db(
         start_date: 開始日期 (YYYY-MM-DD)
         end_date: 結束日期 (YYYY-MM-DD)
         product_id: 產品編號（可選）
+        product_ids: 客訴 product_id 列表（可選，提供時忽略日期範圍）
         stations: 站點列表 ["P2", "P3", "ALL"]
         
     Returns:
         dict: 分析結果 JSON，符合前端預期格式
     """
-    from app.services.analytics_data_fetcher import fetch_merged_p1p2p3_from_db
+    from app.services.analytics_data_fetcher import (
+        fetch_merged_by_product_ids,
+        fetch_merged_p1p2p3_from_db,
+    )
     
-    stations = _normalize_station_selection_for_product_id(stations, product_id)
+    product_ids = [str(pid).strip() for pid in (product_ids or []) if str(pid or "").strip()]
+    if product_id:
+        stations = _normalize_station_selection_for_product_id(stations, product_id)
     
     paths = resolve_external_paths()
     
@@ -1650,13 +1715,20 @@ async def run_external_categorical_analysis_from_db(
     config = _load_json(paths.config_path)
     
     # Fetch from DB instead of reading CSV
-    df = await fetch_merged_p1p2p3_from_db(
-        db=db,
-        tenant_id=tenant_id,
-        start_date=start_date,
-        end_date=end_date,
-        stations=[str(s) for s in stations],
-    )
+    if product_ids:
+        df = await fetch_merged_by_product_ids(
+            db=db,
+            tenant_id=tenant_id,
+            product_ids=product_ids,
+        )
+    else:
+        df = await fetch_merged_p1p2p3_from_db(
+            db=db,
+            tenant_id=tenant_id,
+            start_date=start_date,
+            end_date=end_date,
+            stations=[str(s) for s in stations],
+        )
     
     if df.empty:
         logger.warning(
@@ -1680,9 +1752,9 @@ async def run_external_categorical_analysis_from_db(
         
         station_df = _filter_df(
             df,
-            start_date=start_date,
-            end_date=end_date,
-            product_id=product_id,
+            start_date=None if product_ids else start_date,
+            end_date=None if product_ids else end_date,
+            product_id=None if product_ids else product_id,
             station=station,
         )
         logger.info("[DEBUG] After _filter_df for %s: shape=%s", station, station_df.shape)

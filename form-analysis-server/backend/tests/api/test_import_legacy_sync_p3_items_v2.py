@@ -87,11 +87,12 @@ async def test_legacy_import_sync_upserts_p3_items_v2(db_session_clean):
 
     assert len(items) == 2
     assert items[0].row_no == 1
-    assert items[0].product_id == "P3-001"
+    # product_id is composed from production_date + machine_no + mold_no + lot
+    assert items[0].product_id == "20250902_P24_238-2_301"
     assert items[0].source_winder == 5
     assert isinstance(items[0].row_data, dict)
     assert items[0].row_data.get("Mold NO") == "238-2"
 
     assert items[1].row_no == 2
-    assert items[1].product_id == "P3-002"
+    assert items[1].product_id == "20250902_P24_238-2_302"
     assert items[1].source_winder == 6

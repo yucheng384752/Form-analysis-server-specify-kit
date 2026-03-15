@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 if TYPE_CHECKING:
@@ -376,19 +376,35 @@ async def fetch_merged_p1p2p3_from_db(
             .where(P2ItemV2.tenant_id == tenant_id)
             .options(selectinload(P2ItemV2.p2_record))
         )
+        # SQL-level date pre-filter using indexed production_date_yyyymmdd
+        if start_yyyymmdd is not None:
+            stmt_p2 = stmt_p2.where(
+                or_(
+                    P2ItemV2.production_date_yyyymmdd >= start_yyyymmdd,
+                    P2ItemV2.production_date_yyyymmdd.is_(None),
+                )
+            )
+        if end_yyyymmdd is not None:
+            stmt_p2 = stmt_p2.where(
+                or_(
+                    P2ItemV2.production_date_yyyymmdd <= end_yyyymmdd,
+                    P2ItemV2.production_date_yyyymmdd.is_(None),
+                )
+            )
         result_p2 = await db.execute(stmt_p2)
         p2_items = result_p2.scalars().all()
-        
+
         for p2_item in p2_items:
             row_data = p2_item.row_data or {}
-            
-            # Extract and check date
-            slitting_date_raw = extract_p2_slitting_date(row_data)
-            slitting_yyyymmdd = parse_p2_slitting_date_to_yyyymmdd(slitting_date_raw)
-            
+
+            # Use production_date_yyyymmdd directly (semantically equivalent to Slitting date)
+            slitting_yyyymmdd = p2_item.production_date_yyyymmdd
+
             # Apply date filter
+            # If slitting_yyyymmdd is None, let the row through:
+            # the SQL pre-filter already passed None-dated rows intentionally.
             if start_yyyymmdd is not None or end_yyyymmdd is not None:
-                if not is_date_in_range(slitting_yyyymmdd, start_yyyymmdd, end_yyyymmdd):
+                if slitting_yyyymmdd is not None and not is_date_in_range(slitting_yyyymmdd, start_yyyymmdd, end_yyyymmdd):
                     continue
             
             # Get P1 data by lot_no_norm
@@ -403,8 +419,15 @@ async def fetch_merged_p1p2p3_from_db(
                 p3_row={},
                 lot_no_raw=p2_item.p2_record.lot_no_raw if p2_item.p2_record else None,
             )
+            # Fallback: ensure Winder number from structured field
+            if merged_row.get("Winder number") is None and p2_item.winder_number is not None:
+                merged_row["Winder number"] = p2_item.winder_number
+            # Fallback: populate Slitting date from structured field
+            # so that _filter_df second-pass date filtering works correctly
+            if merged_row.get("Slitting date") is None and p2_item.production_date_yyyymmdd is not None:
+                merged_row["Slitting date"] = str(p2_item.production_date_yyyymmdd)
             rows.append(merged_row)
-    
+
     # Fetch P3 items with date filtering (if P3 is selected)
     if include_p3:
         stmt_p3 = (
@@ -413,19 +436,43 @@ async def fetch_merged_p1p2p3_from_db(
             .where(P3ItemV2.tenant_id == tenant_id)
             .options(selectinload(P3ItemV2.p3_record))
         )
+        # SQL-level date pre-filter using P3ItemV2.production_date
+        if start_yyyymmdd is not None:
+            start_dt = yyyymmdd_to_date(start_yyyymmdd)
+            if start_dt is not None:
+                stmt_p3 = stmt_p3.where(
+                    or_(
+                        P3ItemV2.production_date >= start_dt,
+                        P3ItemV2.production_date.is_(None),
+                    )
+                )
+        if end_yyyymmdd is not None:
+            end_dt = yyyymmdd_to_date(end_yyyymmdd)
+            if end_dt is not None:
+                stmt_p3 = stmt_p3.where(
+                    or_(
+                        P3ItemV2.production_date <= end_dt,
+                        P3ItemV2.production_date.is_(None),
+                    )
+                )
         result_p3 = await db.execute(stmt_p3)
         p3_items = result_p3.scalars().all()
-        
+        logger.info("[DEBUG] fetch_merged: SQL returned %d P3 rows (date range %s~%s)", len(p3_items), start_yyyymmdd, end_yyyymmdd)
+
         for p3_item in p3_items:
             row_data = p3_item.row_data or {}
-            
-            # Extract and check date
-            year_month_day_raw = extract_p3_year_month_day(row_data)
-            p3_yyyymmdd = parse_p3_year_month_day_to_yyyymmdd(year_month_day_raw)
-            
+
+            # Use production_date directly (semantically equivalent to year-month-day in row_data)
+            p3_yyyymmdd = None
+            if p3_item.production_date is not None:
+                d = p3_item.production_date
+                p3_yyyymmdd = d.year * 10000 + d.month * 100 + d.day
+
             # Apply date filter
+            # If p3_yyyymmdd is None, let the row through:
+            # the SQL pre-filter already passed None-dated rows intentionally.
             if start_yyyymmdd is not None or end_yyyymmdd is not None:
-                if not is_date_in_range(p3_yyyymmdd, start_yyyymmdd, end_yyyymmdd):
+                if p3_yyyymmdd is not None and not is_date_in_range(p3_yyyymmdd, start_yyyymmdd, end_yyyymmdd):
                     continue
             
             # Get P1 data by lot_no_norm
@@ -440,6 +487,14 @@ async def fetch_merged_p1p2p3_from_db(
                 p3_row=row_data,
                 lot_no_raw=p3_item.p3_record.lot_no_raw if p3_item.p3_record else None,
             )
+            # Fallback: populate Production Date_x from structured field
+            # so that _filter_df second-pass date filtering works correctly
+            if merged_row.get("Production Date_x") is None and p3_item.production_date is not None:
+                d = p3_item.production_date
+                merged_row["Production Date_x"] = f"{d.year}{d.month:02d}{d.day:02d}"
+            if merged_row.get("Production Date_y") is None and p3_item.production_date is not None:
+                d = p3_item.production_date
+                merged_row["Production Date_y"] = f"{d.year}{d.month:02d}{d.day:02d}"
             rows.append(merged_row)
     
     logger.info("Fetched %d merged rows from DB", len(rows))
@@ -448,6 +503,207 @@ async def fetch_merged_p1p2p3_from_db(
         return pd.DataFrame()
     
     return pd.DataFrame(rows)
+
+
+# ==============================================================================
+# Fetch Merged Data by Product IDs (客訴追溯)
+# ==============================================================================
+
+
+async def fetch_merged_by_product_ids(
+    db: "AsyncSession",
+    tenant_id: UUID,
+    product_ids: list[str],
+) -> pd.DataFrame:
+    """
+    根據客訴 product_id 列表追溯 P1/P2/P3 資料，組合為 merged_p1_p2_p3.csv 格式。
+    
+    這是客訴分析的關鍵函式：
+    1. 將客訴 product_id 轉換為 DB 格式
+    2. 透過 P3 -> P2 -> P1 追溯完整生產鏈
+    3. 組合成符合 Analytical-Four 期望的 merged 格式
+    
+    Args:
+        db: AsyncSession
+        tenant_id: 租戶 ID
+        product_ids: 客訴 product_id 列表 (如 ['250909-P23-2384-301', ...])
+        
+    Returns:
+        pd.DataFrame: 符合 merged_p1_p2_p3.csv 格式的 DataFrame
+    """
+    from app.models.p1_record import P1Record
+    from app.models.p2_item_v2 import P2ItemV2
+    from app.models.p2_record import P2Record
+    from app.models.p3_item_v2 import P3ItemV2
+    from app.models.p3_record import P3Record
+    from app.utils.normalization import normalize_lot_no
+    
+    if not product_ids:
+        return pd.DataFrame()
+    
+    rows: list[dict[str, Any]] = []
+    
+    # Build P1 lookup by lot_no_norm
+    p1_by_lot_norm: dict[int, dict[str, Any]] = {}
+    stmt_p1 = select(P1Record).where(P1Record.tenant_id == tenant_id)
+    result_p1 = await db.execute(stmt_p1)
+    p1_records = result_p1.scalars().all()
+    
+    for p1 in p1_records:
+        if p1.extras and "rows" in p1.extras and p1.extras["rows"]:
+            p1_row = p1.extras["rows"][0] if p1.extras["rows"] else {}
+            p1_by_lot_norm[p1.lot_no_norm] = {
+                "lot_no_raw": p1.lot_no_raw,
+                "lot_no_norm": p1.lot_no_norm,
+                "row_data": p1_row,
+            }
+    
+    for raw_pid in product_ids:
+        pid = _normalize_product_id(raw_pid)
+        if not pid:
+            logger.warning("Invalid product_id format: %s", raw_pid)
+            continue
+        
+        # Step 1: Find P3 by product_id
+        p3_item_stmt = (
+            select(P3ItemV2)
+            .options(selectinload(P3ItemV2.p3_record))
+            .where(
+                P3ItemV2.tenant_id == tenant_id,
+                P3ItemV2.product_id == pid,
+            )
+        )
+        p3_result = await db.execute(p3_item_stmt)
+        p3_item = p3_result.scalar_one_or_none()
+        
+        p3_row: dict[str, Any] = {}
+        p2_row: dict[str, Any] = {}
+        p1_row: dict[str, Any] = {}
+        lot_no_raw: str | None = None
+        lot_no_norm: int | None = None
+        source_winder: int | None = None
+        
+        if p3_item:
+            p3_row = p3_item.row_data or {}
+            lot_no_raw = p3_item.lot_no
+            source_winder = p3_item.source_winder
+
+            # Prefer P3 record normalized lot_no to avoid suffix mismatch.
+            if p3_item.p3_record:
+                lot_no_norm = p3_item.p3_record.lot_no_norm
+                if not lot_no_raw:
+                    lot_no_raw = p3_item.p3_record.lot_no_raw
+
+            # Fallback: normalize lot_no from P3 item if record is missing.
+            if lot_no_norm is None and lot_no_raw:
+                try:
+                    lot_no_norm = normalize_lot_no(lot_no_raw)
+                except Exception:
+                    lot_no_norm = None
+        else:
+            # Try P3Record fallback
+            p3_record_stmt = (
+                select(P3Record)
+                .options(selectinload(P3Record.items_v2))
+                .where(
+                    P3Record.tenant_id == tenant_id,
+                    P3Record.product_id == pid,
+                )
+            )
+            p3_record_result = await db.execute(p3_record_stmt)
+            p3_record = p3_record_result.scalar_one_or_none()
+            
+            if p3_record and p3_record.items_v2:
+                p3_item = p3_record.items_v2[0]
+                p3_row = p3_item.row_data or {}
+                lot_no_raw = p3_record.lot_no_raw
+                lot_no_norm = p3_record.lot_no_norm
+                source_winder = p3_item.source_winder
+        
+        # Step 2: Find P2 by lot_no_norm and winder
+        if lot_no_norm is not None:
+            p2_stmt = (
+                select(P2ItemV2)
+                .join(P2Record, P2ItemV2.p2_record_id == P2Record.id)
+                .options(selectinload(P2ItemV2.p2_record))
+                .where(
+                    P2ItemV2.tenant_id == tenant_id,
+                    P2Record.lot_no_norm == lot_no_norm,
+                )
+            )
+            if source_winder is not None:
+                p2_stmt = p2_stmt.where(P2ItemV2.winder_number == source_winder)
+            else:
+                p2_stmt = p2_stmt.order_by(P2ItemV2.winder_number)
+            
+            p2_result = await db.execute(p2_stmt)
+            p2_item = p2_result.scalars().first()
+            
+            if p2_item:
+                p2_row = p2_item.row_data or {}
+        
+        # Step 3: Find P1 by lot_no_norm
+        if lot_no_norm is not None:
+            p1_data = p1_by_lot_norm.get(lot_no_norm, {})
+            p1_row = p1_data.get("row_data", {})
+            if not lot_no_raw:
+                lot_no_raw = p1_data.get("lot_no_raw")
+        
+        # Build merged row
+        if p3_row or p2_row or p1_row:
+            merged_row = _build_merged_row(
+                p1_row=p1_row,
+                p2_row=p2_row,
+                p3_row=p3_row,
+                lot_no_raw=lot_no_raw,
+            )
+            # Fallback: ensure Winder number from structured field
+            if merged_row.get("Winder number") is None and source_winder is not None:
+                merged_row["Winder number"] = source_winder
+            # Add original product_id for reference
+            merged_row["_original_product_id"] = raw_pid
+            merged_row["_normalized_product_id"] = pid
+            rows.append(merged_row)
+            logger.debug("Traced product_id %s -> lot_no=%s", pid, lot_no_raw)
+        else:
+            logger.warning("No data found for product_id: %s", pid)
+    
+    logger.info("Fetched %d merged rows from %d product_ids", len(rows), len(product_ids))
+    
+    if not rows:
+        return pd.DataFrame()
+    
+    return pd.DataFrame(rows)
+
+
+def _normalize_product_id(raw_id: str) -> str | None:
+    """
+    將客訴格式的 product_id 轉換為 DB 格式
+    
+    Examples:
+        '250909-P23-2384-301' -> '20250909_P23_238-4_301'
+        '20250909_P23_238-4_301' -> '20250909_P23_238-4_301' (已是正確格式)
+    """
+    raw_id = raw_id.strip()
+    
+    # Already in correct format
+    if re.match(r'^\d{8}_[A-Z]\d{2}_\d{3}-\d_\d+$', raw_id):
+        return raw_id
+    
+    # Convert from complaint format: YYMMDD-PXX-XXXN-NNN
+    m = re.match(r'^(\d{6})-([A-Z]\d{2})-(\d{3})(\d)-(\d+)$', raw_id)
+    if m:
+        date_str, prod, mat1, mat2, seq = m.groups()
+        return f'20{date_str}_{prod}_{mat1}-{mat2}_{seq}'
+    
+    # Try with full year: YYYYMMDD-PXX-XXXN-NNN
+    m = re.match(r'^(\d{8})-([A-Z]\d{2})-(\d{3})(\d)-(\d+)$', raw_id)
+    if m:
+        date_str, prod, mat1, mat2, seq = m.groups()
+        return f'{date_str}_{prod}_{mat1}-{mat2}_{seq}'
+    
+    logger.warning("Unknown product_id format: %s", raw_id)
+    return raw_id  # Return as-is, let DB query handle it
 
 
 def _build_merged_row(

@@ -142,67 +142,12 @@ async def test_v2_analytics_artifacts_snapshot_ok(client, monkeypatch, db_sessio
 async def test_v2_analytics_complaint_analysis_ok(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
 
-    from app.api import routes_analytics
     from app.api import traceability
-    from app.services import analytics_external
+    from app.services import analytics_data_fetcher, analytics_external
+    from app.services import analytical_four_adapter
 
-    async def fake_resolve_artifact_input(**kwargs):
-        _ = kwargs
-        return routes_analytics.ArtifactInputResolveResponse(
-            requested=["20250902_P24_238-2_301"],
-            requested_count=1,
-            normalized_inputs={"20250902_P24_238-2_301": ["20250902_P24_238-2_301"]},
-            resolved=["2507173_02_19"],
-            resolved_count=1,
-            unmatched=[],
-            unmatched_count=0,
-            matches={"20250902_P24_238-2_301": ["2507173_02_19"]},
-            match_diagnostics={
-                "20250902_P24_238-2_301": {
-                    "reason_code": "",
-                    "reason_message": "",
-                    "trace_source": "db_trace_lot",
-                }
-            },
-            trace_tokens={"20250902_P24_238-2_301": ["2507173_02_19"]},
-            trace_attempted_count=1,
-            trace_resolved_count=1,
-            unmatched_reason_counts={},
-            elapsed_ms=12.3,
-        )
+    import pandas as pd
 
-    def fake_snapshot(key, **kwargs):
-        _ = kwargs
-        k = str(key)
-        if k == "llm_reports":
-            return {
-                "artifact_key": k,
-                "sample_count": 1,
-                "station_distribution": [{"name": "P2", "count": 2}],
-                "machine_distribution": [],
-                "top_features": [{"name": "LLM:Burr", "count": 2}],
-                "metrics": {"total_anomalies": 2},
-            }
-        if k == "rag_results":
-            return {
-                "artifact_key": k,
-                "sample_count": 1,
-                "station_distribution": [{"name": "P2", "count": 2}],
-                "machine_distribution": [],
-                "top_features": [{"name": "RAG:Burr", "count": 1}],
-                "metrics": {"total_features": 1, "total_sop": 2},
-            }
-        return {
-            "artifact_key": k,
-            "sample_count": 1,
-            "station_distribution": [{"name": "P2", "count": 2}],
-            "machine_distribution": [{"name": "P24", "count": 2}],
-            "top_features": [{"name": "IQR", "count": 2}],
-            "metrics": {"total_events": 2},
-        }
-
-    monkeypatch.setattr(routes_analytics, "resolve_artifact_input", fake_resolve_artifact_input)
-    monkeypatch.setattr(analytics_external, "get_analytics_artifact_unified_snapshot", fake_snapshot)
     async def fake_trace_by_product_id(*, product_id, db, current_tenant):
         _ = (db, current_tenant)
         assert product_id == "20250902_P24_238-2_301"
@@ -211,7 +156,20 @@ async def test_v2_analytics_complaint_analysis_ok(client, monkeypatch, db_sessio
             "p2": {"lot_no": "2507173_02", "additional_data": {"rows": [{}, {}]}},
             "p3": {"lot_no": "2507173_02", "additional_data": {"rows": [{}, {}, {}]}},
         }
+
+    async def fake_fetch_merged_by_product_ids(*, db, tenant_id, product_ids):
+        return pd.DataFrame({"col": [1, 2]})
+
+    def fake_write_csv(df):
+        pass
+
+    async def fake_unified(*, db, tenant_id, product_ids, start_date, end_date, station, **kw):
+        return {"station": station, "status": "ok"}
+
     monkeypatch.setattr(traceability, "trace_by_product_id", fake_trace_by_product_id)
+    monkeypatch.setattr(analytics_data_fetcher, "fetch_merged_by_product_ids", fake_fetch_merged_by_product_ids)
+    monkeypatch.setattr(analytics_external, "write_complain_csv_from_df", fake_write_csv)
+    monkeypatch.setattr(analytical_four_adapter, "run_unified_analysis_from_db", fake_unified)
 
     headers = {"X-Tenant-Id": str(tenant.id)}
     resp = await client.post(
@@ -219,33 +177,18 @@ async def test_v2_analytics_complaint_analysis_ok(client, monkeypatch, db_sessio
         headers=headers,
         json={
             "product_ids": ["20250902_P24_238-2_301"],
-            "snapshot_artifact_key": "serialized_events",
-            "include_report_views": ["llm_reports", "rag_results"],
         },
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["artifact_key"] == "serialized_events"
-    assert body["analysis_scope_id"] != "empty"
-    assert body["scope_tokens_count"] == 1
-    assert body["input_summary"]["resolved_count"] == 1
-    assert body["source_scope"]["p1_count"] == 1
-    assert body["source_scope"]["p2_count"] == 2
-    assert body["source_scope"]["p3_count"] == 3
-    assert body["report_input_scope"]["mode"] == "db_unified_p1p2p3"
-    assert body["snapshot"]["machine_distribution"][0]["name"] == "P24"
-    assert body["report_payload"]["llm_reports"]["metrics"]["total_anomalies"] == 2
-    assert body["report_payload"]["rag_results"]["metrics"]["total_sop"] == 2
-    assert body["mapping"]["20250902_P24_238-2_301"]["matched_stage"] == "matched_trace_lot"
-    assert isinstance(body["report_composition"]["summary"], list)
-    assert isinstance(body["report_composition"]["suggestions"], list)
-    assert isinstance(body["report_composition"]["evidence_refs"], list)
-    assert body["consistency"]["snapshot_scope_locked"] is True
-    assert body["consistency"]["report_scope_locked"] is True
-    assert body["consistency"]["scope_tokens_count"] == 1
-    assert isinstance(body["timing"]["resolve_ms"], (int, float))
-    assert isinstance(body["timing"]["snapshot_ms"], (int, float))
-    assert isinstance(body["timing"]["report_ms"], (int, float))
+    assert body["requested_ids"] == ["20250902_P24_238-2_301"]
+    assert body["mapping"]["20250902_P24_238-2_301"]["matched_stage"] == "trace_ok"
+    assert body["source_scope"]["resolved_count"] == 1
+    assert body["source_scope"]["merged_rows"] == 2
+    assert "P1" in body["analysis"]
+    assert "P2" in body["analysis"]
+    assert "P3" in body["analysis"]
+    assert isinstance(body["timing"]["trace_ms"], (int, float))
     assert isinstance(body["timing"]["total_ms"], (int, float))
 
 
@@ -253,38 +196,29 @@ async def test_v2_analytics_complaint_analysis_ok(client, monkeypatch, db_sessio
 async def test_v2_analytics_complaint_analysis_all_unmatched_returns_diagnostics_only(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
 
-    from app.api import routes_analytics
     from app.api import traceability
-    from app.services import analytics_external
+    from app.services import analytics_data_fetcher, analytics_external
+    from app.services import analytical_four_adapter
 
-    async def fake_resolve_artifact_input(**kwargs):
-        _ = kwargs
-        return routes_analytics.ArtifactInputResolveResponse(
-            requested=["bad-id"],
-            requested_count=1,
-            normalized_inputs={"bad-id": ["bad-id"]},
-            resolved=[],
-            resolved_count=0,
-            unmatched=["bad-id"],
-            unmatched_count=1,
-            matches={"bad-id": []},
-            match_diagnostics={"bad-id": {"reason_code": "invalid_format", "reason_message": "bad format"}},
-            trace_tokens={},
-            trace_attempted_count=1,
-            trace_resolved_count=0,
-            unmatched_reason_counts={"invalid_format": 1},
-            elapsed_ms=10.1,
-        )
+    import pandas as pd
 
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("unified snapshot should not be called when resolved is empty")
-
-    monkeypatch.setattr(routes_analytics, "resolve_artifact_input", fake_resolve_artifact_input)
-    monkeypatch.setattr(analytics_external, "get_analytics_artifact_unified_snapshot", fail_if_called)
     async def fake_trace_by_product_id(*, product_id, db, current_tenant):
         _ = (product_id, db, current_tenant)
         raise HTTPException(status_code=404, detail="not found")
+
+    async def fake_fetch_merged_by_product_ids(*, db, tenant_id, product_ids):
+        return pd.DataFrame()
+
+    def fake_write_csv(df):
+        pass
+
+    async def fake_unified(*, db, tenant_id, product_ids, start_date, end_date, station, **kw):
+        return {"station": station, "status": "no_data"}
+
     monkeypatch.setattr(traceability, "trace_by_product_id", fake_trace_by_product_id)
+    monkeypatch.setattr(analytics_data_fetcher, "fetch_merged_by_product_ids", fake_fetch_merged_by_product_ids)
+    monkeypatch.setattr(analytics_external, "write_complain_csv_from_df", fake_write_csv)
+    monkeypatch.setattr(analytical_four_adapter, "run_unified_analysis_from_db", fake_unified)
 
     headers = {"X-Tenant-Id": str(tenant.id)}
     resp = await client.post(
@@ -292,27 +226,13 @@ async def test_v2_analytics_complaint_analysis_all_unmatched_returns_diagnostics
         headers=headers,
         json={
             "product_ids": ["bad-id"],
-            "snapshot_artifact_key": "serialized_events",
-            "include_report_views": ["llm_reports", "rag_results"],
         },
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["analysis_scope_id"] == "empty"
-    assert body["scope_tokens_count"] == 0
-    assert body["input_summary"]["resolved_count"] == 0
-    assert body["report_input_scope"]["mode"] == "db_unified_p1p2p3"
-    assert body["source_scope"]["total_records"] == 0
-    assert body["snapshot"]["sample_count"] == 0
-    assert body["report_payload"] == {}
-    assert isinstance(body["report_composition"]["summary"], list)
-    assert isinstance(body["report_composition"]["suggestions"], list)
-    assert isinstance(body["report_composition"]["evidence_refs"], list)
-    assert body["consistency"]["scope_tokens_count"] == 0
-    assert body["mapping"]["bad-id"]["matched_stage"] == "unmatched"
-    assert isinstance(body["timing"]["resolve_ms"], (int, float))
-    assert isinstance(body["timing"]["snapshot_ms"], (int, float))
-    assert isinstance(body["timing"]["report_ms"], (int, float))
+    assert body["source_scope"]["resolved_count"] == 0
+    assert body["source_scope"]["merged_rows"] == 0
+    assert body["mapping"]["bad-id"]["matched_stage"] == "trace_error"
     assert isinstance(body["timing"]["total_ms"], (int, float))
 
 
@@ -320,42 +240,11 @@ async def test_v2_analytics_complaint_analysis_all_unmatched_returns_diagnostics
 async def test_v2_analytics_complaint_analysis_partial_hit_keeps_analysis_and_diagnostics(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
 
-    from app.api import routes_analytics
     from app.api import traceability
-    from app.services import analytics_external
+    from app.services import analytics_data_fetcher, analytics_external
+    from app.services import analytical_four_adapter
 
-    async def fake_resolve_artifact_input(**kwargs):
-        _ = kwargs
-        return routes_analytics.ArtifactInputResolveResponse(
-            requested=["hit-id", "miss-id"],
-            requested_count=2,
-            normalized_inputs={"hit-id": ["hit-id"], "miss-id": ["miss-id"]},
-            resolved=["2507173_02_19"],
-            resolved_count=1,
-            unmatched=["miss-id"],
-            unmatched_count=1,
-            matches={"hit-id": ["2507173_02_19"], "miss-id": []},
-            match_diagnostics={
-                "hit-id": {"reason_code": "", "reason_message": "", "trace_source": "db_trace_lot"},
-                "miss-id": {"reason_code": "no_trace", "reason_message": "No trace"},
-            },
-            trace_tokens={"hit-id": ["2507173_02_19"], "miss-id": []},
-            trace_attempted_count=1,
-            trace_resolved_count=0,
-            unmatched_reason_counts={"no_trace": 1},
-            elapsed_ms=8.8,
-        )
-
-    def fake_snapshot(key, **kwargs):
-        _ = kwargs
-        return {
-            "artifact_key": str(key),
-            "sample_count": 2,
-            "station_distribution": [{"name": "P2", "count": 2}],
-            "machine_distribution": [{"name": "P24", "count": 2}],
-            "top_features": [{"name": "IQR", "count": 2}],
-            "metrics": {"total_events": 2},
-        }
+    import pandas as pd
 
     async def fake_trace_by_product_id(*, product_id, db, current_tenant):
         _ = (db, current_tenant)
@@ -367,9 +256,19 @@ async def test_v2_analytics_complaint_analysis_partial_hit_keeps_analysis_and_di
             }
         raise HTTPException(status_code=404, detail="not found")
 
-    monkeypatch.setattr(routes_analytics, "resolve_artifact_input", fake_resolve_artifact_input)
-    monkeypatch.setattr(analytics_external, "get_analytics_artifact_unified_snapshot", fake_snapshot)
+    async def fake_fetch_merged_by_product_ids(*, db, tenant_id, product_ids):
+        return pd.DataFrame({"col": [1]})
+
+    def fake_write_csv(df):
+        pass
+
+    async def fake_unified(*, db, tenant_id, product_ids, start_date, end_date, station, **kw):
+        return {"station": station, "status": "ok"}
+
     monkeypatch.setattr(traceability, "trace_by_product_id", fake_trace_by_product_id)
+    monkeypatch.setattr(analytics_data_fetcher, "fetch_merged_by_product_ids", fake_fetch_merged_by_product_ids)
+    monkeypatch.setattr(analytics_external, "write_complain_csv_from_df", fake_write_csv)
+    monkeypatch.setattr(analytical_four_adapter, "run_unified_analysis_from_db", fake_unified)
 
     headers = {"X-Tenant-Id": str(tenant.id)}
     resp = await client.post(
@@ -377,19 +276,14 @@ async def test_v2_analytics_complaint_analysis_partial_hit_keeps_analysis_and_di
         headers=headers,
         json={
             "product_ids": ["hit-id", "miss-id"],
-            "snapshot_artifact_key": "serialized_events",
-            "include_report_views": ["llm_reports", "rag_results"],
         },
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["input_summary"]["requested_count"] == 2
-    assert body["input_summary"]["resolved_count"] == 1
-    assert body["input_summary"]["unmatched_count"] == 1
-    assert body["snapshot"]["sample_count"] == 2
-    assert body["mapping"]["hit-id"]["matched_stage"] == "matched_trace_lot"
-    assert body["mapping"]["miss-id"]["matched_stage"] == "unmatched"
-    assert body["mapping"]["miss-id"]["reason_code"] == "no_trace"
+    assert body["source_scope"]["requested_count"] == 2
+    assert body["source_scope"]["resolved_count"] == 1
+    assert body["mapping"]["hit-id"]["matched_stage"] == "trace_ok"
+    assert body["mapping"]["miss-id"]["matched_stage"] == "trace_error"
 
 
 @pytest.mark.asyncio
