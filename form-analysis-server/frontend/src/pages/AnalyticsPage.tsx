@@ -1,327 +1,55 @@
-import { ParetoChart } from '../components/analytics/ParetoChart'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEventHandler } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DayPicker, type DateRange } from 'react-day-picker'
-import { endOfMonth, endOfWeek, format, startOfMonth, startOfWeek } from 'date-fns'
-import { enUS, zhTW } from 'date-fns/locale'
-import { ResponsiveContainer, Pie, PieChart, Cell, Tooltip, Legend, ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid } from 'recharts'
+import type { DateRange } from 'react-day-picker'
 import { getTenantId } from '../services/tenant'
 import { getTenantLabelById, writeTenantMap } from '../services/tenantMap'
 import { clampCustomRange, normalizeDayPickerRange } from '../utils/analyticsDateRange'
 import { ArtifactsView, type ViewKey } from '../components/analytics/ArtifactsView'
 
+import type { TenantRow } from '../types/common'
+import type {
+  AnalysisResult,
+  QueryRecordLite,
+  QueryResponseLite,
+  RangeMode,
+  StationSelection,
+  TraceabilityData,
+  ParetoPoint,
+} from './analytics/types'
+import {
+  PARETO_ENABLED_DAILY,
+  PARETO_TOP_N,
+  PARETO_CUM_THRESHOLD,
+  PARETO_MIN_COUNT,
+  PARETO_SHOW_ZERO,
+  PARETO_SOURCE_NG,
+  PARETO_SOURCE_FEATURE,
+} from './analytics/types'
+import {
+  extractProduceNosFromTrace,
+  parseProductIds,
+  toYmd,
+  getModeBounds,
+  parseCounts,
+  isPlainObject,
+  normalizeAnalysisResult,
+  pickOverallNode,
+  pct,
+  round3,
+  toCumsumSeries,
+  buildParetoSeries,
+} from './analytics/utils'
+import { DateRangeSection } from './analytics/DateRangeSection'
+import { NgModeSection } from './analytics/NgModeSection'
+import { AnalysisResultsSection } from './analytics/AnalysisResultsSection'
+
 import './../styles/analytics-page.css'
 import 'react-day-picker/dist/style.css'
 
-type RatioNode = {
-  '0'?: number
-  '1'?: number
-  total_count?: number
-  count_0?: number
-  label?: string
-}
-
-type AnalysisResult = Record<string, Record<string, RatioNode>>
-
-type StationSelection = {
-  p2: boolean
-  p3: boolean
-  all: boolean
-}
-
-import type { DataType, TenantRow } from '../types/common'
-
-type QueryRecordLite = {
-  id: string
-  lot_no: string
-  data_type: DataType
-  production_date?: string
-  created_at: string
-  display_name?: string
-  product_id?: string
-  machine_no?: string
-  mold_no?: string
-  additional_data?: Record<string, unknown>
-}
-
-type QueryResponseLite = {
-  total_count: number
-  page: number
-  page_size: number
-  records: QueryRecordLite[]
-}
-
-type TraceabilityData = {
-  product_id: string
-  p3: any
-  p2: any
-  p1: any
-  trace_complete: boolean
-  missing_links: string[]
-}
-
-function extractProduceNosFromTrace(data: TraceabilityData | null): string[] {
-  if (!data || !data.p3 || typeof data.p3 !== 'object') return []
-
-  const out: string[] = []
-  const seen = new Set<string>()
-  const push = (value: unknown) => {
-    const s = String(value ?? '').trim()
-    if (!s) return
-    const key = s.toLowerCase()
-    if (seen.has(key)) return
-    seen.add(key)
-    out.push(s)
-  }
-
-  const p3: any = data.p3
-  const rows = p3?.additional_data?.rows
-  if (Array.isArray(rows)) {
-    for (const row of rows) {
-      if (!row || typeof row !== 'object') continue
-      const r: any = row
-      push(r['Produce_No.'])
-      push(r['Produce_No'])
-      push(r['produce_no'])
-      push(r['P3_No.'])
-      if (out.length >= 10) break
-    }
-  }
-
-  return out
-}
-
-
-
-
-// Preset modes are week/month/quarter/half-year; custom supports day-level.
-type RangeMode = 'week' | 'month' | 'quarter' | 'halfYear' | 'custom'
-
-function parseProductIds(input: string): string[] {
-  const normalizeProductId = (value: string): string => {
-    const s = value.trim()
-    if (!s) return s
-
-    // Screenshot format examples:
-    //   250902-P24-2382-301
-    // Desired DB/CSV format:
-    //   20250902_P24_238-2_301
-    const m = s.match(/^([0-9]{6})-(P[0-9]{2})-([0-9]{4})-([0-9]{3})$/i)
-    if (m) {
-      const yymmdd = m[1]
-      const station = m[2].toUpperCase()
-      const film = m[3]
-      const seq = m[4]
-
-      const yyyy = `20${yymmdd.slice(0, 2)}`
-      const mm = yymmdd.slice(2, 4)
-      const dd = yymmdd.slice(4, 6)
-      const yyyymmdd = `${yyyy}${mm}${dd}`
-
-      // film: 2382 -> 238-2
-      const filmFmt = `${film.slice(0, 3)}-${film.slice(3)}`
-
-      return `${yyyymmdd}_${station}_${filmFmt}_${seq}`
-    }
-
-    return s
-  }
-
-  const raw = input
-    .split(/[\s,，;；]+/g)
-    .map((s) => normalizeProductId(s))
-    .filter(Boolean)
-  const uniq: string[] = []
-  const seen = new Set<string>()
-  for (const x of raw) {
-    const key = x.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    uniq.push(x)
-    if (uniq.length >= 50) break
-  }
-  return uniq
-}
-
-function toYmd(date: Date): string {
-  return format(date, 'yyyy-MM-dd')
-}
-
-function getHalfYearBounds(date: Date): { start: Date; end: Date } {
-  const year = date.getFullYear()
-  const month = date.getMonth() // 0-11
-  if (month < 6) {
-    return { start: new Date(year, 0, 1), end: new Date(year, 6, 0) }
-  }
-  return { start: new Date(year, 6, 1), end: new Date(year + 1, 0, 0) }
-}
-
-function getQuarterBounds(date: Date): { start: Date; end: Date } {
-  const year = date.getFullYear()
-  const month = date.getMonth() // 0-11
-  const quarterStartMonth = Math.floor(month / 3) * 3
-  return {
-    start: new Date(year, quarterStartMonth, 1),
-    end: new Date(year, quarterStartMonth + 3, 0),
-  }
-}
-
-function getModeBounds(mode: Exclude<RangeMode, 'custom'>, anchor: Date): { start: Date; end: Date } {
-  switch (mode) {
-    case 'week':
-      return {
-        start: startOfWeek(anchor, { weekStartsOn: 1 }),
-        end: endOfWeek(anchor, { weekStartsOn: 1 }),
-      }
-    case 'month':
-      return { start: startOfMonth(anchor), end: endOfMonth(anchor) }
-    case 'quarter':
-      return getQuarterBounds(anchor)
-    case 'halfYear':
-      return getHalfYearBounds(anchor)
-  }
-}
-
-function getIsoWeekYear(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-  const day = d.getUTCDay() || 7
-  d.setUTCDate(d.getUTCDate() + 4 - day)
-  return d.getUTCFullYear()
-}
-
-function getIsoWeekNumber(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-  const day = d.getUTCDay() || 7
-  d.setUTCDate(d.getUTCDate() + 4 - day)
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
-  const diffDays = Math.floor((d.getTime() - yearStart.getTime()) / (24 * 60 * 60 * 1000)) + 1
-  return Math.ceil(diffDays / 7)
-}
-
-function isoWeekStartDate(weekYear: number, weekNumber: number): Date {
-  const safeWeek = Math.max(1, Math.min(53, Math.floor(weekNumber || 1)))
-  const simple = new Date(Date.UTC(weekYear, 0, 1 + (safeWeek - 1) * 7))
-  const dow = simple.getUTCDay() || 7
-  const mondayUtc = new Date(simple)
-  mondayUtc.setUTCDate(simple.getUTCDate() - dow + 1)
-  return new Date(mondayUtc.getUTCFullYear(), mondayUtc.getUTCMonth(), mondayUtc.getUTCDate())
-}
-
-function parseCounts(node: RatioNode | undefined): { ok: number; ng: number; total: number } {
-  const total = Math.max(0, Number(node?.total_count ?? 0) || 0)
-  const ng = Math.max(0, Number(node?.count_0 ?? 0) || 0)
-  const ok = Math.max(0, total - ng)
-  return { ok, ng, total }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function normalizeAnalysisResult(input: unknown): AnalysisResult | null {
-  if (!isPlainObject(input)) return null
-  const result: AnalysisResult = {}
-  for (const [category, bucket] of Object.entries(input)) {
-    if (!isPlainObject(bucket)) continue
-    const inner: Record<string, RatioNode> = {}
-    for (const [key, rawNode] of Object.entries(bucket)) {
-      if (!isPlainObject(rawNode)) continue
-      const node = rawNode as RatioNode
-      inner[key] = node
-    }
-    if (Object.keys(inner).length > 0) result[category] = inner
-  }
-  return Object.keys(result).length > 0 ? result : null
-}
-
-
-function pickOverallNode(result: AnalysisResult): { category: string; key: string; node: RatioNode } | null {
-  let best: { category: string; key: string; node: RatioNode } | null = null
-  let bestTotal = -1
-  let bestNg = -1
-  for (const [category, bucket] of Object.entries(result)) {
-    for (const [key, node] of Object.entries(bucket)) {
-      const total = Number(node?.total_count ?? 0) || 0
-      const ng = Number(node?.count_0 ?? 0) || 0
-      if (total > bestTotal || (total === bestTotal && ng > bestNg)) {
-        best = { category, key, node }
-        bestTotal = total
-        bestNg = ng
-      }
-    }
-  }
-  return best
-}
-
-function pct(n: number, d: number): number {
-  if (!d) return 0
-  return Math.round((n / d) * 1000) / 10
-}
-
-function round3(n: number): number {
-  return Math.round(n * 1000) / 1000
-}
-
-function toCumsumSeries(items: ReadonlyArray<{ name: string; pct: number }>): Array<{ name: string; pct: number; cumPct: number }> {
-  let cum = 0
-  return items.map((x) => {
-    const pct3 = round3(x.pct)
-    cum = Math.min(100, round3(cum + pct3))
-    return { name: x.name, pct: pct3, cumPct: cum }
-  })
-}
-
-type ParetoItem = { name: string; value: number }
-type ParetoPoint = { name: string; value: number; cumPct: number }
-
-const PARETO_ENABLED_DAILY = true
-const PARETO_TOP_N = 12
-const PARETO_CUM_THRESHOLD = 0.8
-const PARETO_MIN_COUNT = 1
-const PARETO_SHOW_ZERO = false
-const PARETO_SOURCE_NG = true
-const PARETO_SOURCE_FEATURE = true
-
-function buildParetoSeries(
-  items: ReadonlyArray<ParetoItem>,
-  options: {
-    topN?: number
-    cumThreshold?: number
-    minValue?: number
-    showZero?: boolean
-  }
-): ParetoPoint[] {
-  const minValue = options.minValue ?? 0
-  const showZero = options.showZero ?? false
-  const topN = options.topN
-  const cumThreshold = options.cumThreshold
-
-  const filtered = items
-    .map((item) => ({
-      name: String(item.name || '').trim(),
-      value: Number(item.value) || 0,
-    }))
-    .filter((item) => item.name && (showZero ? item.value >= minValue : item.value >= minValue))
-    .sort((a, b) => b.value - a.value)
-
-  if (filtered.length === 0) return []
-
-  const total = filtered.reduce((acc, item) => acc + item.value, 0) || 0
-  let running = 0
-  const out: ParetoPoint[] = []
-  for (const item of filtered) {
-    running += item.value
-    const cumPct = total > 0 ? round3((running / total) * 100) : 0
-    out.push({ name: item.name, value: item.value, cumPct })
-    if (topN && out.length >= topN) break
-    if (cumThreshold && total > 0 && running / total >= cumThreshold) break
-  }
-
-  return out
-}
+import type { DataType } from '../types/common'
 
 export function AnalyticsPage() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const [startDate, setStartDate] = useState(() => {
     const anchor = new Date()
     const bounds = getModeBounds('month', anchor)
@@ -421,10 +149,8 @@ export function AnalyticsPage() {
     return toCumsumSeries(top)
   }, [ngFeaturePctEntries])
 
-
   const ngFeaturePctChartHeight = useMemo(() => {
     const count = Math.min(10, ngFeaturePctEntries.length)
-    // For horizontal bars, reserve space for long X-axis labels.
     return Math.max(360, 220 + count * 4)
   }, [ngFeaturePctEntries.length])
 
@@ -481,7 +207,6 @@ export function AnalyticsPage() {
   const commitProductId = useCallback(() => {
     const next = productIdDraft.trim()
     if (next === productIdCommitted) return
-    // Default behavior: date-based analysis auto-run. product_id input switches to manual run.
     autoRunArmedRef.current = parseProductIds(next).length === 0
     setProductIdCommitted(next)
   }, [productIdCommitted, productIdDraft])
@@ -547,14 +272,6 @@ export function AnalyticsPage() {
     ]
   }, [overall.ok, overall.ng, overall.total])
 
-  const OK_COLOR = '#2563eb'
-  const NG_COLOR = '#dc2626'
-  const colors = [OK_COLOR, NG_COLOR]
-
-  const pickerLocale = useMemo(() => {
-    return i18n.language === 'en' ? enUS : zhTW
-  }, [i18n.language])
-
   const applyComputedRange = (start: Date, end: Date) => {
     setStartDate(toYmd(start))
     setEndDate(toYmd(end))
@@ -573,14 +290,11 @@ export function AnalyticsPage() {
   }
 
   const clearDateFilter = () => {
-    // 清除日期時不觸發 auto-run，避免查詢所有資料
     autoRunArmedRef.current = false
     setStartDate('')
     setEndDate('')
     setAnchorDate(undefined)
     setCustomRange(undefined)
-    // Keep complaint(product_id)-driven state untouched.
-    // Date clear should only reset date-mode outputs.
     setAnalysisResult(null)
     setRan(false)
     setNgMode(false)
@@ -604,7 +318,6 @@ export function AnalyticsPage() {
     const from = normalized.from
     const to = normalized.to ?? normalized.from
 
-    // Single-day selection stays day-level (no forced expansion).
     if (from.getTime() === to.getTime()) {
       applyComputedRange(from, to)
       return
@@ -723,16 +436,16 @@ export function AnalyticsPage() {
   const ngParetoData = useMemo(() => {
     if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_NG || !analysisResult) return [] as ParetoPoint[]
     const candidates = ['P2.NG_code', 'NG_code', 'P3.NG_code']
-    let bucket: Record<string, RatioNode> | null = null
+    let bucket: Record<string, any> | null = null
     for (const key of candidates) {
       const entry = analysisResult[key]
       if (entry && typeof entry === 'object') {
-        bucket = entry as Record<string, RatioNode>
+        bucket = entry
         break
       }
     }
     if (!bucket) return []
-    const items: ParetoItem[] = Object.entries(bucket)
+    const items = Object.entries(bucket)
       .map(([name, node]) => ({
         name,
         value: Number(node?.count_0 ?? 0) || 0,
@@ -747,7 +460,7 @@ export function AnalyticsPage() {
 
   const featureParetoData = useMemo(() => {
     if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_FEATURE || !extractionData) return [] as ParetoPoint[]
-    const items: ParetoItem[] = Object.entries(extractionData.final_raw_score || {}).map(
+    const items = Object.entries(extractionData.final_raw_score || {}).map(
       ([name, value]) => ({ name, value: Number(value) || 0 })
     )
     return buildParetoSeries(items, {
@@ -765,7 +478,6 @@ export function AnalyticsPage() {
   }, [])
 
   const computeAutoRunKey = useCallback(() => {
-    // Date analysis key should not depend on product_id; product_id uses manual run.
     return JSON.stringify({ startDate, endDate, stations })
   }, [startDate, endDate, stations])
 
@@ -776,10 +488,9 @@ export function AnalyticsPage() {
       setNgMode(false)
       setNgRecords([])
       setNgError('')
-      
-      // Race condition prevention: increment request ID and capture it
+
       const currentRequestId = ++analyzeRequestIdRef.current
-      
+
       try {
         const chosenStations: Array<'P2' | 'P3' | 'ALL'> = []
         if (stations.all) {
@@ -832,7 +543,6 @@ export function AnalyticsPage() {
 
         const normalized = await requestAnalyze(hasProductIds ? ['P2', 'P3'] : chosenStations)
 
-        // Race condition check: ignore stale responses
         if (currentRequestId !== analyzeRequestIdRef.current) {
           console.log('[Analytics] Ignoring stale response, requestId:', currentRequestId, 'current:', analyzeRequestIdRef.current)
           return
@@ -845,7 +555,6 @@ export function AnalyticsPage() {
           return
         }
 
-        // 自動化：收到 response 後立刻顯示繪圖結果
         const hasAnyData = Object.values(normalized).some((bucket) =>
           Object.values(bucket).some((node) => (Number((node as any)?.total_count ?? 0) || 0) > 0),
         )
@@ -985,7 +694,6 @@ export function AnalyticsPage() {
     setNgError('')
     setNgLoading(true)
     try {
-      // Use user-selected stations instead of hardcoded P2
       const wantedTypes: DataType[] = []
       if (stations.all) {
         wantedTypes.push('P2', 'P3')
@@ -993,7 +701,7 @@ export function AnalyticsPage() {
         if (stations.p2) wantedTypes.push('P2')
         if (stations.p3) wantedTypes.push('P3')
       }
-      
+
       if (wantedTypes.length === 0) {
         setNgError(t('analytics.stationPickError'))
         setNgLoading(false)
@@ -1016,9 +724,6 @@ export function AnalyticsPage() {
             baseFilters.push({ field: 'production_date', op: 'lte', value: endDate })
           }
 
-          // Keep NG query date-based; product_id is handled via manual run.
-
-          // winder_number filter only applies to P2
           if (dt === 'P2' && opts?.winderNumber !== undefined && opts.winderNumber !== null) {
             baseFilters.push({ field: 'winder_number', op: 'eq', value: String(opts.winderNumber) })
           }
@@ -1041,10 +746,8 @@ export function AnalyticsPage() {
             return (await res.json()) as QueryResponseLite
           }
 
-          // P2 uses slitting_result, P3 uses Finish for NG detection
           if (dt === 'P2') {
             try {
-              // Prefer materialized column for better index usage.
               return await queryDynamic([
                 ...baseFilters,
                 { field: 'slitting_result', op: 'eq', value: 0 },
@@ -1062,14 +765,12 @@ export function AnalyticsPage() {
               ) {
                 throw e
               }
-              // Backward-compatible fallback for older backends.
               return await queryDynamic([
                 ...baseFilters,
                 { field: 'row_data.Striped Results', op: 'eq', value: 0 },
               ])
             }
           } else if (dt === 'P3') {
-            // P3 uses Finish field for NG (0 = NG)
             try {
               return await queryDynamic([
                 ...baseFilters,
@@ -1077,7 +778,6 @@ export function AnalyticsPage() {
               ])
             } catch (e) {
               const msg = String(e)
-              // Try lowercase variant if needed
               if (msg.includes('Invalid') || msg.includes('Unsupported')) {
                 return await queryDynamic([
                   ...baseFilters,
@@ -1087,8 +787,7 @@ export function AnalyticsPage() {
               throw e
             }
           }
-          
-          // Fallback: return empty result for unknown data type
+
           return { records: [], total_count: 0, page: 1, page_size: 200 } as QueryResponseLite
         }),
       )
@@ -1217,277 +916,18 @@ export function AnalyticsPage() {
         </div>
 
         <div className="analytics-filters">
-          <div className="analytics-filter-block analytics-date-block">
-            <div className="analytics-date-block-top">
-              <div>
-                <div className="analytics-filter-title">{t('analytics.dateRangeMode')}</div>
-                <div className="analytics-date-mode">
-                  <select
-                    className="register-input analytics-date-select"
-                    value={rangeMode}
-                    onChange={(e) => handleRangeModeChange(e.target.value as RangeMode)}
-                  >
-                    <option value="week">{t('analytics.modeWeek')}</option>
-                    <option value="month">{t('analytics.modeMonth')}</option>
-                    <option value="quarter">{t('analytics.modeQuarter')}</option>
-                    <option value="halfYear">{t('analytics.modeHalfYear')}</option>
-                    <option value="custom">{t('analytics.modeCustom')}</option>
-                  </select>
-                </div>
-                <div className="analytics-date-preview">{t('analytics.rangePreview', { start: startDate || '-', end: endDate || '-' })}</div>
-              </div>
-              <div className="analytics-date-actions">
-                <button type="button" className="btn-secondary" onClick={clearDateFilter}>
-                  {t('common.clear')}
-                </button>
-              </div>
-            </div>
-
-            <div className="analytics-date-picker">
-              <div className="analytics-filter-title">{rangeMode === 'custom' ? t('analytics.pickRange') : t('analytics.pickPreset')}</div>
-              {rangeMode === 'custom' ? (
-                <DayPicker
-                  mode="range"
-                  selected={customRange}
-                  onSelect={handleSelectCustomRange}
-                  showOutsideDays
-                  numberOfMonths={isCompactCalendar ? 1 : 2}
-                  locale={pickerLocale}
-                  weekStartsOn={1}
-                />
-              ) : (
-                (() => {
-                  const today = new Date()
-                  const hasAnchor = Boolean(anchorDate)
-                  const anchor = anchorDate ?? today
-
-                  const baseYear = anchor.getFullYear()
-                  const years = Array.from({ length: 9 }, (_, i) => baseYear - 4 + i)
-
-                  const month = anchor.getMonth() + 1
-                  const quarter = Math.floor(anchor.getMonth() / 3) + 1
-                  const half = anchor.getMonth() < 6 ? 1 : 2
-
-                  const isoWeekYear = getIsoWeekYear(anchor)
-                  const isoWeek = getIsoWeekNumber(anchor)
-
-                  if (rangeMode === 'month') {
-                    const yearValue = hasAnchor ? String(baseYear) : ''
-                    const monthValue = hasAnchor ? String(month) : ''
-                    return (
-                      <div className="analytics-date-presets">
-                        <label className="analytics-date-label">
-                          {t('analytics.yearLabel')}
-                          <select
-                            className="register-input analytics-date-select"
-                            value={yearValue}
-                            onChange={(e) => {
-                              if (!e.target.value) {
-                                applyAnchorForMode('month', undefined)
-                                return
-                              }
-                              const y = Number(e.target.value)
-                              if (!Number.isFinite(y)) return
-                              applyAnchorForMode('month', new Date(y, month - 1, 1))
-                            }}
-                          >
-                            {!hasAnchor ? <option value="">-</option> : null}
-                            {years.map((y) => (
-                              <option key={y} value={String(y)}>
-                                {y}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="analytics-date-label">
-                          {t('analytics.monthLabel')}
-                          <select
-                            className="register-input analytics-date-select"
-                            value={monthValue}
-                            onChange={(e) => {
-                              if (!e.target.value) {
-                                applyAnchorForMode('month', undefined)
-                                return
-                              }
-                              const m = Number(e.target.value)
-                              if (!Number.isFinite(m)) return
-                              applyAnchorForMode('month', new Date(baseYear, Math.max(1, Math.min(12, m)) - 1, 1))
-                            }}
-                          >
-                            {!hasAnchor ? <option value="">-</option> : null}
-                            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                              <option key={m} value={String(m)}>
-                                {m}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                    )
-                  }
-
-                  if (rangeMode === 'quarter') {
-                    const yearValue = hasAnchor ? String(baseYear) : ''
-                    const quarterValue = hasAnchor ? String(quarter) : ''
-                    return (
-                      <div className="analytics-date-presets">
-                        <label className="analytics-date-label">
-                          {t('analytics.yearLabel')}
-                          <select
-                            className="register-input analytics-date-select"
-                            value={yearValue}
-                            onChange={(e) => {
-                              if (!e.target.value) {
-                                applyAnchorForMode('quarter', undefined)
-                                return
-                              }
-                              const y = Number(e.target.value)
-                              if (!Number.isFinite(y)) return
-                              applyAnchorForMode('quarter', new Date(y, (quarter - 1) * 3, 1))
-                            }}
-                          >
-                            {!hasAnchor ? <option value="">-</option> : null}
-                            {years.map((y) => (
-                              <option key={y} value={String(y)}>
-                                {y}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="analytics-date-label">
-                          {t('analytics.quarterLabel')}
-                          <select
-                            className="register-input analytics-date-select"
-                            value={quarterValue}
-                            onChange={(e) => {
-                              if (!e.target.value) {
-                                applyAnchorForMode('quarter', undefined)
-                                return
-                              }
-                              const q = Number(e.target.value)
-                              if (!Number.isFinite(q)) return
-                              const qq = Math.max(1, Math.min(4, q))
-                              applyAnchorForMode('quarter', new Date(baseYear, (qq - 1) * 3, 1))
-                            }}
-                          >
-                            {!hasAnchor ? <option value="">-</option> : null}
-                            {[1, 2, 3, 4].map((q) => (
-                              <option key={q} value={String(q)}>
-                                Q{q}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                    )
-                  }
-
-                  if (rangeMode === 'halfYear') {
-                    const yearValue = hasAnchor ? String(baseYear) : ''
-                    const halfValue = hasAnchor ? String(half) : ''
-                    return (
-                      <div className="analytics-date-presets">
-                        <label className="analytics-date-label">
-                          {t('analytics.yearLabel')}
-                          <select
-                            className="register-input analytics-date-select"
-                            value={yearValue}
-                            onChange={(e) => {
-                              if (!e.target.value) {
-                                applyAnchorForMode('halfYear', undefined)
-                                return
-                              }
-                              const y = Number(e.target.value)
-                              if (!Number.isFinite(y)) return
-                              applyAnchorForMode('halfYear', new Date(y, half === 1 ? 0 : 6, 1))
-                            }}
-                          >
-                            {!hasAnchor ? <option value="">-</option> : null}
-                            {years.map((y) => (
-                              <option key={y} value={String(y)}>
-                                {y}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="analytics-date-label">
-                          {t('analytics.halfYearLabel')}
-                          <select
-                            className="register-input analytics-date-select"
-                            value={halfValue}
-                            onChange={(e) => {
-                              if (!e.target.value) {
-                                applyAnchorForMode('halfYear', undefined)
-                                return
-                              }
-                              const h = Number(e.target.value)
-                              if (!Number.isFinite(h)) return
-                              const hh = Math.max(1, Math.min(2, h))
-                              applyAnchorForMode('halfYear', new Date(baseYear, hh === 1 ? 0 : 6, 1))
-                            }}
-                          >
-                            {!hasAnchor ? <option value="">-</option> : null}
-                            <option value="1">{t('analytics.halfYearH1')}</option>
-                            <option value="2">{t('analytics.halfYearH2')}</option>
-                          </select>
-                        </label>
-                      </div>
-                    )
-                  }
-
-                  // week
-                  const yearValue = hasAnchor ? String(isoWeekYear) : ''
-                  const weekValue = hasAnchor ? String(isoWeek) : ''
-                  return (
-                    <div className="analytics-date-presets">
-                      <label className="analytics-date-label">
-                        {t('analytics.yearLabel')}
-                        <select
-                          className="register-input analytics-date-select"
-                          value={yearValue}
-                          onChange={(e) => {
-                            if (!e.target.value) {
-                              applyAnchorForMode('week', undefined)
-                              return
-                            }
-                            const y = Number(e.target.value)
-                            if (!Number.isFinite(y)) return
-                            applyAnchorForMode('week', isoWeekStartDate(y, isoWeek))
-                          }}
-                        >
-                          {!hasAnchor ? <option value="">-</option> : null}
-                          {Array.from({ length: 9 }, (_, i) => isoWeekYear - 4 + i).map((y) => (
-                            <option key={y} value={String(y)}>
-                              {y}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="analytics-date-label">
-                        {t('analytics.weekNumberLabel')}
-                        <input
-                          className="register-input analytics-date-input"
-                          type="number"
-                          min={1}
-                          max={53}
-                          value={weekValue}
-                          onChange={(e) => {
-                            if (!e.target.value) {
-                              applyAnchorForMode('week', undefined)
-                              return
-                            }
-                            const w = Number(e.target.value)
-                            if (!Number.isFinite(w)) return
-                            applyAnchorForMode('week', isoWeekStartDate(isoWeekYear, w))
-                          }}
-                        />
-                      </label>
-                    </div>
-                  )
-                })()
-              )}
-            </div>
-          </div>
+          <DateRangeSection
+            rangeMode={rangeMode}
+            anchorDate={anchorDate}
+            customRange={customRange}
+            startDate={startDate}
+            endDate={endDate}
+            isCompactCalendar={isCompactCalendar}
+            onRangeModeChange={handleRangeModeChange}
+            onSelectCustomRange={handleSelectCustomRange}
+            onApplyAnchorForMode={applyAnchorForMode}
+            onClearDateFilter={clearDateFilter}
+          />
 
           <div className="analytics-filter-block">
             <div className="analytics-filter-title">{t('analytics.productId')}</div>
@@ -1499,7 +939,6 @@ export function AnalyticsPage() {
               value={productIdDraft}
               onChange={(e) => {
                 setProductIdDraft(e.target.value)
-                // Keep height in sync for immediate feedback.
                 window.setTimeout(() => syncProductIdTextareaHeight(), 0)
               }}
               onBlur={commitProductId}
@@ -1593,484 +1032,43 @@ export function AnalyticsPage() {
         ) : null}
 
       {ngMode ? (
-        <>
-          <div className="analytics-section-header">{t('analytics.ngOnlyTitle')}{ngWinderNumber ? ` · W${ngWinderNumber}` : ''}</div>
-
-          <section className="analytics-card">
-            <div className="analytics-actions" style={{ justifyContent: 'space-between', marginTop: 0 }}>
-              <button type="button" className="btn-secondary" onClick={exitNgMode}>
-                {t('analytics.backToAnalysis')}
-              </button>
-
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {ngWinderNumber !== null ? (
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => {
-                      setNgWinderNumber(null)
-                      void fetchNgRecords({ winderNumber: null })
-                    }}
-                    disabled={ngLoading}
-                  >
-                    {t('common.clear')}
-                  </button>
-                ) : null}
-
-                <button type="button" className="btn-primary" onClick={() => void fetchNgRecords({ winderNumber: ngWinderNumber })} disabled={ngLoading}>
-                  {ngLoading ? t('analytics.loading') : t('analytics.refresh')}
-                </button>
-              </div>
-            </div>
-
-            {ngError ? <div className="analytics-error">{ngError}</div> : null}
-
-            {PARETO_ENABLED_DAILY ? (
-              <div style={{ marginBottom: 16 }}>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                    gap: 12,
-                  }}
-                >
-                  {PARETO_SOURCE_NG ? (
-                    ngParetoData.length > 0 ? (
-                      <ParetoChart
-                        title="NG Pareto (count_0)"
-                        data={ngParetoData}
-                        valueLabel="NG數量"
-                        cumLabel="累積%"
-                      />
-                    ) : (
-                      <div className="analytics-empty">NG Pareto 暫無資料</div>
-                    )
-                  ) : null}
-
-                  {PARETO_SOURCE_FEATURE ? (
-                    extractionLoading ? (
-                      <div className="analytics-empty">{t('analytics.loading')} (Feature Pareto)</div>
-                    ) : featureParetoData.length > 0 ? (
-                      <ParetoChart
-                        title="Feature Pareto (final_raw_score)"
-                        data={featureParetoData}
-                        valueLabel="Final Score"
-                        cumLabel="累積%"
-                      />
-                    ) : (
-                      <div className="analytics-empty">Feature Pareto 暫無資料</div>
-                    )
-                  ) : null}
-                </div>
-
-                {PARETO_SOURCE_FEATURE && extractionData ? (
-                  <details style={{ marginTop: 8 }}>
-                    <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: '#666' }}>
-                      {t('analytics.viewDetails')}
-                    </summary>
-                    <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse', marginTop: 4 }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid #ddd' }}>
-                          <th style={{ textAlign: 'left', padding: '4px 8px' }}>Feature</th>
-                          <th style={{ textAlign: 'right', padding: '4px 8px' }}>Boundary</th>
-                          <th style={{ textAlign: 'right', padding: '4px 8px' }}>SPE</th>
-                          <th style={{ textAlign: 'right', padding: '4px 8px' }}>T²</th>
-                          <th style={{ textAlign: 'right', padding: '4px 8px' }}>Final</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(extractionData.final_raw_score).map(([name, score]) => (
-                          <tr key={name} style={{ borderBottom: '1px solid #eee' }}>
-                            <td style={{ padding: '3px 8px' }}>{name}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{extractionData.boundary_count[name] ?? 0}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{round3(extractionData.spe_score[name] ?? 0)}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 8px' }}>{round3(extractionData.t2_score[name] ?? 0)}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 8px', fontWeight: 600 }}>{round3(score)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </details>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div className="analytics-ng-results">
-              {ngLoading && ngRecords.length === 0 ? <div className="analytics-empty">{t('analytics.loading')}</div> : null}
-              {!ngLoading && ngRecords.length === 0 ? <div className="analytics-empty">{t('analytics.notFound')}</div> : null}
-
-              {ngRecords.map((r) => (
-                <div key={r.id} className="analytics-ng-card">
-                  <div className="analytics-ng-card-head">
-                    <div className="analytics-ng-card-title">
-                      <strong>{r.lot_no}</strong>
-                      <span className="analytics-ng-pill">{r.data_type}</span>
-                    </div>
-                    <div className="muted" style={{ fontSize: '0.9rem' }}>
-                      {r.production_date ? `${t('query.productionDate')}: ${r.production_date}` : null}
-                      {r.production_date && r.product_id ? ' · ' : null}
-                      {r.product_id ? `${t('query.productId')}: ${r.product_id}` : null}
-                    </div>
-                  </div>
-                  <details>
-                    <summary>{t('analytics.viewDetails')}</summary>
-                    {(() => {
-                      const additional = r.additional_data as any
-                      const featurePctObjRaw =
-                        (additional && typeof additional === 'object'
-                          ? (additional.feature_pct ??
-                              additional.featurePct ??
-                              additional.feature_importance?.feature_pct ??
-                              additional.featureImportance?.feature_pct)
-                          : null) as unknown
-
-                      const featurePctObj = isPlainObject(featurePctObjRaw) ? (featurePctObjRaw as Record<string, unknown>) : null
-                      const featurePctEntries = featurePctObj
-                        ? Object.entries(featurePctObj)
-                            .filter(([, v]) => typeof v === 'number' && Number.isFinite(v as number))
-                            .map(([name, v]) => ({ name, pct: Number(v) }))
-                            .sort((a, b) => b.pct - a.pct)
-                        : []
-
-                      const rows: unknown[] = Array.isArray(additional?.rows) ? additional.rows : []
-                      if (rows.length === 0) {
-                        return <div className="analytics-empty">{t('common.noData')}</div>
-                      }
-                      const keys = getNgKeyCandidates(r)
-                      const sorted = sortRowsNgFirst(rows, keys)
-                      const ngOnly = sorted.filter((row) => rowHasNg(row, keys))
-                      const firstRow = sorted.find((x) => x && typeof x === 'object' && !Array.isArray(x)) as Record<string, unknown> | undefined
-                      const headers = firstRow ? Object.keys(firstRow) : []
-                      const ngCount = ngOnly.length
-                      if (ngOnly.length === 0) {
-                        return <div className="analytics-empty">{t('common.noData')}</div>
-                      }
-                      return (
-                        <div className="analytics-ng-details">
-                          {featurePctEntries.length > 0 ? (
-                            <div
-                              className="analytics-ng-feature-pct"
-                              style={{
-                                border: '1px solid #e5e7eb',
-                                borderRadius: 10,
-                                padding: '12px 12px',
-                                marginBottom: 12,
-                                background: '#fafafa',
-                              }}
-                            >
-                              <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                                {t('analytics.featurePct.title')}
-                              </div>
-                              <div
-                                style={{
-                                  display: 'grid',
-                                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                                  gap: 8,
-                                }}
-                              >
-                                {featurePctEntries.slice(0, 12).map((x) => (
-                                  <div key={x.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <div style={{ flex: '1 1 auto', minWidth: 0 }} title={x.name}>
-                                      <div style={{ fontSize: '0.92rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {x.name}
-                                      </div>
-                                      <div style={{ height: 6, background: '#e5e7eb', borderRadius: 999, overflow: 'hidden', marginTop: 4 }}>
-                                        <div
-                                          style={{
-                                            height: '100%',
-                                            width: `${Math.max(0, Math.min(100, x.pct))}%`,
-                                            background: '#2563eb',
-                                          }}
-                                        />
-                                      </div>
-                                    </div>
-                                    <div style={{ width: 62, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                                      {t('analytics.featurePct.percent', { percent: x.pct.toFixed(2) })}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                          <div className="analytics-ng-details-meta muted">
-                            Rows: {rows.length} · NG: {ngCount}
-                          </div>
-                          <div className="analytics-ng-table">
-                            <div className="table-container">
-                              <table className="data-table">
-                                <thead>
-                                  <tr>
-                                    {headers.map((h) => (
-                                      <th key={h}>{h}</th>
-                                    ))}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {ngOnly.map((row, idx) => {
-                                    const rowObj = (row && typeof row === 'object' && !Array.isArray(row) ? (row as Record<string, unknown>) : {})
-                                    const isNg = rowHasNg(rowObj, keys)
-                                    return (
-                                      <tr key={idx} className={isNg ? 'analytics-ng-row' : undefined}>
-                                        {headers.map((h) => (
-                                          <td key={h}>{formatCellValue(rowObj?.[h])}</td>
-                                        ))}
-                                      </tr>
-                                    )
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })()}
-                  </details>
-                </div>
-              ))}
-            </div>
-
-            {ngFeaturePctEntries.length > 0 ? (
-              <div className="analytics-ng-feature-chart" aria-label={t('analytics.featurePct.title')} style={{ marginTop: 16 }}>
-                <div className="analytics-ng-feature-chart-title">{t('analytics.featurePct.title')}</div>
-                <div className="analytics-ng-feature-chart-body" style={{ height: ngFeaturePctChartHeight }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart
-                      data={ngFeaturePctChartData}
-                      margin={{ top: 8, right: 16, bottom: 80, left: 12 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        type="category"
-                        dataKey="name"
-                        interval={0}
-                        angle={-35}
-                        height={80}
-                        textAnchor="end"
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                      <Tooltip
-                        formatter={(value, name) => {
-                          const n = typeof value === 'number' ? value : Number(value)
-                          const label = name === 'cumPct' ? '累積' : '占比'
-                          if (!Number.isFinite(n)) return [String(value), label]
-                          return [`${round3(n).toFixed(3)}%`, label]
-                        }}
-                      />
-                      <Legend />
-                      <Bar dataKey="pct" name="占比" fill="#2563eb" radius={[6, 6, 0, 0]} />
-                      <Line dataKey="cumPct" name="累積" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            ) : null}
-          </section>
-        </>
+        <NgModeSection
+          ngWinderNumber={ngWinderNumber}
+          ngLoading={ngLoading}
+          ngError={ngError}
+          ngRecords={ngRecords}
+          ngParetoData={ngParetoData}
+          featureParetoData={featureParetoData}
+          extractionLoading={extractionLoading}
+          extractionData={extractionData}
+          ngFeaturePctEntries={ngFeaturePctEntries}
+          ngFeaturePctChartData={ngFeaturePctChartData}
+          ngFeaturePctChartHeight={ngFeaturePctChartHeight}
+          onExitNgMode={exitNgMode}
+          onClearWinder={() => {
+            setNgWinderNumber(null)
+            void fetchNgRecords({ winderNumber: null })
+          }}
+          onRefresh={() => void fetchNgRecords({ winderNumber: ngWinderNumber })}
+          getNgKeyCandidates={getNgKeyCandidates}
+          sortRowsNgFirst={sortRowsNgFirst}
+          rowHasNg={rowHasNg}
+          formatCellValue={formatCellValue}
+        />
       ) : ran ? (
-        <>
-          <div className="analytics-section-header">{t('analytics.moldingAnalysis')}</div>
-
-          {/* OK/NG 圓餅圖 */}
-          {overall.total > 0 ? (
-            <section className="analytics-card" style={{ marginBottom: 16 }}>
-              <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>
-                OK / NG ({overall.total} {t('analytics.totalRecords', 'pcs')})
-              </h4>
-              <div style={{ width: '100%', height: 260, display: 'flex', justifyContent: 'center' }}>
-                <ResponsiveContainer width={360} height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={90}
-                      label={({ name }) => `${name}`}
-                    >
-                      {pieData.map((_, i) => (
-                        <Cell key={i} fill={colors[i % colors.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [value ?? 0, '']} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </section>
-          ) : null}
-
-          <section className="analytics-card">
-            <div className="analytics-actions" style={{ justifyContent: 'flex-start', marginTop: 0, gap: 8 }}>
-              {!productIdMode ? (
-                <button
-                  type="button"
-                  className={analysisChartMode === 'heatmap' ? 'btn-primary' : 'btn-secondary'}
-                  onClick={() => setAnalysisChartMode('heatmap')}
-                >
-                  {t('analytics.views.heatmap')}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className={analysisChartMode === 'bar' ? 'btn-primary' : 'btn-secondary'}
-                onClick={() => setAnalysisChartMode('bar')}
-              >
-                {t('analytics.views.bar')}
-              </button>
-            </div>
-
-            {!productIdMode && analysisChartMode === 'heatmap' ? (
-              analysisHeatmapRows.length > 0 ? (
-                <div className="analytics-heatmap">
-                  <div className="analytics-heatmap-head">
-                    <div>{t('analytics.heatmap.category')}</div>
-                    <div>{t('analytics.heatmap.value')}</div>
-                    <div>{t('analytics.heatmap.ngRate')}</div>
-                    <div>{t('analytics.heatmap.sample')}</div>
-                  </div>
-                  {analysisHeatmapRows.map((row) => (
-                    <div
-                      key={`${row.category}:${row.key}`}
-                      className="analytics-heatmap-row"
-                      style={{ background: heatColor(row.ngRate) }}
-                    >
-                      <div title={row.category}>{row.category}</div>
-                      <div title={row.key}>{row.key}</div>
-                      <div>{pct(row.ng, row.total)}%</div>
-                      <div>{row.total}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="analytics-empty">{t('analytics.noData')}</div>
-              )
-            ) : null}
-
-            {analysisChartMode === 'bar' ? (
-            categoryCards.length > 0 ? (
-              categoryCards.map((cat) => {
-                const title = cat.category
-                const isWinderCategory = /winder/i.test(String(title))
-                if (productIdMode) {
-                  const barData = cat.items
-                    .map((item) => ({ name: item.label, count: item.total }))
-                    .filter((item) => item.name)
-                    .sort((a, b) => b.count - a.count)
-                  const maxCount = barData.reduce((acc, item) => Math.max(acc, item.count), 0)
-                  return (
-                    <div key={cat.category} style={{ marginBottom: '1.5rem' }}>
-                      <div className="analytics-card-title">{title}</div>
-                      {barData.length > 0 ? (
-                        <div className="analytics-chart-wrap" style={{ height: 260, minHeight: 260, marginTop: '0.75rem' }}>
-                          <ResponsiveContainer width="100%" height={260}>
-                            <BarChart data={barData} margin={{ top: 10, right: 20, left: 0, bottom: 60 }}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="name" interval={0} angle={-20} height={60} textAnchor="end" />
-                              <YAxis allowDecimals={false} />
-                              <Tooltip />
-                              <Bar dataKey="count">
-                                {barData.map((entry, idx) => (
-                                  <Cell
-                                    key={`cell-${idx}`}
-                                    fill={entry.count === maxCount ? '#dc2626' : '#2563eb'}
-                                  />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      ) : (
-                        <div className="analytics-empty">{t('analytics.noData')}</div>
-                      )}
-                    </div>
-                  )
-                }
-                return (
-                  <div key={cat.category} style={{ marginBottom: '1.5rem' }}>
-                    <div className="analytics-card-title">{title}</div>
-                    <div className="analytics-grid-2" style={{ marginTop: '0.75rem' }}>
-                      {cat.items.map((item) => {
-                        const barData = [
-                          { name: 'OK', value: item.ok },
-                          { name: 'NG', value: item.ng },
-                        ]
-                        return (
-                          <div key={`${cat.category}:${item.key}`}>
-                            <div className="analytics-card-title">{item.key}</div>
-                            <div className="muted" style={{ fontSize: '0.9rem' }}>
-                              {t('analytics.summary.productionNg', { total: item.total, ng: item.ng, percent: pct(item.ng, item.total) })}
-                            </div>
-                            <div className="analytics-chart-wrap" style={{ height: 220, minHeight: 220 }}>
-                              <ResponsiveContainer width="100%" height={220}>
-                                <BarChart data={barData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-                                  <CartesianGrid strokeDasharray="3 3" />
-                                  <XAxis dataKey="name" />
-                                  <YAxis allowDecimals={false} />
-                                  <Tooltip />
-                                  <Bar
-                                    dataKey="value"
-                                onClick={(data: any) => {
-                                  if (data?.payload?.name !== 'NG') return
-                                  if (isWinderCategory) {
-                                    const winderNumber = parseWinderCategoryKey(item.key)
-                                    if (winderNumber === null) return
-                                    enterNgMode({ winderNumber })
-                                    return
-                                  }
-                                  enterNgMode()
-                                }}
-                                  >
-                                    {barData.map((entry, idx) => (
-                                      <Cell
-                                        key={`cell-${idx}`}
-                                        fill={entry.name === 'NG' ? NG_COLOR : OK_COLOR}
-                                      />
-                                    ))}
-                                  </Bar>
-                                </BarChart>
-                              </ResponsiveContainer>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })
-            ) : (
-              <div className="analytics-empty">{t('analytics.noData')}</div>
-            )
-            ) : null}
-
-            {winderChartData.length > 0 ? (
-              <div style={{ marginTop: '1.5rem' }}>
-                <div className="analytics-card-title">Winder Number 累積直方圖</div>
-                <div className="analytics-chart-wrap" style={{ height: 280, minHeight: 280, marginTop: '0.75rem' }}>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <ComposedChart data={winderChartData} margin={{ top: 10, right: 40, left: 0, bottom: 60 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" interval={0} angle={-20} height={60} textAnchor="end" />
-                      <YAxis yAxisId="left" allowDecimals={false} />
-                      <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
-                      <Tooltip
-                        formatter={(value: any, name: any) => {
-                          if (name === '累積%') return [`${round3(Number(value)).toFixed(1)}%`, name]
-                          return [value, name]
-                        }}
-                      />
-                      <Legend />
-                      <Bar yAxisId="left" dataKey="count" name="NG數量" fill="#2563eb" radius={[6, 6, 0, 0]} />
-                      <Line yAxisId="right" dataKey="cumPct" name="累積%" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            ) : null}
-          </section>
-
-        </>
+        <AnalysisResultsSection
+          overall={overall}
+          pieData={pieData}
+          categoryCards={categoryCards}
+          analysisHeatmapRows={analysisHeatmapRows}
+          winderChartData={winderChartData}
+          analysisChartMode={analysisChartMode}
+          productIdMode={productIdMode}
+          heatColor={heatColor}
+          onSetChartMode={setAnalysisChartMode}
+          onEnterNgMode={enterNgMode}
+          parseWinderCategoryKey={parseWinderCategoryKey}
+        />
       ) : null}
     </div>
   )
