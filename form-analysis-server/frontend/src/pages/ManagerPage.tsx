@@ -2,14 +2,7 @@
 import { useTranslation } from 'react-i18next'
 import { useToast } from '../components/common/ToastContext'
 import './../styles/manager-page.css'
-
-type WhoAmI = {
-  is_admin: boolean
-  tenant_id?: string | null
-  actor_user_id?: string | null
-  actor_role?: string | null
-  api_key_label?: string | null
-}
+import type { WhoAmI } from '../types/common'
 
 type TenantUserRow = {
   id: string

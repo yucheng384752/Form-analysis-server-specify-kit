@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_tenant, get_db
+from app.api.deps import get_current_tenant, get_db, get_request_state_attr
 from app.core import database
 from app.core.config import get_settings
 from app.models.core.schema_registry import TableRegistry
@@ -180,7 +180,7 @@ async def create_import_job(
         status=ImportJobStatus.UPLOADED,
         total_files=len(files),
     )
-    actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+    actor_api_key_id = get_request_state_attr(request, "auth_api_key_id")
     actor_api_key_label = getattr(
         getattr(request, "state", None), "auth_api_key_label", None
     )
@@ -267,11 +267,11 @@ async def create_import_job(
     await db.refresh(job)
 
     # Semantic audit event (best-effort).
-    actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+    actor_api_key_id = get_request_state_attr(request, "auth_api_key_id")
     actor_api_key_label = getattr(
         getattr(request, "state", None), "auth_api_key_label", None
     )
-    request_id = getattr(getattr(request, "state", None), "request_id", None)
+    request_id = get_request_state_attr(request, "request_id")
     await write_audit_event_best_effort(
         tenant_id=current_tenant.id,
         actor_api_key_id=actor_api_key_id,
@@ -392,7 +392,7 @@ async def create_import_job_from_upload_job(
     job_id = uuid.uuid4()
     batch_id = f"{datetime.now().strftime('%Y%m%d')}-{str(job_id)[:8]}"
 
-    actor_api_key_id = getattr(getattr(request, "state", None), "auth_api_key_id", None)
+    actor_api_key_id = get_request_state_attr(request, "auth_api_key_id")
     actor_api_key_label = getattr(
         getattr(request, "state", None), "auth_api_key_label", None
     )
@@ -454,7 +454,7 @@ async def create_import_job_from_upload_job(
 
     await db.commit()
 
-    request_id = getattr(getattr(request, "state", None), "request_id", None)
+    request_id = get_request_state_attr(request, "request_id")
     await write_audit_event_best_effort(
         tenant_id=current_tenant.id,
         actor_api_key_id=actor_api_key_id,
@@ -609,7 +609,7 @@ async def commit_import_job(
         await db.commit()
         await db.refresh(job)
 
-        request_id = getattr(getattr(request, "state", None), "request_id", None)
+        request_id = get_request_state_attr(request, "request_id")
         await write_audit_event_best_effort(
             tenant_id=current_tenant.id,
             actor_api_key_id=actor_api_key_id,
@@ -696,7 +696,7 @@ async def cancel_import_job(
         job.last_status_actor_kind = "user"
         await db.commit()
 
-        request_id = getattr(getattr(request, "state", None), "request_id", None)
+        request_id = get_request_state_attr(request, "request_id")
         await write_audit_event_best_effort(
             tenant_id=current_tenant.id,
             actor_api_key_id=actor_api_key_id,

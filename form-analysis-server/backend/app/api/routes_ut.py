@@ -3,41 +3,14 @@
 提供按月查詢各站點資料（P1, P2, P3, P1+P2+P3）
 """
 
-import time
-
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import check_rate_limit
 from app.services.ut_flattener import UTFlattener
 
 router = APIRouter(prefix="/api/v2/ut")
-
-# ============ Rate Limiting（簡易實作）============
-_rate_limit_store = {}  # {ip: [timestamps]}
-
-
-def check_rate_limit(request: Request):
-    """Rate limiting 檢查（每 IP 每分鐘最多 30 次）"""
-    client_ip = request.client.host
-    current_time = time.time()
-    window_start = current_time - 60
-
-    if client_ip in _rate_limit_store:
-        _rate_limit_store[client_ip] = [
-            ts for ts in _rate_limit_store[client_ip] if ts > window_start
-        ]
-        request_count = len(_rate_limit_store[client_ip])
-    else:
-        _rate_limit_store[client_ip] = []
-        request_count = 0
-
-    if request_count >= 30:
-        raise HTTPException(
-            status_code=429, detail="Rate limit exceeded. Max 30 requests per minute."
-        )
-
-    _rate_limit_store[client_ip].append(current_time)
 
 
 # ============ API 端點 ============

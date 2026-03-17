@@ -13,22 +13,7 @@ import { setApiKeyValue } from '../services/auth'
 import { clearTenantId, ensureTenantIdWithOptions, getTenantId, setTenantId, TENANT_STORAGE_KEY } from '../services/tenant'
 import { getTenantLabelById, writeTenantMap } from '../services/tenantMap'
 import './../styles/admin-page.css'
-
-type TenantRow = {
-  id: string
-  name: string
-  code: string
-  is_active: boolean
-  is_default?: boolean
-}
-
-type WhoAmI = {
-  is_admin: boolean
-  tenant_id?: string | null
-  actor_user_id?: string | null
-  actor_role?: string | null
-  api_key_label?: string | null
-}
+import type { TenantRow, WhoAmI } from '../types/common'
 
 type BootstrapStatus = {
   auth_mode: string

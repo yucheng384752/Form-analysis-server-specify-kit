@@ -6,9 +6,7 @@ import { Modal } from "../components/common/Modal";
 import { AdvancedSearch, AdvancedSearchParams } from "../components/AdvancedSearch";
 import { EditRecordModal } from "../components/EditRecordModal";
 import "../styles/query-page.css";
-
-// 資料類型枚舉
-type DataType = 'P1' | 'P2' | 'P3';
+import type { DataType } from "../types/common";
 
 const TENANT_STORAGE_KEY = "form_analysis_tenant_id";
 

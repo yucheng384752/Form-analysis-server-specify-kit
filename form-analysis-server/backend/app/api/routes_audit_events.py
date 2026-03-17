@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_tenant
+from app.api.deps import get_current_tenant, get_request_state_attr
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.core.audit_event import AuditEvent
@@ -51,7 +51,7 @@ async def admin_list_audit_events(
     admin_header = getattr(settings, "admin_api_key_header", "X-Admin-API-Key")
     admin_keys = getattr(settings, "admin_api_keys", set())
 
-    is_admin_state = bool(getattr(getattr(request, "state", None), "is_admin", False))
+    is_admin_state = bool(get_request_state_attr(request, "is_admin", False))
     provided = request.headers.get(admin_header)
     is_admin_key = bool(provided and provided.strip() in admin_keys)
     if not (is_admin_state or is_admin_key):

@@ -28,126 +28,69 @@ logger = logging.getLogger(__name__)
 # ==============================================================================
 
 
-def parse_p2_slitting_date_to_yyyymmdd(raw: str | None) -> int | None:
+def _try_parse_date_to_yyyymmdd(raw: str) -> int | None:
+    """Shared date string → YYYYMMDD parser covering common formats.
+
+    Supported formats:
+    - YYYYMMDD (optionally followed by _HH_MM suffix)
+    - 民國年 ROC: YYY年M月D日 (optionally followed by time)
+    - 西元年: YYYY年M月D日
+    - ISO: YYYY-MM-DD (optionally followed by time)
     """
-    解析 P2 分條時間欄位為 YYYYMMDD 整數。
-    
-    支援格式：
-    - 20250807_16_00 (YYYYMMDD 開頭)
-    - 114年8月20日11:00 (民國年格式)
-    - 2025-08-07 (ISO 格式)
-    - 20250807 (純數字)
-    
-    Args:
-        raw: 原始分條時間字串
-        
-    Returns:
-        YYYYMMDD 整數；無效格式返回 None
-    """
-    if not raw or not isinstance(raw, str):
-        return None
-    
-    raw = str(raw).strip()
-    
-    # Pattern 1: YYYYMMDD 開頭，後面可能有 _HH_MM 或其他後綴
-    match = re.match(r'^(\d{8})(?:_|$)', raw)
-    if match:
+    # YYYYMMDD with optional suffix
+    m = re.match(r'^(\d{8})(?:_|$)', raw)
+    if m:
         try:
-            return int(match.group(1))
+            return int(m.group(1))
         except ValueError:
             pass
-    
-    # Pattern 2: 民國年格式 - YYY年M月D日 (可能有時間後綴)
-    # 例如：114年8月20日11:00 或 114年09月02日
-    match = re.match(r'^(\d{2,3})年(\d{1,2})月(\d{1,2})日', raw)
-    if match:
+
+    # 民國年: YYY年M月D日
+    m = re.match(r'^(\d{2,3})年(\d{1,2})月(\d{1,2})日', raw)
+    if m:
         try:
-            roc_year = int(match.group(1))
-            month = int(match.group(2))
-            day = int(match.group(3))
-            western_year = roc_year + 1911
-            return western_year * 10000 + month * 100 + day
+            return (int(m.group(1)) + 1911) * 10000 + int(m.group(2)) * 100 + int(m.group(3))
         except ValueError:
             pass
-    
-    # Pattern 3: ISO 格式 YYYY-MM-DD
-    match = re.match(r'^(\d{4})-(\d{2})-(\d{2})', raw)
-    if match:
+
+    # 西元年: YYYY年M月D日
+    m = re.match(r'^(\d{4})年(\d{1,2})月(\d{1,2})日', raw)
+    if m:
         try:
-            year = int(match.group(1))
-            month = int(match.group(2))
-            day = int(match.group(3))
-            return year * 10000 + month * 100 + day
+            return int(m.group(1)) * 10000 + int(m.group(2)) * 100 + int(m.group(3))
         except ValueError:
             pass
-    
-    # Pattern 4: 純 8 位數字
+
+    # ISO YYYY-MM-DD
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})', raw)
+    if m:
+        try:
+            return int(m.group(1)) * 10000 + int(m.group(2)) * 100 + int(m.group(3))
+        except ValueError:
+            pass
+
+    # Pure 8-digit
     if re.match(r'^\d{8}$', raw):
         try:
             return int(raw)
         except ValueError:
             pass
-            
+
     return None
+
+
+def parse_p2_slitting_date_to_yyyymmdd(raw: str | None) -> int | None:
+    """解析 P2 分條時間欄位為 YYYYMMDD 整數。"""
+    if not raw or not isinstance(raw, str):
+        return None
+    return _try_parse_date_to_yyyymmdd(str(raw).strip())
 
 
 def parse_p3_year_month_day_to_yyyymmdd(raw: str | None) -> int | None:
-    """
-    解析 P3 year-month-day 欄位 (格式: 114年09月02日) 為 YYYYMMDD 整數。
-    
-    Args:
-        raw: 原始日期字串，如 "114年09月02日"
-        
-    Returns:
-        YYYYMMDD 整數，如 20250902；無效格式返回 None
-    """
+    """解析 P3 year-month-day 欄位 (格式: 114年09月02日) 為 YYYYMMDD 整數。"""
     if not raw or not isinstance(raw, str):
         return None
-    
-    raw = str(raw).strip()
-    
-    # Pattern: YYY年MM月DD日 (民國年)
-    match = re.match(r'^(\d{2,3})年(\d{1,2})月(\d{1,2})日$', raw)
-    if match:
-        try:
-            roc_year = int(match.group(1))
-            month = int(match.group(2))
-            day = int(match.group(3))
-            western_year = roc_year + 1911
-            return western_year * 10000 + month * 100 + day
-        except ValueError:
-            pass
-    
-    # 也支援西元年格式: YYYY年MM月DD日
-    match = re.match(r'^(\d{4})年(\d{1,2})月(\d{1,2})日$', raw)
-    if match:
-        try:
-            year = int(match.group(1))
-            month = int(match.group(2))
-            day = int(match.group(3))
-            return year * 10000 + month * 100 + day
-        except ValueError:
-            pass
-    
-    # 也支援 YYYYMMDD 格式
-    if re.match(r'^\d{8}$', raw):
-        try:
-            return int(raw)
-        except ValueError:
-            pass
-    
-    # 也支援 YYYY-MM-DD 格式
-    match = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', raw)
-    if match:
-        try:
-            year = int(match.group(1))
-            month = int(match.group(2))
-            day = int(match.group(3))
-            return year * 10000 + month * 100 + day
-        except ValueError:
-            pass
-    
-    return None
+    return _try_parse_date_to_yyyymmdd(str(raw).strip())
 
 
 def yyyymmdd_to_date(yyyymmdd: int | None) -> date | None:
@@ -192,48 +135,24 @@ def is_date_in_range(
 
 
 def parse_date_string_to_yyyymmdd(date_str: str | None) -> int | None:
-    """
-    解析日期字串 (YYYY-MM-DD 或 YYYYMMDD) 為 YYYYMMDD 整數。
-    
-    Args:
-        date_str: 日期字串，如 "2025-08-01" 或 "20250801"
-        
-    Returns:
-        YYYYMMDD 整數
-    """
+    """解析日期字串 (YYYY-MM-DD, YYYYMMDD, YYYY-MM) 為 YYYYMMDD 整數。"""
     if not date_str:
         return None
-    
+
     date_str = str(date_str).strip()
-    
-    # YYYY-MM-DD format
-    match = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', date_str)
-    if match:
+
+    result = _try_parse_date_to_yyyymmdd(date_str)
+    if result is not None:
+        return result
+
+    # YYYY-MM format (default to first day of month)
+    m = re.match(r'^(\d{4})-(\d{2})$', date_str)
+    if m:
         try:
-            year = int(match.group(1))
-            month = int(match.group(2))
-            day = int(match.group(3))
-            return year * 10000 + month * 100 + day
+            return int(m.group(1)) * 10000 + int(m.group(2)) * 100 + 1
         except ValueError:
             pass
-    
-    # YYYYMMDD format
-    if re.match(r'^\d{8}$', date_str):
-        try:
-            return int(date_str)
-        except ValueError:
-            pass
-    
-    # YYYY-MM format (assume first day of month for start, last day for end)
-    match = re.match(r'^(\d{4})-(\d{2})$', date_str)
-    if match:
-        try:
-            year = int(match.group(1))
-            month = int(match.group(2))
-            return year * 10000 + month * 100 + 1  # Default to first day
-        except ValueError:
-            pass
-    
+
     return None
 
 

@@ -29,7 +29,7 @@ type StationSelection = {
   all: boolean
 }
 
-type DataType = 'P1' | 'P2' | 'P3'
+import type { DataType, TenantRow } from '../types/common'
 
 type QueryRecordLite = {
   id: string
@@ -91,11 +91,7 @@ function extractProduceNosFromTrace(data: TraceabilityData | null): string[] {
   return out
 }
 
-type TenantRow = {
-  id: string
-  name?: string
-  code?: string
-}
+
 
 
 // Preset modes are week/month/quarter/half-year; custom supports day-level.

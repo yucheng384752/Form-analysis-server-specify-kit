@@ -10,7 +10,7 @@ from sqlalchemy import JSON, and_, cast, func, or_, select, union_all
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_tenant, get_db
+from app.api.deps import get_current_tenant, get_db, get_request_state_attr
 from app.models.core.tenant import Tenant
 from app.models.p1_record import P1Record
 from app.models.p2_record import P2Record
@@ -1861,7 +1861,7 @@ async def query_records_advanced_v2(
         actor_api_key_label = getattr(
             getattr(request, "state", None), "auth_api_key_label", None
         )
-        request_id = getattr(getattr(request, "state", None), "request_id", None)
+        request_id = get_request_state_attr(request, "request_id")
         await write_audit_event_best_effort(
             tenant_id=current_tenant.id,
             actor_api_key_id=actor_api_key_id,
@@ -2204,7 +2204,7 @@ async def query_records_dynamic_v2(
             actor_api_key_label = getattr(
                 getattr(request, "state", None), "auth_api_key_label", None
             )
-            request_id = getattr(getattr(request, "state", None), "request_id", None)
+            request_id = get_request_state_attr(request, "request_id")
             await write_audit_event_best_effort(
                 tenant_id=current_tenant.id,
                 actor_api_key_id=actor_api_key_id,
@@ -2816,7 +2816,7 @@ async def query_records_dynamic_v2(
         actor_api_key_label = getattr(
             getattr(request, "state", None), "auth_api_key_label", None
         )
-        request_id = getattr(getattr(request, "state", None), "request_id", None)
+        request_id = get_request_state_attr(request, "request_id")
         await write_audit_event_best_effort(
             tenant_id=current_tenant.id,
             actor_api_key_id=actor_api_key_id,

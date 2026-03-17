@@ -9,10 +9,8 @@
 """
 
 import logging
-import math
 import re
 import time
-import pandas as pd
 import pandas as pd
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -25,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_tenant
 from app.config.analytics_config import AnalyticsConfig
 from app.core.database import get_db
+from app.core.rate_limit import check_rate_limit as _shared_check_rate_limit
 from app.models.core.tenant import Tenant
 from app.models.p2_item_v2 import P2ItemV2
 from app.models.p2_record import P2Record
@@ -36,56 +35,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v2/analytics")
 
-# ============ Rate Limiting（簡易實作）============
-# 生產環境建議使用 Redis + slowapi
-_rate_limit_store = {}  # {ip: [timestamp, ...]}
-
 
 def check_rate_limit(request: Request, *, endpoint: str | None = None):
-    """
-    簡易 rate limiting 檢查
-
-    限制：每 IP 每分鐘最多 RATE_LIMIT_REQUESTS_PER_MINUTE 次請求（支援多 server 並發）
-    """
-    client_ip = request.client.host
-    current_time = time.time()
-    window_start = current_time - 60  # 60秒滾動窗口
-
-    # 清理過期記錄並計算當前窗口內請求數
-    if client_ip in _rate_limit_store:
-        _rate_limit_store[client_ip] = [
-            ts for ts in _rate_limit_store[client_ip] if ts > window_start
-        ]
-        request_count = len(_rate_limit_store[client_ip])
-    else:
-        _rate_limit_store[client_ip] = []
-        request_count = 0
-
-    # 檢查是否超過限制
-    if request_count >= AnalyticsConfig.RATE_LIMIT_REQUESTS_PER_MINUTE:
-        oldest_ts = (
-            min(_rate_limit_store.get(client_ip, []))
-            if _rate_limit_store.get(client_ip)
-            else current_time
-        )
-        retry_after_seconds = max(1, int(math.ceil((oldest_ts + 60) - current_time)))
-        endpoint_tag = endpoint or request.url.path
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "code": "RATE_LIMIT_EXCEEDED",
-                "message": (
-                    f"Rate limit exceeded. Max {AnalyticsConfig.RATE_LIMIT_REQUESTS_PER_MINUTE} requests per minute."
-                ),
-                "endpoint": endpoint_tag,
-                "retry_after_seconds": retry_after_seconds,
-                "limit_per_minute": AnalyticsConfig.RATE_LIMIT_REQUESTS_PER_MINUTE,
-            },
-            headers={"Retry-After": str(retry_after_seconds)},
-        )
-
-    # 記錄本次請求時間戳
-    _rate_limit_store[client_ip].append(current_time)
+    _shared_check_rate_limit(
+        request,
+        max_per_minute=AnalyticsConfig.RATE_LIMIT_REQUESTS_PER_MINUTE,
+        endpoint=endpoint,
+    )
 
 
 # ============ API 端點 ============

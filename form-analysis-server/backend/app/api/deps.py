@@ -1,9 +1,17 @@
+from typing import Any
+
 from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.tenant_resolver import resolve_tenant_or_raise
 from app.models.core.tenant import Tenant
+
+
+def get_request_state_attr(request: Request, attr: str, default: Any = None) -> Any:
+    """Safely read an attribute from request.state."""
+    state = getattr(request, "state", None)
+    return getattr(state, attr, default)
 
 
 async def get_current_tenant(

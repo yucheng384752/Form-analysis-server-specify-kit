@@ -6,6 +6,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_request_state_attr
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.core.tenant import Tenant
@@ -37,11 +38,11 @@ async def get_tenants(
     admin_header = getattr(settings, "admin_api_key_header", "X-Admin-API-Key")
     admin_keys = getattr(settings, "admin_api_keys", set())
 
-    is_admin_state = bool(getattr(getattr(request, "state", None), "is_admin", False))
+    is_admin_state = bool(get_request_state_attr(request, "is_admin", False))
     provided = request.headers.get(admin_header)
     is_admin_key = bool(provided and provided.strip() in admin_keys)
     is_admin = bool(is_admin_state or is_admin_key)
-    auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+    auth_tenant_id = get_request_state_attr(request, "auth_tenant_id")
 
     stmt = select(Tenant)
     if not include_inactive or not is_admin:
@@ -85,7 +86,7 @@ async def create_tenant(
     admin_keys = getattr(settings, "admin_api_keys", set())
 
     is_admin = (
-        bool(getattr(getattr(request, "state", None), "is_admin", False))
+        bool(get_request_state_attr(request, "is_admin", False))
         if request is not None
         else False
     )
@@ -150,7 +151,7 @@ async def admin_create_tenant(
     admin_keys = getattr(settings, "admin_api_keys", set())
 
     is_admin = (
-        bool(getattr(getattr(request, "state", None), "is_admin", False))
+        bool(get_request_state_attr(request, "is_admin", False))
         if request is not None
         else False
     )
@@ -210,7 +211,7 @@ async def update_tenant(
     admin_keys = getattr(settings, "admin_api_keys", set())
 
     is_admin = (
-        bool(getattr(getattr(request, "state", None), "is_admin", False))
+        bool(get_request_state_attr(request, "is_admin", False))
         if request is not None
         else False
     )
@@ -273,7 +274,7 @@ async def delete_tenant(
     admin_keys = getattr(settings, "admin_api_keys", set())
 
     is_admin = (
-        bool(getattr(getattr(request, "state", None), "is_admin", False))
+        bool(get_request_state_attr(request, "is_admin", False))
         if request is not None
         else False
     )

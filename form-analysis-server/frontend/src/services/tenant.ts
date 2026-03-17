@@ -5,13 +5,7 @@ const API_BASE_URL = (import.meta.env?.VITE_API_URL as string) || ''
 import { getAdminApiKeyValue } from './adminAuth'
 import { getAdminApiKeyHeaderName } from './adminAuth'
 import i18n from '../i18n'
-
-type TenantRow = {
-  id: string
-  name?: string
-  code?: string
-  is_active?: boolean
-}
+import type { TenantRow } from '../types/common'
 
 type ToastType = 'info' | 'error' | 'success'
 

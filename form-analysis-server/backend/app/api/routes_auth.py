@@ -10,7 +10,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db
+from app.api.deps import get_db, get_request_state_attr
 from app.core.auth import generate_api_key, hash_api_key
 from app.core.config import get_settings
 from app.core.password import hash_password, verify_password
@@ -405,8 +405,8 @@ async def create_user(
 
     is_admin_key = _is_admin_key(request)
 
-    actor_role = getattr(getattr(request, "state", None), "actor_role", None)
-    auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+    actor_role = get_request_state_attr(request, "actor_role")
+    auth_tenant_id = get_request_state_attr(request, "auth_tenant_id")
     is_tenant_privileged = _is_tenant_privileged(actor_role, auth_tenant_id)
 
     if not is_admin_key and not is_tenant_privileged:
@@ -517,8 +517,8 @@ async def list_users(
     """
 
     is_admin_key = _is_admin_key(request)
-    actor_role = getattr(getattr(request, "state", None), "actor_role", None)
-    auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+    actor_role = get_request_state_attr(request, "actor_role")
+    auth_tenant_id = get_request_state_attr(request, "auth_tenant_id")
     is_tenant_privileged = _is_tenant_privileged(actor_role, auth_tenant_id)
 
     if not is_admin_key and not is_tenant_privileged:
@@ -603,8 +603,8 @@ async def update_user(
     """
 
     is_admin_key = _is_admin_key(request)
-    actor_role = getattr(getattr(request, "state", None), "actor_role", None)
-    auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+    actor_role = get_request_state_attr(request, "actor_role")
+    auth_tenant_id = get_request_state_attr(request, "auth_tenant_id")
     is_tenant_privileged = _is_tenant_privileged(actor_role, auth_tenant_id)
 
     if not is_admin_key and not is_tenant_privileged:
@@ -765,8 +765,8 @@ async def delete_user(
     """
 
     is_admin_key = _is_admin_key(request)
-    actor_role = getattr(getattr(request, "state", None), "actor_role", None)
-    auth_tenant_id = getattr(getattr(request, "state", None), "auth_tenant_id", None)
+    actor_role = get_request_state_attr(request, "actor_role")
+    auth_tenant_id = get_request_state_attr(request, "auth_tenant_id")
     is_tenant_privileged = _is_tenant_privileged(actor_role, auth_tenant_id)
 
     if not is_admin_key and not is_tenant_privileged:

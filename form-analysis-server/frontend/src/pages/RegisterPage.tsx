@@ -13,23 +13,7 @@ import {
   setAdminUnlockedInSession,
 } from '../services/adminAuth'
 import './../styles/register-page.css'
-
-type TenantRow = {
-  id: string
-  name?: string
-  code?: string
-  is_active?: boolean
-  is_default?: boolean
-}
-
-type WhoAmI = {
-  is_admin: boolean
-  tenant_id?: string | null
-  actor_user_id?: string | null
-  actor_role?: string | null
-  api_key_label?: string | null
-  must_change_password?: boolean
-}
+import type { TenantRow, WhoAmI } from '../types/common'
 
 export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void; onWhoamiChanged?: (whoami: WhoAmI | null) => void }) {
   const { t } = useTranslation()
