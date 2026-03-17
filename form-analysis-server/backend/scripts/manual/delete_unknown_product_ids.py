@@ -8,10 +8,8 @@ from sqlalchemy import delete, func, select
 
 # Keep consistent with other backend scripts in this repo
 # Allow overriding via environment variable, but provide a sensible local default.
-os.environ.setdefault(
-    "DATABASE_URL",
-    "postgresql+asyncpg://app:app_secure_password_2024@localhost:18001/form_analysis_db",
-)
+if not os.environ.get("DATABASE_URL"):
+    raise RuntimeError("DATABASE_URL environment variable is required. Set it or use a .env file.")
 
 # Ensure we can import the backend package when running as a script
 sys.path.append(os.getcwd())

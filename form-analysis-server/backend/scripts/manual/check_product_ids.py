@@ -3,7 +3,9 @@ import sys
 import os
 
 # Set DATABASE_URL explicitly for the script to connect to the exposed port
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://app:app_secure_password_2024@localhost:18001/form_analysis_db"
+# Require DATABASE_URL from environment
+if not os.environ.get("DATABASE_URL"):
+    raise RuntimeError("DATABASE_URL environment variable is required. Set it or use a .env file.")
 
 print("Script started...")
 from sqlalchemy import select

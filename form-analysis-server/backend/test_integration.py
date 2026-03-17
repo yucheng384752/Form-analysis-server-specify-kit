@@ -8,6 +8,7 @@
 4. 測試追溯邏輯（不使用 API，直接測試資料庫查詢邏輯）
 """
 
+import os
 import sys
 from datetime import date
 import pandas as pd
@@ -20,7 +21,9 @@ from app.services.product_id_generator import generate_product_id
 from app.services.validation import FileValidationService
 
 # 資料庫連線
-TEST_DATABASE_URL = "postgresql://app:app_secure_password_2024@localhost:18001/form_analysis_db"
+TEST_DATABASE_URL = os.environ.get("DATABASE_URL", os.environ.get("TEST_DATABASE_URL", ""))
+if not TEST_DATABASE_URL:
+    raise RuntimeError("DATABASE_URL or TEST_DATABASE_URL environment variable is required.")
 engine = create_engine(TEST_DATABASE_URL)
 Session = sessionmaker(bind=engine)
 

@@ -14,8 +14,17 @@ backend_dir = os.path.join(workspace_root, 'form-analysis-server', 'backend')
 if backend_dir not in sys.path:
     sys.path.append(backend_dir)
 
-# Hardcode the URL for debugging/script usage
-DATABASE_URL = "postgresql+asyncpg://app:app_secure_password_2024@localhost:18001/form_analysis_db"
+# Load DATABASE_URL from environment or .env file
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    from dotenv import load_dotenv
+    env_path = os.path.join(workspace_root, "form-analysis-server", ".env")
+    load_dotenv(env_path)
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    print("ERROR: DATABASE_URL environment variable is not set.")
+    print("Set it directly or create form-analysis-server/.env with DATABASE_URL=...")
+    sys.exit(1)
 
 from app.models.record import Record, DataType
 from app.models.p2_item import P2Item

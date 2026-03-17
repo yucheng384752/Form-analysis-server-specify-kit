@@ -27,8 +27,8 @@ class Settings(BaseSettings):
 
     # Database settings - Fixed to PostgreSQL only
     database_url: str = Field(
-        default="postgresql+asyncpg://app:app_secure_password@localhost:5432/form_analysis_db",
-        description="PostgreSQL database connection URL (固定使用PostgreSQL)",
+        default="postgresql+asyncpg://app:changeme@localhost:5432/form_analysis_db",
+        description="PostgreSQL database connection URL (固定使用PostgreSQL, 請透過 .env 或環境變數設定)",
     )
 
     # API server settings

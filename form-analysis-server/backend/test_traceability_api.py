@@ -9,6 +9,7 @@
 5. 清理測試資料
 """
 
+import os
 import sys
 from datetime import date
 from fastapi.testclient import TestClient
@@ -21,7 +22,9 @@ from app.models.record import Record, DataType
 from app.services.product_id_generator import generate_product_id
 
 # 建立測試資料庫連線
-TEST_DATABASE_URL = "postgresql://app:app_secure_password_2024@localhost:18001/form_analysis_db"
+TEST_DATABASE_URL = os.environ.get("DATABASE_URL", os.environ.get("TEST_DATABASE_URL", ""))
+if not TEST_DATABASE_URL:
+    raise RuntimeError("DATABASE_URL or TEST_DATABASE_URL environment variable is required.")
 engine = create_engine(TEST_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

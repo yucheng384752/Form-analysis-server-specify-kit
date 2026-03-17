@@ -30,7 +30,7 @@ from typing import Iterable, Optional
 from sqlalchemy import and_, delete, func, or_, select
 
 
-DEFAULT_DATABASE_URL = "postgresql+asyncpg://app:app_secure_password_2024@localhost:18001/form_analysis_db"
+DEFAULT_DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 
 @dataclass(frozen=True)
