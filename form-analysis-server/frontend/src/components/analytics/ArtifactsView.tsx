@@ -4,7 +4,6 @@ import {
   fetchArtifactDetailView,
   fetchArtifactList,
   fetchArtifactListView,
-  type ArtifactKey,
   type ComplaintAnalysisResult,
   type ArtifactListItem,
 } from '../../services/analyticsArtifacts'
@@ -19,163 +18,32 @@ import {
   Legend,
   ComposedChart,
   Line,
-  ScatterChart,
-  Scatter,
-  ZAxis,
 } from 'recharts'
 
-type ViewKey = 'events' | 'aggregated' | 'rag' | 'llm' | 'weighted'
+import {
+  type ViewKey,
+  VIEW_TO_ARTIFACT,
+  type EventRow,
+  type AggRow,
+  type CoreFeatureSummary,
+  type WeightedItem,
+  type RagEvent,
+  type LlmListItem,
+  isPlainObject,
+  toStr,
+  safeNumber,
+  pickId,
+  tryParseIsoDate,
+  formatIsoPreview,
+  extractOutlierCounts,
+  extractBasicStatsTopN,
+} from './artifacts/types'
 
-const VIEW_TO_ARTIFACT: Record<ViewKey, ArtifactKey> = {
-  events: 'serialized_events',
-  aggregated: 'aggregated_diagnostics',
-  rag: 'rag_results',
-  llm: 'llm_reports',
-  weighted: 'weighted_contributions',
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function toStr(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  return String(value)
-}
-
-function safeNumber(value: unknown): number {
-  const n = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(n) ? n : 0
-}
-
-function isNumberLike(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value)
-}
-
-function pickOutlierLabel(row: Record<string, unknown>): string {
-  const keys = ['feature', 'column', 'name', 'dimension', 'id', 'key']
-  for (const k of keys) {
-    const v = row[k]
-    if (typeof v === 'string' && v.trim()) return v.trim()
-  }
-  return ''
-}
-
-function extractOutlierCounts(raw: unknown): Array<{ name: string; count: number }> {
-  if (!raw) return []
-  const candidates: Array<{ name: string; count: number }> = []
-
-  const pushEntry = (name: string, count: number) => {
-    const n = String(name || '').trim()
-    if (!n) return
-    const c = Number(count)
-    candidates.push({ name: n, count: Number.isFinite(c) ? c : 0 })
-  }
-
-  if (Array.isArray(raw)) {
-    for (const item of raw) {
-      if (!isPlainObject(item)) continue
-      const label = pickOutlierLabel(item)
-      const count = isNumberLike(item.count) ? item.count : 1
-      pushEntry(label, count)
-    }
-  } else if (isPlainObject(raw)) {
-    const nestedKeys = ['outliers', 'result', 'data', 'records', 'rows']
-    for (const k of nestedKeys) {
-      if (raw[k]) {
-        return extractOutlierCounts(raw[k])
-      }
-    }
-    for (const [key, value] of Object.entries(raw)) {
-      if (isNumberLike(value)) {
-        pushEntry(key, value)
-        continue
-      }
-      if (Array.isArray(value)) {
-        pushEntry(key, value.length)
-        continue
-      }
-      if (isPlainObject(value)) {
-        const label = pickOutlierLabel(value)
-        const count = isNumberLike(value.count) ? value.count : undefined
-        if (label && count !== undefined) {
-          pushEntry(label, count)
-        } else if (count !== undefined) {
-          pushEntry(key, count)
-        }
-      }
-    }
-  }
-
-  const byName = new Map<string, number>()
-  for (const row of candidates) {
-    byName.set(row.name, (byName.get(row.name) ?? 0) + row.count)
-  }
-  return [...byName.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-}
-
-function extractBasicStatsTopN(
-  raw: unknown,
-  topN = 8,
-  preferMetric: 'std' | 'mean' = 'std',
-): Array<{ name: string; value: number; metric: string }> {
-  if (!isPlainObject(raw)) return []
-  const rows: Array<{ name: string; value: number; metric: string }> = []
-  for (const [key, value] of Object.entries(raw)) {
-    if (!isPlainObject(value)) continue
-    const stats = value as Record<string, unknown>
-    const std = stats.std ?? stats.stdev ?? stats.std_dev
-    const mean = stats.mean ?? stats.avg ?? stats.average
-    const max = stats.max
-    const min = stats.min
-    if (preferMetric === 'mean' && isNumberLike(mean)) {
-      rows.push({ name: key, value: Number(mean), metric: 'mean' })
-      continue
-    }
-    if (isNumberLike(std)) {
-      rows.push({ name: key, value: Number(std), metric: 'std' })
-      continue
-    }
-    if (isNumberLike(max) && isNumberLike(min)) {
-      rows.push({ name: key, value: Math.abs(Number(max) - Number(min)), metric: 'range' })
-      continue
-    }
-    if (isNumberLike(mean)) {
-      rows.push({ name: key, value: Number(mean), metric: 'mean' })
-    }
-  }
-  return rows.sort((a, b) => b.value - a.value).slice(0, topN)
-}
-
-function tryParseIsoDate(value: unknown): Date | null {
-  const s = String(value ?? '').trim()
-  if (!s) return null
-  const d = new Date(s)
-  return Number.isFinite(d.getTime()) ? d : null
-}
-
-function formatIsoPreview(value: unknown): string {
-  const d = tryParseIsoDate(value)
-  if (!d) return ''
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${y}-${m}-${day} ${hh}:${mm}`
-}
-
-function pickId(item: unknown): string {
-  if (!isPlainObject(item)) return ''
-  const candidates = ['event_id', 'summary_id', 'id', 'eventId', 'summaryId']
-  for (const k of candidates) {
-    const v = item[k]
-    if (typeof v === 'string' && v.trim()) return v.trim()
-  }
-  return ''
-}
+import { EventsView } from './artifacts/EventsView'
+import { AggregatedView } from './artifacts/AggregatedView'
+import { WeightedView } from './artifacts/WeightedView'
+import { RagView } from './artifacts/RagView'
+import { LlmView } from './artifacts/LlmView'
 
 export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<string, string>; productIds?: string[] }) {
   const artifactKey = VIEW_TO_ARTIFACT[props.view]
@@ -331,18 +199,6 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
   }, [refreshDetailData, selectedId])
 
   // ===== Events (serialized_results) =====
-  type EventRow = {
-    event_id: string
-    event_date_raw: unknown
-    event_date: Date | null
-    produce_no: string
-    winder: string
-    slitting: string
-    iqr_count: number
-    t2_count: number
-    spe_count: number
-  }
-
   const eventRows = useMemo(() => {
     if (props.view !== 'events') return [] as EventRow[]
     if (!Array.isArray(listData)) return [] as EventRow[]
@@ -414,12 +270,6 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
     return sorted
   }, [eventRows, matchAnyProductId, productIdNeedle.length, props.view, query, sortMode])
 
-  const selectedEvent = useMemo(() => {
-    if (props.view !== 'events') return null
-    if (!selectedId) return null
-    return filteredEventRows.find((x) => x.event_id === selectedId) ?? null
-  }, [filteredEventRows, props.view, selectedId])
-
   const eventTrendData = useMemo(() => {
     if (props.view !== 'events') return [] as Array<{ day: string; events: number; iqr: number }>
     const m = new Map<string, { events: number; iqr: number }>()
@@ -437,15 +287,6 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
   }, [filteredEventRows, props.view])
 
   // ===== Aggregated (ut_aggregated_diagnostics) =====
-  type AggRow = {
-    summary_id: string
-    analysis_dimension: string
-    sample_count: number
-    context_preview: string
-    core_feature_count: number
-    event_count: number
-  }
-
   const aggRows = useMemo(() => {
     if (props.view !== 'aggregated') return [] as AggRow[]
     if (!Array.isArray(listData)) return [] as AggRow[]
@@ -514,14 +355,6 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
     return filteredAggRows.find((x) => x.summary_id === selectedId) ?? null
   }, [filteredAggRows, props.view, selectedId])
 
-  type CoreFeatureSummary = {
-    feature: string
-    iqr_freq: number
-    t2_freq: number
-    spe_freq: number
-    total: number
-  }
-
   const selectedAggDetail = useMemo(() => (props.view === 'aggregated' && isPlainObject(detailData) ? (detailData as any) : null), [detailData, props.view])
 
   const selectedAggCoreFeatures = useMemo(() => {
@@ -555,14 +388,6 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
   }, [selectedAggCoreFeatures])
 
   // ===== Weighted contributions =====
-  type WeightedItem = {
-    id: string
-    x_T2: number
-    x_SPE: number
-    t2_top: string
-    spe_top: string
-  }
-
   const weightedItems = useMemo(() => {
     if (props.view !== 'weighted') return [] as WeightedItem[]
     if (!Array.isArray(listData)) return [] as WeightedItem[]
@@ -611,12 +436,6 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
   }, [filteredWeightedItems, props.view])
 
   // ===== RAG =====
-  type RagEvent = {
-    event_id: string
-    feature_count: number
-    sop_count: number
-  }
-
   const ragEvents = useMemo(() => {
     if (props.view !== 'rag') return [] as RagEvent[]
     if (!Array.isArray(listData)) return [] as RagEvent[]
@@ -647,13 +466,6 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
   }, [filteredRagEvents, props.view, selectedId])
 
   // ===== LLM =====
-  type LlmListItem = {
-    event_id: string
-    event_time_raw: unknown
-    event_time: Date | null
-    total_anomalies: number
-  }
-
   const llmItems = useMemo(() => {
     if (props.view !== 'llm') return [] as LlmListItem[]
     if (!Array.isArray(listData)) return [] as LlmListItem[]
@@ -969,528 +781,46 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
 
       {!complaintOnlyView ? (
         props.view === 'events' && eventRows.length > 0 ? (
-          <div className="analytics-report-grid">
-          <div className="register-block">
-            <div className="register-title" style={{ marginBottom: 8 }}>事件清單（{filteredEventRows.length}）</div>
-            {eventTrendData.length > 0 ? (
-              <div className="analytics-chart-wrap" style={{ height: 220, marginTop: 0, marginBottom: 8 }}>
-                <ResponsiveContainer>
-                  <BarChart data={eventTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="events" name="Events" fill="#2563eb" />
-                    <Bar dataKey="iqr" name="IQR Events" fill="#ef4444" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : null}
-            <div className="analytics-report-list">
-              {filteredEventRows.slice(0, 500).map((r) => {
-                const active = r.event_id === selectedId
-                return (
-                  <button
-                    key={r.event_id}
-                    type="button"
-                    className={active ? 'btn-primary' : 'btn-secondary'}
-                    style={{ textAlign: 'left' }}
-                    onClick={() => setSelectedId(r.event_id)}
-                    title={r.event_id}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.produce_no || r.event_id}</div>
-                      <div className="muted" style={{ whiteSpace: 'nowrap' }}>{formatIsoPreview(r.event_date_raw) || '-'}</div>
-                    </div>
-                    <div className="muted" style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <span className="analytics-pill">IQR: {r.iqr_count}</span>
-                      <span className="analytics-pill">T2: {r.t2_count}</span>
-                      <span className="analytics-pill">SPE: {r.spe_count}</span>
-                      {r.slitting ? <span className="analytics-pill">Slit: {r.slitting}</span> : null}
-                      {r.winder ? <span className="analytics-pill">Winder: {r.winder}</span> : null}
-                    </div>
-                  </button>
-                )
-              })}
-              {filteredEventRows.length > 500 ? <div className="muted">僅顯示前 500 筆（避免卡頓）</div> : null}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {selectedEvent ? (
-              <>
-                <div className="register-block">
-                  <div className="register-title" style={{ marginBottom: 8 }}>事件摘要</div>
-                  <div className="muted" style={{ marginBottom: 10 }}><code>{selectedEvent.event_id}</code></div>
-                  <div className="analytics-report-kv">
-                    <div><span className="analytics-report-k">時間</span><span className="analytics-report-v">{formatIsoPreview(selectedEvent.event_date_raw) || '-'}</span></div>
-                    <div><span className="analytics-report-k">Produce_No.</span><span className="analytics-report-v">{selectedEvent.produce_no || '-'}</span></div>
-                    <div><span className="analytics-report-k">Slitting</span><span className="analytics-report-v">{selectedEvent.slitting || '-'}</span></div>
-                    <div><span className="analytics-report-k">Winder</span><span className="analytics-report-v">{selectedEvent.winder || '-'}</span></div>
-                    <div><span className="analytics-report-k">IQR anomalies</span><span className="analytics-report-v">{selectedEvent.iqr_count}</span></div>
-                  </div>
-                </div>
-
-                {props.view === 'events' && selectedId && isPlainObject(detailData) ? (
-                  <>
-                    {Array.isArray((detailData as any)?.iqr_features) ? (
-                      <div className="register-block">
-                        <div className="register-title" style={{ marginBottom: 8 }}>IQR 異常特徵</div>
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {((detailData as any).iqr_features as unknown[]).slice(0, 80).map((x, idx) => (
-                            <span key={idx} className="analytics-pill">{toStr(x) || '-'}</span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {Array.isArray((detailData as any)?.t2_features) ? (
-                      <div className="register-block">
-                        <div className="register-title" style={{ marginBottom: 8 }}>T2 Top Features</div>
-                        <div className="analytics-report-table">
-                          <div className="analytics-report-row analytics-report-head">
-                            <div>feature</div>
-                            <div>final_score</div>
-                            <div>final_rank</div>
-                          </div>
-                          {((detailData as any).t2_features as unknown[]).slice(0, 20).filter(isPlainObject).map((x: any, idx: number) => (
-                            <div key={idx} className="analytics-report-row">
-                              <div>{toStr(x.feature) || '-'}</div>
-                              <div>{safeNumber(x.final_score).toFixed(6)}</div>
-                              <div>{safeNumber(x.final_rank)}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {Array.isArray((detailData as any)?.spe_features) ? (
-                      <div className="register-block">
-                        <div className="register-title" style={{ marginBottom: 8 }}>SPE Top Features</div>
-                        <div className="analytics-report-table">
-                          <div className="analytics-report-row analytics-report-head">
-                            <div>feature</div>
-                            <div>final_score</div>
-                            <div>final_rank</div>
-                          </div>
-                          {((detailData as any).spe_features as unknown[]).slice(0, 20).filter(isPlainObject).map((x: any, idx: number) => (
-                            <div key={idx} className="analytics-report-row">
-                              <div>{toStr(x.feature) || '-'}</div>
-                              <div>{safeNumber(x.final_score).toFixed(6)}</div>
-                              <div>{safeNumber(x.final_rank)}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <div className="register-block">
-                  <div className="register-title" style={{ marginBottom: 8 }}>事件摘要</div>
-                  <div className="muted">請從左側選擇一筆事件</div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+          <EventsView
+            filteredEventRows={filteredEventRows}
+            eventTrendData={eventTrendData}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            detailData={detailData}
+          />
       ) : props.view === 'aggregated' && aggRows.length > 0 ? (
-        <div className="analytics-report-grid">
-          <div className="register-block">
-            <div className="register-title" style={{ marginBottom: 8 }}>彙總清單（{filteredAggRows.length}）</div>
-            <div className="analytics-report-list">
-              {filteredAggRows.slice(0, 500).map((r) => {
-                const active = r.summary_id === selectedId
-                return (
-                  <button
-                    key={r.summary_id}
-                    type="button"
-                    className={active ? 'btn-primary' : 'btn-secondary'}
-                    style={{ textAlign: 'left' }}
-                    onClick={() => setSelectedId(r.summary_id)}
-                    title={r.summary_id}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.analysis_dimension || '(dimension)'}</div>
-                      <div className="muted" style={{ whiteSpace: 'nowrap' }}>樣本 {r.sample_count}</div>
-                    </div>
-                    <div className="muted" style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <span className="analytics-pill">core: {r.core_feature_count}</span>
-                      <span className="analytics-pill">events: {r.event_count}</span>
-                      {r.context_preview ? <span className="analytics-pill">{r.context_preview}</span> : null}
-                    </div>
-                  </button>
-                )
-              })}
-              {filteredAggRows.length > 500 ? <div className="muted">僅顯示前 500 筆（避免卡頓）</div> : null}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {selectedAgg ? (
-              <>
-                <div className="register-block">
-                  <div className="register-title" style={{ marginBottom: 8 }}>彙總摘要</div>
-                  <div className="muted" style={{ marginBottom: 10 }}><code>{selectedAgg.summary_id}</code></div>
-                  <div className="analytics-report-kv">
-                    <div><span className="analytics-report-k">維度</span><span className="analytics-report-v">{selectedAgg.analysis_dimension || '-'}</span></div>
-                    <div><span className="analytics-report-k">樣本數</span><span className="analytics-report-v">{selectedAgg.sample_count}</span></div>
-                    <div><span className="analytics-report-k">events</span><span className="analytics-report-v">{selectedAgg.event_count}</span></div>
-                    <div><span className="analytics-report-k">core features</span><span className="analytics-report-v">{selectedAgg.core_feature_count}</span></div>
-                  </div>
-                </div>
-
-                <div className="register-block">
-                  <div className="register-title" style={{ marginBottom: 8 }}>Core Features 重點摘要</div>
-                  {aggCoreChartData.length > 0 ? (
-                    <div className="analytics-chart-wrap" style={{ height: 320, marginTop: 0, marginBottom: 10 }}>
-                      <ResponsiveContainer>
-                        <BarChart data={aggCoreChartData} layout="vertical" margin={{ left: 30, right: 12 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis type="number" allowDecimals={false} />
-                          <YAxis type="category" dataKey="feature" width={180} tick={{ fontSize: 11 }} />
-                          <Tooltip />
-                          <Legend />
-                          <Bar dataKey="IQR" stackId="a" fill="#ef4444" />
-                          <Bar dataKey="T2" stackId="a" fill="#2563eb" />
-                          <Bar dataKey="SPE" stackId="a" fill="#0ea5e9" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  ) : null}
-                  {selectedAggCoreFeatures.length === 0 ? (
-                    <div className="muted">找不到 core_features 或 evidence 結構不符合預期</div>
-                  ) : (
-                    <>
-                      <div className="muted" style={{ marginBottom: 10 }}>
-                        依 evidence 頻率（IQR + T2 + SPE）排序，僅顯示前 12 個。
-                      </div>
-                      <div className="analytics-report-card-grid">
-                        {selectedAggCoreFeatures.slice(0, 12).map((r) => (
-                          <div key={r.feature} className="analytics-report-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
-                              <div style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.feature}</div>
-                              <div className="muted" style={{ whiteSpace: 'nowrap' }}>Total {r.total}</div>
-                            </div>
-                            <div className="muted" style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              <span className="analytics-pill">IQR: {r.iqr_freq}</span>
-                              <span className="analytics-pill">T2: {r.t2_freq}</span>
-                              <span className="analytics-pill">SPE: {r.spe_freq}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="register-block"><div className="register-title" style={{ marginBottom: 8 }}>彙總摘要</div><div className="muted">請從左側選擇一筆彙總</div></div>
-              </>
-            )}
-          </div>
-        </div>
+          <AggregatedView
+            filteredAggRows={filteredAggRows}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            selectedAgg={selectedAgg}
+            selectedAggCoreFeatures={selectedAggCoreFeatures}
+            aggCoreChartData={aggCoreChartData}
+          />
       ) : props.view === 'weighted' && weightedItems.length > 0 ? (
-        <div className="analytics-report-grid">
-          <div className="register-block">
-            <div className="register-title" style={{ marginBottom: 8 }}>案件清單（{filteredWeightedItems.length}）</div>
-            <div className="analytics-report-list">
-              {filteredWeightedItems.slice(0, 500).map((r) => {
-                const active = r.id === selectedId
-                return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    className={active ? 'btn-primary' : 'btn-secondary'}
-                    style={{ textAlign: 'left' }}
-                    onClick={() => setSelectedId(r.id)}
-                    title={r.id}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                      <div style={{ fontWeight: 600 }}>{r.id}</div>
-                      <div className="muted" style={{ whiteSpace: 'nowrap' }}>x_T2 {r.x_T2.toFixed(3)} / x_SPE {r.x_SPE.toFixed(3)}</div>
-                    </div>
-                    <div className="muted" style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {r.t2_top ? <span className="analytics-pill">T2 top: {r.t2_top}</span> : null}
-                      {r.spe_top ? <span className="analytics-pill">SPE top: {r.spe_top}</span> : null}
-                    </div>
-                  </button>
-                )
-              })}
-              {filteredWeightedItems.length > 500 ? <div className="muted">僅顯示前 500 筆（避免卡頓）</div> : null}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {weightedScatterData.length > 0 ? (
-              <div className="register-block">
-                <div className="register-title" style={{ marginBottom: 8 }}>Risk Map（x_T2 vs x_SPE）</div>
-                <div className="analytics-chart-wrap" style={{ height: 320, marginTop: 0 }}>
-                  <ResponsiveContainer>
-                    <ScatterChart margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-                      <CartesianGrid />
-                      <XAxis type="number" dataKey="x" name="x_T2" />
-                      <YAxis type="number" dataKey="y" name="x_SPE" />
-                      <ZAxis type="number" dataKey="z" range={[40, 220]} />
-                      <Tooltip
-                        cursor={{ strokeDasharray: '3 3' }}
-                        formatter={(value: any, name: any) => [value, name === 'x' ? 'x_T2' : name === 'y' ? 'x_SPE' : name]}
-                        labelFormatter={(_, payload) => {
-                          const row = payload?.[0]?.payload as any
-                          return row?.id ? `ID: ${row.id}` : ''
-                        }}
-                      />
-                      <Scatter data={weightedScatterData} fill="#2563eb" />
-                    </ScatterChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            ) : null}
-            {selectedWeighted && isPlainObject(detailData) ? (
-              <>
-                <div className="register-block">
-                  <div className="register-title" style={{ marginBottom: 8 }}>加權貢獻摘要</div>
-                  <div className="muted" style={{ marginBottom: 10 }}><code>{selectedWeighted.id}</code></div>
-                  <div className="analytics-report-kv">
-                    <div><span className="analytics-report-k">x_T2</span><span className="analytics-report-v">{selectedWeighted.x_T2.toFixed(3)}</span></div>
-                    <div><span className="analytics-report-k">x_SPE</span><span className="analytics-report-v">{selectedWeighted.x_SPE.toFixed(3)}</span></div>
-                  </div>
-                </div>
-
-                {(() => {
-                  const t2 = Array.isArray((detailData as any)?.t2_features) ? ((detailData as any).t2_features as unknown[]) : []
-                  const spe = Array.isArray((detailData as any)?.spe_features) ? ((detailData as any).spe_features as unknown[]) : []
-                  const top10 = (items: unknown[]) => items.filter(isPlainObject).map((x) => x as Record<string, unknown>).slice(0, 10)
-                  return (
-                    <>
-                      <div className="register-block">
-                        <div className="register-title" style={{ marginBottom: 8 }}>T2 Top Features</div>
-                        <div className="analytics-report-table">
-                          <div className="analytics-report-row analytics-report-head">
-                            <div>feature</div>
-                            <div>final_score</div>
-                            <div>final_rank</div>
-                          </div>
-                          {top10(t2).map((x, idx) => (
-                            <div key={idx} className="analytics-report-row">
-                              <div>{toStr(x['feature'])}</div>
-                              <div>{safeNumber(x['final_score']).toFixed(6)}</div>
-                              <div>{safeNumber(x['final_rank'])}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="register-block">
-                        <div className="register-title" style={{ marginBottom: 8 }}>SPE Top Features</div>
-                        <div className="analytics-report-table">
-                          <div className="analytics-report-row analytics-report-head">
-                            <div>feature</div>
-                            <div>final_score</div>
-                            <div>final_rank</div>
-                          </div>
-                          {top10(spe).map((x, idx) => (
-                            <div key={idx} className="analytics-report-row">
-                              <div>{toStr(x['feature'])}</div>
-                              <div>{safeNumber(x['final_score']).toFixed(6)}</div>
-                              <div>{safeNumber(x['final_rank'])}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )
-                })()}
-              </>
-            ) : (
-              <>
-                <div className="register-block"><div className="register-title" style={{ marginBottom: 8 }}>加權貢獻摘要</div><div className="muted">請從左側選擇一筆案件</div></div>
-              </>
-            )}
-          </div>
-        </div>
+          <WeightedView
+            filteredWeightedItems={filteredWeightedItems}
+            weightedScatterData={weightedScatterData}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            selectedWeighted={selectedWeighted}
+            detailData={detailData}
+          />
       ) : props.view === 'rag' && ragEvents.length > 0 ? (
-        <div className="analytics-report-grid">
-          <div className="register-block">
-            <div className="register-title" style={{ marginBottom: 8 }}>事件清單（{filteredRagEvents.length}）</div>
-            <div className="analytics-report-list">
-              {filteredRagEvents.slice(0, 500).map((r) => {
-                const active = r.event_id === selectedId
-                return (
-                  <button
-                    key={r.event_id}
-                    type="button"
-                    className={active ? 'btn-primary' : 'btn-secondary'}
-                    style={{ textAlign: 'left' }}
-                    onClick={() => setSelectedId(r.event_id)}
-                    title={r.event_id}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.event_id}</div>
-                      <div className="muted" style={{ whiteSpace: 'nowrap' }}>SOP {r.sop_count}</div>
-                    </div>
-                    <div className="muted" style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <span className="analytics-pill">features: {r.feature_count}</span>
-                    </div>
-                  </button>
-                )
-              })}
-              {filteredRagEvents.length > 500 ? <div className="muted">僅顯示前 500 筆（避免卡頓）</div> : null}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {selectedRag && isPlainObject(detailData) ? (
-              <>
-                <div className="register-block">
-                  <div className="register-title" style={{ marginBottom: 8 }}>SOP 建議（RAG）</div>
-                  <div className="analytics-artifacts-hint" style={{ marginBottom: 10 }}><code>{selectedRag.event_id}</code></div>
-                  {Object.entries(((detailData as any)?.features ?? {}) as Record<string, unknown>).map(([feature, rows]) => {
-                    const arr = Array.isArray(rows) ? (rows as unknown[]) : []
-                    if (arr.length === 0) return null
-                    return (
-                      <div key={feature} style={{ marginBottom: 12 }}>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
-                          <div style={{ fontWeight: 700 }}>{feature}</div>
-                          <span className="analytics-pill">{arr.length} 條</span>
-                        </div>
-                        <div className="analytics-report-table" style={{ marginTop: 6 }}>
-                          <div
-                            className="analytics-report-row analytics-report-head"
-                            style={{ gridTemplateColumns: '90px 130px 120px 1.2fr 1.2fr 120px' }}
-                          >
-                            <div>code</div>
-                            <div>station</div>
-                            <div>kind</div>
-                            <div>problem</div>
-                            <div>action</div>
-                            <div>section</div>
-                          </div>
-                          {arr.slice(0, 20).filter(isPlainObject).map((row: any, idx) => {
-                            const code = toStr(row.code)
-                            const station = toStr(row.station)
-                            const kind = toStr(row.kind)
-                            const problem = toStr(row.problem)
-                            const action = toStr(row.action)
-                            const section = toStr(row.section)
-                            return (
-                              <div
-                                key={idx}
-                                className="analytics-report-row"
-                                style={{ gridTemplateColumns: '90px 130px 120px 1.2fr 1.2fr 120px' }}
-                                title={[code, station, kind, problem, action, section].filter(Boolean).join(' / ')}
-                              >
-                                <div>{code || '-'}</div>
-                                <div>{station || '-'}</div>
-                                <div>{kind || '-'}</div>
-                                <div style={{ whiteSpace: 'normal' }}>{problem || '-'}</div>
-                                <div style={{ whiteSpace: 'normal' }}>{action || '-'}</div>
-                                <div>{section || '-'}</div>
-                              </div>
-                            )
-                          })}
-                          {arr.length > 20 ? (
-                            <div className="analytics-artifacts-hint" style={{ padding: '8px 10px' }}>
-                              僅顯示前 20 條（避免卡頓）
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="register-block"><div className="register-title" style={{ marginBottom: 8 }}>SOP 建議（RAG）</div><div className="analytics-artifacts-hint">請從左側選擇一筆事件</div></div>
-              </>
-            )}
-          </div>
-        </div>
+          <RagView
+            filteredRagEvents={filteredRagEvents}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            selectedRag={selectedRag}
+            detailData={detailData}
+          />
       ) : props.view === 'llm' && llmItems.length > 0 ? (
-        <div className="analytics-report-grid">
-          <div className="register-block">
-            <div className="register-title" style={{ marginBottom: 8 }}>事件清單（{filteredLlmItems.length}）</div>
-            <div className="analytics-report-list">
-              {filteredLlmItems.slice(0, 500).map((r) => {
-                const active = r.event_id === selectedId
-                return (
-                  <button
-                    key={r.event_id}
-                    type="button"
-                    className={active ? 'btn-primary' : 'btn-secondary'}
-                    style={{ textAlign: 'left' }}
-                    onClick={() => setSelectedId(r.event_id)}
-                    title={r.event_id}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.event_id}</div>
-                      <div className="muted" style={{ whiteSpace: 'nowrap' }}>異常 {r.total_anomalies}</div>
-                    </div>
-                    <div className="muted" style={{ marginTop: 4 }}>{formatIsoPreview(r.event_time_raw) || '-'}</div>
-                  </button>
-                )
-              })}
-              {filteredLlmItems.length > 500 ? <div className="muted">僅顯示前 500 筆（避免卡頓）</div> : null}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {selectedLlmDetail ? (
-              <>
-                <div className="register-block">
-                  <div className="register-title" style={{ marginBottom: 8 }}>LLM 主異常清單（表格）</div>
-                  <div className="analytics-report-kv">
-                    <div><span className="analytics-report-k">event_id</span><span className="analytics-report-v"><code>{toStr(selectedLlmDetail.event_id) || '-'}</code></span></div>
-                    <div><span className="analytics-report-k">event_time</span><span className="analytics-report-v">{formatIsoPreview(selectedLlmDetail.event_time) || '-'}</span></div>
-                    <div><span className="analytics-report-k">total_anomalies</span><span className="analytics-report-v">{safeNumber(selectedLlmDetail.total_anomalies)}</span></div>
-                  </div>
-                </div>
-
-                {Array.isArray(selectedLlmDetail.by_station) ? (
-                  <div className="register-block">
-                    <div className="register-title" style={{ marginBottom: 8 }}>按站點</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {(selectedLlmDetail.by_station as unknown[]).filter(isPlainObject).map((stationRow: any) => {
-                        const station = toStr(stationRow.station)
-                        const anomalies = Array.isArray(stationRow.anomalies) ? (stationRow.anomalies as unknown[]) : []
-                        if (anomalies.length === 0) return null
-                        return (
-                          <div key={station} className="analytics-report-subcard">
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                              <div style={{ fontWeight: 800 }}>{station || '(station)'}</div>
-                              <span className="analytics-pill">{anomalies.length} 條</span>
-                            </div>
-                            <div className="analytics-report-table" style={{ marginTop: 8 }}>
-                              <div className="analytics-report-row analytics-report-head" style={{ gridTemplateColumns: '220px 150px 1.5fr' }}>
-                                <div>feature</div>
-                                <div>method</div>
-                                <div>description</div>
-                              </div>
-                              {anomalies.slice(0, 50).filter(isPlainObject).map((it: any, idx: number) => (
-                                <div key={idx} className="analytics-report-row" style={{ gridTemplateColumns: '220px 150px 1.5fr' }}>
-                                  <div>{toStr(it.feature_name) || '-'}</div>
-                                  <div>{toStr(it.detection_method) || '-'}</div>
-                                  <div style={{ whiteSpace: 'normal' }}>{toStr(it.problem_description) || '-'}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <div className="register-block"><div className="register-title" style={{ marginBottom: 8 }}>LLM 主異常清單（表格）</div><div className="muted">請從左側選擇一筆事件</div></div>
-            )}
-          </div>
-        </div>
+          <LlmView
+            filteredLlmItems={filteredLlmItems}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            selectedLlmDetail={selectedLlmDetail}
+          />
       ) : (
         <div className="register-block">
           <div className="register-title" style={{ marginBottom: 8 }}>改善報告</div>
