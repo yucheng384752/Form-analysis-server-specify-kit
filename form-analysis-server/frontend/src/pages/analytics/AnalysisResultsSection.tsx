@@ -65,6 +65,14 @@ export function AnalysisResultsSection({
                   cy="50%"
                   outerRadius={90}
                   label={({ name }) => `${name}`}
+                  style={{ cursor: 'pointer' }}
+                  onClick={(data: any) => {
+                    const kind = data?.kind ?? data?.payload?.kind
+                    const name = String(data?.name ?? data?.payload?.name ?? '')
+                    if (kind === 'NG' || name.startsWith('NG')) {
+                      onEnterNgMode()
+                    }
+                  }}
                 >
                   {pieData.map((_, i) => (
                     <Cell key={i} fill={colors[i % colors.length]} />

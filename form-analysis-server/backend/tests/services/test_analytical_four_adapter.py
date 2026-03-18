@@ -143,7 +143,7 @@ async def test_realtime_analysis_endpoint_exists():
 
 async def test_complaint_analysis_request_model():
     """測試 ComplaintAnalysisRequest 包含必要欄位"""
-    from app.api.routes_analytics import ComplaintAnalysisRequest
+    from app.api.analytics.schemas import ComplaintAnalysisRequest
 
     model_fields = ComplaintAnalysisRequest.model_fields
 
@@ -155,7 +155,7 @@ async def test_complaint_analysis_request_model():
 
 async def test_complaint_analysis_response_model():
     """測試 ComplaintAnalysisResponse 包含必要欄位"""
-    from app.api.routes_analytics import ComplaintAnalysisResponse
+    from app.api.analytics.schemas import ComplaintAnalysisResponse
 
     model_fields = ComplaintAnalysisResponse.model_fields
     assert "requested_ids" in model_fields

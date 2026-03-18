@@ -150,7 +150,10 @@ describe('AnalyticsPage interaction regression', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /Bar/i }))
-    await user.click(screen.getByRole('button', { name: /^NG$/i }))
+    // Multiple Bar mocks render NG buttons (category chart + winder histogram);
+    // select the first one which belongs to the Winder category card.
+    const ngButtons1 = screen.getAllByRole('button', { name: /^NG$/i })
+    await user.click(ngButtons1[0])
 
     await waitFor(() => {
       expect(screen.getByText('LOT-001')).toBeInTheDocument()
@@ -253,7 +256,8 @@ describe('AnalyticsPage interaction regression', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /Bar/i }))
-    await user.click(screen.getByRole('button', { name: /^NG$/i }))
+    const ngButtons2 = screen.getAllByRole('button', { name: /^NG$/i })
+    await user.click(ngButtons2[0])
 
     await waitFor(() => {
       expect(screen.getByText('LOT-2025-08-01')).toBeInTheDocument()
@@ -345,7 +349,8 @@ describe('AnalyticsPage interaction regression', () => {
       expect(screen.getByRole('button', { name: /Bar/i })).toBeInTheDocument()
     })
     await user.click(screen.getByRole('button', { name: /Bar/i }))
-    await user.click(screen.getByRole('button', { name: /^NG$/i }))
+    const ngButtons3 = screen.getAllByRole('button', { name: /^NG$/i })
+    await user.click(ngButtons3[0])
     await waitFor(() => {
       expect(screen.getByText('LOT-FALLBACK-001')).toBeInTheDocument()
     })

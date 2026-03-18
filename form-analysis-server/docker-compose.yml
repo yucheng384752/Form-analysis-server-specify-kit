@@ -55,7 +55,7 @@ services:
       # External PDF conversion server (optional)
       - PDF_SERVER_URL=${PDF_SERVER_URL:-}
       - PDF_SERVER_CONVERT_PATH=${PDF_SERVER_CONVERT_PATH:-/convert}
-      - PDF_SERVER_TIMEOUT_SECONDS=${PDF_SERVER_TIMEOUT_SECONDS:-60}
+      - PDF_SERVER_TIMEOUT_SECONDS=${PDF_SERVER_TIMEOUT_SECONDS:-300}
       - PDF_SERVER_TABLE=${PDF_SERVER_TABLE:-}
 
       # External analytics inputs (Analytical-Four + september_v2)

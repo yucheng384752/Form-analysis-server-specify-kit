@@ -96,3 +96,41 @@ export async function parseCsv(file: File): Promise<CsvData> {
 
   return { headers, rows: dataRows, colWidths: pixelWidths, starCells };
 }
+
+// ── Winder Number 自動注入 ──
+
+/** 後端 CSVFieldMapper.WINDER_NUMBER_FIELD_NAMES 對應的欄位名稱 */
+const WINDER_FIELD_NAMES = [
+  'Winder', 'Winder Number', 'Winder number',
+  'winder', 'winder_number', '收卷機', '收卷機編號',
+];
+
+/**
+ * P2 CSV 若缺少 Winder 欄位，在第一欄插入 "Winder Number"，值 = row index + 1。
+ * 後端 `_extract_winder_from_row()` 會讀取此欄位，讓每列分配到不同 winder，
+ * 避免所有列合併為單一 P2Record。
+ */
+export function injectWinderColumnIfMissing(csv: CsvData, fileType: string): CsvData {
+  if (fileType !== 'P2') return csv;
+  const hasWinder = csv.headers.some((h) => WINDER_FIELD_NAMES.includes(h.trim()));
+  if (hasWinder) return csv;
+
+  const newHeaders = ['Winder Number', ...csv.headers];
+  const newRows = csv.rows.map((row, i) => [String(i + 1), ...row]);
+
+  // Winder Number 欄位寬度固定 120px，其餘保持原 colWidths
+  const winderColWidth = 120;
+  const newColWidths = [winderColWidth, ...csv.colWidths];
+
+  // starCells 的 key 格式為 "row_col"，插入欄位後 col index 全部 +1
+  const newStarCells = new Set<string>();
+  csv.starCells.forEach((key) => {
+    const parts = key.split('_');
+    if (parts.length === 2) {
+      const [r, c] = parts;
+      newStarCells.add(`${r}_${Number(c) + 1}`);
+    }
+  });
+
+  return { headers: newHeaders, rows: newRows, colWidths: newColWidths, starCells: newStarCells };
+}

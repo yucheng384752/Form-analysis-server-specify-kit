@@ -8,7 +8,10 @@ import "./../styles/upload-page.css";
 
 import type { UploadedFile } from "./upload/types";
 import { MAX_SIZE_BYTES, EDIT_ENABLED } from "./upload/types";
-import { detectFileType, deriveLotNoFromFilename, normalizeP3LotNo, normalizeLotNo, parseCsv } from "./upload/utils";
+
+/** PDF 相關 fetch 的超時時間（毫秒），與後端 PDF_SERVER_TIMEOUT_SECONDS=300 一致 */
+const PDF_FETCH_TIMEOUT_MS = 300_000;
+import { detectFileType, deriveLotNoFromFilename, normalizeP3LotNo, normalizeLotNo, parseCsv, injectWinderColumnIfMissing } from "./upload/utils";
 import { FileDropArea } from "./upload/FileDropArea";
 import { UploadedFileCard } from "./upload/UploadedFileCard";
 
@@ -103,9 +106,13 @@ export function UploadPage() {
   };
 
   const fetchPdfConvertStatus = async (processId: string) => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), PDF_FETCH_TIMEOUT_MS);
     const res = await fetch(`/api/upload/pdf/${processId}/convert/status`, {
       headers: buildTenantHeaders(),
+      signal: ac.signal,
     });
+    clearTimeout(timer);
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({ detail: t('upload.errors.fetchPdfConvertStatusFailed') }));
       const message =
@@ -118,9 +125,13 @@ export function UploadPage() {
   };
 
   const fetchPdfConvertedCsvOutputs = async (processId: string) => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), PDF_FETCH_TIMEOUT_MS);
     const res = await fetch(`/api/upload/pdf/${processId}/convert/outputs?include_csv_text=1`, {
       headers: buildTenantHeaders(),
+      signal: ac.signal,
     });
+    clearTimeout(timer);
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({ detail: t('upload.errors.fetchCsvOutputsFailed') }));
       const message =
@@ -256,11 +267,15 @@ export function UploadPage() {
         const formData = new FormData();
         formData.append('file', target.file, target.name);
 
+        const pdfUploadAc = new AbortController();
+        const pdfUploadTimer = setTimeout(() => pdfUploadAc.abort(), PDF_FETCH_TIMEOUT_MS);
         const res = await fetch('/api/upload/pdf', {
           method: 'POST',
           headers: buildTenantHeaders(),
           body: formData,
+          signal: pdfUploadAc.signal,
         });
+        clearTimeout(pdfUploadTimer);
 
         if (!res.ok) {
           const errorData = await res.json().catch(() => ({ detail: t('upload.errors.pdfUploadFailed') }));
@@ -394,7 +409,9 @@ export function UploadPage() {
       );
 
       // 2. 解析CSV內容以供編輯（若本來就有 csvData，代表使用者已在畫面編輯過，直接沿用）
-      const csvData = target.csvData ?? await parseCsv(fileToUpload);
+      //    首次解析時自動為 P2 注入 Winder Number 欄位
+      const csvDataRaw = target.csvData ?? await parseCsv(fileToUpload);
+      const csvData = target.csvData ? csvDataRaw : injectWinderColumnIfMissing(csvDataRaw, target.type);
 
       setFiles((prev) =>
         prev.map((f) =>
@@ -605,10 +622,14 @@ export function UploadPage() {
     );
 
     try {
+      const convertAc = new AbortController();
+      const convertTimer = setTimeout(() => convertAc.abort(), PDF_FETCH_TIMEOUT_MS);
       const res = await fetch(`/api/upload/pdf/${target.processId}/convert`, {
         method: 'POST',
         headers: buildTenantHeaders(),
+        signal: convertAc.signal,
       });
+      clearTimeout(convertTimer);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({ detail: t('upload.errors.triggerPdfConvertFailed') }));
         const message =
@@ -683,7 +704,8 @@ export function UploadPage() {
               const file = new File([csvText], safeName, { type: 'text/csv' });
               const type = detectFileType(safeName);
               const lotNo = type === 'P1' || type === 'P2' ? deriveLotNoFromFilename(safeName) : '';
-              const csvData = await parseCsv(file);
+              const csvDataRaw = await parseCsv(file);
+              const csvData = injectWinderColumnIfMissing(csvDataRaw, type);
 
               const id = `${safeName}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
               newCsvFiles.push({
