@@ -7,6 +7,19 @@ export function detectFileType(name: string): FileType {
   return "P3";
 }
 
+/**
+ * 根據 CSV 欄位內容重新判斷檔案類型。
+ * 用於 PDF 轉出的 CSV 檔名不含 P1_/P2_ 前綴的情況。
+ */
+export function detectFileTypeByHeaders(headers: string[], fallback: FileType): FileType {
+  if (fallback === 'P1' || fallback === 'P2' || fallback === 'PDF') return fallback;
+  const headerSet = new Set(headers.map((h) => h.trim()));
+  // P2 特徵欄位
+  const p2Sigs = ['Striped Results', 'Slitting machine', 'Semi-finished productsLOT NO', 'Slitting speed'];
+  if (p2Sigs.some((sig) => headerSet.has(sig))) return 'P2';
+  return fallback;
+}
+
 // P1 / P2: 由檔名取 lot_no，例如 P1_2503033_02.csv -> 2503033_02
 export function deriveLotNoFromFilename(name: string): string {
   const base = name.replace(/\.csv$/i, "");
@@ -105,13 +118,30 @@ const WINDER_FIELD_NAMES = [
   'winder', 'winder_number', '收卷機', '收卷機編號',
 ];
 
+/** P2 CSV 的特徵欄位 — 用於 PDF 轉出 CSV 時 fileType 可能不是 'P2' 的情況 */
+const P2_SIGNATURE_HEADERS = [
+  'Striped Results', 'Slitting machine', 'Slitting speed',
+  'Semi-finished products impedance', 'Semi-finished productsLOT NO',
+  'Rewind torque', 'Heat gun temperature', 'Rubber wheel gasket thickness',
+];
+
+/** 檢查 CSV 欄位是否像 P2 資料 */
+function looksLikeP2Csv(headers: string[]): boolean {
+  const headerSet = new Set(headers.map((h) => h.trim()));
+  return P2_SIGNATURE_HEADERS.some((sig) => headerSet.has(sig));
+}
+
 /**
  * P2 CSV 若缺少 Winder 欄位，在第一欄插入 "Winder Number"，值 = row index + 1。
  * 後端 `_extract_winder_from_row()` 會讀取此欄位，讓每列分配到不同 winder，
  * 避免所有列合併為單一 P2Record。
+ *
+ * 判斷是否為 P2：fileType === 'P2' 或 CSV 欄位含有 P2 特徵欄位
+ * （PDF 轉出 CSV 時檔名可能不以 P2_ 開頭，需靠內容判斷）
  */
 export function injectWinderColumnIfMissing(csv: CsvData, fileType: string): CsvData {
-  if (fileType !== 'P2') return csv;
+  const isP2 = fileType === 'P2' || looksLikeP2Csv(csv.headers);
+  if (!isP2) return csv;
   const hasWinder = csv.headers.some((h) => WINDER_FIELD_NAMES.includes(h.trim()));
   if (hasWinder) return csv;
 

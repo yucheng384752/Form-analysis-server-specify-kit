@@ -11,7 +11,7 @@ import { MAX_SIZE_BYTES, EDIT_ENABLED } from "./upload/types";
 
 /** PDF 相關 fetch 的超時時間（毫秒），與後端 PDF_SERVER_TIMEOUT_SECONDS=300 一致 */
 const PDF_FETCH_TIMEOUT_MS = 300_000;
-import { detectFileType, deriveLotNoFromFilename, normalizeP3LotNo, normalizeLotNo, parseCsv, injectWinderColumnIfMissing } from "./upload/utils";
+import { detectFileType, detectFileTypeByHeaders, deriveLotNoFromFilename, normalizeP3LotNo, normalizeLotNo, parseCsv, injectWinderColumnIfMissing } from "./upload/utils";
 import { FileDropArea } from "./upload/FileDropArea";
 import { UploadedFileCard } from "./upload/UploadedFileCard";
 
@@ -702,9 +702,10 @@ export function UploadPage() {
                 : filename;
 
               const file = new File([csvText], safeName, { type: 'text/csv' });
-              const type = detectFileType(safeName);
-              const lotNo = type === 'P1' || type === 'P2' ? deriveLotNoFromFilename(safeName) : '';
               const csvDataRaw = await parseCsv(file);
+              // PDF 轉出 CSV 檔名可能不含 P2_ 前綴，需靠內容欄位判斷
+              const type = detectFileTypeByHeaders(csvDataRaw.headers, detectFileType(safeName));
+              const lotNo = type === 'P1' || type === 'P2' ? deriveLotNoFromFilename(safeName) : '';
               const csvData = injectWinderColumnIfMissing(csvDataRaw, type);
 
               const id = `${safeName}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
