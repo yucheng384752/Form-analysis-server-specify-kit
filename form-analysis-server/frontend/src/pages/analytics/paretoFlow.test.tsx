@@ -4,17 +4,6 @@
  * 驗證從「使用者點擊圓餅圖 NG 區塊」到「顯示 NG list 與 Pareto 圖表」的完整資料流：
  *
  * ┌──────────────────────────────────────────────────────────────────────────┐
- * │  NG Pareto 資料流                                                       │
- * │                                                                          │
- * │  DB → run_external_categorical_analysis_from_db()                       │
- * │     → POST /api/v2/analytics/analyze                                    │
- * │     → analysisResult['P2.NG_code'][*].count_0                           │
- * │     → ngParetoData useMemo → buildParetoSeries()                        │
- * │     → <ParetoChart title="NG Pareto (count_0)">                         │
- * │       └─ <ComposedChart> + <Bar value> + <Line cumPct>                  │
- * └──────────────────────────────────────────────────────────────────────────┘
- *
- * ┌──────────────────────────────────────────────────────────────────────────┐
  * │  Feature Pareto 資料流                                                   │
  * │                                                                          │
  * │  DB → validate_and_prepare_df() → BasicStatistics → Comparator          │
@@ -34,7 +23,7 @@ import userEvent from '@testing-library/user-event'
 import { AnalyticsPage } from '../AnalyticsPage'
 import { buildParetoSeries } from './utils'
 import type { ParetoItem, ParetoPoint } from './types'
-import { PARETO_TOP_N, PARETO_CUM_THRESHOLD, PARETO_MIN_COUNT, PARETO_SHOW_ZERO } from './types'
+import { PARETO_TOP_N, PARETO_CUM_THRESHOLD } from './types'
 
 // ── Mocks ──
 
@@ -162,7 +151,7 @@ const MOCK_NG_RECORDS = {
 // ==========================================================================
 
 describe('buildParetoSeries — 使用實際 Pareto 常數', () => {
-  it('NG Pareto：從 count_0 建構 (topN=12, cumThreshold=0.8, minValue=1)', () => {
+  it('NG Pareto：從 count_0 建構 (topN=12, cumThreshold=0.8)', () => {
     // 步驟：模擬前端 ngParetoData useMemo 的邏輯
     const bucket = MOCK_ANALYZE_RESULT['P2.NG_code']
     const items: ParetoItem[] = Object.entries(bucket).map(([name, node]) => ({
@@ -173,8 +162,6 @@ describe('buildParetoSeries — 使用實際 Pareto 常數', () => {
     const result = buildParetoSeries(items, {
       topN: PARETO_TOP_N,       // 12
       cumThreshold: PARETO_CUM_THRESHOLD, // 0.8
-      minValue: PARETO_MIN_COUNT,  // 1
-      showZero: PARETO_SHOW_ZERO,  // false
     })
 
     // 驗證：降序排列
@@ -205,36 +192,31 @@ describe('buildParetoSeries — 使用實際 Pareto 常數', () => {
     const result = buildParetoSeries(items, {
       topN: PARETO_TOP_N,
       cumThreshold: PARETO_CUM_THRESHOLD,
-      minValue: PARETO_MIN_COUNT,
-      showZero: PARETO_SHOW_ZERO,
     })
 
     // 驗證：降序排列
     expect(result[0].name).toBe('Semi-finished impedance')
     expect(result[0].value).toBe(1.17)
 
-    // 驗證：最後一項的 cumPct 應接近 100（因為 minValue=1 會過濾掉 < 1 的值）
-    // final_raw_score: 1.17, 0.58, 0.25
-    // 只有 1.17 ≥ 1 → 只保留一項
-    expect(result.length).toBe(1)
-    expect(result[0].cumPct).toBeCloseTo(100, 0)
+    // 驗證：cumThreshold 會截斷到達 80% 以上的範圍
+    // final_raw_score: 1.17, 0.58, 0.25 → cum after 2 items = 87.5%
+    expect(result.length).toBe(2)
+    expect(result[1].cumPct).toBeGreaterThanOrEqual(80)
   })
 
-  it('Feature Pareto：minValue=0 時保留所有項目', () => {
+  it('Feature Pareto：保留所有正值項目', () => {
     const items: ParetoItem[] = Object.entries(MOCK_EXTRACTION_RESULT.final_raw_score).map(
       ([name, value]) => ({ name, value: Number(value) || 0 }),
     )
 
     const result = buildParetoSeries(items, {
       topN: PARETO_TOP_N,
-      minValue: 0,
-      showZero: false,
     })
 
-    expect(result.length).toBe(3)
+    expect(result.length).toBe(2)
     expect(result[0].name).toBe('Semi-finished impedance')
-    expect(result[2].name).toBe('Slitting speed')
-    expect(result[2].cumPct).toBeCloseTo(100, 0)
+    expect(result[1].name).toBe('Heat gun temperature')
+    expect(result[1].cumPct).toBeGreaterThanOrEqual(80)
   })
 })
 
@@ -315,8 +297,6 @@ describe('前端 useMemo 轉換邏輯', () => {
     const paretoData = buildParetoSeries(items, {
       topN: PARETO_TOP_N,
       cumThreshold: PARETO_CUM_THRESHOLD,
-      minValue: PARETO_MIN_COUNT,
-      showZero: PARETO_SHOW_ZERO,
     })
 
     expect(paretoData.length).toBeGreaterThan(0)
@@ -340,8 +320,6 @@ describe('前端 useMemo 轉換邏輯', () => {
     const paretoData = buildParetoSeries(items, {
       topN: PARETO_TOP_N,
       cumThreshold: PARETO_CUM_THRESHOLD,
-      minValue: PARETO_MIN_COUNT,
-      showZero: PARETO_SHOW_ZERO,
     })
 
     // 驗證輸出結構符合 ParetoChart 預期

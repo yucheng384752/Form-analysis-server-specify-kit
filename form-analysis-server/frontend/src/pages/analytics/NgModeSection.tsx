@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, Line } from 'recharts'
 import { ParetoChart } from '../../components/analytics/ParetoChart'
 import type { QueryRecordLite, ParetoPoint } from './types'
-import { PARETO_ENABLED_DAILY, PARETO_SOURCE_NG, PARETO_SOURCE_FEATURE } from './types'
+import { PARETO_ENABLED_DAILY, PARETO_SOURCE_FEATURE } from './types'
 import { isPlainObject, round3 } from './utils'
 
 interface NgModeSectionProps {
@@ -10,7 +10,6 @@ interface NgModeSectionProps {
   ngLoading: boolean
   ngError: string
   ngRecords: QueryRecordLite[]
-  ngParetoData: ParetoPoint[]
   featureParetoData: ParetoPoint[]
   extractionLoading: boolean
   extractionData: {
@@ -36,7 +35,6 @@ export function NgModeSection({
   ngLoading,
   ngError,
   ngRecords,
-  ngParetoData,
   featureParetoData,
   extractionLoading,
   extractionData,
@@ -84,7 +82,7 @@ export function NgModeSection({
         {ngError ? <div className="analytics-error">{ngError}</div> : null}
 
         {PARETO_ENABLED_DAILY ? (
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginTop: 16, marginBottom: 16 }}>
             <div
               style={{
                 display: 'grid',
@@ -92,19 +90,6 @@ export function NgModeSection({
                 gap: 12,
               }}
             >
-              {PARETO_SOURCE_NG ? (
-                ngParetoData.length > 0 ? (
-                  <ParetoChart
-                    title="NG Pareto (count_0)"
-                    data={ngParetoData}
-                    valueLabel="NG數量"
-                    cumLabel="累積%"
-                  />
-                ) : (
-                  <div className="analytics-empty">NG Pareto 暫無資料</div>
-                )
-              ) : null}
-
               {PARETO_SOURCE_FEATURE ? (
                 extractionLoading ? (
                   <div className="analytics-empty">{t('analytics.loading')} (Feature Pareto)</div>

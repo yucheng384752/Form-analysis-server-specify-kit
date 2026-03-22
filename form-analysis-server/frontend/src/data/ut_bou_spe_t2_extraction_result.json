@@ -1,0 +1,58 @@
+{
+  "boundary_count": {
+    "Heat gun temperature": 0,
+    "Thickness diff": 0,
+    "rough edge": 19,
+    "Slitting speed": 0,
+    "Appearance": 19,
+    "Semi-finished impedance": 0,
+    "Rubber wheel gasket thickness (out)": 0,
+    "Thicknessss Low(μm)": 1,
+    "Board Width(mm)": 0,
+    "Rubber wheel gasket thickness (in)": 3,
+    "Thicknessss High(μm)": 0,
+    "Rewind torque": 0
+  },
+  "spe_score": {
+    "Heat gun temperature": 4.024611977886333e-31,
+    "Thickness diff": 2.369221239686846e-29,
+    "rough edge": 19.0,
+    "Slitting speed": 0,
+    "Appearance": 19.0,
+    "Semi-finished impedance": 1.072357793034813e-30,
+    "Rubber wheel gasket thickness (out)": 5.87045984864736e-29,
+    "Thicknessss Low(μm)": 2.10687684045225e-28,
+    "Board Width(mm)": 7.581091966129919e-28,
+    "Rubber wheel gasket thickness (in)": 1.0799999999999987,
+    "Thicknessss High(μm)": 5.702774861827825e-30,
+    "Rewind torque": 1.3213119601035254e-30
+  },
+  "t2_score": {
+    "Heat gun temperature": 0.0,
+    "Thickness diff": 11.540350466363511,
+    "rough edge": 0,
+    "Slitting speed": 0.0,
+    "Appearance": 0,
+    "Semi-finished impedance": 9.981141454123074,
+    "Rubber wheel gasket thickness (out)": 7.980690540315824e-31,
+    "Thicknessss Low(μm)": 11.831137444284611,
+    "Board Width(mm)": 0.8080459137881161,
+    "Rubber wheel gasket thickness (in)": 2.433423793476812e-16,
+    "Thicknessss High(μm)": 0.8212450625724019,
+    "Rewind torque": 0.0
+  },
+  "final_raw_score": {
+    "Heat gun temperature": 1.2073835933659e-31,
+    "Thickness diff": 3.4621051399090534,
+    "rough edge": 13.3,
+    "Slitting speed": 0.0,
+    "Appearance": 13.3,
+    "Semi-finished impedance": 2.994342436236922,
+    "Rubber wheel gasket thickness (out)": 1.7850800262151553e-29,
+    "Thicknessss Low(μm)": 3.949341233285383,
+    "Board Width(mm)": 0.2424137741364348,
+    "Rubber wheel gasket thickness (in)": 1.5239999999999998,
+    "Thicknessss High(μm)": 0.24637351877172056,
+    "Rewind torque": 3.963935880310576e-31
+  }
+}

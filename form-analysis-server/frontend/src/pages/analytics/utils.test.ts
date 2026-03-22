@@ -128,22 +128,12 @@ describe('buildParetoSeries', () => {
     expect(result[0].name).toBe('valid')
   })
 
-  it('value 為 0 時預設被過濾（showZero=false）', () => {
+  it('value 為 0 時仍會保留', () => {
     const items: ParetoItem[] = [
       { name: 'A', value: 10 },
       { name: 'B', value: 0 },
     ]
-    const result = buildParetoSeries(items, { minValue: 1 })
-    expect(result).toHaveLength(1)
-  })
-
-  it('minValue 過濾小於門檻的項目', () => {
-    const items: ParetoItem[] = [
-      { name: 'A', value: 10 },
-      { name: 'B', value: 3 },
-      { name: 'C', value: 1 },
-    ]
-    const result = buildParetoSeries(items, { minValue: 3 })
+    const result = buildParetoSeries(items, {})
     expect(result).toHaveLength(2)
   })
 
@@ -161,7 +151,7 @@ describe('buildParetoSeries', () => {
       { name: 'B', value: undefined as unknown as number },
       { name: 'C', value: 5 },
     ]
-    const result = buildParetoSeries(items, { minValue: 1 })
+    const result = buildParetoSeries(items, {})
     expect(result).toHaveLength(1)
     expect(result[0].name).toBe('C')
   })
@@ -184,7 +174,6 @@ describe('buildParetoSeries', () => {
     const result = buildParetoSeries(paretoItems, {
       topN: 12,
       cumThreshold: 0.8,
-      minValue: 1,
     })
 
     expect(result.length).toBeGreaterThan(0)

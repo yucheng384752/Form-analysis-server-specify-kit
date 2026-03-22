@@ -54,8 +54,6 @@ export type ParetoPoint = { name: string; value: number; cumPct: number }
 export const PARETO_ENABLED_DAILY = true
 export const PARETO_TOP_N = 12
 export const PARETO_CUM_THRESHOLD = 0.8
-export const PARETO_MIN_COUNT = 1
-export const PARETO_SHOW_ZERO = false
 export const PARETO_SOURCE_NG = true
 export const PARETO_SOURCE_FEATURE = true
 

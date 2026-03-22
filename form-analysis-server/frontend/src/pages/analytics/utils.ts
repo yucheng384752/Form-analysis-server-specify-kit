@@ -210,12 +210,8 @@ export function buildParetoSeries(
   options: {
     topN?: number
     cumThreshold?: number
-    minValue?: number
-    showZero?: boolean
   }
 ): ParetoPoint[] {
-  const minValue = options.minValue ?? 0
-  const showZero = options.showZero ?? false
   const topN = options.topN
   const cumThreshold = options.cumThreshold
 
@@ -224,7 +220,7 @@ export function buildParetoSeries(
       name: String(item.name || '').trim(),
       value: Number(item.value) || 0,
     }))
-    .filter((item) => item.name && (showZero ? item.value >= minValue : item.value >= minValue))
+    .filter((item) => item.name)
     .sort((a, b) => b.value - a.value)
 
   if (filtered.length === 0) return []

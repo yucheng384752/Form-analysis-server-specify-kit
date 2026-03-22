@@ -117,6 +117,256 @@ Form-analysis-server-specify-kit/
 
 ---
 
+## 系統架構總覽
+
+本平台是一個**製造業表單分析與供應鏈追溯系統**，涵蓋 P1（押出）→ P2（分條）→ P3（沖壓）三階段生產數據的上傳、查詢、分析與追溯。
+
+### 架構泳道圖
+
+```mermaid
+flowchart LR
+    subgraph User["使用者層"]
+        Browser["瀏覽器"]
+    end
+
+    subgraph Frontend["前端 React + Vite"]
+        direction TB
+        Register["RegisterPage<br/>登入"]
+        Upload["UploadPage<br/>上傳"]
+        Query["QueryPage<br/>查詢"]
+        Analytics["AnalyticsPage<br/>分析"]
+        Admin["AdminPage<br/>管理"]
+    end
+
+    subgraph Backend["後端 FastAPI"]
+        direction TB
+        MW["Middleware<br/>Auth + Tenant 隔離"]
+        Routes["Routes Layer<br/>import_v2 / query_v2 / analytics"]
+        Services["Service Layer<br/>ImportService / AnalyticsFetcher"]
+        Models["ORM Models<br/>P1/P2/P3 Records"]
+    end
+
+    subgraph External["外部系統"]
+        AF["Analytical-Four<br/>外部分析數據"]
+        PDF["PDF Server<br/>PDF→CSV 轉換"]
+    end
+
+    subgraph Database["PostgreSQL 16"]
+        direction TB
+        BizData["業務表<br/>p1/p2/p3_records"]
+        ImportData["匯入表<br/>import_jobs / staging_rows"]
+        TenantData["租戶表<br/>tenants / users / keys"]
+        AuditData["稽核表<br/>audit_events"]
+    end
+
+    Browser --> Frontend
+    Frontend -->|HTTP + X-API-Key| MW
+    MW --> Routes
+    Routes --> Services
+    Services --> Models
+    Models --> Database
+    Services --> External
+```
+
+---
+
+## Work Breakdown Structure (WBS)
+
+```mermaid
+graph TD
+    ROOT["Form Analysis Server<br/>製造業表單分析平台"]
+
+    ROOT --> BE["Backend<br/>FastAPI + Python"]
+    ROOT --> FE["Frontend<br/>React + TypeScript"]
+    ROOT --> DB["Database<br/>PostgreSQL 16"]
+    ROOT --> INFRA["Infrastructure<br/>Docker Compose"]
+
+    BE --> AUTH["認證模組<br/>routes_auth.py"]
+    AUTH --> AUTH1["API Key 驗證"]
+    AUTH --> AUTH2["Admin 驗證"]
+    AUTH --> AUTH3["Tenant 隔離 Middleware"]
+
+    BE --> IMPORT["匯入模組 V2<br/>routes_import_v2.py"]
+    IMPORT --> IMP1["CSV/Excel 上傳"]
+    IMPORT --> IMP2["解析 parse_job"]
+    IMPORT --> IMP3["驗證 validate_job"]
+    IMPORT --> IMP4["提交 commit_job"]
+    IMPORT --> IMP5["PDF 轉 CSV"]
+
+    BE --> QUERY["查詢模組 V2<br/>api/query_v2/"]
+    QUERY --> Q1["Records 查詢"]
+    QUERY --> Q2["Lots 查詢"]
+    QUERY --> Q3["Dynamic 動態查詢"]
+    QUERY --> Q4["追溯鏈查詢 P1→P2→P3"]
+
+    BE --> ANALYTICS["分析模組<br/>api/analytics/"]
+    ANALYTICS --> A1["日報/週報分析"]
+    ANALYTICS --> A2["NG 不良分析"]
+    ANALYTICS --> A3["Pareto 柏拉圖"]
+    ANALYTICS --> A4["外部數據整合<br/>Analytical-Four"]
+
+    BE --> TENANT["租戶管理<br/>routes_tenants.py"]
+    TENANT --> T1["租戶 CRUD"]
+    TENANT --> T2["使用者管理"]
+    TENANT --> T3["API Key 管理"]
+
+    BE --> AUDIT["稽核模組<br/>routes_audit_events.py"]
+
+    FE --> PG1["RegisterPage<br/>登入/初始化"]
+    FE --> PG2["UploadPage<br/>檔案上傳"]
+    FE --> PG3["QueryPage<br/>數據查詢"]
+    FE --> PG4["AnalyticsPage<br/>分析儀表板"]
+    FE --> PG5["ManagerPage<br/>管理員操作"]
+    FE --> PG6["AdminPage<br/>系統管理"]
+    FE --> PG7["LogViewer<br/>稽核日誌"]
+
+    PG2 --> PG2A["拖放上傳區"]
+    PG2 --> PG2B["CSV 線上編輯器"]
+    PG2 --> PG2C["驗證錯誤檢視"]
+
+    PG4 --> PG4A["日期範圍選擇器"]
+    PG4 --> PG4B["NG 模式分析"]
+    PG4 --> PG4C["Pareto 柏拉圖"]
+    PG4 --> PG4D["圓餅圖/柱狀圖"]
+
+    DB --> DB1["業務資料表<br/>p1/p2/p3_records + items"]
+    DB --> DB2["匯入狀態表<br/>import_jobs / staging_rows"]
+    DB --> DB3["租戶表<br/>tenants / users / api_keys"]
+    DB --> DB4["稽核表<br/>audit_events"]
+    DB --> DB5["Schema 註冊<br/>table_registry"]
+```
+
+---
+
+## 核心流程泳道圖（匯入 → 查詢 → 分析）
+
+```mermaid
+sequenceDiagram
+    participant U as 使用者 (Browser)
+    participant FE as Frontend (React)
+    participant API as Backend API (FastAPI)
+    participant SVC as Service Layer
+    participant DB as PostgreSQL
+
+    Note over U,DB: ═══ Phase 1: 登入與認證 ═══
+
+    U->>FE: 輸入帳號密碼
+    FE->>API: POST /api/auth/login
+    API->>DB: 查詢 tenant_users
+    DB-->>API: user + tenant 資訊
+    API-->>FE: JWT / API Key
+    FE-->>U: 顯示主頁面 (7 Tabs)
+
+    Note over U,DB: ═══ Phase 2: CSV 檔案匯入 (V2 Job Flow) ═══
+
+    U->>FE: 拖放 CSV 檔案
+    FE->>FE: 本地預覽 & CSV 編輯
+    U->>FE: 點擊「上傳」
+    FE->>API: POST /api/v2/import/jobs<br/>(multipart: table_code + files)
+    API->>SVC: ImportService.create_job()
+    SVC->>DB: INSERT import_jobs (QUEUED)
+    API-->>FE: job_id
+
+    Note over API,DB: 背景任務開始
+
+    SVC->>SVC: parse_job() — 解析 CSV
+    SVC->>DB: INSERT staging_rows (parsed_json)
+    SVC->>SVC: validate_job() — 欄位驗證
+    SVC->>DB: UPDATE staging_rows (errors_json)
+    SVC->>DB: UPDATE import_jobs → READY / FAILED
+
+    loop 輪詢 (每 2 秒)
+        FE->>API: GET /api/v2/import/jobs/{id}
+        API->>DB: SELECT status
+        DB-->>API: status
+        API-->>FE: { status, error_count }
+    end
+
+    alt 狀態 = READY (無錯誤)
+        U->>FE: 點擊「確認提交」
+        FE->>API: POST /api/v2/import/jobs/{id}/commit
+        API->>SVC: ImportService.commit_job()
+        SVC->>DB: INSERT INTO p1/p2/p3_records
+        SVC->>DB: UPDATE import_jobs → COMMITTED
+        API-->>FE: 成功
+        FE-->>U: 匯入完成
+    else 狀態 = FAILED (有錯誤)
+        FE->>API: GET /api/v2/import/jobs/{id}/errors
+        API-->>FE: 錯誤列表
+        FE-->>U: 顯示錯誤，開啟 CSV 編輯器
+        U->>FE: 修正 CSV → 重新上傳 (新 Job)
+    end
+
+    Note over U,DB: ═══ Phase 3: 數據查詢 ═══
+
+    U->>FE: 輸入查詢條件 (lot_no / 日期 / product_id)
+    FE->>API: GET /api/v2/query/records?filters...
+    API->>DB: SELECT ... WHERE tenant_id = ? AND filters
+    DB-->>API: records[]
+    API-->>FE: JSON 結果
+    FE-->>U: 表格顯示 + 分頁
+
+    U->>FE: 點擊「追溯」
+    FE->>API: GET /api/v2/query/trace/{product_id}
+    API->>DB: JOIN p1 → p2 → p3
+    DB-->>API: traceability chain
+    API-->>FE: P1→P2→P3 鏈
+    FE-->>U: 供應鏈追溯圖
+
+    Note over U,DB: ═══ Phase 4: 分析與報表 ═══
+
+    U->>FE: 選擇分析模式 & 日期範圍
+    FE->>API: POST /api/v2/analytics/analyze
+    API->>SVC: analytics_data_fetcher
+    SVC->>DB: 聚合查詢 (GROUP BY date / defect_type)
+    SVC->>SVC: 整合外部數據 (Analytical-Four)
+    SVC-->>API: 分析結果
+    API-->>FE: { daily_stats, ng_breakdown, pareto }
+    FE-->>U: 圓餅圖 + 柏拉圖 + 柱狀圖
+
+    U->>FE: 點擊圓餅圖 NG 類別
+    FE->>API: POST /api/v2/analytics/analyze (ng_drill)
+    API->>SVC: Pareto 排序
+    SVC-->>API: top defects (80/20)
+    API-->>FE: Pareto data
+    FE-->>U: Pareto 柏拉圖 (累積線)
+```
+
+---
+
+## 模組摘要表
+
+| 層級 | 模組 | 主要檔案 | 職責 |
+|------|------|----------|------|
+| **Frontend** | UploadPage | `pages/UploadPage.tsx` | 拖放上傳、CSV 編輯、錯誤修正 |
+| | QueryPage | `pages/QueryPage.tsx` | 條件查詢、追溯鏈視覺化 |
+| | AnalyticsPage | `pages/AnalyticsPage.tsx` | 日報/NG/Pareto 分析儀表板 |
+| **Backend** | Import V2 | `services/import_v2.py` | Job-based 匯入：解析→驗證→提交 |
+| | Analytics | `services/analytics_data_fetcher.py` | 聚合分析 + 外部數據整合 |
+| | Query V2 | `api/query_v2/` | Records/Lots/Dynamic/追溯查詢 |
+| | Auth | `routes_auth.py` + middleware | API Key + 多租戶隔離 |
+| **Database** | 業務資料 | `p1/p2/p3_records` | 三階段生產數據（押出→分條→沖壓） |
+| | 匯入管理 | `import_jobs` + `staging_rows` | 狀態機：QUEUED→READY→COMMITTED |
+| | 多租戶 | `tenants` + `tenant_users` | 租戶隔離 + RBAC（manager/operator） |
+
+## 主要 API 端點
+
+| 類別 | 端點 | 說明 |
+|------|------|------|
+| **匯入** | `POST /api/v2/import/jobs` | 建立匯入 Job（上傳 CSV） |
+| | `GET /api/v2/import/jobs/{id}` | 查詢 Job 狀態 |
+| | `POST /api/v2/import/jobs/{id}/commit` | 確認提交 |
+| **查詢** | `GET /api/v2/query/records` | 依條件查詢記錄 |
+| | `GET /api/v2/query/lots/{lot_no}` | 查詢 Lot 詳情 |
+| | `GET /api/v2/query/trace/{product_id}` | 供應鏈追溯 |
+| **分析** | `POST /api/v2/analytics/analyze` | 執行分析（日報/週報/NG） |
+| | `GET /api/v2/analytics/artifacts` | 取得分析產物 |
+| **認證** | `POST /api/auth/login` | 使用者登入 |
+| | `POST /api/tenants` | 建立租戶（Admin） |
+| **健康檢查** | `GET /healthz` | 基本健康檢查 |
+
+---
+
 ## 進階文件
 
 - [產品需求文檔 (PRD)](docs/PRD2.md)
@@ -126,4 +376,4 @@ Form-analysis-server-specify-kit/
 
 ---
 
-**最後更新**: 2025年12月25日
+**最後更新**: 2026年3月22日

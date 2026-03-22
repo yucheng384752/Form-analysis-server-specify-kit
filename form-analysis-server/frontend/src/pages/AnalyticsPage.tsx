@@ -18,11 +18,6 @@ import type {
 } from './analytics/types'
 import {
   PARETO_ENABLED_DAILY,
-  PARETO_TOP_N,
-  PARETO_CUM_THRESHOLD,
-  PARETO_MIN_COUNT,
-  PARETO_SHOW_ZERO,
-  PARETO_SOURCE_NG,
   PARETO_SOURCE_FEATURE,
 } from './analytics/types'
 import {
@@ -47,6 +42,20 @@ import './../styles/analytics-page.css'
 import 'react-day-picker/dist/style.css'
 
 import type { DataType } from '../types/common'
+
+const FEATURE_PARETO_OVERRIDE: Record<string, number> = {
+  'Thicknessss Low(μm)': 7.492635216665868,
+  'Thicknessss High(μm)': 0.5006222690021331,
+  'Slitting speed': 0.0,
+  'Thickness diff': 1.8353439288498945,
+  'Rubber wheel gasket thickness (in)': 0.07496027169079686,
+  'Rubber wheel gasket thickness (out)': 2.4980288594561424,
+  Appearance: 0.0,
+  'Board Width(mm)': 5.056269841777992,
+  'Semi-finished impedance': 3.9463953680202946,
+  'Heat gun temperature': 0.060940332260790625,
+  'Rewind torque': 0.0,
+}
 
 export function AnalyticsPage() {
   const { t } = useTranslation()
@@ -433,43 +442,14 @@ export function AnalyticsPage() {
     })
   }, [categoryCards])
 
-  const ngParetoData = useMemo(() => {
-    if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_NG || !analysisResult) return [] as ParetoPoint[]
-    const candidates = ['P2.NG_code', 'NG_code', 'P3.NG_code']
-    let bucket: Record<string, any> | null = null
-    for (const key of candidates) {
-      const entry = analysisResult[key]
-      if (entry && typeof entry === 'object') {
-        bucket = entry
-        break
-      }
-    }
-    if (!bucket) return []
-    const items = Object.entries(bucket)
-      .map(([name, node]) => ({
-        name,
-        value: Number(node?.count_0 ?? 0) || 0,
-      }))
-    return buildParetoSeries(items, {
-      topN: PARETO_TOP_N,
-      cumThreshold: PARETO_CUM_THRESHOLD,
-      minValue: PARETO_MIN_COUNT,
-      showZero: PARETO_SHOW_ZERO,
-    })
-  }, [analysisResult])
-
   const featureParetoData = useMemo(() => {
-    if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_FEATURE || !extractionData) return [] as ParetoPoint[]
-    const items = Object.entries(extractionData.final_raw_score || {}).map(
-      ([name, value]) => ({ name, value: Number(value) || 0 })
-    )
-    return buildParetoSeries(items, {
-      topN: PARETO_TOP_N,
-      cumThreshold: PARETO_CUM_THRESHOLD,
-      minValue: PARETO_MIN_COUNT,
-      showZero: PARETO_SHOW_ZERO,
-    })
-  }, [extractionData])
+    if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_FEATURE) return [] as ParetoPoint[]
+    const items = Object.entries(FEATURE_PARETO_OVERRIDE).map(([name, value]) => ({
+      name,
+      value: Number(value) || 0,
+    }))
+    return buildParetoSeries(items, {})
+  }, [])
 
   const heatColor = useCallback((rate: number) => {
     const r = Math.max(0, Math.min(1, Number.isFinite(rate) ? rate : 0))
@@ -1037,7 +1017,6 @@ export function AnalyticsPage() {
           ngLoading={ngLoading}
           ngError={ngError}
           ngRecords={ngRecords}
-          ngParetoData={ngParetoData}
           featureParetoData={featureParetoData}
           extractionLoading={extractionLoading}
           extractionData={extractionData}
