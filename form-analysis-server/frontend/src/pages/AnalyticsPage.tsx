@@ -1906,8 +1906,8 @@ export function AnalyticsPage() {
         <>
           <div className="analytics-section-header">{t('analytics.moldingAnalysis')}</div>
 
-          {/* OK/NG 圓餅圖 */}
-          {overall.total > 0 ? (
+          {/* OK/NG 圓餅圖：客訴模式（productIdMode）下隱藏 */}
+          {overall.total > 0 && !productIdMode ? (
             <section className="analytics-card" style={{ marginBottom: 16 }}>
               <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>
                 OK / NG ({overall.total} {t('analytics.totalRecords', 'pcs')})
