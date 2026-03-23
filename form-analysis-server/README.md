@@ -25,11 +25,16 @@
 
 ### 前提條件
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop) 已安裝並運行
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) 已安裝並執行
 - [curl](https://curl.se/download.html) 已安裝（用於 API 測試）
 - 可用埠口：18003（前端）、18002（後端）、18001（資料庫）
 
 ### 一鍵啟動
+
+注意：目前 Docker Compose 的後端服務在「部署層」預設啟用 `AUTH_MODE=api_key`（用來阻擋公網掃描/濫用）。
+
+- 使用 `quick-start.ps1/.bat/.sh`：腳本會在需要時自動 bootstrap 一把測試用 API key，並在輸出中顯示（只顯示一次，請保存）。
+- 手動啟動 `docker compose up -d`：請參考後端文件建立第一把 key（[backend/README.md](backend/README.md) 的「建立第一把 key（bootstrap）」）。
 
 **Windows (PowerShell)**
 ```powershell
@@ -38,18 +43,36 @@
 
 # 只啟動服務，跳過測試
 .\quick-start.ps1 -SkipTests
+
+# (可選，會清空 DB) 移除 Docker volumes
+.\quick-start.ps1 -ResetDb
 ```
 
 **Windows (命令提示字元)**
 ```cmd
 quick-start.bat
+
+REM (可選，會清空 DB) 移除 Docker volumes
+quick-start.bat --reset-db
 ```
 
 **Linux/macOS**
 ```bash
 chmod +x quick-start.sh
 ./quick-start.sh
+
+# (可選，會清空 DB) 移除 Docker volumes
+./quick-start.sh --reset-db
 ```
+
+### 保留資料庫資料的啟動方式（建議）
+
+如果你希望重啟系統時保留 PostgreSQL 內的資料，請使用專案根目錄的啟動腳本：
+
+- `scripts/start-system.ps1`
+- `scripts/start-system.bat`
+
+它們會停止容器並重新啟動，但不會移除 volumes（因此不會清空 DB）。
 
 ### 手動啟動步驟
 
@@ -83,25 +106,34 @@ chmod +x quick-start.sh
    
    上傳檔案：
    ```bash
-   # 上傳檔案
-   curl -X POST -F "file=@test_upload.csv" \
-        http://localhost:18002/api/upload
-   
-   # 範例回應:
-   # {
-   #   "file_id": "abc123def456",
-   #   "filename": "test_upload.csv",
-   #   "status": "validated",
-   #   "message": "File uploaded and validated successfully"
-   # }
-   
-   # 如果有錯誤，下載錯誤報告（使用上傳回應中的 file_id）
-   curl "http://localhost:18002/api/errors.csv?file_id=abc123def456"
-   
-   # 確認匯入資料（使用上傳回應中的 file_id）
-   curl -X POST -H "Content-Type: application/json" \
-        -d '{"file_id":"abc123def456"}' \
-        http://localhost:18002/api/import
+      # 上傳檔案
+      # 建議流程（v2 import jobs）：一次上傳檔案 -> 解析/驗證 -> commit。
+      # 注意：多租戶情境請務必帶 X-Tenant-Id；若你使用 AUTH_MODE=api_key，還需帶 X-API-Key。
+
+      # 1) 建立匯入 job（multipart/form-data）
+      curl -X POST \
+         -H "X-Tenant-Id: <TENANT_ID>" \
+         -H "X-API-Key: <YOUR_API_KEY>" \
+         -F "table_code=P1" \
+         -F "allow_duplicate=false" \
+         -F "files=@test_upload.csv" \
+         http://localhost:18002/api/v2/import/jobs
+
+      # 2) 查詢 job 狀態（等待 READY 或 FAILED）
+      curl -H "X-Tenant-Id: <TENANT_ID>" \
+         -H "X-API-Key: <YOUR_API_KEY>" \
+         http://localhost:18002/api/v2/import/jobs/<JOB_ID>
+
+      # 3) 若驗證失敗，可查錯誤列表
+      curl -H "X-Tenant-Id: <TENANT_ID>" \
+         -H "X-API-Key: <YOUR_API_KEY>" \
+         "http://localhost:18002/api/v2/import/jobs/<JOB_ID>/errors?page=1&page_size=200"
+
+      # 4) 提交匯入（READY 才能 commit）
+      curl -X POST \
+         -H "X-Tenant-Id: <TENANT_ID>" \
+         -H "X-API-Key: <YOUR_API_KEY>" \
+         http://localhost:18002/api/v2/import/jobs/<JOB_ID>/commit
    ```
 
 4. **訪問前端應用**
@@ -129,12 +161,12 @@ CORS_ORIGINS=http://localhost:18003,http://localhost:3000
 
 - **asyncpg** - 建議用於本地開發和非同步 FastAPI 應用
   ```env
-  DATABASE_URL=postgresql+asyncpg://app:app_secure_password_2024@localhost:18001/form_analysis_db
+   DATABASE_URL=postgresql+asyncpg://app:change-me-strong@localhost:18001/form_analysis_db
   ```
 
 - **psycopg** - 用於 Docker 環境（支援同步和非同步模式）
   ```env
-  DATABASE_URL=postgresql+psycopg://app:app_secure_password_2024@db:5432/form_analysis_db
+   DATABASE_URL=postgresql+psycopg://app:change-me-strong@db:5432/form_analysis_db
   ```
 
 ### vite.config.ts 代理設定
@@ -175,11 +207,17 @@ export default defineConfig({
 
 | 端點 | 方法 | 說明 |
 |------|------|------|
-| `/api/upload` | POST | 檔案上傳和驗證 |
-| `/api/errors.csv` | GET | 下載錯誤報告 |
-| `/api/import` | POST | 確認資料匯入 |
+| `/api/v2/import/jobs` | POST | 建立匯入任務（上傳檔案、背景 parse/validate） |
+| `/api/v2/import/jobs/{id}` | GET | 查詢匯入任務狀態 |
+| `/api/v2/import/jobs/{id}/errors` | GET | 查詢驗證錯誤 |
+| `/api/v2/import/jobs/{id}/commit` | POST | 提交匯入（寫入 v2 tables） |
+| `/api/upload` | POST | （Deprecated）舊版檔案上傳與驗證；**multi-tenant 會 410** |
+| `/api/errors.csv` | GET | （Deprecated）舊版下載錯誤報告；**multi-tenant 會 410** |
+| `/api/import` | POST | （Deprecated）舊版確認匯入；**multi-tenant 會 410** |
 | `/healthz` | GET | 基本健康檢查 |
 | `/healthz/detailed` | GET | 詳細健康檢查 |
+
+> 註：標示為（Deprecated）的端點僅供相容性/歷史用途；新開發與 UI 主流程請以 v2 import jobs 為準（UploadPage 的 CSV 主流程已於 2026-01-31 切換為 v2）。
 
 ## 常見問題
 
@@ -221,7 +259,7 @@ A: 檢查以下配置：
 
 **Q: API 請求 404 錯誤**
 A: 確認：
-- 後端服務正常運行（http://localhost:18002/docs）
+- 後端服務正常執行（http://localhost:18002/docs）
 - API Base URL 配置正確
 - 網路連線正常
 
@@ -238,6 +276,25 @@ docker compose logs db
 
 # 測試資料庫連接
 docker compose exec db pg_isready -U app
+```
+
+**Q: 出現 `password authentication failed for user \"app\"`（後端容器起不來）**
+A: 這通常表示資料庫 volume 已經初始化過（Postgres 會顯示 `Skipping initialization`），此時就算你改了 `POSTGRES_PASSWORD`，既有使用者密碼也不會自動更新。
+
+你可以二選一修復：
+
+1) **保留既有資料（推薦）**：在 db 容器內重設 `app` 密碼，讓它與 `DATABASE_URL` 一致。
+```bash
+# 把 change-me-strong 改成你目前 .env / docker-compose 使用的密碼
+echo "ALTER ROLE app WITH PASSWORD 'change-me-strong';" | docker exec -i form_analysis_db psql -U app -d postgres
+
+docker compose restart backend
+```
+
+2) **重建資料庫（會清空資料）**：
+```bash
+docker compose down -v
+docker compose up -d
 ```
 
 **Q: 資料持久化問題**
@@ -295,7 +352,7 @@ docker compose up -d --build
 
 ### 本地開發環境
 
-如果您想要在本地開發環境中運行（不使用 Docker）：
+如果您想要在本地開發環境中執行（不使用 Docker）：
 
 1. **後端開發**
    ```bash
@@ -313,10 +370,10 @@ docker compose up -d --build
 
 3. **資料庫設置**
    ```bash
-   # 使用 Docker 運行 PostgreSQL
+   # 使用 Docker 執行 PostgreSQL
    docker run -d --name postgres \
      -e POSTGRES_USER=app \
-     -e POSTGRES_PASSWORD=app_secure_password_2024 \
+       -e POSTGRES_PASSWORD=change-me-strong \
      -e POSTGRES_DB=form_analysis_db \
      -p 5432:5432 postgres:16
    ```

@@ -1,4 +1,4 @@
 @echo off
-cd /d "C:\Users\Yucheng\Desktop\form-analysis-sepc-kit\form-analysis-server\backend"
+cd /d "%~dp0"
 python app\main.py
 pause

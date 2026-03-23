@@ -39,7 +39,7 @@ npm run dev
 3. 如果端口被佔用，使用：`npm run dev -- --port 3001`
 
 ### 如果 Docker 想要使用：
-1. 確保 Docker Desktop 正在運行
+1. 確保 Docker Desktop 正在執行
 2. 等待 Docker Engine 完全啟動（通常需要 1-2 分鐘）
 3. 然後再執行：`docker-compose up -d`
 
@@ -54,13 +54,13 @@ npm run dev
 ### 測試 API：
 1. 訪問 http://localhost:8000/docs
 2. 測試 `/healthz` 端點
-3. 測試 `/api/upload` 端點
+3. 測試 v2 匯入端點：`POST /api/v2/import/jobs`
 
 ##  系統狀態檢查
 
-運行驗證腳本：
+執行驗證腳本：
 ```powershell
-python comprehensive_verification_test.py
+python tools\comprehensive_verification_test.py
 ```
 
 這將檢查：

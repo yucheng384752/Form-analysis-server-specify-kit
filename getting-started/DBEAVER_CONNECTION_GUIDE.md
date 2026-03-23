@@ -5,7 +5,7 @@
 
 ## 前置條件
 -  系統已啟動（執行 `start-system.bat`）
--  PostgreSQL 容器正在運行
+-  PostgreSQL 容器正在執行
 -  已安裝 DBeaver Community 或 Enterprise 版本
 
 ## 資料庫連線資訊
@@ -37,7 +37,7 @@ POSTGRES_PORT=18001  # 外部訪問端口(主機端)
 
 ## DBeaver 連線步驟
 
-### 1. 啟動系統並確認資料庫運行
+### 1. 啟動系統並確認資料庫執行
 
 ```batch
 # 在專案根目錄執行
@@ -172,7 +172,7 @@ WHERE data_type = 'P1';
 **錯誤訊息：** "Connection refused" 或 "Could not connect to server"
 
 **解決方案：**
-1. 確認 Docker 容器正在運行：
+1. 確認 Docker 容器正在執行：
    ```bash
    docker ps | findstr postgres
    ```

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -14,6 +15,7 @@ interface QueryResult {
 }
 
 export function DataQuery() {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<QueryResult[]>([]);
@@ -24,24 +26,30 @@ export function DataQuery() {
       id: 1,
       filename: "p1_2503033_03.csv",
       upload_date: "2025-11-08 14:30:00",
-      status: "已完成",
+      status: "completed",
       records: 150
     },
     {
       id: 2,
       filename: "p2_2503033_03.csv", 
       upload_date: "2025-11-08 14:32:00",
-      status: "已完成",
+      status: "completed",
       records: 280
     },
     {
       id: 3,
       filename: "p3_data_analysis.csv",
       upload_date: "2025-11-08 14:35:00", 
-      status: "處理中",
+      status: "processing",
       records: 95
     }
   ];
+
+  const getStatusLabel = (status: string) => {
+    if (status === "completed") return t("dataQuery.status.completed");
+    if (status === "processing") return t("dataQuery.status.processing");
+    return status;
+  };
 
   const handleSearch = async () => {
     setIsSearching(true);
@@ -55,9 +63,10 @@ export function DataQuery() {
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Filter mock data based on search term
+      const needle = searchTerm.toLowerCase();
       const filteredResults = mockData.filter(item => 
-        item.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.status.toLowerCase().includes(searchTerm.toLowerCase())
+        item.filename.toLowerCase().includes(needle) ||
+        getStatusLabel(item.status).toLowerCase().includes(needle)
       );
       
       setResults(filteredResults);
@@ -77,12 +86,12 @@ export function DataQuery() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg font-semibold text-gray-700">資料查詢</CardTitle>
+          <CardTitle className="text-lg font-semibold text-gray-700">{t("dataQuery.title")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
             <Input
-              placeholder="請輸入檔案名稱或狀態..."
+              placeholder={t("dataQuery.searchPlaceholder")}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
@@ -94,12 +103,12 @@ export function DataQuery() {
               className="flex items-center gap-2"
             >
               <Search className="w-4 h-4" />
-              {isSearching ? "查詢中..." : "查詢"}
+              {isSearching ? t("dataQuery.searching") : t("dataQuery.search")}
             </Button>
           </div>
           
           <div className="text-sm text-gray-500">
-            提示：可以搜尋檔案名稱、上傳狀態等關鍵字
+            {t("dataQuery.hint")}
           </div>
         </CardContent>
       </Card>
@@ -108,7 +117,7 @@ export function DataQuery() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-gray-700">
-              查詢結果 ({results.length} 筆)
+              {t("dataQuery.resultsWithCount", { count: results.length })}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -116,11 +125,11 @@ export function DataQuery() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="font-semibold">檔案名稱</TableHead>
-                    <TableHead className="font-semibold">上傳時間</TableHead>
-                    <TableHead className="font-semibold">處理狀態</TableHead>
-                    <TableHead className="font-semibold">記錄數量</TableHead>
-                    <TableHead className="font-semibold">操作</TableHead>
+                    <TableHead className="font-semibold">{t("dataQuery.columns.filename")}</TableHead>
+                    <TableHead className="font-semibold">{t("dataQuery.columns.uploadTime")}</TableHead>
+                    <TableHead className="font-semibold">{t("dataQuery.columns.status")}</TableHead>
+                    <TableHead className="font-semibold">{t("dataQuery.columns.records")}</TableHead>
+                    <TableHead className="font-semibold">{t("dataQuery.columns.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -130,11 +139,11 @@ export function DataQuery() {
                       <TableCell>{item.upload_date}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          item.status === '已完成' 
+                          item.status === 'completed' 
                             ? 'bg-green-100 text-green-700' 
                             : 'bg-yellow-100 text-yellow-700'
                         }`}>
-                          {item.status}
+                          {getStatusLabel(item.status)}
                         </span>
                       </TableCell>
                       <TableCell>{item.records.toLocaleString()}</TableCell>
@@ -144,10 +153,10 @@ export function DataQuery() {
                           size="sm"
                           onClick={() => handleExport(item.filename)}
                           className="flex items-center gap-1"
-                          disabled={item.status !== '已完成'}
+                          disabled={item.status !== 'completed'}
                         >
                           <Download className="w-3 h-3" />
-                          匯出
+                          {t("dataQuery.export")}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -162,8 +171,8 @@ export function DataQuery() {
       {searchTerm && results.length === 0 && !isSearching && (
         <Card>
           <CardContent className="py-8 text-center text-gray-500">
-            <p>沒有找到符合條件的資料</p>
-            <p className="text-sm mt-1">請嘗試不同的搜尋關鍵字</p>
+            <p>{t("dataQuery.empty.noMatch")}</p>
+            <p className="text-sm mt-1">{t("dataQuery.empty.tryDifferent")}</p>
           </CardContent>
         </Card>
       )}
@@ -172,8 +181,8 @@ export function DataQuery() {
         <Card>
           <CardContent className="py-8 text-center text-gray-500">
             <Search className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>請輸入搜尋條件開始查詢</p>
-            <p className="text-sm mt-1">支援檔案名稱、狀態等關鍵字搜尋</p>
+            <p>{t("dataQuery.empty.prompt")}</p>
+            <p className="text-sm mt-1">{t("dataQuery.empty.supportsKeywords")}</p>
           </CardContent>
         </Card>
       )}

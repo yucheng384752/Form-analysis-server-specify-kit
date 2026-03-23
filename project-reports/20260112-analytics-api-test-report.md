@@ -17,10 +17,10 @@
 
 ---
 
-## ✅ 通過的測試 (4/8)
+## 通過的測試 (4/8)
 
 ### 1. 健康檢查 (Health Check)
-- **狀態**: ✅ PASS
+- **狀態**: PASS
 - **結果**: `status: healthy`
 - **配置資訊**:
   - Max Records: 1500/request
@@ -30,19 +30,19 @@
   - Empty Array Handling: preserve
 
 ### 2. 邊界測試 - 無效年份 (Invalid Year)
-- **狀態**: ✅ PASS
+- **狀態**: PASS
 - **測試條件**: `year=1900`
 - **預期行為**: 拒絕請求 (HTTP 422)
 - **實際結果**: 正確拒絕，回傳 HTTP 422
 
 ### 3. 邊界測試 - 無效月份 (Invalid Month)
-- **狀態**: ✅ PASS
+- **狀態**: PASS
 - **測試條件**: `month=13`
 - **預期行為**: 拒絕請求 (HTTP 422)
 - **實際結果**: 正確拒絕，回傳 HTTP 422
 
 ### 4. 邊界測試 - 缺少參數 (Missing Parameter)
-- **狀態**: ✅ PASS
+- **狀態**: PASS
 - **測試條件**: 僅提供 `year` 參數，缺少 `month`
 - **預期行為**: 拒絕請求 (HTTP 422)
 - **實際結果**: 正確拒絕，回傳 HTTP 422
@@ -267,9 +267,9 @@ query = select(P3Record).where(
 
 ### 立即行動 (今天完成)
 
-1. ✅ 修正 `P3Record.timestamp` → `production_date_yyyymmdd`
-2. ✅ 修正 P1/P2 時間欄位引用
-3. ✅ 重新執行測試 1, 2
+1. 修正 `P3Record.timestamp` → `production_date_yyyymmdd`
+2. 修正 P1/P2 時間欄位引用
+3. 重新執行測試 1, 2
 
 ### 短期行動 (本週完成)
 

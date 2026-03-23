@@ -6,13 +6,23 @@ import { resolve } from 'path'
 export default defineConfig({
   plugins: [react()],
   base: '/',
+
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    globals: true,
+    clearMocks: true,
+    restoreMocks: true,
+  },
   
   // Development server configuration
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: Number(process.env.FRONTEND_PORT || 5173),
     strictPort: true,
     cors: true,
+    // Allow tunnel domains (e.g. ngrok) to avoid 403 invalid host.
+    allowedHosts: true,
     // hmr: {
     //   host: 'localhost',
     //   port: 5173,
@@ -45,7 +55,7 @@ export default defineConfig({
   // Preview server configuration (for production build testing)
   preview: {
     host: '0.0.0.0',
-    port: 5173,
+    port: Number(process.env.FRONTEND_PORT || 5173),
     strictPort: true,
     cors: true,
   },

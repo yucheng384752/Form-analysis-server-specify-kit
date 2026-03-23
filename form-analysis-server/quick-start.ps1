@@ -1,4 +1,4 @@
-# Form Analysis - Docker 一鍵啟動與驗證腳本 (PowerShell)
+﻿# Form Analysis - Docker 一鍵啟動與驗證腳本 (PowerShell)
 # 
 # 此腳本將：
 # 1. 啟動所有服務
@@ -9,8 +9,17 @@
 
 param(
     [switch]$SkipTests,
+    [switch]$ResetDb,
     [switch]$Help
 )
+
+# Ensure consistent UTF-8 output (avoid mojibake in terminals).
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {
+    # best-effort
+}
 
 if ($Help) {
     Write-Host @"
@@ -20,8 +29,12 @@ Form Analysis - Docker 一鍵啟動與驗證腳本
   .\quick-start.ps1           # 完整啟動和測試
   .\quick-start.ps1 -SkipTests # 只啟動服務，跳過測試
 
+    # (危險) 清空資料庫：會移除 docker volumes（PostgreSQL 資料會消失）
+    .\quick-start.ps1 -ResetDb
+
 選項:
   -SkipTests    跳過 API 測試，只啟動服務
+    -ResetDb      (危險) 移除 Docker volumes，等同清空資料庫
   -Help         顯示此幫助資訊
 "@
     exit 0
@@ -56,32 +69,102 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-if (-not (Get-Command curl -ErrorAction SilentlyContinue)) {
-    Write-Warning "curl 未安裝，嘗試使用 Invoke-WebRequest 替代"
+# 注意：Windows PowerShell 5.1 中 `curl` 常是 Invoke-WebRequest 的別名。
+# 這裡明確檢查/使用 curl.exe，避免 alias 行為差異。
+if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
+    Write-Warning "找不到 curl.exe，嘗試使用 Invoke-WebRequest 替代"
     $useCurl = $false
 } else {
     $useCurl = $true
 }
 
-# 檢查 Docker 是否運行
+# 檢查 Docker 是否執行
 try {
     docker info | Out-Null
-    Write-Success "Docker 正在運行"
+    Write-Success "Docker 正在執行"
 } catch {
-    Write-Error "Docker 未運行，請先啟動 Docker Desktop"
+    Write-Error "Docker 未執行，請先啟動 Docker Desktop"
     exit 1
 }
 
+# Ensure we always run from the directory that contains docker-compose.yml.
+try {
+    Set-Location $PSScriptRoot
+} catch {
+    Write-Error "無法切換到腳本目錄：$PSScriptRoot"
+    exit 1
+}
+
+# Ensure .env exists for docker compose variable substitution.
+if (-not (Test-Path ".env") -and (Test-Path ".env.example")) {
+    try {
+        Copy-Item ".env.example" ".env" -Force
+        Write-Info "偵測到未設定環境檔，已建立 .env（由 .env.example 複製）"
+    } catch {
+        Write-Warning "建立 .env 失敗，將改用系統環境變數（錯誤：$_）"
+    }
+}
+
+function Initialize-DockerCompose {
+    # Prefer Docker Compose v2 plugin (docker compose). Fallback to docker-compose.
+    try {
+        docker compose version | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $script:ComposeCommand = "docker"
+            $script:ComposeBaseArgs = @("compose")
+            return
+        }
+    } catch {
+        # ignore
+    }
+
+    if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+        $script:ComposeCommand = "docker-compose"
+        $script:ComposeBaseArgs = @()
+        return
+    }
+
+    Write-Error "找不到 Docker Compose。請確認 Docker Desktop 已安裝 compose plugin 或已安裝 docker-compose。"
+    exit 1
+}
+
+function Invoke-Compose {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$ComposeArgs,
+        [switch]$ShowOutput
+    )
+
+    # IMPORTANT: Pass args as an array to avoid PowerShell treating -d/-v as common parameters.
+    if ($ShowOutput) {
+        & $script:ComposeCommand @($script:ComposeBaseArgs + $ComposeArgs)
+    } else {
+        & $script:ComposeCommand @($script:ComposeBaseArgs + $ComposeArgs) *> $null
+    }
+    return $LASTEXITCODE
+}
+
+Initialize-DockerCompose
+
+Write-Info ("使用 Docker Compose: {0} {1}" -f $script:ComposeCommand, (($script:ComposeBaseArgs -join ' ')))
+
 # 停止現有容器
-Write-Info "停止並清理現有容器..."
-docker compose down -v 2>$null
+Write-Info "停止現有容器..."
+if ($ResetDb) {
+    Write-Warning "ResetDb=true：將移除 Docker volumes，資料庫資料會被清空"
+    $null = Invoke-Compose @("down", "-v", "--remove-orphans") 2>$null
+} else {
+    # Default: keep volumes to preserve DB data
+    $null = Invoke-Compose @("down", "--remove-orphans") 2>$null
+}
 
 # 啟動服務
 Write-Info "啟動所有服務..."
-docker compose up -d
+$composeUpExit = Invoke-Compose @("up", "-d", "--build")
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "服務啟動失敗"
+if ($composeUpExit -ne 0) {
+    Write-Error ("服務啟動失敗（docker compose exit code: {0}）" -f $composeUpExit)
+    try { Invoke-Compose @("ps") -ShowOutput } catch {}
     exit 1
 }
 
@@ -95,8 +178,8 @@ $retryCount = 0
 
 while ($retryCount -lt $maxRetries) {
     try {
-        $result = docker compose exec -T db pg_isready -U app 2>$null
-        if ($LASTEXITCODE -eq 0) {
+        $dbReadyExit = Invoke-Compose @("exec", "-T", "db", "pg_isready", "-U", "app") 2>$null
+        if ($dbReadyExit -eq 0) {
             Write-Success "資料庫已就緒"
             break
         }
@@ -109,7 +192,7 @@ while ($retryCount -lt $maxRetries) {
 
 if ($retryCount -eq $maxRetries) {
     Write-Error "資料庫啟動超時"
-    docker compose logs db
+    Invoke-Compose @("logs", "db") -ShowOutput
     exit 1
 }
 
@@ -120,7 +203,7 @@ $retryCount = 0
 while ($retryCount -lt $maxRetries) {
     try {
         if ($useCurl) {
-            curl -f http://localhost:18002/healthz -o $null -s 2>$null
+            curl.exe -f http://localhost:18002/healthz -o $null -s 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "後端 API 已就緒"
                 break
@@ -141,18 +224,34 @@ while ($retryCount -lt $maxRetries) {
 
 if ($retryCount -eq $maxRetries) {
     Write-Error "後端 API 啟動超時"
-    docker compose logs backend
+    Invoke-Compose @("logs", "backend") -ShowOutput
     exit 1
 }
 
+# 前端容器會 mount /app/node_modules 為 volume，可能覆蓋 image build 階段的依賴。
+# 若 node_modules volume 是空的，frontend 可能會直接起不來，因此先補齊依賴再等健康。
+Write-Info "檢查前端依賴（node_modules volume）..."
+try {
+    docker exec form_analysis_frontend sh -lc "test -f node_modules/.package-lock.json || npm ci --silent" | Out-Null
+} catch {
+    try {
+        $null = Invoke-Compose @("run", "--rm", "--no-deps", "frontend", "sh", "-lc", "test -f node_modules/.package-lock.json || npm ci --silent")
+    } catch {
+        Write-Warning "無法自動補齊前端依賴；若前端啟動失敗，請查看 logs frontend 或執行 docker compose down -v"
+    }
+}
+
+try { Invoke-Compose @("restart", "frontend") | Out-Null } catch {}
+
 # 等待前端就緒
 Write-Info "等待前端就緒..."
+$frontendMaxRetries = 60
 $retryCount = 0
 
-while ($retryCount -lt $maxRetries) {
+while ($retryCount -lt $frontendMaxRetries) {
     try {
         if ($useCurl) {
-            curl -f http://localhost:18003 -o $null -s 2>$null
+            curl.exe -f http://localhost:18003 -o $null -s 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "前端已就緒"
                 break
@@ -171,9 +270,9 @@ while ($retryCount -lt $maxRetries) {
     Start-Sleep 2
 }
 
-if ($retryCount -eq $maxRetries) {
+if ($retryCount -eq $frontendMaxRetries) {
     Write-Error "前端啟動超時"
-    docker compose logs frontend
+    Invoke-Compose @("logs", "frontend") -ShowOutput
     exit 1
 }
 
@@ -184,14 +283,14 @@ Write-Host ""
 if (-not $SkipTests) {
     # 驗證健康檢查
     Write-ColorOutput Blue @"
-🩺 健康檢查驗證
+健康檢查驗證
 ==================
 "@
 
     Write-Info "測試基本健康檢查..."
     try {
         if ($useCurl) {
-            $response = curl -f http://localhost:18002/healthz -s
+            $response = curl.exe -f http://localhost:18002/healthz -s
             Write-Host $response
             Write-Success "基本健康檢查通過"
         } else {
@@ -208,7 +307,7 @@ if (-not $SkipTests) {
     Write-Info "測試詳細健康檢查..."
     try {
         if ($useCurl) {
-            $response = curl -f http://localhost:18002/healthz/detailed -s 2>$null
+            $response = curl.exe -f http://localhost:18002/healthz/detailed -s 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Write-Host $response
                 Write-Success "詳細健康檢查通過"
@@ -236,8 +335,14 @@ if (-not $SkipTests) {
 =======================
 "@
 
-    # 創建測試 CSV 文件
-    $testCsvContent = @"
+    # 優先使用 repo 內既有測試檔（檔名符合 P1/P2 批號擷取規則）
+    $testCsvPath = $null
+    $repoTestCsv = Join-Path $PSScriptRoot "..\\test-data\\root-test-files\\P1_2503033_98.csv"
+    if (Test-Path $repoTestCsv) {
+        $testCsvPath = (Resolve-Path $repoTestCsv).Path
+    } else {
+        # fallback：建立一個檔名符合規則的暫存檔
+        $testCsvContent = @"
 lot_no,product_name,quantity,production_date
 1234567_01,測試產品A,100,2024-01-15
 2345678_02,測試產品B,50,2024-01-16
@@ -246,64 +351,141 @@ lot_no,product_name,quantity,production_date
 5678901_05,測試產品E,125,2024-01-19
 "@
 
-    $tempCsv = [System.IO.Path]::GetTempFileName() + ".csv"
-    $testCsvContent | Out-File -FilePath $tempCsv -Encoding UTF8
+        $testCsvPath = Join-Path ([System.IO.Path]::GetTempPath()) "P1_2503033_01.csv"
+        $testCsvContent | Out-File -FilePath $testCsvPath -Encoding UTF8
+    }
 
-    Write-Info "測試檔案上傳（5 列測試資料）..."
+    Write-Info "測試檔案上傳: $testCsvPath"
 
+    # Docker compose 預設可能已啟用 AUTH_MODE=api_key。
+    # 若 /api/tenants 回 401，代表需要先 bootstrap 一把 tenant API key。
+    $rawKey = $null
+    $authEnabled = $false
     try {
         if ($useCurl) {
-            $uploadResponse = curl -s -X POST -F "file=@$tempCsv" http://localhost:18002/api/upload
+            $status = curl.exe -s -o $null -w "%{http_code}" http://localhost:18002/api/tenants
+            if ($status -eq "401") {
+                $authEnabled = $true
+            }
         } else {
-            # PowerShell 檔案上傳比較複雜，這裡簡化處理
-            Write-Warning "使用 PowerShell 進行檔案上傳測試（簡化版本）"
-            $uploadResponse = "PowerShell upload test - please use browser for full test"
+            # Invoke-RestMethod 對 401 會 throw；用這個作為判斷。
+            Invoke-RestMethod -Uri "http://localhost:18002/api/tenants" -ErrorAction Stop | Out-Null
+        }
+    } catch {
+        $authEnabled = $true
+    }
+
+    if ($authEnabled) {
+        Write-Info "偵測到 API key auth 已啟用，bootstrap 測試用 API key..."
+        try {
+            $bootstrapOut = Invoke-Compose @("exec", "-T", "backend", "python", "scripts/bootstrap_tenant_api_key.py", "--tenant-code", "default", "--label", "docker-quick-start", "--force")
+            $lines = ($bootstrapOut -split "`r?`n") | Where-Object { $_.Trim().Length -gt 0 }
+            $markerIndex = $lines.IndexOf("SAVE THIS KEY NOW (shown once):")
+            if ($markerIndex -ge 0 -and ($markerIndex + 1) -lt $lines.Count) {
+                $rawKey = $lines[$markerIndex + 1].Trim()
+            }
+            if (-not $rawKey) {
+                # Fallback: take last non-empty line
+                $rawKey = $lines[-1].Trim()
+            }
+            Write-Success "已建立/取得測試用 API key（請在註冊頁貼上）：$rawKey"
+        } catch {
+            Write-Error "bootstrap API key 失敗: $($_.Exception.Message)"
+            exit 1
+        }
+    }
+
+    # 取得 tenant（多租戶模式下 /api/* 需要 X-Tenant-Id）
+    $tenantId = $null
+    try {
+        if ($useCurl) {
+            if ($rawKey) {
+                $tenantsJson = curl.exe -s -H "X-API-Key: $rawKey" http://localhost:18002/api/tenants
+            } else {
+                $tenantsJson = curl.exe -s http://localhost:18002/api/tenants
+            }
+            $tenants = $tenantsJson | ConvertFrom-Json
+        } else {
+            if ($rawKey) {
+                $tenants = Invoke-RestMethod -Uri "http://localhost:18002/api/tenants" -Headers @{ "X-API-Key" = $rawKey } -ErrorAction Stop
+            } else {
+                $tenants = Invoke-RestMethod -Uri "http://localhost:18002/api/tenants" -ErrorAction Stop
+            }
         }
 
-        Write-Host "上傳回應: $uploadResponse"
-        
-        # 嘗試解析 file_id
-        if ($uploadResponse -match '"file_id":"([^"]*)"') {
-            $fileId = $Matches[1]
-            Write-Success "檔案上傳成功，file_id: $fileId"
-            
-            # 測試錯誤報告下載
-            Write-Info "測試錯誤報告下載..."
+        if ($tenants -and $tenants.Count -gt 0 -and $tenants[0].id) {
+            $tenantId = $tenants[0].id
+            Write-Info "使用 Tenant ID: $tenantId"
+        }
+    } catch {
+        Write-Warning "無法取得 tenant 清單：$($_.Exception.Message)"
+    }
+
+    if (-not $tenantId) {
+        Write-Error "無法取得 Tenant ID，無法進行上傳/匯入 smoke test"
+        exit 1
+    }
+
+    try {
+        if (-not $useCurl) {
+            Write-Warning "使用 PowerShell 進行 v2 匯入測試需要 curl.exe；此段跳過。"
+        } else {
+            # v2 匯入（建議流程）：POST /api/v2/import/jobs -> poll READY -> POST /commit
+            $headers = @("-H", "X-Tenant-Id: $tenantId")
+            if ($rawKey) {
+                $headers += @("-H", "X-API-Key: $rawKey")
+            }
+
+            $tableCode = "P1"
             try {
-                if ($useCurl) {
-                    curl -f "http://localhost:18002/api/errors.csv?file_id=$fileId" -o errors.csv -s
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Success "錯誤報告下載成功"
-                        Write-Host "錯誤報告內容："
-                        Get-Content errors.csv
-                        Remove-Item errors.csv -ErrorAction SilentlyContinue
+                $fn = [System.IO.Path]::GetFileName($testCsvPath)
+                if ($fn -match '^(P[123])_') { $tableCode = $Matches[1] }
+            } catch {}
+
+            Write-Info "測試 v2 匯入（table_code=$tableCode）..."
+            $jobCreateResp = curl.exe -s -X POST @headers -F "table_code=$tableCode" -F "allow_duplicate=false" -F "files=@$testCsvPath" http://localhost:18002/api/v2/import/jobs
+            Write-Host "建立 job 回應: $jobCreateResp"
+
+            if ($jobCreateResp -match '"id"\s*:\s*"([^"]+)"') {
+                $jobId = $Matches[1]
+                Write-Success "已建立 import job: $jobId"
+
+                $status = ""
+                for ($i = 0; $i -lt 30; $i++) {
+                    Start-Sleep -Seconds 1
+                    $jobStatusResp = curl.exe -s -X GET @headers "http://localhost:18002/api/v2/import/jobs/$jobId"
+                    if ($jobStatusResp -match '"status"\s*:\s*"([^"]+)"') {
+                        $status = $Matches[1]
+                        Write-Info "job status: $status"
+                        if ($status -eq "READY" -or $status -eq "FAILED") { break }
                     }
                 }
-            } catch {
-                Write-Warning "錯誤報告下載失敗或無錯誤"
-            }
-            
-            # 測試資料匯入
-            Write-Info "測試資料匯入..."
-            try {
-                if ($useCurl) {
-                    $importResponse = curl -s -X POST -H "Content-Type: application/json" -d "{`"file_id`":`"$fileId`"}" http://localhost:18002/api/import
-                    Write-Host "匯入回應: $importResponse"
-                    Write-Success "資料匯入測試完成"
+
+                if ($status -eq "FAILED") {
+                    Write-Warning "匯入 job 失敗（可用 /api/v2/import/jobs/$jobId/errors 檢視錯誤）"
+                } elseif ($status -eq "READY") {
+                    Write-Info "提交匯入（commit）..."
+                    $commitResp = curl.exe -s -X POST @headers "http://localhost:18002/api/v2/import/jobs/$jobId/commit"
+                    Write-Host "commit 回應: $commitResp"
+                    Write-Success "v2 匯入測試完成"
+                } else {
+                    Write-Warning "等待逾時：job 尚未 READY/FAILED，請稍後到 UI 或 API 查詢狀態。"
                 }
-            } catch {
-                Write-Warning "資料匯入測試失敗"
+            } else {
+                Write-Warning "無法解析 job_id，跳過後續測試"
             }
-        } else {
-            Write-Warning "無法解析 file_id，跳過後續測試"
         }
         
     } catch {
         Write-Error "檔案上傳測試失敗: $_"
     }
 
-    # 清理臨時文件
-    Remove-Item $tempCsv -ErrorAction SilentlyContinue
+    # 清理臨時文件（若是 fallback 產生的 temp 檔）
+    try {
+        if ($testCsvPath -and $testCsvPath -like "*\\Temp\\P1_2503033_01.csv") {
+            Remove-Item $testCsvPath -ErrorAction SilentlyContinue
+        }
+    } catch {}
 }
 
 Write-Host ""
@@ -331,21 +513,21 @@ Write-ColorOutput Blue @"
  容器狀態
 ===========
 "@
-docker compose ps
+Invoke-Compose @("ps") -ShowOutput
 
 Write-Host ""
 Write-Success " 一鍵啟動與驗證完成！"
 Write-Host ""
 Write-Host "使用以下命令查看日誌："
-Write-Host "  docker compose logs -f backend    # 後端日誌"
-Write-Host "  docker compose logs -f frontend   # 前端日誌"
-Write-Host "  docker compose logs -f db         # 資料庫日誌"
+Write-Host "  docker compose logs -f backend    # 後端日誌（或 docker-compose logs -f backend）"
+Write-Host "  docker compose logs -f frontend   # 前端日誌（或 docker-compose logs -f frontend）"
+Write-Host "  docker compose logs -f db         # 資料庫日誌（或 docker-compose logs -f db）"
 Write-Host ""
 Write-Host "停止服務："
-Write-Host "  docker compose down"
+Write-Host "  docker compose down              # （或 docker-compose down）"
 Write-Host ""
 Write-Host "停止並清理資料："
-Write-Host "  docker compose down -v"
+Write-Host "  docker compose down -v           # （或 docker-compose down -v）"
 Write-Host ""
 
 # 自動打開瀏覽器（可選）

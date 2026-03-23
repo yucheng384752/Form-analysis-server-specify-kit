@@ -1,0 +1,50 @@
+﻿{
+    "total_count":  1,
+    "page":  1,
+    "page_size":  50,
+    "records":  [
+                    {
+                        "id":  "0b70d74b-cd9f-446b-adf8-ed980c7c809d",
+                        "lot_no":  "2507173_02",
+                        "data_type":  "P2",
+                        "production_date":  null,
+                        "created_at":  "2026-01-14T07:30:58.162652+00:00",
+                        "display_name":  "2507173_02",
+                        "winder_number":  null,
+                        "product_id":  null,
+                        "machine_no":  null,
+                        "mold_no":  null,
+                        "source_winder":  null,
+                        "specification":  null,
+                        "additional_data":  {
+                                                "rows":  [
+                                                             {
+                                                                 "format":  "PE32",
+                                                                 "Material":  "H5",
+                                                                 "Appearance":  "1",
+                                                                 "rough edge":  "1",
+                                                                 "åæ¢æé":  "114å¹´8æ20æ¥11:00",
+                                                                 "Rewind torque":  "0",
+                                                                 "Winder number":  "1",
+                                                                 "Slitting speed":  "60",
+                                                                 "Thickness diff":  "16",
+                                                                 "Board Width(mm)":  "7.987",
+                                                                 "Qaulity control":  "ling",
+                                                                 "Striped Results":  "1",
+                                                                 "Meters completed":  "4375",
+                                                                 "Slitting machine":  "1",
+                                                                 "Qaulity inspecrion":  "ronie",
+                                                                 "Heat gun temperature":  "0",
+                                                                 "Thicknessss Low(Î¼m)":  "315",
+                                                                 "Thicknessss High(Î¼m)":  "331",
+                                                                 "Semi-finished productsLOT NO":  "2507173-02",
+                                                                 "Semi-finished products impedance":  "10^10",
+                                                                 "Rubber wheel gasket thickness (in)":  "8.5",
+                                                                 "Rubber wheel gasket thickness (out)":  "10.2",
+                                                                 "winder_number":  2
+                                                             }
+                                                         ]
+                                            }
+                    }
+                ]
+}

@@ -110,11 +110,11 @@
         * `UPLOADED` → `PARSING` → `VALIDATING` → (`FAILED` | `READY`) → `COMMITTING` → (`COMPLETED` | `FAILED`)
         * 任何 `COMMITTING` 之前都允許 `CANCELLED`
     *   **API（補齊）**：
-        * `POST /api/import/jobs`：建立 Job（多檔）
-        * `GET /api/import/jobs/{id}`：查狀態/進度/統計
-        * `GET /api/import/jobs/{id}/errors`：錯誤列分頁（只回 error rows）
-        * `POST /api/import/jobs/{id}/cancel`：進庫前取消
-        * `POST /api/import/jobs/{id}/commit`：手動觸發 commit（若採自動 commit，則標示為 internal/可保留）
+        * `POST /api/v2/import/jobs`：建立 Job（多檔）
+        * `GET /api/v2/import/jobs/{id}`：查狀態/進度/統計
+        * `GET /api/v2/import/jobs/{id}/errors`：錯誤列分頁（只回 error rows）
+        * `POST /api/v2/import/jobs/{id}/cancel`：進庫前取消
+        * `POST /api/v2/import/jobs/{id}/commit`：手動觸發 commit（若採自動 commit，則標示為 internal/可保留）
     *   **Progress**：至少提供 `progress 0-100` 與 `error_count`
 *   **測試策略**：
     *   建 job → 狀態正確更新、progress 變化合理。
@@ -122,7 +122,7 @@
 
 ### L2-2 Batch Upload API（多檔 + 混批規則）
 *   **實作內容**：
-    *   `POST /api/import/jobs` 接受 `files: List[UploadFile]`。
+    *   `POST /api/v2/import/jobs` 接受 `files: List[UploadFile]`。
     *   **混批規則（同一 job 必須一致）**：
         1) 同 `tenant_id`（由 tenant resolver 或 UI 選擇）
         2) 同 `format`（csv/xlsx/pdf 不混）
@@ -198,8 +198,8 @@
 ### L3-2 Traceability Search（優先 Trace Index，fallback join）
 *   **實作內容**：
     *   **API**：
-        * `POST /api/query/advanced`：多條件交集（lot/date_range/machine/mold/winder）
-        * `GET /api/query/trace/{trace_key}`：展開回完整追溯鏈（P1+P2[]+P3[]，缺漏也回）
+        * `GET /api/v2/query/records/advanced`：多條件交集（lot/date_range/machine/mold/winder）
+        * `GET /api/v2/query/trace/{trace_key}`：展開回完整追溯鏈（P1+P2[]+P3[]，缺漏也回）
     *   **索引策略**：
         1) 若已建置 Trace Index（`trace_lots/trace_p2_index/trace_p3_index`）→ 查詢優先走索引表
         2) 若尚未建置 → fallback 使用 join（MVP），但需標註後續切換成本
@@ -227,6 +227,8 @@
 **目標：配合後端 API 調整 UI，且完整對應「單 tenant 隱藏 / 多 tenant 選擇 / 匯入進度 / 錯誤列顯示 / 可取消 / PDF 轉檔下載&套用 / 追溯彈窗」。**
 
 ### FE-1 Tenant（單 tenant 隱藏；多 tenant 顯示）
+* 狀態：已完成（2026-01-18，commit: f5d0729）
+* 備註：前端不再自動選 tenant；未選 tenant 時會阻擋 tenant-scoped 的 `/api/*` 呼叫，並要求使用者明確選擇（`X-Tenant-Id` 一律顯式送出）。
 * `TenantProvider`：App 啟動時 `GET /api/tenants`
 * `TenantSelector`：若 tenants>1 顯示 Modal/Dropdown；若=1 隱藏
 * Axios Interceptor：對除 `GET /api/tenants` 以外的請求自動注入 Header `X-Tenant-Id`
@@ -235,8 +237,8 @@
 * `UploadPage`：選 table_code + format（同批次限制）
 * `UploadDropzone`（react-dropzone）：多檔上傳
 * `JobList` / `JobCard`：顯示 status/progress/error_count
-* `CancelJobButton`：呼叫 `POST /api/import/jobs/{id}/cancel`
-* `JobErrorTable`：呼叫 `GET /api/import/jobs/{id}/errors`，只顯示錯誤列（可展開顯示 field/code/message）
+* `CancelJobButton`：呼叫 `POST /api/v2/import/jobs/{id}/cancel`
+* `JobErrorTable`：呼叫 `GET /api/v2/import/jobs/{id}/errors`，只顯示錯誤列（可展開顯示 field/code/message）
 
 ### FE-3 PDF 轉檔（下載 / 套用）
 * `PdfUploadToggle`：切換上傳 CSV vs PDF
@@ -246,7 +248,7 @@
 ### FE-4 查詢/追溯（卡片 + 展開彈窗）
 * `AdvancedSearchForm`：lot/date_range/machine/mold/winder 任意組合
 * `SearchResultCards`：回 trace_key
-* `TraceModal`：呼叫 `GET /api/query/trace/{trace_key}` 展開顯示 P1/P2/P3（缺漏也顯示）
+* `TraceModal`：呼叫 `GET /api/v2/query/trace/{trace_key}` 展開顯示 P1/P2/P3（缺漏也顯示）
 
 ### FE-5 線上編輯（inline edit + reason）
 * `RecordTable`（PrimeReact DataTable + virtual scroll）

@@ -40,13 +40,214 @@ python app/main.py
 http://localhost:8000/docs
 ```
 
+## 簡易身份驗證（API Key，tenant 綁定）
+
+在沒有 Nginx / Cloudflare / Front Door 的情況下，可用此模式建立最小可用的「阻擋掃描/濫用」門檻。
+
+### 啟用
+
+設定環境變數：
+
+- `AUTH_MODE=api_key`
+- `AUTH_API_KEY_HEADER=X-API-Key`（可選，預設就是 `X-API-Key`）
+- `AUTH_PROTECT_PREFIXES=/api`（可選，預設就是 `/api`）
+- `AUTH_EXEMPT_PATHS=/healthz,/docs,/redoc,/openapi.json`（可選；當 `AUTH_PROTECT_PREFIXES` 設為 `/` 這類「保護所有路徑」時特別重要）
+
+啟用後：
+
+- 只要路徑符合保護前綴（預設 `/api`），就會要求帶 API key。
+- `AUTH_EXEMPT_PATHS` 內的路徑前綴會放行（預設包含 `/healthz`、`/docs`、`/redoc`、`/openapi.json`，方便健康檢查與看文件）。
+- API key 會綁定 tenant：server 端會用 key 對應到 tenant，並忽略 client 送來的 `X-Tenant-Id`（避免繞過）。
+
+### 建議預設（profiles）
+
+#### Profile A（建議：只保護 API，文件放行）
+
+適用：內網/開發環境，或你只想保護業務 API，不介意 Swagger 文件能被看到。
+
+```env
+AUTH_MODE=api_key
+AUTH_API_KEY_HEADER=X-API-Key
+AUTH_PROTECT_PREFIXES=/api
+```
+
+> 註：此 profile 下 `/docs` 並不在 `/api` 前綴內，因此天然不會被保護。
+
+#### Profile B（上線建議：保護所有路徑，文件放行）
+
+適用：你把後端直接曝露到公網，但仍希望保留 `/docs` 方便操作。
+
+```env
+AUTH_MODE=api_key
+AUTH_API_KEY_HEADER=X-API-Key
+AUTH_PROTECT_PREFIXES=/
+AUTH_EXEMPT_PATHS=/healthz,/docs,/redoc,/openapi.json
+```
+
+#### Profile C（更嚴格：保護所有路徑，文件也要 key）
+
+適用：公網上線且不希望 Swagger/OpenAPI 被未授權的人看到。
+
+```env
+AUTH_MODE=api_key
+AUTH_API_KEY_HEADER=X-API-Key
+AUTH_PROTECT_PREFIXES=/
+AUTH_EXEMPT_PATHS=/healthz
+```
+
+### 建立第一把 key（bootstrap）
+
+PowerShell：
+
+```powershell
+..\scripts\bootstrap-api-key.ps1 -TenantCode ut -Label "local-dev"
+```
+
+或直接跑 Python：
+
+```bash
+python scripts/bootstrap_tenant_api_key.py --tenant-code ut --label local-dev
+```
+
+指令會輸出 raw key（只會顯示一次，請自行保存）。
+
+### 呼叫範例
+
+```bash
+curl -H "X-API-Key: <your-key>" http://localhost:8000/api/tenants
+```
+
+## 稽核事件落庫（audit_events，最小版）
+
+此功能用來把「重要操作」寫入 DB，方便日後用 SQL 回查：誰（哪把 API key）在什麼時間呼叫了哪個 API、回應狀態碼是什麼。
+
+特性：
+
+- Best-effort：寫入失敗不會影響 API 回應。
+- 不會儲存 request body、也不會記錄明文 API key。
+- 預設只記錄寫入類 HTTP 方法（可設定）。
+
+### 啟用
+
+設定環境變數：
+
+- `AUDIT_EVENTS_ENABLED=true`
+- `AUDIT_EVENTS_METHODS=POST,PUT,PATCH,DELETE`（可選；預設就是這組）
+
+啟用後會寫入資料表 `audit_events`，內容包含：
+
+- `tenant_id`、`actor_api_key_id`、`actor_label_snapshot`
+- `request_id`、`method`、`path`、`status_code`
+- `client_host`、`user_agent`
+- `created_at`、`metadata_json`（目前包含 query params）
+
+### 驗證（最小操作清單）
+
+目標：打一個「寫入類」API（POST/PUT/PATCH/DELETE），拿到回應的 `X-Request-ID`，再用 SQL 依 `request_id` 查到對應的 `audit_events`（含 tenant/actor）。
+
+1) 設定環境變數並重啟後端
+
+- `AUDIT_EVENTS_ENABLED=true`
+- （可選）`AUDIT_EVENTS_METHODS=POST,PUT,PATCH,DELETE`
+
+2)（建議）同時開啟 API key auth，讓 audit_events 具備 actor 欄位
+
+- `AUTH_MODE=api_key`
+- 先用本 README 上方的 bootstrap 指令建立一把 API key（會輸出 raw key，只顯示一次）
+
+3) 打一個最小寫入 API：`POST /api/tenants`
+
+備註：如果你已經有 tenant，這個 API 可能回 `409`；不影響驗證，audit 仍會記錄 method/path/status_code。
+
+PowerShell 範例（取出 request_id）：
+
+```powershell
+$rawKey = "<your-raw-key>"
+$resp = Invoke-WebRequest -Method Post -Uri "http://localhost:8000/api/tenants" -Headers @{ "X-API-Key" = $rawKey } -ContentType "application/json" -Body "{}"
+$requestId = $resp.Headers["X-Request-ID"]
+$requestId
+```
+
+4) 用 SQL 依 request_id 查 `audit_events`
+
+PostgreSQL：
+
+```sql
+SELECT
+  id,
+  created_at,
+  tenant_id,
+  actor_api_key_id,
+  actor_label_snapshot,
+  request_id,
+  method,
+  path,
+  status_code
+FROM audit_events
+WHERE request_id = '<X-Request-ID>'
+ORDER BY created_at DESC;
+```
+
+（快速看最近幾筆）
+
+```sql
+SELECT created_at, request_id, method, path, status_code, tenant_id, actor_api_key_id
+FROM audit_events
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
 ## API 端點
 
-### 檔案上傳
+### v2 匯入（推薦）
+
+v2 流程：建立匯入 job（上傳檔案→背景 parse/validate）→ poll 狀態 → 若 READY 則 commit。
+
+> 注意：v2 端點通常需要 `X-Tenant-Id`。
+
+**POST** `/api/v2/import/jobs`
+
+```bash
+curl -X POST "http://localhost:8000/api/v2/import/jobs" \
+  -H "X-Tenant-Id: <TENANT_ID>" \
+  -F "table_code=P1" \
+  -F "allow_duplicate=false" \
+  -F "files=@your-file.csv;type=text/csv"
+```
+
+**GET** `/api/v2/import/jobs/{id}`
+
+```bash
+curl -X GET "http://localhost:8000/api/v2/import/jobs/<JOB_ID>" \
+  -H "X-Tenant-Id: <TENANT_ID>"
+```
+
+**GET** `/api/v2/import/jobs/{id}/errors`
+
+```bash
+curl -X GET "http://localhost:8000/api/v2/import/jobs/<JOB_ID>/errors" \
+  -H "X-Tenant-Id: <TENANT_ID>"
+```
+
+**POST** `/api/v2/import/jobs/{id}/commit`
+
+```bash
+curl -X POST "http://localhost:8000/api/v2/import/jobs/<JOB_ID>/commit" \
+  -H "X-Tenant-Id: <TENANT_ID>"
+```
+
+### （Deprecated）檔案上傳
 
 **POST** `/api/upload`
 
-上傳 CSV 或 Excel 檔案進行驗證。
+上傳 CSV 或 Excel 檔案進行驗證（舊流程/相容性保留）。
+
+> ⚠️ Deprecated：僅供歷史/相容性用途，請勿用於新開發或新腳本。
+> - UI 的 CSV 主流程已於 2026-01-31 切換為 v2 import jobs。
+> - multi-tenant 模式下，此類 legacy endpoints 會回 410。
+
+<details>
+  <summary>（Deprecated）Legacy curl 範例（僅供回溯/相容性；請勿複製到新腳本）</summary>
 
 ```bash
 curl -X POST "http://localhost:8000/api/upload" \
@@ -74,11 +275,16 @@ curl -X POST "http://localhost:8000/api/upload" \
 }
 ```
 
-### 查詢上傳狀態
+</details>
+
+### （Deprecated）查詢上傳狀態
 
 **GET** `/api/upload/{process_id}/status`
 
 查詢上傳工作的處理狀態。
+
+<details>
+  <summary>（Deprecated）Legacy curl 範例（僅供回溯/相容性）</summary>
 
 ```bash
 curl -X GET "http://localhost:8000/api/upload/550e8400-e29b-41d4-a716-446655440000/status"
@@ -94,11 +300,16 @@ curl -X GET "http://localhost:8000/api/upload/550e8400-e29b-41d4-a716-4466554400
 }
 ```
 
-### 查詢驗證結果
+</details>
+
+### （Deprecated）查詢驗證結果
 
 **GET** `/api/validate`
 
 查詢詳細的驗證結果和錯誤列表（支援分頁）。
+
+<details>
+  <summary>（Deprecated）Legacy curl 範例（僅供回溯/相容性）</summary>
 
 ```bash
 # 基本查詢
@@ -107,6 +318,8 @@ curl -X GET "http://localhost:8000/api/validate?process_id=550e8400-e29b-41d4-a7
 # 分頁查詢
 curl -X GET "http://localhost:8000/api/validate?process_id=550e8400-e29b-41d4-a716-446655440000&page=2&page_size=10"
 ```
+
+</details>
 
 **回應範例：**
 ```json
@@ -140,17 +353,24 @@ curl -X GET "http://localhost:8000/api/validate?process_id=550e8400-e29b-41d4-a7
 }
 ```
 
-### 匯入驗證通過的資料
+### （Deprecated）匯入驗證通過的資料
 
 **POST** `/api/import`
 
 將驗證通過的有效資料匯入到系統中。
 
+> ⚠️ Deprecated：僅供相容性用途；新流程請用 `POST /api/v2/import/jobs/{id}/commit`。
+
+<details>
+  <summary>（Deprecated）Legacy curl 範例（僅供回溯/相容性）</summary>
+
 ```bash
 curl -X POST "http://localhost:8000/api/import" \
-     -H "Content-Type: application/json" \
-     -d '{"process_id": "550e8400-e29b-41d4-a716-446655440000"}'
+  -H "Content-Type: application/json" \
+  -d '{"process_id": "550e8400-e29b-41d4-a716-446655440000"}'
 ```
+
+</details>
 
 **回應範例：**
 ```json
@@ -163,19 +383,21 @@ curl -X POST "http://localhost:8000/api/import" \
 }
 ```
 
-### 匯出錯誤資料 CSV
+### （Deprecated）匯出錯誤資料 CSV
 
 **GET** `/api/errors.csv`
 
 下載驗證錯誤的詳細清單 CSV 檔案。
 
+<details>
+  <summary>（Deprecated）Legacy curl 範例（僅供回溯/相容性）</summary>
+
 ```bash
 # 下載錯誤 CSV 檔案
 curl -o errors.csv "http://localhost:8000/api/errors.csv?process_id=550e8400-e29b-41d4-a716-446655440000"
-
-# 使用 wget 下載
-wget -O errors.csv "http://localhost:8000/api/errors.csv?process_id=550e8400-e29b-41d4-a716-446655440000"
 ```
+
+</details>
 
 **CSV 檔案內容範例：**
 ```csv
@@ -216,6 +438,9 @@ row_index,field,error_code,message
 | `OUT_OF_RANGE` | 超出允許範圍 | 產品名稱長度不可超過100字元 |
 
 ## 完整工作流程
+
+> 注意：以下 sequence diagram 描述的是 **legacy 流程（deprecated）**。
+> 推薦請改用 v2 import jobs：`POST /api/v2/import/jobs` → `GET /api/v2/import/jobs/{id}` → `POST /api/v2/import/jobs/{id}/commit`。
 
 ```mermaid
 sequenceDiagram

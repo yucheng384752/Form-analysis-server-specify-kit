@@ -1,30 +1,15 @@
 /* AdvancedSearch.tsx 樣式 */
 
 .advanced-search {
-  margin-top: 1.5rem;
+  margin-top: 0.75rem;
   width: 100%;
 }
 
 .advanced-search-toggle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  background-color: #f8f9fa;
-  border: 1px solid #dee2e6;
-  border-radius: 6px;
-  font-size: 1rem;
-  font-weight: 500;
-  color: #495057;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  width: 100%;
-  text-align: left;
-}
-
-.advanced-search-toggle:hover {
-  background-color: #e9ecef;
-  border-color: #adb5bd;
+  white-space: nowrap;
 }
 
 .toggle-icon {
@@ -39,42 +24,102 @@
 }
 
 .advanced-search-panel {
-  margin-top: 1rem;
-  padding: 1.5rem;
-  background-color: #ffffff;
-  border: 1px solid #dee2e6;
+  margin-top: 0;
+  padding: 0;
+  background-color: transparent;
+  border: 0 solid #dee2e6;
   border-radius: 6px;
+  box-shadow: none;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition:
+    max-height 220ms ease,
+    opacity 160ms ease,
+    transform 220ms ease,
+    padding 220ms ease,
+    margin-top 220ms ease,
+    border-width 220ms ease,
+    box-shadow 220ms ease,
+    background-color 220ms ease;
+}
+
+.advanced-search-panel[data-expanded="true"] {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: #ffffff;
+  border-width: 1px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  max-height: 2000px;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.advanced-search-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
 }
 
 /* 搜尋欄位網格 */
 .search-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.25rem;
-  margin-bottom: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
 }
 
 .search-field {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .search-field label {
   font-weight: 500;
   color: #495057;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .search-field input[type="text"],
 .search-field input[type="number"],
 .search-field select {
-  padding: 0.625rem 0.75rem;
+  padding: 0.5rem 0.65rem;
   border: 1px solid #ced4da;
   border-radius: 4px;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   transition: border-color 0.15s ease;
+}
+
+.search-field select[multiple] {
+  min-height: 6.5rem;
+}
+
+.multi-checkbox-list {
+  max-height: 6.5rem;
+  overflow: auto;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  padding: 0.4rem 0.5rem;
+  background: #fff;
+}
+
+.multi-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  padding: 0.1rem 0;
+  color: #212529;
+}
+
+.multi-checkbox-item input[type="checkbox"] {
+  margin: 0;
 }
 
 .search-field input:focus,
@@ -91,31 +136,31 @@
 /* 日期輸入欄位 */
 .date-field {
   grid-column: span 1;
-  min-width: 280px;
+  min-width: 240px;
 }
 
 .date-inputs {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .date-inputs input {
   flex: 1;
-  padding: 0.625rem 0.75rem;
+  padding: 0.5rem 0.65rem;
   border: 1px solid #ced4da;
   border-radius: 4px;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   text-align: center;
 }
 
 .date-year {
-  max-width: 100px;
+  max-width: 90px;
 }
 
 .date-month,
 .date-day {
-  max-width: 70px;
+  max-width: 60px;
 }
 
 .date-separator {
@@ -128,16 +173,16 @@
   display: flex;
   justify-content: flex-end;
   gap: 1rem;
-  padding-top: 1rem;
+  padding-top: 0.75rem;
   border-top: 1px solid #e9ecef;
 }
 
 .btn-reset,
 .btn-search {
-  padding: 0.625rem 1.5rem;
+  padding: 0.55rem 1.25rem;
   border: none;
   border-radius: 4px;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;

@@ -4,17 +4,18 @@
 提供匯出驗證錯誤資料為 CSV 格式的 API 端點。
 """
 
-import io
 import csv
+import io
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.upload_job import UploadJob
 from app.models.upload_error import UploadError
+from app.models.upload_job import UploadJob
 
 # 建立路由器
 router = APIRouter()
@@ -72,9 +73,9 @@ router = APIRouter()
             "headers": {
                 "Content-Disposition": {
                     "description": "CSV 檔案下載名稱",
-                    "schema": {"type": "string"}
+                    "schema": {"type": "string"},
                 }
-            }
+            },
         },
         404: {
             "description": "找不到指定的上傳工作",
@@ -82,10 +83,10 @@ router = APIRouter()
                 "application/json": {
                     "example": {
                         "detail": "找不到指定的上傳工作",
-                        "process_id": "550e8400-e29b-41d4-a716-446655440000"
+                        "process_id": "550e8400-e29b-41d4-a716-446655440000",
                     }
                 }
-            }
+            },
         },
         422: {
             "description": "參數驗證錯誤",
@@ -97,52 +98,59 @@ router = APIRouter()
                                 "type": "uuid_parsing",
                                 "loc": ["query", "process_id"],
                                 "msg": "Input should be a valid UUID",
-                                "input": "invalid-uuid"
+                                "input": "invalid-uuid",
                             }
                         ]
                     }
                 }
-            }
-        }
+            },
+        },
     },
-    tags=["資料匯出"]
+    tags=["資料匯出"],
 )
 async def export_errors_csv(
     process_id: UUID = Query(
         ...,
         description="處理流程識別碼",
-        examples=["550e8400-e29b-41d4-a716-446655440000"]
+        examples=["550e8400-e29b-41d4-a716-446655440000"],
     ),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> Response:
     """
     匯出驗證錯誤為 CSV 格式
-    
+
     Args:
         process_id: 處理流程識別碼
         db: 資料庫會話
-        
+
     Returns:
         Response: CSV 格式的錯誤報告檔案
-        
+
     Raises:
         HTTPException: 當找不到指定工作時拋出 404 錯誤
     """
-    
+
+    if get_settings().multi_tenant_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "detail": "Legacy error report endpoint is disabled in multi-tenant mode.",
+                "hint": "Use v2 import pipeline errors: GET /api/v2/import/jobs/{id}/errors.",
+                "error_code": "LEGACY_EXPORT_DISABLED",
+            },
+        )
+
     # 1. 查詢上傳工作是否存在
     job_stmt = select(UploadJob).where(UploadJob.process_id == process_id)
     job_result = await db.execute(job_stmt)
     job = job_result.scalar_one_or_none()
-    
+
     if not job:
         raise HTTPException(
             status_code=404,
-            detail={
-                "detail": "找不到指定的上傳工作",
-                "process_id": str(process_id)
-            }
+            detail={"detail": "找不到指定的上傳工作", "process_id": str(process_id)},
         )
-    
+
     # 2. 查詢所有錯誤項目
     errors_stmt = (
         select(UploadError)
@@ -151,35 +159,35 @@ async def export_errors_csv(
     )
     errors_result = await db.execute(errors_stmt)
     errors = errors_result.scalars().all()
-    
+
     # 3. 產生 CSV 內容
     csv_buffer = io.StringIO()
     csv_writer = csv.writer(csv_buffer)
-    
+
     # 寫入標題行
     csv_writer.writerow(["row_index", "field", "error_code", "message"])
-    
+
     # 寫入錯誤資料
     for error in errors:
-        csv_writer.writerow([
-            error.row_index + 1,  # 轉換為從1開始的行號
-            error.field,
-            error.error_code,
-            error.message
-        ])
-    
+        csv_writer.writerow(
+            [
+                error.row_index + 1,  # 轉換為從1開始的行號
+                error.field,
+                error.error_code,
+                error.message,
+            ]
+        )
+
     # 4. 準備 CSV 內容
     csv_content = csv_buffer.getvalue()
     csv_buffer.close()
-    
+
     # 5. 產生檔案名稱
     filename = f"errors_{process_id}.csv"
-    
+
     # 6. 回傳 CSV 檔案
     return Response(
-        content=csv_content.encode('utf-8-sig'),  # 使用 UTF-8 BOM 確保中文正確顯示
+        content=csv_content.encode("utf-8-sig"),  # 使用 UTF-8 BOM 確保中文正確顯示
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

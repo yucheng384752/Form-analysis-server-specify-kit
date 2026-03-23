@@ -99,7 +99,7 @@ winget install Git.Git
 部署前請確認：
 
 1. **軟體安裝**
-   - [ ] Docker Desktop 運行正常
+   - [ ] Docker Desktop 執行正常
    - [ ] Node.js 版本 18+
    - [ ] Python 版本 3.8+
 

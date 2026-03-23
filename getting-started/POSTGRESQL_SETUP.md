@@ -103,7 +103,7 @@ docker-compose down
 
 1. **連接失敗**
 ```
-解決: 確認PostgreSQL服務正在運行
+解決: 確認PostgreSQL服務正在執行
 docker-compose ps db
 ```
 

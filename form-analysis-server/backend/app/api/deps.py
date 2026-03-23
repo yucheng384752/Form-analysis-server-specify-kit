@@ -1,59 +1,53 @@
-from typing import Optional
-from uuid import UUID
-from fastapi import Header, HTTPException, Depends, status
-from sqlalchemy import select, func
+from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.tenant_resolver import resolve_tenant_or_raise
 from app.models.core.tenant import Tenant
 
+
 async def get_current_tenant(
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-Id"),
-    db: AsyncSession = Depends(get_db)
+    request: Request = None,
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-Id"),
+    db: AsyncSession = Depends(get_db),
 ) -> Tenant:
     """
     Resolve current tenant from Header or Default.
-    
+
     Logic:
     1. If X-Tenant-Id header is present, use it to find tenant.
     2. If header is missing:
        - If only 1 tenant exists in DB, use it.
        - If multiple tenants exist, check for is_default=True.
        - If exactly one default tenant exists, use it.
-       - Otherwise, raise 422 error requiring explicit tenant ID.
+         - Otherwise, raise 400 error requiring explicit tenant ID.
     """
-    # 1. If Header is provided, verify it
-    if x_tenant_id:
-        try:
-            tenant_uuid = UUID(x_tenant_id)
-        except ValueError:
-             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid X-Tenant-Id format")
-        
-        result = await db.execute(select(Tenant).where(Tenant.id == tenant_uuid))
-        tenant = result.scalar_one_or_none()
-        if not tenant:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
-        return tenant
+    if request is not None:
+        state = getattr(request, "state", None)
+        auth_tenant_id = getattr(state, "auth_tenant_id", None)
+        is_admin = bool(getattr(state, "is_admin", False))
+        if auth_tenant_id and not is_admin:
+            # When auth is enabled, tenant is bound to the API key.
+            tenant = await resolve_tenant_or_raise(
+                db=db, x_tenant_id=str(auth_tenant_id)
+            )
+            request.state.tenant_id = tenant.id
+            request.state.tenant_code = tenant.code
+            return tenant
 
-    # 2. If Header is NOT provided, try to resolve default
-    # Check total count
-    count_result = await db.execute(select(func.count(Tenant.id)))
-    total_count = count_result.scalar()
+        if auth_tenant_id and is_admin:
+            # Highest admin: allow explicit override via X-Tenant-Id.
+            # If override header is not provided, fall back to the bound tenant.
+            effective_tenant_id = x_tenant_id or str(auth_tenant_id)
+            tenant = await resolve_tenant_or_raise(
+                db=db, x_tenant_id=str(effective_tenant_id)
+            )
+            request.state.tenant_id = tenant.id
+            request.state.tenant_code = tenant.code
+            return tenant
 
-    if total_count == 1:
-        # Only 1 tenant exists, return it
-        result = await db.execute(select(Tenant))
-        return result.scalar_one()
-    
-    # Check for default tenant
-    result = await db.execute(select(Tenant).where(Tenant.is_default == True))
-    default_tenants = result.scalars().all()
-    
-    if len(default_tenants) == 1:
-        return default_tenants[0]
-    
-    # Cannot resolve automatically
-    raise HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, 
-        detail="X-Tenant-Id header is required (Multiple tenants exist and no unique default)"
-    )
+    tenant = await resolve_tenant_or_raise(db=db, x_tenant_id=x_tenant_id)
+    if request is not None:
+        request.state.tenant_id = tenant.id
+        request.state.tenant_code = tenant.code
+    return tenant

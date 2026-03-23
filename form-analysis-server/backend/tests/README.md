@@ -175,7 +175,7 @@ async def test_create_record_basic(self, db_session, clean_db):
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 ```
 
--  **快速**: 完全在記憶體中運行
+-  **快速**: 完全在記憶體中執行
 -  **隔離**: 每個測試都有獨立的資料庫
 -  **清潔**: 測試結束後自動清理
 -  **免安裝**: 無需外部資料庫服務

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -22,6 +23,7 @@ interface CSVEditorProps {
 }
 
 export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
+  const { t } = useTranslation();
   const [editedData, setEditedData] = useState<string[][]>(data);
   const [editingCell, setEditingCell] = useState<{ row: number; col: number } | null>(null);
   const [canImport, setCanImport] = useState(false);
@@ -68,7 +70,7 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
     onDataChange(editedData);
     setCanImport(true);
     // Use simple notification for now
-    console.log("修改已儲存");
+    console.log("Changes saved");
   };
 
   const handleImport = async () => {
@@ -77,11 +79,7 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
 
     try {
       // TODO: Implement actual API call to backend
-      // const response = await fetch('/api/import', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ data: editedData, fileName })
-      // });
+      // Legacy import endpoint has been removed; use v2 import jobs commit instead.
 
       // Simulate import progress
       const totalSteps = 100;
@@ -92,7 +90,7 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
 
       setIsImporting(false);
       setCanImport(false);
-      console.log("資料已成功匯入資料庫");
+      console.log("Data imported into database");
     } catch (error) {
       console.error('Import failed:', error);
       setIsImporting(false);
@@ -120,7 +118,7 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
     link.click();
     document.body.removeChild(link);
     
-    console.log("CSV 檔案已下載");
+    console.log("CSV downloaded");
   };
 
   if (!editedData || editedData.length === 0) {
@@ -134,7 +132,7 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
     <div className="bg-white rounded-lg p-6 shadow-sm">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-gray-700">CSV 內容編輯 - {fileName}</h2>
+          <h2 className="text-lg font-semibold text-gray-700">{t('csvEditor.titleWithFile', { fileName })}</h2>
           <Button
             variant="ghost"
             size="sm"
@@ -144,12 +142,12 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
             {isExpanded ? (
               <>
                 <ChevronUp className="w-4 h-4" />
-                收起
+                {t('common.collapse')}
               </>
             ) : (
               <>
                 <ChevronDown className="w-4 h-4" />
-                展開
+                {t('common.expand')}
               </>
             )}
           </Button>
@@ -162,7 +160,7 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
             disabled={isImporting}
           >
             <Download className="w-4 h-4" />
-            下載
+            {t('csvEditor.actions.download')}
           </Button>
           <Button
             onClick={handleSave}
@@ -171,7 +169,7 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
             disabled={isImporting}
           >
             <Save className="w-4 h-4" />
-            儲存修改
+            {t('csvEditor.actions.saveChanges')}
           </Button>
           <Button
             onClick={() => setShowConfirmDialog(true)}
@@ -179,17 +177,17 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
             disabled={!canImport || isImporting}
           >
             <Database className="w-4 h-4" />
-            確認匯入
+            {t('csvEditor.actions.confirmImport')}
           </Button>
         </div>
       </div>
 
       {isImporting && (
         <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-          <p className="text-blue-700 mb-2">匯入資料庫中...請稍後...</p>
+          <p className="text-blue-700 mb-2">{t('csvEditor.status.importingWait')}</p>
           <Progress value={importProgress} className="h-2" />
           <p className="text-blue-600 text-sm mt-2">
-            匯入進度: {Math.round(importProgress)}%
+            {t('csvEditor.status.importProgress', { percent: Math.round(importProgress) })}
           </p>
         </div>
       )}
@@ -213,7 +211,11 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
                       <Input
                         value={editedData[0][colIndex] || ''}
                         onChange={(e) => handleCellChange(0, colIndex, e.target.value)}
-                        className="border-0 bg-transparent p-1 h-8 w-full font-semibold"
+                        className={`border-0 bg-transparent p-1 h-8 w-full font-semibold ${
+                          editingCell?.row === 0 && editingCell.col === colIndex
+                            ? 'ring-1 ring-blue-500 rounded'
+                            : ''
+                        }`}
                         onFocus={() => setEditingCell({ row: 0, col: colIndex })}
                         onBlur={() => setEditingCell(null)}
                       />
@@ -236,7 +238,11 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
                         <Input
                           value={editedData[rowIndex + 1] && editedData[rowIndex + 1][colIndex] || ''}
                           onChange={(e) => handleCellChange(rowIndex + 1, colIndex, e.target.value)}
-                          className="border-0 hover:border hover:border-blue-300 focus:border-blue-500 p-1 h-8 transition-all w-full"
+                          className={`border-0 hover:border hover:border-blue-300 focus:border-blue-500 p-1 h-8 transition-all w-full ${
+                            editingCell?.row === rowIndex + 1 && editingCell.col === colIndex
+                              ? 'ring-1 ring-blue-500 rounded'
+                              : ''
+                          }`}
                           onFocus={() => setEditingCell({ row: rowIndex + 1, col: colIndex })}
                           onBlur={() => setEditingCell(null)}
                         />
@@ -249,8 +255,8 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
           </div>
 
           <div className="mt-4 text-gray-500 text-sm">
-            <p>共 {rows.length} 行資料，{headers.length} 個欄位</p>
-            <p className="mt-1">提示：點擊任意儲存格即可直接編輯內容</p>
+            <p>{t('csvEditor.footer.summary', { rows: rows.length, cols: headers.length })}</p>
+            <p className="mt-1">{t('csvEditor.footer.hint')}</p>
           </div>
         </>
       )}
@@ -258,20 +264,20 @@ export function CSVEditor({ fileName, data, onDataChange }: CSVEditorProps) {
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle> 是否確認上傳</AlertDialogTitle>
+            <AlertDialogTitle>{t('csvEditor.confirmDialog.title')}</AlertDialogTitle>
             <AlertDialogDescription>
-              此操作將會把 CSV 檔案匯入資料庫中，請確認是否要繼續？
+              {t('csvEditor.confirmDialog.description')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 setShowConfirmDialog(false);
                 handleImport();
               }}
             >
-              確認
+              {t('common.ok')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

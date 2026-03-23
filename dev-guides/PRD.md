@@ -91,11 +91,17 @@
 - Lookup：materials、slitting_machines、measurement_points、buckets、bottom_tapes
 
 ## 7. APIs（摘要）
-- Upload
-  - POST /api/upload/files（多檔驗證 & 暫存）
-  - POST /api/upload/confirm?process_id=xxx
-- View
-  - GET /api/view/lots, /api/phase{1,2,3}/{lot}
+- Import（V2；推薦）
+  - POST /api/v2/import/jobs（multipart: table_code, files, allow_duplicate）
+  - GET /api/v2/import/jobs/{id}
+  - POST /api/v2/import/jobs/{id}/commit
+  - GET /api/v2/import/jobs/{id}/errors
+- Legacy Upload（Deprecated；multi-tenant 會回 410）
+  - POST /api/upload/files（多檔驗證 & 暫存；**目前 UI 已不再使用，僅相容保留**）
+  - POST /api/upload/confirm?process_id=xxx（**目前 UI 已不再使用，僅相容保留**）
+- Query（V2）
+  - GET /api/v2/query/lots
+  - GET /api/v2/query/trace/{trace_key}
 - Logs（Internal）
   - GET /api/logs/analyze
   - GET /api/logs/search

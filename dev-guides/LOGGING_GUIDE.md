@@ -47,7 +47,7 @@ form-analysis-server/backend/logs/
   "event": "Request started",
   "request_id": "550e8400-e29b-41d4-a716-446655440000",
   "method": "POST",
-  "path": "/api/upload",
+  "path": "/api/v2/import/jobs",
   "query_params": "",
   "client_host": "192.168.1.100",
   "user_agent": "Mozilla/5.0..."
@@ -73,19 +73,19 @@ form-analysis-server/backend/logs/
 {
   "timestamp": "2025-11-09T10:30:00.789Z",
   "level": "info",
-  "event": "檔案上傳開始",
+  "event": "建立匯入任務",
+  "table_code": "P1",
   "filename": "P1_2503033_01.csv"
 }
 
 {
   "timestamp": "2025-11-09T10:30:01.234Z", 
   "level": "info",
-  "event": "檔案上傳和驗證完成",
-  "process_id": "550e8400-e29b-41d4-a716-446655440000",
-  "filename": "P1_2503033_01.csv",
-  "total_rows": 100,
-  "valid_rows": 95,
-  "invalid_rows": 5,
+  "event": "匯入任務就緒",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "READY",
+  "table_code": "P1",
+  "files": [{"filename": "P1_2503033_01.csv"}],
   "processing_time": 0.445
 }
 ```
@@ -291,7 +291,7 @@ scripts\diagnose-system.bat
 - 💾 磁碟空間監控
 - 🌍 網路連接測試
 -  Docker 容器狀態 (如果可用)
--  運行中的相關程序
+-  執行中的相關程序
 
 ##  日誌輪轉和清理
 

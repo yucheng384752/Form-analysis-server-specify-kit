@@ -8,7 +8,7 @@ echo.
 echo [1/6] 檢查 Docker 安裝...
 docker --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  Docker 未安裝或未運行
+    echo  Docker 未安裝或未執行
     echo    請先安裝 Docker Desktop
     pause
     exit /b 1
@@ -67,7 +67,7 @@ echo.
 echo [5/6] 檢查 Docker 服務...
 docker info >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  Docker 服務未運行
+    echo  Docker 服務未執行
     echo    請啟動 Docker Desktop
     pause
     exit /b 1
@@ -77,19 +77,19 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [6/6] 檢查端口佔用...
-netstat -ano | findstr :5173 >nul 2>&1
+netstat -ano | findstr :18003 >nul 2>&1
 if %errorlevel% equ 0 (
-    echo   端口 5173 (前端) 已被佔用
+    echo   端口 18003 (前端) 已被佔用
 )
 
-netstat -ano | findstr :8000 >nul 2>&1
+netstat -ano | findstr :18002 >nul 2>&1
 if %errorlevel% equ 0 (
-    echo   端口 8000 (後端) 已被佔用
+    echo   端口 18002 (後端) 已被佔用
 )
 
-netstat -ano | findstr :5432 >nul 2>&1
+netstat -ano | findstr :18001 >nul 2>&1
 if %errorlevel% equ 0 (
-    echo   端口 5432 (資料庫) 已被佔用
+    echo   端口 18001 (資料庫) 已被佔用
 )
 
 echo  端口檢查完成
@@ -101,7 +101,7 @@ echo ═════════════════════════
 echo.
 echo  下一步：
 echo    1. 執行: .\scripts\start-system.bat
-echo    2. 開啟瀏覽器: http://localhost:5173
+echo    2. 開啟瀏覽器: http://localhost:18003/index.html
 echo    3. 測試上傳功能和查詢功能
 echo.
 echo 如有問題，請參考 DEPLOYMENT_GUIDE.md

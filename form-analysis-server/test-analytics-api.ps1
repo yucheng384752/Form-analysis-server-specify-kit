@@ -1,4 +1,4 @@
-# Analytics API 完整測試腳本
+﻿# Analytics API 完整測試腳本
 # 測試日期: 2026-01-12
 
 param(
@@ -8,6 +8,22 @@ param(
 $ErrorActionPreference = "Continue"
 $testResults = @()
 $testStartTime = Get-Date
+
+# Get Tenant (required for /api/* endpoints)
+Write-Host "Getting Tenant..." -ForegroundColor Yellow
+try {
+    $tenants = Invoke-RestMethod -Uri "$BaseUrl/api/tenants" -Method Get
+    $tenants = @($tenants)
+    if (-not $tenants -or $tenants.Count -eq 0) {
+        throw "No tenants found"
+    }
+    $tenantId = $tenants[0].id
+    $script:TenantHeaders = @{ "X-Tenant-Id" = "$tenantId" }
+    Write-Host "Using Tenant ID: $tenantId" -ForegroundColor Gray
+} catch {
+    Write-Host "Failed to get tenant: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
 
 function Write-TestHeader {
     param($TestName)
@@ -42,7 +58,7 @@ function Test-ApiEndpoint {
     
     $startTime = Get-Date
     try {
-        $response = Invoke-WebRequest -Uri $Url -Method GET -UseBasicParsing -TimeoutSec 60
+        $response = Invoke-WebRequest -Uri $Url -Method GET -Headers $script:TenantHeaders -UseBasicParsing -TimeoutSec 60
         $duration = (Get-Date) - $startTime
         
         if ($response.StatusCode -eq 200) {
@@ -64,7 +80,7 @@ function Test-ApiEndpoint {
 # 測試 0: 健康檢查
 # ============================================
 Write-TestHeader "0. 健康檢查"
-$healthUrl = "$BaseUrl/api/v2/analytics/traceability/health"
+$healthUrl = "$BaseUrl/api/v2/analytics/health"
 $health = Test-ApiEndpoint -Url $healthUrl -TestName "健康檢查端點"
 
 if ($health) {
@@ -79,7 +95,7 @@ if ($health) {
 # 測試 1: 單 Server 呼叫單月內容 (9月)
 # ============================================
 Write-TestHeader "1. 單 Server 呼叫單月內容 (2025年9月)"
-$monthlyUrl = "$BaseUrl/api/v2/analytics/traceability/flatten/monthly?year=2025`&month=9"
+$monthlyUrl = "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025`&month=9"
 $monthlyResult = Test-ApiEndpoint -Url $monthlyUrl -TestName "單月查詢 (2025-09)"
 
 if ($monthlyResult) {
@@ -106,22 +122,23 @@ $concurrentStartTime = Get-Date
 
 for ($i = 1; $i -le 3; $i++) {
     $jobs += Start-Job -ScriptBlock {
-        param($url, $serverNum)
+        param($url, $serverNum, $headers)
         
         try {
             $startTime = Get-Date
-            $response = Invoke-WebRequest -Uri $url -Method GET -UseBasicParsing -TimeoutSec 60
+            $response = Invoke-WebRequest -Uri $url -Method GET -Headers $headers -UseBasicParsing -TimeoutSec 60
             $duration = (Get-Date) - $startTime
             
-            return @{
+            return [PSCustomObject]@{
                 ServerNum = $serverNum
                 StatusCode = $response.StatusCode
                 Duration = $duration.TotalSeconds
                 ContentLength = $response.Content.Length
                 Success = $true
+                Error = $null
             }
         } catch {
-            return @{
+            return [PSCustomObject]@{
                 ServerNum = $serverNum
                 StatusCode = 0
                 Duration = 0
@@ -130,7 +147,7 @@ for ($i = 1; $i -le 3; $i++) {
                 Error = $_.Exception.Message
             }
         }
-    } -ArgumentList $monthlyUrl, $i
+    } -ArgumentList $monthlyUrl, $i, $script:TenantHeaders
 }
 
 Write-Host "等待 3 個並發請求完成..." -ForegroundColor Yellow
@@ -157,7 +174,7 @@ if ($successCount -eq 3) {
 # ============================================
 Write-TestHeader "3. 超過限制筆數測試"
 # 由於實際資料可能不足,我們測試邏輯：查詢多個月份
-$overLimitUrl = "$BaseUrl/api/v2/analytics/traceability/flatten/monthly?year=2025`&month=1"
+$overLimitUrl = "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025`&month=1"
 Write-Host "註: 實際測試需要大量資料，此處測試 API 回應邏輯" -ForegroundColor Yellow
 $overLimitResult = Test-ApiEndpoint -Url $overLimitUrl -TestName "大量資料月份查詢"
 
@@ -169,7 +186,7 @@ if ($overLimitResult -and $overLimitResult.count -gt 1500) {
 # 測試 4: Rate Limiting 測試
 # ============================================
 Write-TestHeader "4. Rate Limiting 測試 (30 req/min)"
-$rateLimitUrl = "$BaseUrl/api/v2/analytics/traceability/health"
+$rateLimitUrl = "$BaseUrl/api/v2/analytics/health"
 $rateLimitCount = 35
 $rateLimitStart = Get-Date
 $rateLimitResults = @()
@@ -178,7 +195,7 @@ Write-Host "快速發送 $rateLimitCount 個請求..." -ForegroundColor Yellow
 
 for ($i = 1; $i -le $rateLimitCount; $i++) {
     try {
-        $response = Invoke-WebRequest -Uri $rateLimitUrl -Method GET -UseBasicParsing -TimeoutSec 5
+        $response = Invoke-WebRequest -Uri $rateLimitUrl -Method GET -Headers $script:TenantHeaders -UseBasicParsing -TimeoutSec 5
         $rateLimitResults += @{ RequestNum = $i; StatusCode = $response.StatusCode; Success = $true }
         Write-Host "." -NoNewline -ForegroundColor Green
     } catch {
@@ -209,8 +226,8 @@ if ($blocked -gt 0) {
 # 測試 5: 最小可呼叫內容 (空資料測試)
 # ============================================
 Write-TestHeader "5. 最小可呼叫內容 (空資料月份)"
-$emptyUrl = "$BaseUrl/api/v2/analytics/traceability/flatten/monthly?year=2099`&month=12"
-$emptyResult = Test-ApiEndpoint -Url $emptyUrl -TestName "空資料月份 (2099-12)"
+$emptyUrl = "$BaseUrl/api/v2/analytics/flatten/monthly?year=2050`&month=12"
+$emptyResult = Test-ApiEndpoint -Url $emptyUrl -TestName "空資料月份 (2050-12)"
 
 if ($emptyResult) {
     if ($emptyResult.count -eq 0 -and $emptyResult.has_data -eq $false -and $emptyResult.data.Count -eq 0) {
@@ -230,9 +247,9 @@ Write-TestHeader "6. 邊界測試"
 
 # 6.1 無效年份
 Write-Host "6.1 無效年份測試 (year=1900)" -ForegroundColor Yellow
-$invalidYearUrl = "$BaseUrl/api/v2/analytics/traceability/flatten/monthly?year=1900`&month=1"
+$invalidYearUrl = "$BaseUrl/api/v2/analytics/flatten/monthly?year=1900`&month=1"
 try {
-    $response = Invoke-WebRequest -Uri $invalidYearUrl -Method GET -UseBasicParsing -TimeoutSec 10
+    $response = Invoke-WebRequest -Uri $invalidYearUrl -Method GET -Headers $script:TenantHeaders -UseBasicParsing -TimeoutSec 10
     Write-TestResult -TestName "無效年份 (應拒絕)" -Status "FAIL" -Details "API 接受了無效年份 1900"
 } catch {
     $statusCode = if ($_.Exception.Response) { $_.Exception.Response.StatusCode.value__ } else { 0 }
@@ -245,9 +262,9 @@ try {
 
 # 6.2 無效月份
 Write-Host "6.2 無效月份測試 (month=13)" -ForegroundColor Yellow
-$invalidMonthUrl = "$BaseUrl/api/v2/analytics/traceability/flatten/monthly?year=2025`&month=13"
+$invalidMonthUrl = "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025`&month=13"
 try {
-    $response = Invoke-WebRequest -Uri $invalidMonthUrl -Method GET -UseBasicParsing -TimeoutSec 10
+    $response = Invoke-WebRequest -Uri $invalidMonthUrl -Method GET -Headers $script:TenantHeaders -UseBasicParsing -TimeoutSec 10
     Write-TestResult -TestName "無效月份 (應拒絕)" -Status "FAIL" -Details "API 接受了無效月份 13"
 } catch {
     $statusCode = if ($_.Exception.Response) { $_.Exception.Response.StatusCode.value__ } else { 0 }
@@ -260,9 +277,9 @@ try {
 
 # 6.3 缺少參數
 Write-Host "6.3 缺少參數測試 (無 month)" -ForegroundColor Yellow
-$missingParamUrl = "$BaseUrl/api/v2/analytics/traceability/flatten/monthly?year=2025"
+$missingParamUrl = "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025"
 try {
-    $response = Invoke-WebRequest -Uri $missingParamUrl -Method GET -UseBasicParsing -TimeoutSec 10
+    $response = Invoke-WebRequest -Uri $missingParamUrl -Method GET -Headers $script:TenantHeaders -UseBasicParsing -TimeoutSec 10
     Write-TestResult -TestName "缺少參數 (應拒絕)" -Status "FAIL" -Details "API 接受了缺少 month 參數"
 } catch {
     $statusCode = if ($_.Exception.Response) { $_.Exception.Response.StatusCode.value__ } else { 0 }
@@ -280,7 +297,7 @@ if ($monthlyResult -and $monthlyResult.data.Count -gt 0) {
     $testLotNo = $monthlyResult.data[0].'LOT NO.'
     if ($testLotNo) {
         # 構造假設的 product_id (實際需根據資料結構調整)
-        $productIdUrl = "$BaseUrl/api/v2/analytics/traceability/flatten?product_ids=$testLotNo"
+        $productIdUrl = "$BaseUrl/api/v2/analytics/flatten?product_ids=$testLotNo"
         $productIdResult = Test-ApiEndpoint -Url $productIdUrl -TestName "Product ID 查詢"
     } else {
         Write-TestResult -TestName "Product ID 查詢" -Status "SKIP" -Details "無可用的 product_id"

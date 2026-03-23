@@ -76,17 +76,18 @@ VALID_SLITTING_MACHINES = [
 # 用於 API 回應時提供使用者友善的顯示名稱
 # 資料庫只儲存數字，顯示時透過此映射轉換
 SLITTING_MACHINE_DISPLAY_NAMES = {
-    1: "分1Points 1",
-    2: "分2Points 2",
+    1: "分條1",
+    2: "分條2",
 }
 
 
 # ==================== 輔助函數 ====================
 
+
 def get_material_list() -> list[str]:
     """
     取得有效的材料清單
-    
+
     Returns:
         list[str]: 材料代碼清單
     """
@@ -96,7 +97,7 @@ def get_material_list() -> list[str]:
 def get_slitting_machine_list() -> list[int]:
     """
     取得有效的分條機編號清單
-    
+
     Returns:
         list[int]: 分條機編號清單
     """
@@ -106,30 +107,24 @@ def get_slitting_machine_list() -> list[int]:
 def get_slitting_machine_display_name(machine_number: int) -> str:
     """
     取得分條機的顯示名稱
-    
+
     Args:
         machine_number: 分條機編號
-        
+
     Returns:
         str: 顯示名稱，如果找不到則返回預設格式
     """
-    return SLITTING_MACHINE_DISPLAY_NAMES.get(
-        machine_number,
-        f"分條機 {machine_number}"
-    )
+    return SLITTING_MACHINE_DISPLAY_NAMES.get(machine_number, "未知")
 
 
 def get_slitting_machines_with_display_names() -> list[dict]:
     """
     取得分條機清單（包含顯示名稱）
-    
+
     Returns:
         list[dict]: 包含 number 和 display_name 的字典清單
     """
     return [
-        {
-            "number": num,
-            "display_name": get_slitting_machine_display_name(num)
-        }
+        {"number": num, "display_name": get_slitting_machine_display_name(num)}
         for num in VALID_SLITTING_MACHINES
     ]

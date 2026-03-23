@@ -99,7 +99,7 @@ updated_at: Mapped[datetime] = mapped_column(
 **下一步**:
 1. 執行資料庫遷移 SQL
 2. 部署更新後的程式碼
-3. 驗證服務運行
+3. 驗證服務執行
 4. 測試 P3 檔案匯入功能
 
 ---

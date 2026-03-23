@@ -1,5 +1,9 @@
 # 檔案上傳功能測試報告
 
+> ⚠️ 歷史/Deprecated 文件：本報告（2025-11）是針對舊版 `/api/upload` 流程的測試紀錄，僅供問題回溯與相容性參考。
+> - 新開發/新腳本請改用 v2 import jobs（create → poll → errors → commit）。
+> - 參考文件：[dev-guides/USER_UPLOAD_FLOW.md](../../dev-guides/USER_UPLOAD_FLOW.md)
+
 ## 問題診斷結果 
 
 ### 原始問題
@@ -58,7 +62,7 @@ curl.exe -X POST -F "file=@P1_2411012_04_test.csv" http://localhost:8000/api/upl
 
 ### 系統狀態確認
 
-1. **Docker 容器**： 正常運行
+1. **Docker 容器**： 正常執行
 2. **後端 API**： 完全正常
 3. **資料庫連接**： 正常
 4. **日誌記錄**： 詳細記錄所有操作
@@ -109,4 +113,4 @@ curl.exe -X POST -F "file=@P1_2411012_04_test.csv" http://localhost:8000/api/upl
 ---
 *測試完成於：2025-11-09 23:45*
 *測試者：GitHub Copilot*
-*系統狀態：完全正常運行* 
+*系統狀態：完全正常執行* 

@@ -192,7 +192,7 @@ HTTP 404 Not Found
 ```
 
 **已驗證項目**:
--  容器正在運行 (Up 4 hours)
+-  容器正在執行 (Up 4 hours)
 -  容器狀態顯示 Healthy
 -  Vite 開發伺服器已啟動
 
@@ -694,7 +694,7 @@ VITE_API_URL=http://localhost:18002
 
 ### 成功項目總結
 1.  Docker 映像成功重建，包含所有新程式碼
-2.  所有容器健康運行，無啟動錯誤
+2.  所有容器健康執行，無啟動錯誤
 3.  後端 API 正常運作，可存取文檔
 4.  進階搜尋 API 正常回應
 5.  production_date_extractor 成功整合到後端

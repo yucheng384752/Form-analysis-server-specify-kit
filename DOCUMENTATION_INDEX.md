@@ -5,25 +5,25 @@
 ## P0：入口（先看）
 
 - [README.md](README.md)（專案總覽/快速入口）
+- [README_DEMO.md](README_DEMO.md)（Demo 環境使用說明）
 - [getting-started/QUICK_START.md](getting-started/QUICK_START.md)（最快啟動）
 - [getting-started/MANUAL_STARTUP_GUIDE.md](getting-started/MANUAL_STARTUP_GUIDE.md)（手動啟動流程）
 - [getting-started/POSTGRESQL_SETUP.md](getting-started/POSTGRESQL_SETUP.md)（資料庫安裝/設定）
 - [getting-started/DBEAVER_CONNECTION_GUIDE.md](getting-started/DBEAVER_CONNECTION_GUIDE.md)（DB GUI 連線）
+- [getting-started/REGISTRATION_FLOW.md](getting-started/REGISTRATION_FLOW.md)（外部上線版：初始化/登入/tenant/API key）
+
+## P0：Demo/Dev 環境分離（2026-03 新增）
+
+- [dev-guides/DUAL_ENV_STARTUP_CHECKLIST.md](dev-guides/DUAL_ENV_STARTUP_CHECKLIST.md)（雙環境啟動檢查清單）
+- [dev-guides/ENV_SEPARATION_OPERATIONS_GUIDE.md](dev-guides/ENV_SEPARATION_OPERATIONS_GUIDE.md)（環境分離操作指南）
+- [scripts/start-demo.bat](scripts/start-demo.bat)（Demo 啟動腳本，Port 181xx）
+- [scripts/start-dev.bat](scripts/start-dev.bat)（Dev 啟動腳本，Port 180xx）
 
 ## P1：開發指南（規格/設計/待辦）
 
-- [dev-guides/PROJECT_OVERVIEW.md](dev-guides/PROJECT_OVERVIEW.md)
-- [dev-guides/PRD.md](dev-guides/PRD.md)
-- [dev-guides/PRD2.md](dev-guides/PRD2.md)
-- [dev-guides/API_DESIGN_EXPLANATION.md](dev-guides/API_DESIGN_EXPLANATION.md)
-- [dev-guides/NEW_FORM_ADAPTATION_GUIDE.md](dev-guides/NEW_FORM_ADAPTATION_GUIDE.md)
-- [dev-guides/LOGGING_GUIDE.md](dev-guides/LOGGING_GUIDE.md)
-- [dev-guides/FRONTEND_DATE_DISPLAY_GUIDE.md](dev-guides/FRONTEND_DATE_DISPLAY_GUIDE.md)
-- [dev-guides/IMPLEMENTATION_PLAN_V2.md](dev-guides/IMPLEMENTATION_PLAN_V2.md)
-- [dev-guides/IMPLEMENTATION_PLAN_V2_1.md](dev-guides/IMPLEMENTATION_PLAN_V2_1.md)
-- [dev-guides/STARTUP_SCRIPT_FEATURES.md](dev-guides/STARTUP_SCRIPT_FEATURES.md)
-- [dev-guides/RESTRUCTURE_PLAN.md](dev-guides/RESTRUCTURE_PLAN.md)
-- [dev-guides/TODO_IN_20251229.md](dev-guides/TODO_IN_20251229.md)
+- [dev-guides/DB_SCHEMA_DIAGRAM.md](dev-guides/DB_SCHEMA_DIAGRAM.md)（DB Schema Diagram (ERD) + Data Flow）
+- [dev-guides/V2_IMPORT_JOBS_GUIDE.md](dev-guides/V2_IMPORT_JOBS_GUIDE.md)（v2 匯入主流程：create→poll→commit/errors）
+- [dev-guides/LEGACY_DEPRECATION_PLAN.md](dev-guides/LEGACY_DEPRECATION_PLAN.md)（P1/LEGACY：legacy endpoints 淘汰清單與時程）
 
 ## P1：服務內文件（form-analysis-server 子專案）
 
@@ -39,6 +39,9 @@
 ## P2：內部開發紀錄（可參考，但通常不是入口）
 
 - [dev-docs/README.md](dev-docs/README.md)
+
+### dev-docs/2025-01
+- [dev-docs/2025-01/0113-test-report.md](dev-docs/2025-01/0113-test-report.md)（Product_ID 解析與 P2 查詢優化測試報告）
 
 ### dev-docs/2025-11
 - [dev-docs/2025-11/LOG_AND_DATABASE_FIX_SUMMARY.md](dev-docs/2025-11/LOG_AND_DATABASE_FIX_SUMMARY.md)

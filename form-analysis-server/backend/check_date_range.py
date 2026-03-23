@@ -1,37 +1,20 @@
-"""檢查資料日期範圍"""
-import asyncio
-from app.core.database import init_db, get_db_context
-from sqlalchemy import select, func
-from app.models.p3_item import P3Item
-from app.models.p2_record import P2Record
+"""Backward-compatible shim.
 
-async def main():
-    await init_db()
-    
-    async with get_db_context() as db:
-        # P3 日期範圍
-        result = await db.execute(
-            select(
-                func.min(P3Item.production_date),
-                func.max(P3Item.production_date),
-                func.count(P3Item.id)
-            )
-        )
-        row = result.one()
-        print(f"P3 items: {row[2]} 筆")
-        print(f"  日期範圍: {row[0]} to {row[1]}")
-        
-        # P2 created_at 範圍
-        result2 = await db.execute(
-            select(
-                func.min(P2Record.created_at),
-                func.max(P2Record.created_at),
-                func.count(P2Record.id)
-            )
-        )
-        row2 = result2.one()
-        print(f"\nP2 records: {row2[2]} 筆")
-        print(f"  日期範圍: {row2[0]} to {row2[1]}")
+This script was archived to keep the backend root tidy.
+New location: scripts/manual/check_date_range.py
+"""
+
+from __future__ import annotations
+
+import runpy
+from pathlib import Path
+
+
+def main() -> int:
+    target = Path(__file__).resolve().parent / "scripts" / "manual" / "check_date_range.py"
+    runpy.run_path(str(target), run_name="__main__")
+    return 0
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(main())

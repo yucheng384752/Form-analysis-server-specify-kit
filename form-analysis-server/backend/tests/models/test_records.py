@@ -1,10 +1,11 @@
 import pytest
-import uuid
 from sqlalchemy.exc import IntegrityError
+
 from app.models.core.tenant import Tenant
 from app.models.p1_record import P1Record
 from app.models.p2_record import P2Record
 from app.models.p3_record import P3Record
+
 
 @pytest.mark.asyncio
 async def test_p1_record_creation(db_session, clean_db):
@@ -19,7 +20,7 @@ async def test_p1_record_creation(db_session, clean_db):
         tenant_id=tenant.id,
         lot_no_raw="1234567-01",
         lot_no_norm=123456701,
-        extras={"some": "data"}
+        extras={"some": "data"},
     )
     db_session.add(p1)
     await db_session.commit()
@@ -28,6 +29,7 @@ async def test_p1_record_creation(db_session, clean_db):
     assert p1.id is not None
     assert p1.tenant_id == tenant.id
     assert p1.lot_no_norm == 123456701
+
 
 @pytest.mark.asyncio
 async def test_p1_unique_constraint(db_session, clean_db):
@@ -41,11 +43,12 @@ async def test_p1_unique_constraint(db_session, clean_db):
 
     p1_b = P1Record(tenant_id=tenant.id, lot_no_raw="B", lot_no_norm=100)
     db_session.add(p1_b)
-    
+
     with pytest.raises(IntegrityError):
         await db_session.commit()
-    
+
     await db_session.rollback()
+
 
 @pytest.mark.asyncio
 async def test_p2_record_creation(db_session, clean_db):
@@ -58,12 +61,13 @@ async def test_p2_record_creation(db_session, clean_db):
         lot_no_raw="1234567-02",
         lot_no_norm=123456702,
         winder_number=1,
-        extras={}
+        extras={},
     )
     db_session.add(p2)
     await db_session.commit()
-    
+
     assert p2.winder_number == 1
+
 
 @pytest.mark.asyncio
 async def test_p3_record_creation(db_session, clean_db):
@@ -78,9 +82,9 @@ async def test_p3_record_creation(db_session, clean_db):
         production_date_yyyymmdd=20230101,
         machine_no="M1",
         mold_no="Mold1",
-        extras={}
+        extras={},
     )
     db_session.add(p3)
     await db_session.commit()
-    
+
     assert p3.production_date_yyyymmdd == 20230101

@@ -172,9 +172,15 @@ POST /api/production/lots
     "phase": "P1"
 }
 
-# 2. 上傳P1資料
-POST /api/upload/csv/P1/2503033_01
-[CSV檔案]
+# 2. 匯入 P1 資料（v2；推薦）
+POST /api/v2/import/jobs
+Headers:
+    X-Tenant-Id: <TENANT_ID>
+    X-API-Key: <YOUR_API_KEY>   # 若 AUTH_MODE=api_key
+Multipart:
+    table_code=P1
+    allow_duplicate=false
+    files=@P1_2503033_01.csv
 
 # 3. 查詢完整資料
 GET /api/production/lots/2503033_01

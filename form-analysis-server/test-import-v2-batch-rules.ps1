@@ -1,8 +1,17 @@
 # Test Import V2 Batch Rules & Deduplication
 
 $ApiBase = "http://localhost:18002"
-$FileCSV = "test_p3.csv"
-$FileTXT = "test_dummy.txt"
+$FileCSV = Join-Path $PSScriptRoot "test-results/test_p3.csv"
+if (-not (Test-Path $FileCSV)) {
+    $FileCSV = Join-Path $PSScriptRoot "test_p3.csv"
+}
+
+$FileTXT = Join-Path $PSScriptRoot "test-results/test_dummy.txt"
+try {
+    "dummy" | Set-Content -Path $FileTXT -Encoding UTF8
+} catch {
+    # ignore
+}
 
 Write-Host "Testing Import V2 Batch Rules & Deduplication..." -ForegroundColor Cyan
 

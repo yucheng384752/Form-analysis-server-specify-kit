@@ -24,6 +24,63 @@ body {
   margin-bottom: 1.5rem;
 }
 
+.app-lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 14px;
+}
+
+.app-a11y {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 14px;
+}
+
+.app-a11y-label {
+  opacity: 0.85;
+  color: #7b8794;
+}
+
+.app-a11y-select {
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  padding: 0 0.8rem;
+  font-size: 0.85rem;
+  color: #111827;
+}
+
+.app-lang-label {
+  opacity: 0.85;
+  color: #7b8794;
+}
+
+.app-lang-tabs {
+  display: inline-flex;
+  background-color: #eef2f7;
+  border-radius: 999px;
+  padding: 0.25rem;
+}
+
+.app-lang-tab {
+  border: none;
+  background: transparent;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: #7b8794;
+}
+
+.app-lang-tab.is-active {
+  background-color: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+}
+
 .app-title {
   margin: 0 0 0.25rem;
   font-size: 1.6rem;
@@ -163,6 +220,7 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 40;
+  padding: 16px;
 }
 
 .modal-card {
@@ -171,6 +229,9 @@ body {
   padding: 1.25rem 1.5rem 1rem;
   max-width: 420px;
   width: 100%;
+  max-height: min(88vh, 760px);
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.4);
 }
 
@@ -182,6 +243,8 @@ body {
 .modal-body {
   font-size: 0.9rem;
   color: #4b5563;
+  overflow: auto;
+  min-height: 0;
 }
 
 .modal-footer {
@@ -189,6 +252,9 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-top: 0.5rem;
+  border-top: 1px solid #e5e7eb;
 }
 
 /* Progress */

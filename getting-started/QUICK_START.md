@@ -1,5 +1,8 @@
 # Form Analysis API - 一鍵啟動與驗證指令摘要
 
+> 重要：本專案的「初始化/登入」= 建立/選擇 tenant（租戶）+（可選）啟用 API key。
+> 詳細流程請看：getting-started/REGISTRATION_FLOW.md
+
 ##  一鍵啟動命令
 
 ### Docker Compose 啟動
@@ -23,13 +26,28 @@ docker compose logs -f
 
 # 只啟動服務，跳過測試
 .\quick-start.ps1 -SkipTests
+
+# (可選，會清空 DB) 移除 Docker volumes
+.\quick-start.ps1 -ResetDb
 ```
 
 **Linux/macOS**
 ```bash
 chmod +x quick-start.sh
 ./quick-start.sh
+
+# (可選，會清空 DB) 移除 Docker volumes
+./quick-start.sh --reset-db
 ```
+
+##  保留資料庫資料（建議）
+
+如果你只是要重啟系統、並且希望保留 PostgreSQL 內的資料，請使用：
+
+- `scripts/start-system.ps1`
+- `scripts/start-system.bat`
+
+這兩個腳本會 `docker-compose down --remove-orphans`（不會移除 volumes），所以不會清空 DB。
 
 ## 🩺 健康檢查驗證
 
@@ -66,7 +84,10 @@ curl -f http://localhost:18002/healthz/detailed
 }
 ```
 
-##  檔案上傳與驗證流程
+##  匯入流程（建議：v2 import jobs）
+
+> 注意：在多租戶模式下，`/api/*` 端點通常需要 `X-Tenant-Id`。
+> 你可以先用 `GET /api/tenants` 取得 tenant id，或在前端「登入」頁籤完成選擇。
 
 ### 1. 創建測試 CSV 檔案
 
@@ -82,70 +103,54 @@ lot_no,product_name,quantity,production_date
 EOF
 ```
 
-### 2. 上傳檔案
+### 2. 建立匯入 job（上傳檔案）
 ```bash
+TENANT_ID="<your-tenant-id>"
+
 curl -X POST \
-     -F "file=@test_upload.csv" \
-     http://localhost:18002/api/upload
+  -H "X-Tenant-Id: $TENANT_ID" \
+  -F "table_code=P1" \
+  -F "allow_duplicate=false" \
+  -F "files=@test_upload.csv" \
+  http://localhost:18002/api/v2/import/jobs
 ```
 
-**成功回應範例：**
+**成功回應範例（節錄）：**
 ```json
 {
-  "success": true,
-  "message": "檔案上傳成功",
-  "file_id": "550e8400-e29b-41d4-a716-446655440000",
-  "file_name": "test_upload.csv",
-  "total_rows": 5,
-  "has_errors": false
+  "id": "<JOB_ID>",
+  "batch_id": "<BATCH_ID>",
+  "status": "PENDING",
+  "total_files": 1
 }
 ```
 
-### 3. 內聯 CSV 上傳 (使用 --form file=@-)
+### 3. 查詢 job 狀態（直到 READY / FAILED）
+```bash
+JOB_ID="<JOB_ID>"
+
+curl -H "X-Tenant-Id: $TENANT_ID" \
+  "http://localhost:18002/api/v2/import/jobs/$JOB_ID"
+```
+
+### 4. 查錯誤（如果有）
+```bash
+curl -H "X-Tenant-Id: $TENANT_ID" \
+  "http://localhost:18002/api/v2/import/jobs/$JOB_ID/errors"
+```
+
+### 5. commit（寫入 v2 tables）
 ```bash
 curl -X POST \
-     -H "Content-Type: multipart/form-data" \
-     --form 'file=@-;filename=inline.csv;type=text/csv' \
-     http://localhost:18002/api/upload << 'EOF'
-lot_no,product_name,quantity,production_date
-7777777_01,內聯產品A,10,2024-02-01
-8888888_02,內聯產品B,20,2024-02-02
-9999999_03,內聯產品C,30,2024-02-03
-1111111_04,內聯產品D,40,2024-02-04
-2222222_05,內聯產品E,50,2024-02-05
-EOF
+  -H "X-Tenant-Id: $TENANT_ID" \
+  "http://localhost:18002/api/v2/import/jobs/$JOB_ID/commit"
 ```
 
-### 4. 下載錯誤報告（如果有錯誤）
-```bash
-# 使用上傳回應中的 file_id
-curl "http://localhost:18002/api/errors.csv?file_id=550e8400-e29b-41d4-a716-446655440000"
-```
-
-**錯誤報告 CSV 格式：**
-```csv
-row,column,value,error
-2,lot_no,123456,"格式錯誤：應為 7digits_2digits 格式"
-3,product_name,"","產品名稱不能為空"
-4,quantity,-10,"數量不能為負數"
-5,production_date,2024-13-45,"日期格式錯誤：應為 YYYY-MM-DD"
-```
-
-### 5. 確認資料匯入
-```bash
-curl -X POST \
-     -H "Content-Type: application/json" \
-     -d '{"file_id":"550e8400-e29b-41d4-a716-446655440000"}' \
-     http://localhost:18002/api/import
-```
-
-**成功匯入回應：**
+**成功回應（節錄）：**
 ```json
 {
-  "success": true,
-  "message": "資料匯入完成",
-  "imported_rows": 5,
-  "failed_rows": 0
+  "id": "<JOB_ID>",
+  "status": "COMPLETED"
 }
 ```
 
@@ -170,20 +175,22 @@ chmod +x test-api.sh
 # 1. 健康檢查
 curl -f http://localhost:18002/healthz
 
-# 2. 上傳測試檔案
-FILE_ID=$(curl -s -X POST -F "file=@test_upload.csv" http://localhost:18002/api/upload | \
-          grep -o '"file_id":"[^"]*"' | cut -d'"' -f4)
+# 2. 建立 v2 匯入 job
+JOB_ID=$(curl -s -X POST \
+  -H "X-Tenant-Id: $TENANT_ID" \
+  -F "table_code=P1" \
+  -F "allow_duplicate=false" \
+  -F "files=@test_upload.csv" \
+  http://localhost:18002/api/v2/import/jobs | \
+  grep -o '"id":"[^"]*"' | head -n 1 | cut -d'"' -f4)
 
-echo "File ID: $FILE_ID"
+echo "Job ID: $JOB_ID"
 
-# 3. 檢查錯誤（如果有）
-curl "http://localhost:18002/api/errors.csv?file_id=$FILE_ID"
+# 3. 查錯誤（如果有）
+curl -H "X-Tenant-Id: $TENANT_ID" "http://localhost:18002/api/v2/import/jobs/$JOB_ID/errors"
 
-# 4. 匯入資料
-curl -X POST \
-     -H "Content-Type: application/json" \
-     -d "{\"file_id\":\"$FILE_ID\"}" \
-     http://localhost:18002/api/import
+# 4. commit
+curl -X POST -H "X-Tenant-Id: $TENANT_ID" "http://localhost:18002/api/v2/import/jobs/$JOB_ID/commit"
 
 # 5. 清理
 rm test_upload.csv
@@ -196,6 +203,34 @@ rm test_upload.csv
 - **後端 API**: http://localhost:18002
 - **API 文件**: http://localhost:18002/docs
 - **ReDoc 文件**: http://localhost:18002/redoc
+
+## 登入 / 初始化（Tenant + API key）
+
+第一次啟動後，建議依序做：
+
+1) 讓前端自動建立/選擇 tenant（或用 API 手動建立）
+2)（可選）建立 tenant-bound API key
+3)（可選）啟用 `AUTH_MODE=api_key` 並讓前端送 `X-API-Key`
+
+完整說明與常見問題：getting-started/REGISTRATION_FLOW.md
+
+### 註冊頁（UI）入口
+
+開啟前端 `http://localhost:18003`，依序使用：
+
+- 「初始化」：第一次建立 Tenant / 建立第一個 tenant admin（需要 admin key，通常由內部維運）
+- 「登入」：選擇 Tenant、帳密登入取得 API key
+- （可選）「管理者」：日常 CRUD（Tenant / Tenant users）
+
+「登入」頁籤可：
+
+- 保存 / 清除 API key（localStorage）
+- 刷新 tenants 列表並選擇 tenant
+
+「初始化」頁籤可：
+
+- 以 admin key 建立/選擇 tenant（空資料庫 bootstrap）
+- 建立 tenant 使用者 / tenant 管理者（role=admin）
 
 ### 前端環境配置
 
@@ -240,8 +275,8 @@ CORS_ORIGINS=http://localhost:18003,http://localhost:3000,http://127.0.0.1:18003
 curl -X OPTIONS \
      -H "Origin: http://localhost:18003" \
      -H "Access-Control-Request-Method: POST" \
-     -H "Access-Control-Request-Headers: Content-Type" \
-     http://localhost:18002/api/upload
+  -H "Access-Control-Request-Headers: Content-Type,X-Tenant-Id" \
+  http://localhost:18002/api/v2/import/jobs
 ```
 
 ##  常用除錯指令
@@ -305,7 +340,7 @@ FRONTEND_PORT=18003
 
 ### Docker 權限問題
 ```bash
-# 確保 Docker 正在運行
+# 確保 Docker 正在執行
 docker info
 
 # 重啟 Docker Desktop（Windows）

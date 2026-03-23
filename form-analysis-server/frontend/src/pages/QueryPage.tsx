@@ -1,5 +1,7 @@
 // src/pages/QueryPage.tsx
 import React, { useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
+import { useToast } from "../components/common/ToastContext";
 import { Modal } from "../components/common/Modal";
 import { AdvancedSearch, AdvancedSearchParams } from "../components/AdvancedSearch";
 import { EditRecordModal } from "../components/EditRecordModal";
@@ -7,6 +9,8 @@ import "../styles/query-page.css";
 
 // 資料類型枚舉
 type DataType = 'P1' | 'P2' | 'P3';
+
+const TENANT_STORAGE_KEY = "form_analysis_tenant_id";
 
 interface QueryRecord {
   id: string;
@@ -24,6 +28,7 @@ interface QueryRecord {
   // P2專用欄位
   slitting_machine_number?: number;
   winder_number?: number;
+  winder_numbers?: number[];
   sheet_width?: number;
   thickness1?: number;
   thickness2?: number;
@@ -57,7 +62,83 @@ interface QueryResponse {
   records: QueryRecord[];
 }
 
+const normalizeMaybeNumber = (v: any): number | null => {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  const s = String(v).trim();
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+};
+
+const getP2RowWinderNumber = (row: any): number | null => {
+  if (!row || typeof row !== 'object') return null;
+  return (
+    normalizeMaybeNumber(row.winder_number) ??
+    normalizeMaybeNumber(row['winder_number']) ??
+    normalizeMaybeNumber(row['Winder number']) ??
+    normalizeMaybeNumber(row['Winder Number'])
+  );
+};
+
+const mergeP2RecordsForLotNo = (records: QueryRecord[], lotNo: string): QueryRecord[] => {
+  if (!lotNo) return records;
+
+  const isTarget = (r: QueryRecord) => r?.data_type === 'P2' && String(r?.lot_no || '') === lotNo;
+  const p2Records = records.filter(isTarget);
+  if (p2Records.length <= 1) return records;
+
+  const mergedRows: any[] = [];
+  for (const r of p2Records) {
+    const rows = (r as any)?.additional_data?.rows;
+    if (Array.isArray(rows)) {
+      for (const row of rows) {
+        if (row && typeof row === 'object' && !Array.isArray(row)) {
+          mergedRows.push(row);
+        }
+      }
+    }
+  }
+
+  // 依 winder_number 做穩定排序（有的就排前面，沒有就維持原順序）。
+  const mergedRowsSorted = mergedRows
+    .map((row, idx) => ({ row, idx, w: getP2RowWinderNumber(row) }))
+    .sort((a, b) => {
+      if (a.w === null && b.w === null) return a.idx - b.idx;
+      if (a.w === null) return 1;
+      if (b.w === null) return -1;
+      if (a.w !== b.w) return a.w - b.w;
+      return a.idx - b.idx;
+    })
+    .map(x => x.row);
+
+  // 用第一筆 record 當 base，把 rows 合併進去；避免誤導，清掉會「每 winder 不同」的欄位。
+  const base = { ...p2Records[0] };
+  (base as any).winder_number = undefined;
+  (base as any).slitting_machine_number = undefined;
+  base.additional_data = {
+    ...(base.additional_data || {}),
+    rows: mergedRowsSorted,
+  };
+
+  const out: QueryRecord[] = [];
+  let inserted = false;
+  for (const r of records) {
+    if (isTarget(r)) {
+      if (!inserted) {
+        out.push(base);
+        inserted = true;
+      }
+      continue;
+    }
+    out.push(r);
+  }
+  return out;
+};
+
 export function QueryPage() {
+  const { t } = useTranslation();
+  const { showToast } = useToast();
   // 搜尋相關狀態
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchPerformed, setSearchPerformed] = useState(false);
@@ -76,18 +157,42 @@ export function QueryPage() {
   const [detailRecord, setDetailRecord] = useState<QueryRecord | null>(null);
   const [editRecord, setEditRecord] = useState<QueryRecord | null>(null);
   const [tenantId, setTenantId] = useState<string>("");
+
+  const effectiveTenantId = tenantId || window.localStorage.getItem(TENANT_STORAGE_KEY) || ''
   
   // 表格排序狀態: { 'recordId-tableType': { column: 'columnName', direction: 'asc'|'desc' } }
   const [tableSortState, setTableSortState] = useState<{ [key: string]: { column: string; direction: 'asc' | 'desc' } }>({});
 
   React.useEffect(() => {
-    fetch('/api/tenants')
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.length > 0) setTenantId(data[0].id);
-      })
-      .catch(err => console.error("Failed to fetch tenants", err));
+    const storedTenantId = window.localStorage.getItem(TENANT_STORAGE_KEY);
+    if (storedTenantId) {
+      setTenantId(storedTenantId);
+    }
   }, []);
+
+  const mergeTenantHeaders = (headers?: HeadersInit): HeadersInit => {
+    const tenantHeaders: Record<string, string> = effectiveTenantId ? { 'X-Tenant-Id': effectiveTenantId } : {};
+
+    if (!headers) return tenantHeaders;
+    if (headers instanceof Headers) {
+      const merged = new Headers(headers);
+      for (const [k, v] of Object.entries(tenantHeaders)) merged.set(k, v);
+      return merged;
+    }
+    if (Array.isArray(headers)) {
+      const mergedObj: Record<string, string> = { ...tenantHeaders };
+      for (const [k, v] of headers) mergedObj[String(k)] = String(v);
+      return mergedObj;
+    }
+    return { ...tenantHeaders, ...(headers as Record<string, string>) };
+  };
+
+  const fetchWithTenant = (input: RequestInfo | URL, init?: RequestInit) => {
+    return fetch(input, {
+      ...init,
+      headers: mergeTenantHeaders(init?.headers),
+    });
+  };
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -171,6 +276,43 @@ export function QueryPage() {
 
   // 輔助函數：格式化欄位值（處理多種 boolean 轉換和日期轉換）
   const formatFieldValue = (header: string, value: any): string => {
+    // 空值處理
+    if (value === null || value === undefined) return '-';
+
+    // 避免直接渲染物件導致 [object Object]
+    if (Array.isArray(value)) {
+      // 陣列內容可能是物件或原始值
+      const parts = value
+        .map((v) => {
+          if (v === null || v === undefined) return '';
+          if (typeof v === 'object') {
+            try {
+              return JSON.stringify(v);
+            } catch {
+              return String(v);
+            }
+          }
+          return String(v);
+        })
+        .filter((s) => s.trim().length > 0);
+      return parts.length ? parts.join(', ') : '-';
+    }
+
+    if (typeof value === 'object') {
+      // 常見包裝格式（避免直接顯示 [object Object]）
+      const obj: any = value;
+      for (const k of ['value', 'raw', 'text', 'display', 'name']) {
+        const v = obj?.[k];
+        if (v !== null && v !== undefined && typeof v !== 'object') {
+          return String(v);
+        }
+      }
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
     // 10Po 欄位的 boolean 轉換
     if (header === '10Po' || header === '10PO') {
       if (typeof value === 'boolean') {
@@ -230,10 +372,10 @@ export function QueryPage() {
     // P2 分條機編號轉換顯示名稱
     if (header === 'Slitting machine' || header === 'slitting machine' || header === 'slitting_machine_number') {
       if (value === 1 || value === '1') {
-        return '分1Points 1';
+        return t('query.p2.slittingMachineDisplay.points1');
       }
       if (value === 2 || value === '2') {
-        return '分2Points 2';
+        return t('query.p2.slittingMachineDisplay.points2');
       }
     }
 
@@ -292,48 +434,177 @@ export function QueryPage() {
       return value.toLocaleString();
     }
     
-    // 空值處理
-    return value || '-';
+    // 空字串處理
+    return value === '' ? '-' : String(value);
+  };
+
+  const formatP2SlittingTimeValue = (rawValue: any, productionDate?: any): string => {
+    if (rawValue === null || rawValue === undefined) return '-';
+    if (productionDate && typeof rawValue === 'string') {
+      const v = rawValue.trim();
+      const timeOnly = /^\d{1,2}:\d{2}(:\d{2})?$/.test(v);
+      const hasLeadingDate =
+        /^\d{3}[\/-]\d{1,2}[\/-]\d{1,2}/.test(v) ||
+        /^\d{4}-\d{2}-\d{2}/.test(v);
+      if (timeOnly && !hasLeadingDate) {
+        return `${formatFieldValue('production_date', productionDate)} ${v}`;
+      }
+    }
+    return formatFieldValue('分條時間', rawValue);
+  };
+
+  const getP2SlittingTimeForSummary = (record: QueryRecord): string | null => {
+    const additional = (record.additional_data || {}) as any;
+    const rows = Array.isArray(additional.rows) ? (additional.rows as any[]) : [];
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue;
+      const rawValue = row['分條時間'] ?? row['slitting time'] ?? row['slitting_time'];
+      if (rawValue === null || rawValue === undefined || String(rawValue).trim() === '') continue;
+      const formatted = formatP2SlittingTimeValue(rawValue, record.production_date);
+      return formatted === '-' ? null : formatted;
+    }
+    return null;
   };
 
   // 搜尋記錄 (支援基本搜尋和進階搜尋)
   const searchRecords = async (search: string, page: number = 1, advancedParams?: AdvancedSearchParams) => {
     setLoading(true);
+    // 每次搜尋預設收合（避免沿用上一次展開狀態）
+    setExpandedRecordId(null);
+    setCollapsedSections({});
     try {
       let apiUrl = '/api/v2/query/records';
+
+      const isLikelyExactLotNo = (value: string): boolean => {
+        // Typical lot pattern in this project: 6-8 digits + '_' + 2 digits (e.g. 2507173_02)
+        // Keep this strict so fuzzy search won't accidentally trigger P2 merge mode.
+        return /^\d{6,8}_\d{2}$/.test(value.trim());
+      };
+
+      const lotNoForMerge = (advancedParams?.lot_no || search || '').trim();
+      const canMergeP2LotNo =
+        isLikelyExactLotNo(lotNoForMerge) &&
+        (!advancedParams || !advancedParams.winder_number) &&
+        (!advancedParams?.data_type || advancedParams.data_type === 'P2');
+
+      // lot_no 查詢下，P2 可能會是一個 lot 多筆 records（每個 winder 一筆）。
+      // 為了讓前端能顯示「20 筆 items 明細」，這裡把 page_size 拉到上限並固定抓第 1 頁。
+      const effectivePage = canMergeP2LotNo ? 1 : page;
+      const effectivePageSize = canMergeP2LotNo ? (advancedParams ? 200 : 100) : pageSize;
+
       const params = new URLSearchParams({
-        page: page.toString(),
-        page_size: pageSize.toString()
+        page: effectivePage.toString(),
+        page_size: effectivePageSize.toString()
       });
       
       // 優先使用進階搜尋參數
       if (advancedParams) {
-        apiUrl = '/api/v2/query/records/advanced';
-        if (advancedParams.lot_no) params.append('lot_no', advancedParams.lot_no);
-        if (advancedParams.production_date_from) params.append('production_date_from', advancedParams.production_date_from);
-        if (advancedParams.production_date_to) params.append('production_date_to', advancedParams.production_date_to);
-        if (advancedParams.machine_no) params.append('machine_no', advancedParams.machine_no);
-        if (advancedParams.mold_no) params.append('mold_no', advancedParams.mold_no);
-        if (advancedParams.product_id) params.append('product_id', advancedParams.product_id);
-        if (advancedParams.specification) params.append('specification', advancedParams.specification);
-        if (advancedParams.winder_number) params.append('winder_number', advancedParams.winder_number);
-        if (advancedParams.data_type) params.append('data_type', advancedParams.data_type);
+        apiUrl = '/api/v2/query/records/dynamic';
+
+        type DynamicFilter = { field: string; op: string; value: any };
+
+        const filters: DynamicFilter[] = [];
+        if (advancedParams.lot_no) {
+          filters.push({ field: 'lot_no', op: 'contains', value: advancedParams.lot_no });
+        }
+
+        const dateFrom = (advancedParams.production_date_from || '').trim();
+        const dateTo = (advancedParams.production_date_to || '').trim();
+        if (dateFrom && dateTo) {
+          if (dateFrom === dateTo) {
+            filters.push({ field: 'production_date', op: 'eq', value: dateFrom });
+          } else {
+            filters.push({ field: 'production_date', op: 'between', value: [dateFrom, dateTo] });
+          }
+        }
+
+        if (advancedParams.machine_no && advancedParams.machine_no.length) {
+          filters.push({ field: 'machine_no', op: 'all_of', value: advancedParams.machine_no });
+        }
+        if (advancedParams.mold_no && advancedParams.mold_no.length) {
+          filters.push({ field: 'mold_no', op: 'all_of', value: advancedParams.mold_no });
+        }
+        if (advancedParams.product_id) {
+          filters.push({ field: 'product_id', op: 'contains', value: advancedParams.product_id });
+        }
+        if (advancedParams.specification && advancedParams.specification.length) {
+          filters.push({ field: 'specification', op: 'all_of', value: advancedParams.specification });
+        }
+        if (advancedParams.material && advancedParams.material.length) {
+          filters.push({ field: 'material', op: 'all_of', value: advancedParams.material });
+        }
+        if (advancedParams.winder_number) {
+          filters.push({ field: 'winder_number', op: 'eq', value: advancedParams.winder_number });
+        }
+        if (advancedParams.thickness_min || advancedParams.thickness_max) {
+          const a = advancedParams.thickness_min ? Number(advancedParams.thickness_min) : null;
+          const b = advancedParams.thickness_max ? Number(advancedParams.thickness_max) : null;
+          if (Number.isFinite(a) && Number.isFinite(b)) {
+            filters.push({ field: 'thickness', op: 'between', value: [a, b] });
+          } else if (Number.isFinite(a)) {
+            filters.push({ field: 'thickness', op: 'between', value: [a, a] });
+          } else if (Number.isFinite(b)) {
+            filters.push({ field: 'thickness', op: 'between', value: [b, b] });
+          }
+        }
+
+        const dataTypeRaw = (advancedParams.data_type || '').trim().toUpperCase();
+        const dataType = (dataTypeRaw === 'P1' || dataTypeRaw === 'P2' || dataTypeRaw === 'P3') ? dataTypeRaw : undefined;
+
+        const response = await fetchWithTenant(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data_type: dataType,
+            filters,
+            page: effectivePage,
+            page_size: effectivePageSize,
+          }),
+        });
+
+        if (response.ok) {
+          const data: QueryResponse = await response.json();
+
+          if (canMergeP2LotNo) {
+            const merged = mergeP2RecordsForLotNo(data.records, lotNoForMerge);
+            setRecords(merged);
+            setTotalCount(merged.length);
+            setCurrentPage(1);
+          } else {
+            setRecords(data.records);
+            setTotalCount(data.total_count);
+            setCurrentPage(data.page);
+          }
+          setSearchPerformed(true);
+        } else {
+          console.error('Error searching records:', response.status);
+        }
+
+        return;
       } else if (search) {
         params.append('lot_no', search);
       }
       
-      const response = await fetch(`${apiUrl}?${params}`);
+      const response = await fetchWithTenant(`${apiUrl}?${params}`);
       if (response.ok) {
         const data: QueryResponse = await response.json();
-        setRecords(data.records);
-        setTotalCount(data.total_count);
-        setCurrentPage(data.page);
+
+        if (canMergeP2LotNo) {
+          const merged = mergeP2RecordsForLotNo(data.records, lotNoForMerge);
+          setRecords(merged);
+          setTotalCount(merged.length);
+          setCurrentPage(1);
+        } else {
+          setRecords(data.records);
+          setTotalCount(data.total_count);
+          setCurrentPage(data.page);
+        }
         setSearchPerformed(true);
       } else {
-        console.error("搜尋記錄時出錯:", response.status);
+        console.error('Error searching records:', response.status);
       }
     } catch (error) {
-      console.error("搜尋記錄時出錯:", error);
+      console.error('Error searching records:', error);
     } finally {
       setLoading(false);
     }
@@ -341,10 +612,17 @@ export function QueryPage() {
 
   // 輔助函數：產生 P3 Row 的 Product ID
   const generateRowProductId = (record: QueryRecord, row: any): string => {
-    // 如果後端已經提供了 product_id，直接使用
-    if (row['product_id']) {
-      return row['product_id'];
-    }
+    const normalizeLotToken = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const s = String(value).trim();
+      if (!s) return '';
+      if (/^\d+(\.\d+)?$/.test(s)) {
+        const n = Number(s);
+        if (Number.isFinite(n)) return String(Math.trunc(n));
+      }
+      const m = s.match(/(\d{2,4})$/);
+      return m ? m[1] : s;
+    };
 
     // 1. 取得日期 (YYYYMMDD)
     let dateStr = '';
@@ -363,13 +641,23 @@ export function QueryPage() {
     }
 
     // 2. 機台
-    const machine = record.machine_no || row['machine'] || row['Machine'] || 'Unknown';
+    const machine = record.machine_no || row['Machine NO'] || row['Machine No'] || row['machine'] || row['Machine'] || 'Unknown';
 
     // 3. 模具號碼
-    const mold = record.mold_no || row['mold'] || row['Mold'] || 'Unknown';
+    const mold = record.mold_no || row['Mold NO'] || row['Mold No'] || row['mold'] || row['Mold'] || 'Unknown';
 
     // 4. Lot (優先使用 row 中的 lot 資訊)
-    const lot = row['lot'] || row['Lot'] || row['production_lot'] || row['Production Lot'] || row['lot_no'] || row['Lot No'] || '0';
+    const lotRaw = row['lot'] || row['Lot'] || row['production_lot'] || row['Production Lot'] || row['lot_no'] || row['Lot No'] || '0';
+    const lot = normalizeLotToken(lotRaw) || '0';
+
+    // 若後端已提供 product_id，僅在與 row 的 lot 一致時採用，避免 record-level fallback 蓋掉 row-level 值。
+    const providedId = String(row['product_id'] || '').trim();
+    if (providedId) {
+      const suffix = providedId.split('_').pop() || '';
+      if (!lot || suffix === lot) {
+        return providedId;
+      }
+    }
 
     return `${dateStr}_${machine}_${mold}_${lot}`;
   };
@@ -395,7 +683,7 @@ export function QueryPage() {
             // 剩下的前面部分是 Lot No
             baseLotNo = parts.slice(0, parts.length - 2).join('_');
             
-            console.log('從 P3_No 解析成功:', { p3No, baseLotNo, sourceWinder });
+            console.log('Parsed from P3_No:', { p3No, baseLotNo, sourceWinder });
           }
         }
       }
@@ -416,7 +704,7 @@ export function QueryPage() {
               if (!baseLotNo) {
                 baseLotNo = parts.slice(0, parts.length - 1).join('_');
               }
-              console.log('從 lot no 欄位解析成功:', { lotNoVal, baseLotNo, sourceWinder });
+              console.log('Parsed from lot no field:', { lotNoVal, baseLotNo, sourceWinder });
             }
           }
         }
@@ -448,25 +736,25 @@ export function QueryPage() {
       }
 
       if (!baseLotNo) {
-        alert('無法取得批號資訊');
+        showToast('error', t('query.errors.lotInfoMissing'));
         return;
       }
       
       if (!sourceWinder) {
-        alert('無法從 P3 資料中提取卷收機編號 (Winder Number)，無法進行關聯查詢。\n請確認 P3_No 格式 (Lot_Winder_Batch) 或欄位中包含 Winder 資訊。');
+        showToast('error', t('query.errors.winderMissing'));
         return;
       }
       
-      console.log('P3 關聯查詢執行:', {
+      console.log('P3 link search executing:', {
         baseLotNo,
         sourceWinder,
-        message: '使用解析出的批號 + winder_number 搜尋 P2'
+        message: 'Search P2 by parsed lot no + winder_number'
       });
       
       setLoading(true);
       
       // 使用新的追溯 API 獲取完整資料
-      const traceResponse = await fetch(
+      const traceResponse = await fetchWithTenant(
         `/api/traceability/winder/${encodeURIComponent(baseLotNo)}/${sourceWinder}`
       );
       
@@ -474,11 +762,19 @@ export function QueryPage() {
         // 如果追溯 API 失敗，嘗試回退到舊的查詢方式，或者直接報錯
         // 這裡我們假設追溯 API 應該要成功，如果 404 代表真的沒資料
         if (traceResponse.status === 404) {
-           alert(`未找到對應的 P2 記錄（Lot: ${baseLotNo}, Winder: ${sourceWinder}）`);
+            showToast('error', t('query.errors.p2NotFound', { lotNo: baseLotNo, winder: sourceWinder }));
            setLoading(false);
            return;
         }
-        throw new Error(`追溯查詢失敗: ${traceResponse.statusText}`);
+        showToast(
+          'error',
+          t('query.errors.traceFailedWithStatus', {
+            status: traceResponse.status,
+            statusText: traceResponse.statusText || String(traceResponse.status)
+          })
+        );
+        setLoading(false);
+        return;
       }
       
       const traceData = await traceResponse.json();
@@ -541,8 +837,8 @@ export function QueryPage() {
       }, 500);
       
     } catch (error: any) {
-      console.error('P3 關聯查詢失敗:', error);
-      alert(`查詢失敗: ${error.message || '未知錯誤'}`);
+      console.error('P3 link search failed:', error);
+      showToast('error', t('query.errors.searchFailedWithDetail', { detail: String(error?.message || '') || t('query.errors.unknownError') }));
       setLoading(false);
     }
   };
@@ -563,18 +859,18 @@ export function QueryPage() {
         limit: '10'
       });
       
-      const response = await fetch(`/api/v2/query/lots/suggestions?${params}`);
+      const response = await fetchWithTenant(`/api/v2/query/lots/suggestions?${params}`);
       if (response.ok) {
         const data: string[] = await response.json();
         setSuggestions(data);
         setShowSuggestions(data.length > 0);
       } else {
-        console.error("獲取建議時出錯:", response.status);
+        console.error('Error fetching suggestions:', response.status);
         setSuggestions([]);
         setShowSuggestions(false);
       }
     } catch (error) {
-      console.error("獲取建議時出錯:", error);
+      console.error('Error fetching suggestions:', error);
       setSuggestions([]);
       setShowSuggestions(false);
     } finally {
@@ -584,6 +880,11 @@ export function QueryPage() {
 
   // 處理基本搜尋
   const handleSearch = async () => {
+    if (!effectiveTenantId) {
+      showToast('error', t('query.noTenantWarning'));
+      return;
+    }
+
     const keyword = searchKeyword.trim();
     if (!keyword) return;
 
@@ -598,10 +899,10 @@ export function QueryPage() {
         setTotalCount(0);
         setSearchPerformed(false);
 
-        const res = await fetch(`/api/traceability/product/${encodeURIComponent(keyword)}`);
+        const res = await fetchWithTenant(`/api/traceability/product/${encodeURIComponent(keyword)}`);
         if (!res.ok) {
           if (res.status === 404) {
-            alert('查無此產品');
+            showToast('error', t('query.errors.productNotFound'));
             return;
           }
           const text = await res.text().catch(() => '');
@@ -612,8 +913,8 @@ export function QueryPage() {
         setTraceActiveTab('P3');
         scrollToTrace();
       } catch (e: any) {
-        console.error('Product ID 追溯查詢失敗:', e);
-        alert(`查詢失敗: ${e?.message || '未知錯誤'}`);
+        console.error('Product ID traceability failed:', e);
+        showToast('error', t('query.errors.searchFailedWithDetail', { detail: String(e?.message || '') || t('query.errors.unknownError') }));
       } finally {
         setLoading(false);
       }
@@ -629,6 +930,11 @@ export function QueryPage() {
   
   // 處理進階搜尋
   const handleAdvancedSearch = async (params: AdvancedSearchParams) => {
+    if (!effectiveTenantId) {
+      showToast('error', t('query.noTenantWarning'));
+      return;
+    }
+
     setAdvancedSearchParams(params);
     setSearchKeyword(''); // 清除基本搜尋關鍵字
     await searchRecords('', 1, params);
@@ -646,20 +952,24 @@ export function QueryPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchKeyword(value);
-    fetchSuggestions(value);
+    if (tenantId) fetchSuggestions(value);
   };
 
   // 處理建議點擊
   const handleSuggestionClick = (suggestion: string) => {
     setSearchKeyword(suggestion);
     setShowSuggestions(false);
+    if (!effectiveTenantId) {
+      showToast('error', t('query.noTenantWarning'));
+      return;
+    }
     searchRecords(suggestion);
   };
 
   // 處理輸入焦點
   const handleInputFocus = () => {
     if (searchKeyword.trim().length >= 1) {
-      fetchSuggestions(searchKeyword);
+      if (tenantId) fetchSuggestions(searchKeyword);
     }
   };
 
@@ -722,8 +1032,9 @@ export function QueryPage() {
     const multiplier = direction === 'asc' ? 1 : -1;
     
     return [...rows].sort((a, b) => {
-      const aVal = a[column];
-      const bVal = b[column];
+      const isP2WinderSort = tableType === 'p2' && column === '__winder_number__';
+      const aVal = isP2WinderSort ? getP2RowWinderNumber(a) : a[column];
+      const bVal = isP2WinderSort ? getP2RowWinderNumber(b) : b[column];
       
       // 處理 null/undefined
       if (aVal === null || aVal === undefined) return 1;
@@ -741,90 +1052,342 @@ export function QueryPage() {
     });
   };
 
-  // 分組資料的輔助函數
-  const groupDataByPrefix = (data: { [key: string]: any }) => {
-    const groups: { [key: string]: { [key: string]: any } } = {
-      actual_temp: {},
-      set_temp: {},
-      other: {}
-    };
-
-    Object.entries(data).forEach(([key, value]) => {
-      // 統一轉為小寫並移除空格進行判斷
-      const normalizedKey = key.toLowerCase().replace(/\s+/g, '_');
-      
-      if (normalizedKey.startsWith('actual_temp')) {
-        groups.actual_temp[key] = value;
-      } else if (normalizedKey.startsWith('set_temp')) {
-        groups.set_temp[key] = value;
-      } else {
-        groups.other[key] = value;
-      }
-    });
-
-    return groups;
-  };
-
-  // 渲染分組區塊
-  const renderGroupedSection = (
+  const renderCollapsibleSection = (
     recordId: string,
     title: string,
     sectionKey: string,
-    data: { [key: string]: any },
-    icon: string = "ℹ",
-    vertical: boolean = false
+    children: React.ReactNode,
+    icon: string = ""
   ) => {
     const isCollapsed = isSectionCollapsed(recordId, sectionKey);
-    const fieldCount = Object.keys(data).length;
-
     return (
       <div className="data-section" key={sectionKey}>
         <div className="section-header">
           <div className="section-title-wrapper">
-            <span className="section-icon">{icon}</span>
+            {icon ? <span className="section-icon">{icon}</span> : <span className="section-icon"></span>}
             <h5>{title}</h5>
-            <span className="field-count-badge">{fieldCount}</span>
           </div>
-          <button
-            className="btn-collapse"
-            onClick={() => toggleSection(recordId, sectionKey)}
-          >
-            {isCollapsed ? '展開' : '收起'}
+          <button className="btn-collapse" onClick={() => toggleSection(recordId, sectionKey)}>
+            {isCollapsed ? t('common.expand') : t('common.collapse')}
           </button>
         </div>
-        {!isCollapsed && (
-          <div className="section-content">
-            {vertical ? (
-              <table className="data-table data-table-vertical">
-                <tbody>
-                  {Object.entries(data).map(([key, value]) => (
-                    <tr key={key}>
-                      <th>{key}</th>
-                      <td>{typeof value === 'number' ? value.toLocaleString() : String(value)}</td>
-                    </tr>
+        {!isCollapsed && <div className="section-content">{children}</div>}
+      </div>
+    );
+  };
+
+  const getFlattenedAdditionalData = (additionalData: { [key: string]: any } | undefined) => {
+    if (!additionalData) return {} as { [key: string]: any };
+    let displayData: { [key: string]: any } = additionalData;
+    if (
+      displayData &&
+      (displayData as any).rows &&
+      Array.isArray((displayData as any).rows) &&
+      (displayData as any).rows.length > 0
+    ) {
+      const { rows, ...rest } = displayData as any;
+      const row0 = rows[0];
+      if (row0 && typeof row0 === 'object' && !Array.isArray(row0)) {
+        displayData = { ...rest, ...row0 };
+      } else {
+        displayData = { ...rest };
+      }
+    }
+    return displayData;
+  };
+
+  const getValueByKeyRegex = (data: { [key: string]: any }, regexes: RegExp[]): any => {
+    for (const [k, v] of Object.entries(data)) {
+      for (const re of regexes) {
+        if (re.test(k)) return v;
+      }
+    }
+    return undefined;
+  };
+
+  const formatCell = (value: any) => {
+    if (value === null || value === undefined) return '-';
+    const s = String(value).trim();
+    return s === '' || s === '-' ? '-' : s;
+  };
+
+  const renderP1CheckboxGroup = (
+    title: string,
+    options: string[],
+    selectedRaw: any
+  ) => {
+    const selected = selectedRaw === null || selectedRaw === undefined ? '' : String(selectedRaw).trim();
+    const normalizedSelected = selected.replace(/\s+/g, '').toLowerCase();
+    const matched = options.find((o) => o.replace(/\s+/g, '').toLowerCase() === normalizedSelected);
+    const otherValue = matched ? '' : selected;
+
+    return (
+      <div className="p1-paper-checkbox-group">
+        <div className="p1-paper-checkbox-title">{title}</div>
+        <div className="p1-paper-checkbox-options">
+          {options.map((o) => {
+            const isChecked = !!matched && o === matched;
+            return (
+              <div key={o} className={`p1-paper-checkbox ${isChecked ? 'is-checked' : ''}`}>
+                <span className="p1-paper-box" aria-hidden="true"></span>
+                <span className="p1-paper-checkbox-label">{o}</span>
+              </div>
+            );
+          })}
+          <div className={`p1-paper-checkbox ${otherValue ? 'is-checked' : ''}`}>
+            <span className="p1-paper-box" aria-hidden="true"></span>
+            <span className="p1-paper-checkbox-label">{t('common.other')}</span>
+            <span className="p1-paper-checkbox-other">{otherValue || ''}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderP1PaperLayout = (record: QueryRecord) => {
+    const data = getFlattenedAdditionalData(record.additional_data);
+
+    // Header fields
+    const specValue = getValueByKeyRegex(data, [/^specification$/i, /specification/i]) ?? record.product_name;
+    const materialValue = getValueByKeyRegex(data, [/^material$/i, /material/i]);
+    const startTime = getValueByKeyRegex(data, [/production\s*time.*start/i, /start\s*time/i, /\bstart\b.*time/i]);
+    const endTime = getValueByKeyRegex(data, [/production\s*time.*end/i, /end\s*time/i, /\bend\b.*time/i]);
+
+    // Extrusion temps C1..C16
+    const cCols = Array.from({ length: 16 }, (_, i) => i + 1);
+    const extrusionActual = cCols.map((i) =>
+      getValueByKeyRegex(data, [new RegExp(`^actual\\s*temp.*c${i}\\b`, 'i'), new RegExp(`^actual[_\\s]*temp.*c${i}\\b`, 'i')])
+    );
+    const extrusionSet = cCols.map((i) =>
+      getValueByKeyRegex(data, [new RegExp(`^set\\s*temp.*c${i}\\b`, 'i'), new RegExp(`^set[_\\s]*temp.*c${i}\\b`, 'i')])
+    );
+
+    // Dryer buckets A/B/C
+    const dryerCols = ['A', 'B', 'C'] as const;
+    const dryerActual = dryerCols.map((b) =>
+      getValueByKeyRegex(data, [new RegExp(`^actual\\s*temp.*${b}.*bucket`, 'i'), new RegExp(`^actual[_\\s]*temp.*${b}.*bucket`, 'i')])
+    );
+    const dryerSet = dryerCols.map((b) =>
+      getValueByKeyRegex(data, [new RegExp(`^set\\s*temp.*${b}.*bucket`, 'i'), new RegExp(`^set[_\\s]*temp.*${b}.*bucket`, 'i')])
+    );
+
+    // Extension wheel temps (Top/Mid/Bottom) -> (A/B/C)
+    const extCols = [
+      { key: 'Top', label: t('query.p1.paper.extWheel.top') },
+      { key: 'Mid', label: t('query.p1.paper.extWheel.mid') },
+      { key: 'Bottom', label: t('query.p1.paper.extWheel.bottom') },
+    ] as const;
+    const extActual = extCols.map((c) =>
+      getValueByKeyRegex(data, [new RegExp(`^actual\\s*temp.*${c.key}`, 'i'), new RegExp(`^actual[_\\s]*temp.*${c.key}`, 'i')])
+    );
+    const extSet = extCols.map((c) =>
+      getValueByKeyRegex(data, [new RegExp(`^set\\s*temp.*${c.key}`, 'i'), new RegExp(`^set[_\\s]*temp.*${c.key}`, 'i')])
+    );
+
+    // Production params (exclude 成品資料：Semi-finished/Weight)
+    const params = [
+      {
+        label: t('query.p1.paper.params.lineSpeed'),
+        value: getValueByKeyRegex(data, [/^line\s*speed/i, /^line_speed/i]),
+        unit: 'M/min',
+      },
+      {
+        label: t('query.p1.paper.params.screwPressure'),
+        value: getValueByKeyRegex(data, [/^screw\s*pressure/i, /^screw_pressure/i]),
+        unit: 'psi',
+      },
+      {
+        label: t('query.p1.paper.params.screwOutput'),
+        value: getValueByKeyRegex(data, [/^screw\s*output/i, /^screw_output/i]),
+        unit: '%',
+      },
+      {
+        label: t('query.p1.paper.params.leftPadThickness'),
+        value: getValueByKeyRegex(data, [/^left\s*pad\s*thickness/i, /^left_pad_thickness/i]),
+        unit: 'mm',
+      },
+      {
+        label: t('query.p1.paper.params.rightPadThickness'),
+        value: getValueByKeyRegex(data, [/^right\s*pad\s*thickness/i, /^right_pad_thickness/i]),
+        unit: 'mm',
+      },
+      {
+        label: t('query.p1.paper.params.current'),
+        value: getValueByKeyRegex(data, [/^current\s*\(a\)/i, /^current\(a\)/i, /^current$/i]),
+        unit: 'A',
+      },
+      {
+        label: t('query.p1.paper.params.extruderSpeed'),
+        value: getValueByKeyRegex(data, [/^extruder\s*speed/i, /^extruder_speed/i]),
+        unit: 'rpm',
+      },
+      {
+        label: t('query.p1.paper.params.quantitativePressure'),
+        value: getValueByKeyRegex(data, [/^quantitative\s*pressure/i, /^quantitative_pressure/i]),
+        unit: 'psi',
+      },
+      {
+        label: t('query.p1.paper.params.quantitativeOutput'),
+        value: getValueByKeyRegex(data, [/^quantitative\s*output/i, /^quantitative_output/i]),
+        unit: '%',
+      },
+      {
+        label: t('query.p1.paper.params.frame'),
+        value: getValueByKeyRegex(data, [/^frame/i, /^carriage/i]),
+        unit: 'cm',
+      },
+      {
+        label: t('query.p1.paper.params.filterPressure'),
+        value: getValueByKeyRegex(data, [/^filter\s*pressure/i, /^filter_pressure/i]),
+        unit: 'psi',
+      },
+    ];
+
+    return (
+      <div className="p1-paper">
+        <div className="p1-paper-header">
+          <div className="p1-paper-header-item">
+            <div className="p1-paper-header-label">{t('query.fields.productionDate')}</div>
+            <div className="p1-paper-header-value">{record.production_date ? formatFieldValue('production_date', record.production_date) : '-'}</div>
+          </div>
+          <div className="p1-paper-header-item">
+            <div className="p1-paper-header-label">{t('query.fields.lotNo')}</div>
+            <div className="p1-paper-header-value">{record.lot_no}</div>
+          </div>
+          <div className="p1-paper-header-item">
+            <div className="p1-paper-header-label">{t('query.p1.paper.productionTimeStart')}</div>
+            <div className="p1-paper-header-value">{formatCell(startTime)}</div>
+          </div>
+          <div className="p1-paper-header-item">
+            <div className="p1-paper-header-label">{t('query.p1.paper.productionTimeEnd')}</div>
+            <div className="p1-paper-header-value">{formatCell(endTime)}</div>
+          </div>
+        </div>
+
+        <div className="p1-paper-header">
+          {renderP1CheckboxGroup(t('query.p1.paper.specification'), ['0.30mm','0.32mm','0.33mm','0.35mm','0.40mm','0.44mm','0.45mm','0.50mm','0.60mm'], specValue)}
+          {renderP1CheckboxGroup(t('query.p1.paper.material'), ['H2','H8','H5'], materialValue)}
+        </div>
+
+        {renderCollapsibleSection(
+          record.id,
+          t('query.sections.extrusionConditions'),
+          'p1_extrusion_paper',
+          <div className="table-container">
+            <table className="p1-paper-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  {cCols.map((i) => (
+                    <th key={i}>C{i}</th>
                   ))}
-                </tbody>
-              </table>
-            ) : (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    {Object.keys(data).map(key => (
-                      <th key={key}>{key}</th>
-                    ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th>{t('query.p1.paper.actualTemp')}</th>
+                  {extrusionActual.map((v, idx) => (
+                    <td key={idx}>{formatCell(v)}</td>
+                  ))}
+                </tr>
+                <tr>
+                  <th>{t('query.p1.paper.setTemp')}</th>
+                  {extrusionSet.map((v, idx) => (
+                    <td key={idx}>{formatCell(v)}</td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {renderCollapsibleSection(
+          record.id,
+          t('query.p1.paper.sections.dryerTemps'),
+          'p1_dryer_paper',
+          <div className="table-container">
+            <table className="p1-paper-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>A</th>
+                  <th>B</th>
+                  <th>C</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th>{t('query.p1.paper.actualTemp')}</th>
+                  {dryerActual.map((v, idx) => (
+                    <td key={idx}>{formatCell(v)}</td>
+                  ))}
+                </tr>
+                <tr>
+                  <th>{t('query.p1.paper.setTemp')}</th>
+                  {dryerSet.map((v, idx) => (
+                    <td key={idx}>{formatCell(v)}</td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {renderCollapsibleSection(
+          record.id,
+          t('query.p1.paper.sections.extWheelTemps'),
+          'p1_extwheel_paper',
+          <div className="table-container">
+            <table className="p1-paper-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  {extCols.map((c) => (
+                    <th key={c.key}>{c.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th>{t('query.p1.paper.actualTemp')}</th>
+                  {extActual.map((v, idx) => (
+                    <td key={idx}>{formatCell(v)}</td>
+                  ))}
+                </tr>
+                <tr>
+                  <th>{t('query.p1.paper.setTemp')}</th>
+                  {extSet.map((v, idx) => (
+                    <td key={idx}>{formatCell(v)}</td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {renderCollapsibleSection(
+          record.id,
+          t('query.p1.paper.sections.productionParams'),
+          'p1_params_paper',
+          <div className="table-container">
+            <table className="p1-paper-table p1-paper-table-params">
+              <thead>
+                <tr>
+                  <th>{t('query.p1.paper.param')}</th>
+                  <th>{t('query.p1.paper.value')}</th>
+                  <th>{t('query.p1.paper.unit')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {params.map((p) => (
+                  <tr key={p.label}>
+                    <td>{p.label}</td>
+                    <td>{formatCell(p.value)}</td>
+                    <td>{p.unit}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    {Object.values(data).map((value, idx) => (
-                      <td key={idx}>
-                        {typeof value === 'number' ? value.toLocaleString() : String(value)}
-                      </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-            )}
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -834,35 +1397,16 @@ export function QueryPage() {
   // 渲染P1展開內容
   const renderP1ExpandedContent = (record: QueryRecord) => {
     if (!record.additional_data) {
-      return <p className="no-data">此記錄沒有額外的CSV資料</p>;
+      return <p className="no-data">{t('query.noExtraCsvData')}</p>;
     }
 
-    // 分組其他資料
-    const grouped = groupDataByPrefix(record.additional_data);
-
-    // 合併 actual_temp 和 set_temp 作為押出機生產條件
-    const extrusionConditions = {
-      ...grouped.actual_temp,
-      ...grouped.set_temp
-    };
-
-    return (
-      <div className="grouped-data-container">
-        {/* 基本資料區塊已移除 */}
-        
-        {Object.keys(extrusionConditions).length > 0 && 
-          renderGroupedSection(record.id, '押出機生產條件', 'extrusion', extrusionConditions, '', true)}
-        
-        {Object.keys(grouped.other).length > 0 && 
-          renderGroupedSection(record.id, '其他參數', 'other', grouped.other, '')}
-      </div>
-    );
+    return <div className="grouped-data-container">{renderP1PaperLayout(record)}</div>;
   };
 
   // 渲染P2展開內容
   const renderP2ExpandedContent = (record: QueryRecord) => {
     if (!record.additional_data) {
-      return <p className="no-data">此記錄沒有額外的CSV資料</p>;
+      return <p className="no-data">{t('query.noExtraCsvData')}</p>;
     }
 
     // 檢查是否為 rows 陣列結構
@@ -871,6 +1415,12 @@ export function QueryPage() {
     // 應用使用者排序
     const displayRows = sortTableData(sortedRows, record.id, 'p2');
     const hasRows = Array.isArray(rows) && rows.length > 0;
+    const p2Headers = hasRows
+      ? Object.keys(rows[0]).filter((k) => {
+          const nk = k.toLowerCase().replace(/[\s_]/g, '');
+          return nk !== 'windernumber';
+        })
+      : [];
     
     // 取得排序狀態
     const sortState = tableSortState[`${record.id}-p2`];
@@ -884,14 +1434,14 @@ export function QueryPage() {
             <div className="section-header">
               <div className="section-title-wrapper">
                 <span className="section-icon"></span>
-                <h5>檢測資料</h5>
-                <span className="field-count-badge">{rows.length} 筆</span>
+                <h5>{t('query.sections.inspectionData')}</h5>
+                <span className="field-count-badge">{t('query.units.items', { count: rows.length })}</span>
               </div>
               <button
                 className="btn-collapse"
                 onClick={() => toggleSection(record.id, 'rows_data')}
               >
-                {isSectionCollapsed(record.id, 'rows_data') ? '展開' : '收起'}
+                {isSectionCollapsed(record.id, 'rows_data') ? t('common.expand') : t('common.collapse')}
               </button>
             </div>
             {!isSectionCollapsed(record.id, 'rows_data') && (
@@ -899,13 +1449,24 @@ export function QueryPage() {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>#</th>
-                      {Object.keys(rows[0]).map(key => (
+                      <th
+                        onClick={() => handleTableSort(record.id, 'p2', '__winder_number__')}
+                        style={{ cursor: 'pointer', userSelect: 'none' }}
+                        title={t('query.tableHeaders.clickToSort')}
+                      >
+                        {t('query.tableHeaders.winder')}
+                        {sortState && sortState.column === '__winder_number__' && (
+                          <span style={{ marginLeft: '4px' }}>
+                            {sortState.direction === 'asc' ? '▲' : '▼'}
+                          </span>
+                        )}
+                      </th>
+                      {p2Headers.map(key => (
                         <th 
                           key={key} 
                           onClick={() => handleTableSort(record.id, 'p2', key)}
                           style={{ cursor: 'pointer', userSelect: 'none' }}
-                          title="點擊排序"
+                          title={t('query.tableHeaders.clickToSort')}
                         >
                           {key}
                           {sortState && sortState.column === key && (
@@ -920,8 +1481,14 @@ export function QueryPage() {
                   <tbody>
                     {displayRows.map((row: any, idx: number) => (
                       <tr key={idx}>
-                        <td>{idx + 1}</td>
-                        {Object.keys(rows[0]).map((header: string, vidx: number) => {
+                        <td>
+                          {(() => {
+                            const w = getP2RowWinderNumber(row)
+                            if (w == null) return '-'
+                            return String(w)
+                          })()}
+                        </td>
+                        {p2Headers.map((header: string, vidx: number) => {
                           const rawValue = row?.[header];
 
                           // P2 分條時間：若只有時間（HH:MM 或 HH:MM:SS），補上本筆 record 的 production_date。
@@ -963,21 +1530,8 @@ export function QueryPage() {
   // 渲染P3展開內容
   const renderP3ExpandedContent = (record: QueryRecord) => {
     if (!record.additional_data) {
-      return <p className="no-data">此記錄沒有額外的CSV資料</p>;
+      return <p className="no-data">{t('query.noExtraCsvData')}</p>;
     }
-
-    // 基本資料
-    const basicData = {
-      lot_no: record.lot_no,
-      // p3_no: record.p3_no || '-',
-      // product_id: record.product_id || '-',
-      // machine_no: record.machine_no || '-',
-      // mold_no: record.mold_no || '-',
-      // specification: record.specification || '-',
-      // bottom_tape_lot: record.bottom_tape_lot || '-',
-      updated_at: new Date(record.created_at).toLocaleString('zh-TW'),
-      created_at: new Date(record.created_at).toLocaleString('zh-TW')
-    };
 
     // 檢查是否有 rows 陣列
     const rows = record.additional_data.rows || [];
@@ -993,16 +1547,16 @@ export function QueryPage() {
       <div className="grouped-data-container">
         <div className="p3-header">
           <div className="p3-badges">
-            <span className="badge badge-primary">批號: {record.lot_no}</span>
-            <span className="badge badge-success">檢查筆數: {rowCount}筆</span>
+            <span className="badge badge-primary">{t('query.fields.lotNo')}: {record.lot_no}</span>
+            <span className="badge badge-success">{t('query.stats.checkCount')}: {t('query.units.items', { count: rowCount })}</span>
           </div>
           <div className="p3-stats">
             <div className="stat-item">
-              <span className="stat-label">原始筆數:</span>
+              <span className="stat-label">{t('query.stats.originalCount')}:</span>
               <span className="stat-value">{rowCount}</span>
             </div>
             <div className="stat-item">
-              <span className="stat-label">有效筆數:</span>
+              <span className="stat-label">{t('query.stats.validCount')}:</span>
               <span className="stat-value">{rowCount}</span>
             </div>
           </div>
@@ -1016,8 +1570,8 @@ export function QueryPage() {
             <div className="section-header">
               <div className="section-title-wrapper">
                 <span className="section-icon"></span>
-                <h5>檢查項目明細</h5>
-                <span className="field-count-badge">{rows.length} 筆</span>
+                <h5>{t('query.sections.checkItemsDetail')}</h5>
+                <span className="field-count-badge">{t('query.units.items', { count: rows.length })}</span>
               </div>
               <button
                 className="btn-collapse"
@@ -1032,13 +1586,13 @@ export function QueryPage() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th className="action-column">關聯查詢</th>
+                        <th className="action-column">{t('query.tableHeaders.linkSearch')}</th>
                         <th 
                           onClick={() => handleTableSort(record.id, 'p3', 'product_id')}
                           style={{ cursor: 'pointer', userSelect: 'none' }}
-                          title="點擊排序"
+                          title={t('query.tableHeaders.clickToSort')}
                         >
-                          Product ID
+                          {t('query.fields.productId')}
                           {sortState && sortState.column === 'product_id' && (
                             <span style={{ marginLeft: '4px' }}>
                               {sortState.direction === 'asc' ? '▲' : '▼'}
@@ -1050,7 +1604,7 @@ export function QueryPage() {
                             key={header}
                             onClick={() => handleTableSort(record.id, 'p3', header)}
                             style={{ cursor: 'pointer', userSelect: 'none' }}
-                            title="點擊排序"
+                            title={t('query.tableHeaders.clickToSort')}
                           >
                             {header}
                             {sortState && sortState.column === header && (
@@ -1070,10 +1624,10 @@ export function QueryPage() {
                             <td className="action-column">
                               <button
                                 className="btn-link-search"
-                                title="查詢對應的 P2 和 P1 資料"
+                                title={t('query.actions.searchLinkedDataHint')}
                                 onClick={() => handleP3LinkSearch(record, row, rowProductId)}
                               >
-                                查詢
+                                {t('query.actions.linkSearch')}
                               </button>
                             </td>
                             <td className="product-id-cell" title={rowProductId}>
@@ -1108,7 +1662,7 @@ export function QueryPage() {
       case 'P3':
         return renderP3ExpandedContent(record);
       default:
-        return <p className="no-data">未知的資料類型</p>;
+        return <p className="no-data">{t('query.errors.unknownDataType')}</p>;
     }
   };
 
@@ -1140,7 +1694,7 @@ export function QueryPage() {
 
       return (
         <div className="additional-data-section">
-          <div className="section-title">檢查項目明細</div>
+          <div className="section-title">{t('query.sections.checkItemsDetail')}</div>
           <div className="table-container">
             <table className="data-table">
               <thead>
@@ -1174,67 +1728,9 @@ export function QueryPage() {
 
   // 渲染P1詳細資料
   const renderP1Details = (record: QueryRecord) => {
-    // 定義要排除的系統欄位
-    const excludedKeys = [
-      'id', 'lot_no', 'data_type', 'created_at', 'updated_at', 
-      'additional_data', 'notes', 'display_name', 'production_date',
-      'product_name', 'quantity'
-    ];
-
-    // 獲取所有非系統欄位的鍵值對 (包含後端展開的 additional_data 欄位)
-    const detailFields = Object.entries(record).filter(([key, value]) => {
-      return !excludedKeys.includes(key) && 
-             value !== null && 
-             value !== undefined && 
-             typeof value !== 'object'; // 排除物件類型
-    });
-
     return (
-      <div className="detail-grid">
-        <div className="detail-row">
-          <strong>批號：</strong>
-          <span>{record.lot_no}</span>
-        </div>
-        {record.product_name && (
-           <div className="detail-row">
-            <strong>產品名稱：</strong>
-            <span>{record.product_name}</span>
-          </div>
-        )}
-        {record.quantity !== undefined && (
-           <div className="detail-row">
-            <strong>數量：</strong>
-            <span>{record.quantity}</span>
-          </div>
-        )}
-        {record.production_date && (
-           <div className="detail-row">
-            <strong>生產日期：</strong>
-            <span>{formatFieldValue('production_date', record.production_date)}</span>
-          </div>
-        )}
-        {record.notes && (
-          <div className="detail-row">
-            <strong>備註：</strong>
-            <span>{record.notes}</span>
-          </div>
-        )}
-        <div className="detail-row">
-          <strong>建立時間：</strong>
-          <span>{new Date(record.created_at).toLocaleString()}</span>
-        </div>
-        
-        {/* 動態渲染其他欄位 */}
-        {detailFields.map(([key, value]) => (
-          <div className="detail-row" key={key}>
-            <strong>{key}：</strong>
-            <span>{formatFieldValue(key, value)}</span>
-          </div>
-        ))}
-        
-        {renderAdditionalData(record.additional_data)}
-        
-        {/* P0: 暫時移除 P1 詳情的編輯入口（避免 422） */}
+      <div className="detail-grid" style={{ gridColumn: '1 / -1' }}>
+        {renderP1PaperLayout(record)}
       </div>
     );
   };
@@ -1247,54 +1743,62 @@ export function QueryPage() {
     let displayData: { [key: string]: any } = {};
     
     // 1. 先加入標準欄位
-    const standardFields: { [key: string]: any } = {
-      '分條機': record.slitting_machine_number,
-      '收卷機': record.winder_number,
-      '片材寬度': record.sheet_width,
-      '厚度1': record.thickness1,
-      '厚度2': record.thickness2,
-      '厚度3': record.thickness3,
-      '厚度4': record.thickness4,
-      '厚度5': record.thickness5,
-      '厚度6': record.thickness6,
-      '厚度7': record.thickness7,
-      '外觀': record.appearance,
-      '毛邊': record.rough_edge,
-      '分條結果': record.slitting_result,
-    };
+    const standardFields: Array<{ label: string; value: any }> = [
+      { label: t('query.p2.fields.slittingMachine'), value: record.slitting_machine_number },
+      { label: t('query.p2.fields.winderMachine'), value: record.winder_number },
+      { label: t('query.p2.fields.sheetWidth'), value: record.sheet_width },
+      { label: t('query.p2.fields.thickness1'), value: record.thickness1 },
+      { label: t('query.p2.fields.thickness2'), value: record.thickness2 },
+      { label: t('query.p2.fields.thickness3'), value: record.thickness3 },
+      { label: t('query.p2.fields.thickness4'), value: record.thickness4 },
+      { label: t('query.p2.fields.thickness5'), value: record.thickness5 },
+      { label: t('query.p2.fields.thickness6'), value: record.thickness6 },
+      { label: t('query.p2.fields.thickness7'), value: record.thickness7 },
+      { label: t('query.p2.fields.appearance'), value: record.appearance },
+      { label: t('query.p2.fields.roughEdge'), value: record.rough_edge },
+      { label: t('query.p2.fields.slittingResult'), value: record.slitting_result },
+    ];
 
-    // 過濾掉 undefined/null 的標準欄位
-    Object.entries(standardFields).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        displayData[key] = value;
+    for (const f of standardFields) {
+      if (f.value !== undefined && f.value !== null) {
+        displayData[f.label] = f.value;
       }
-    });
+    }
 
     // 2. 合併額外資料
-    // 如果 P2 資料包含 rows 且只有一筆，提取出來以 Grid 方式顯示 (像 P1 一樣)
-    // 這樣可以顯示單個 row 的所有細項
-    if (record.additional_data && 
-        record.additional_data.rows && 
-        Array.isArray(record.additional_data.rows) && 
-        record.additional_data.rows.length === 1) {
-      displayData = { ...displayData, ...record.additional_data.rows[0] };
-    } else if (record.additional_data) {
-      displayData = { ...displayData, ...record.additional_data };
+    // P2 的細項通常在 additional_data.rows（多筆 items）。
+    // - 若只有 1 筆：直接展開成 Grid（像 P1 一樣）
+    // - 若多筆：Grid 顯示 record-level 欄位，並在下方顯示明細表
+    const additional = (record.additional_data || {}) as any;
+    const rows = Array.isArray(additional.rows) ? (additional.rows as any[]) : [];
+    const { rows: _rowsIgnored, ...additionalWithoutRows } = additional || {};
+
+    if (rows.length === 1 && rows[0] && typeof rows[0] === 'object' && !Array.isArray(rows[0])) {
+      displayData = { ...displayData, ...additionalWithoutRows, ...rows[0] };
+    } else {
+      displayData = { ...displayData, ...additionalWithoutRows };
     }
 
-    // 移除 rows 屬性，避免在 renderAdditionalData 中被誤判為表格顯示
-    if (displayData.rows) {
-        delete displayData.rows;
-    }
+    const hasItemRows = rows.length > 1;
+    const sortedRows = hasItemRows ? sortRowsNgFirst(rows, ['striped results', 'Striped results', '分條結果']) : rows;
+    const rowHeaders = hasItemRows && rows[0] && typeof rows[0] === 'object' && !Array.isArray(rows[0])
+      ? Object.keys(rows[0])
+      : [];
 
     return (
       <div className="detail-grid">
         <div className="detail-row">
-          <strong>批號：</strong>
+          <strong>{t('query.fields.lotNo')}:</strong>
           <span>{record.lot_no}</span>
         </div>
+        {Array.isArray((record as any).winder_numbers) && (record as any).winder_numbers.length > 0 && (
+          <div className="detail-row">
+          <strong>符合的收卷機（Winder）：</strong>
+            <span>{(record as any).winder_numbers.join(', ')}</span>
+          </div>
+        )}
         <div className="detail-row">
-          <strong>建立時間：</strong>
+          <strong>{t('query.fields.createdAt')}:</strong>
           <span>{new Date(record.created_at).toLocaleString()}</span>
         </div>
         
@@ -1305,6 +1809,56 @@ export function QueryPage() {
               <span>{formatFieldValue(key, value)}</span>
             </div>
         ))}
+
+        {hasItemRows && (
+          <div className="additional-data-section" style={{ gridColumn: '1 / -1' }}>
+            <div className="section-title">{t('query.sections.checkItemsDetail')}</div>
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    {rowHeaders.map((h) => (
+                      <th key={h}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRows.map((row: any, idx: number) => (
+                    <tr key={idx}>
+                      <td>{idx + 1}</td>
+                      {rowHeaders.map((header: string, vidx: number) => {
+                        const rawValue = row?.[header];
+
+                        // P2 分條時間：若只有時間（HH:MM 或 HH:MM:SS），補上本筆 record 的 production_date。
+                        if (
+                          (header === '分條時間' || header === 'slitting time') &&
+                          record.production_date &&
+                          typeof rawValue === 'string'
+                        ) {
+                          const v = rawValue.trim();
+                          const timeOnly = /^\d{1,2}:\d{2}(:\d{2})?$/.test(v);
+                          const hasLeadingDate = /^\d{3}[\/-]\d{1,2}[\/-]\d{1,2}/.test(v) || /^\d{4}-\d{2}-\d{2}/.test(v);
+                          if (timeOnly && !hasLeadingDate) {
+                            return (
+                              <td key={vidx}>
+                                {`${formatFieldValue('production_date', record.production_date)} ${v}`}
+                              </td>
+                            );
+                          }
+                        }
+
+                        return (
+                          <td key={vidx}>{formatFieldValue(header, rawValue)}</td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1327,54 +1881,54 @@ export function QueryPage() {
     return (
       <div className="detail-grid">
         <div className="detail-row">
-          <strong>批號：</strong>
+          <strong>{t('query.fields.lotNo')}:</strong>
           <span>{record.lot_no}</span>
         </div>
         <div className="detail-row">
-          <strong>P3編號：</strong>
+          <strong>{t('query.p3.fields.p3No')}:</strong>
           <span>{record.p3_no}</span>
         </div>
         <div className="detail-row">
-          <strong>Product ID：</strong>
+          <strong>{t('query.fields.productId')}:</strong>
           <span>{record.product_id || '-'}</span>
         </div>
         
         <div className="detail-row">
-          <strong>機台：</strong>
+          <strong>{t('query.fields.machineNo')}:</strong>
           <span>{record.machine_no || '-'}</span>
         </div>
         <div className="detail-row">
-          <strong>模具：</strong>
+          <strong>{t('query.fields.moldNo')}:</strong>
           <span>{record.mold_no || '-'}</span>
         </div>
         <div className="detail-row">
-          <strong>規格：</strong>
+          <strong>{t('query.fields.specification')}:</strong>
           <span>{record.specification || '-'}</span>
         </div>
         <div className="detail-row">
-          <strong>下膠編號：</strong>
+          <strong>{t('query.fields.bottomTapeLot')}:</strong>
           <span>{record.bottom_tape_lot || '-'}</span>
         </div>
         {record.notes && (
           <div className="detail-row">
-            <strong>備註：</strong>
+            <strong>{t('query.fields.notes')}:</strong>
             <span>{record.notes}</span>
           </div>
         )}
         <div className="detail-row">
-          <strong>建立時間：</strong>
+          <strong>{t('query.fields.createdAt')}:</strong>
           <span>{new Date(record.created_at).toLocaleString()}</span>
         </div>
         {displayData.rows && Array.isArray(displayData.rows) && displayData.rows.length > 0 ? (
           <div className="additional-data-section">
-            <div className="section-title">檢查項目明細</div>
+            <div className="section-title">{t('query.sections.checkItemsDetail')}</div>
             <div className="text-display-container">
               {displayData.rows.map((row: any, idx: number) => {
                 const rowProductId = generateRowProductId(record, row);
                 return (
                   <div key={idx} className="text-item-row" style={{ marginBottom: '15px', padding: '15px', borderBottom: '1px solid #eee', backgroundColor: '#f9f9f9', borderRadius: '4px' }}>
                     <div style={{ fontWeight: 'bold', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>#{idx + 1} - Product ID: {rowProductId}</span>
+                      <span>{t('query.p3.rowHeader', { index: idx + 1, productId: rowProductId })}</span>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px' }}>
                       {Object.keys(row).map(header => (
@@ -1401,20 +1955,35 @@ export function QueryPage() {
       {/* 搜尋區域 */}
       <section className="query-search-section">
         <label className="query-search-label">
-          資料查詢
+          {t('query.title')}
           
           <div className="query-description">
-            <p><strong>批號查詢：</strong>輸入批號進行模糊搜尋，查詢後可查看 P1/P2/P3 分類資料</p>
-            <p><strong>產品編號查詢：</strong>直接輸入 Product ID 會顯示該筆的 P1/P2/P3 追溯結果</p>
-            <p><strong>進階搜尋：</strong>可依日期範圍、機台號碼、下膠編號、產品編號、P3規格等條件進行多條件組合搜尋</p>
+            <p><strong>{t('query.descLotTitle')}</strong>{t('query.descLot')}</p>
+            <p><strong>{t('query.descProductTitle')}</strong>{t('query.descProduct')}</p>
+            <p><strong>{t('query.descAdvancedTitle')}</strong>{t('query.descAdvanced')}</p>
           </div>
 
           <div className="query-search-input-wrapper autocomplete-wrapper">
+            {!effectiveTenantId && (
+              <div
+                style={{
+                  marginBottom: '10px',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  background: '#fff3cd',
+                  border: '1px solid #ffeeba',
+                  color: '#856404',
+                  fontSize: '14px',
+                }}
+              >
+                {t('query.noTenantWarning')}
+              </div>
+            )}
             <input
               ref={inputRef}
               type="text"
               className="query-search-input"
-              placeholder="輸入 Lot No(批號) 或 Product ID 查詢"
+              placeholder={t('query.searchPlaceholder')}
               value={searchKeyword}
               onChange={handleInputChange}
               onFocus={handleInputFocus}
@@ -1432,7 +2001,7 @@ export function QueryPage() {
             {showSuggestions && (
               <div ref={suggestionsRef} className="autocomplete-suggestions">
                 {suggestionLoading ? (
-                  <div className="suggestion-item loading">載入建議中...</div>
+                  <div className="suggestion-item loading">{t('query.suggestionLoading')}</div>
                 ) : suggestions.length > 0 ? (
                   suggestions.map((suggestion, index) => (
                     <div
@@ -1444,7 +2013,7 @@ export function QueryPage() {
                     </div>
                   ))
                 ) : (
-                  <div className="suggestion-item no-results">沒有找到相符的建議</div>
+                  <div className="suggestion-item no-results">{t('query.suggestionNoResults')}</div>
                 )}
               </div>
             )}
@@ -1452,9 +2021,9 @@ export function QueryPage() {
             <button 
               className="btn-primary" 
               onClick={handleSearch}
-              disabled={loading}
+              disabled={loading || !tenantId}
             >
-              {loading ? "查詢中..." : "查詢"}
+              {loading ? t('query.searching') : t('query.search')}
             </button>
             
             {/* 清除按鈕 */}
@@ -1463,19 +2032,21 @@ export function QueryPage() {
                 className="btn-secondary" 
                 onClick={handleClear}
               >
-                清除
+                {t('common.clear')}
               </button>
             )}
             
             {/* 進階搜尋按鈕 */}
             <button 
-              className="advanced-search-toggle"
+              className={`btn-secondary advanced-search-toggle ${advancedSearchExpanded ? 'expanded' : ''}`}
               onClick={() => setAdvancedSearchExpanded(!advancedSearchExpanded)}
               type="button"
-              title="進階搜尋"
+              title={t('query.advancedSearch')}
+              aria-expanded={advancedSearchExpanded}
+              aria-controls="advanced-search-panel"
             >
               <span className={`toggle-icon ${advancedSearchExpanded ? 'expanded' : ''}`}>▶</span>
-              進階搜尋
+              {t('query.advancedSearch')}
             </button>
           </div>
           
@@ -1484,7 +2055,7 @@ export function QueryPage() {
             onSearch={handleAdvancedSearch}
             onReset={handleAdvancedReset}
             isExpanded={advancedSearchExpanded}
-            onToggle={() => setAdvancedSearchExpanded(!advancedSearchExpanded)}
+            tenantId={tenantId}
           />
         </label>
       </section>
@@ -1494,9 +2065,9 @@ export function QueryPage() {
         <section className="query-result-section" ref={traceSectionRef}>
           <div className="records-container">
             <div className="records-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3>{traceabilityData.product_id ? `追溯結果 - ${traceabilityData.product_id}` : '追溯結果'}</h3>
+              <h3>{traceabilityData.product_id ? `${t('query.traceResult')} - ${traceabilityData.product_id}` : t('query.traceResult')}</h3>
               <button className="btn-secondary" onClick={() => setTraceabilityData(null)}>
-                清除追溯結果
+                {t('query.clearTraceResult')}
               </button>
             </div>
 
@@ -1525,19 +2096,19 @@ export function QueryPage() {
               {traceActiveTab === 'P3' && (
                 (() => {
                   const rec = normalizeTraceRecord('P3', traceabilityData.p3);
-                  return rec ? renderP3Details(rec) : <p className="section-empty">查無資料</p>;
+                  return rec ? renderP3Details(rec) : <p className="section-empty">{t('common.noData')}</p>;
                 })()
               )}
               {traceActiveTab === 'P2' && (
                 (() => {
                   const rec = normalizeTraceRecord('P2', traceabilityData.p2);
-                  return rec ? renderP2Details(rec) : <p className="section-empty">查無資料</p>;
+                  return rec ? renderP2Details(rec) : <p className="section-empty">{t('common.noData')}</p>;
                 })()
               )}
               {traceActiveTab === 'P1' && (
                 (() => {
                   const rec = normalizeTraceRecord('P1', traceabilityData.p1);
-                  return rec ? renderP1Details(rec) : <p className="section-empty">查無資料</p>;
+                  return rec ? renderP1Details(rec) : <p className="section-empty">{t('common.noData')}</p>;
                 })()
               )}
             </div>
@@ -1549,69 +2120,128 @@ export function QueryPage() {
       {searchPerformed && (
         <section className="query-result-section">
           {loading ? (
-            <p className="section-empty">載入中...</p>
+            <p className="section-empty">{t('common.loading')}</p>
           ) : records.length === 0 ? (
-            <p className="section-empty">沒有找到符合條件的資料</p>
+            <p className="section-empty">{t('query.results.noResults')}</p>
           ) : (
             <div className="records-container">
               <div className="records-header">
-                <h3>{searchKeyword ? `${searchKeyword} - ` : ''}共找到 {totalCount} 筆資料</h3>
+                <h3>
+                  {searchKeyword
+                    ? t('query.results.foundCountWithKeyword', { keyword: searchKeyword, count: totalCount })
+                    : t('query.results.foundCount', { count: totalCount })}
+                </h3>
               </div>
-              
-              <table className="records-table">
-                <thead>
-                  <tr>
-                    <th>Lot No</th>
-                    <th>資料類型</th>
-                    <th>生產日期</th>
-                    <th>建立時間</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.map((record) => (
-                    <React.Fragment key={record.id}>
-                      <tr>
-                        <td>{record.lot_no}</td>
-                        <td>
-                          <span className={`data-type-label ${record.data_type.toLowerCase()}`}>
-                            {record.data_type}
-                          </span>
-                        </td>
-                        <td>{formatFieldValue('production_date', record.production_date)}</td>
-                        <td>{new Date(record.created_at).toLocaleString('zh-TW', {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: false
-                        })}</td>
-                        <td>
+
+              {(() => {
+                const lotNoForDisplay = (advancedSearchParams?.lot_no || searchKeyword || '').trim();
+                const isSingleP2LotCard =
+                  !!lotNoForDisplay &&
+                  !advancedSearchParams?.winder_number &&
+                  records.length === 1 &&
+                  records[0]?.data_type === 'P2';
+
+                if (isSingleP2LotCard) {
+                  const record = records[0];
+                  return (
+                    <div className="single-record-card">
+                      <div className="single-record-card-header">
+                        <div className="single-record-card-title">
+                          <span className="single-record-lot">{record.lot_no}</span>
+                          <span className={`data-type-label ${record.data_type.toLowerCase()}`}>{record.data_type}</span>
+                        </div>
+                        <div className="single-record-card-meta">
+                          <div>{t('query.fields.slittingTime')}: {getP2SlittingTimeForSummary(record) ?? '-'}</div>
+                          <div>{t('query.fields.createdAt')}: {new Date(record.created_at).toLocaleString('zh-TW', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false
+                          })}</div>
+                        </div>
+                        <div className="single-record-card-actions">
                           <button
                             className="btn-expand"
-                            title="展開查看CSV資料"
+                            title={t('query.actions.expandDetails')}
                             onClick={() => toggleExpand(record.id)}
                           >
-                            {expandedRecordId === record.id ? '收起' : '展開'}
+                            {expandedRecordId === record.id ? t('common.collapse') : t('common.expand')}
                           </button>
-                        </td>
-                      </tr>
-                      
-                      {/* 展開行 - 顯示分組資料 */}
+                        </div>
+                      </div>
+
                       {expandedRecordId === record.id && (
-                        <tr className="expanded-row">
-                          <td colSpan={5}>
-                            <div className="expanded-data-container">
-                              {renderExpandedContent(record)}
-                            </div>
-                          </td>
-                        </tr>
+                        <div className="single-record-card-body">
+                          {renderP2Details(record)}
+                        </div>
                       )}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
+                    </div>
+                  );
+                }
+
+                return (
+                  <table className="records-table">
+                    <thead>
+                      <tr>
+                        <th>{t('query.tableHeaders.lotNo')}</th>
+                        <th>{t('query.tableHeaders.dataType')}</th>
+                        <th>{t('query.tableHeaders.productionDate')}</th>
+                        <th>{t('query.tableHeaders.createdAt')}</th>
+                        <th>{t('query.tableHeaders.actions')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {records.map((record) => (
+                        <React.Fragment key={record.id}>
+                          <tr>
+                            <td>{record.lot_no}</td>
+                            <td>
+                              <span className={`data-type-label ${record.data_type.toLowerCase()}`}>
+                                {record.data_type}
+                              </span>
+                            </td>
+                            <td>
+                              {record.data_type === 'P2'
+                                ? (getP2SlittingTimeForSummary(record) ?? '-')
+                                : formatFieldValue('production_date', record.production_date)}
+                            </td>
+                            <td>{new Date(record.created_at).toLocaleString('zh-TW', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: false
+                            })}</td>
+                            <td>
+                              <button
+                                className="btn-expand"
+                                title={t('query.actions.expandCsvData')}
+                                onClick={() => toggleExpand(record.id)}
+                              >
+                                {expandedRecordId === record.id ? t('common.collapse') : t('common.expand')}
+                              </button>
+                            </td>
+                          </tr>
+
+                          {/* 展開行 - 顯示分組資料 */}
+                          {expandedRecordId === record.id && (
+                            <tr className="expanded-row">
+                              <td colSpan={5}>
+                                <div className="expanded-data-container">
+                                  {renderExpandedContent(record)}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
               
               {/* 分頁控制 */}
               {totalCount > pageSize && (
@@ -1620,14 +2250,14 @@ export function QueryPage() {
                     onClick={() => searchRecords(searchKeyword, currentPage - 1, advancedSearchParams || undefined)}
                     disabled={currentPage <= 1}
                   >
-                    上一頁
+                    {t('query.pagination.previous')}
                   </button>
-                  <span>第 {currentPage} 頁</span>
+                  <span>{t('query.pagination.page', { page: currentPage })}</span>
                   <button
                     onClick={() => searchRecords(searchKeyword, currentPage + 1, advancedSearchParams || undefined)}
                     disabled={currentPage * pageSize >= totalCount}
                   >
-                    下一頁
+                    {t('query.pagination.next')}
                   </button>
                 </div>
               )}
@@ -1639,7 +2269,7 @@ export function QueryPage() {
       {/* 詳細資料模態框 */}
       <Modal
         open={detailRecord !== null}
-        title={`${detailRecord?.data_type} 資料詳情`}
+        title={t('query.detailModalTitle', { type: String(detailRecord?.data_type || '') })}
         onClose={() => setDetailRecord(null)}
       >
         {detailRecord && (

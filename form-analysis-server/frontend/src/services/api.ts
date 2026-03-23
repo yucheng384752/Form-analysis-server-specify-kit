@@ -2,6 +2,10 @@
  * API 請求工具函數
  */
 
+import { TENANT_STORAGE_KEY } from './tenant';
+import { getApiKeyHeaderName, getApiKeyValue } from './auth'
+import i18n from '../i18n'
+
 interface RequestOptions {
   url: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -60,7 +64,7 @@ export async function apiRequest<T = any>(options: RequestOptions): Promise<T> {
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('fetch')) {
       // 網路錯誤
-      throw new Error('網路連接失敗，請檢查網路連接或服務器狀態');
+      throw new Error(i18n.t('errors.networkConnectionFailed'));
     }
     throw error;
   }
@@ -149,15 +153,37 @@ export async function uploadFile<T = any>(
     });
 
     xhr.addEventListener('error', () => {
-      reject(new Error('網路錯誤，上傳失敗'));
+      reject(new Error(i18n.t('errors.uploadNetworkFailed')));
     });
 
     xhr.addEventListener('abort', () => {
-      reject(new Error('上傳已取消'));
+      reject(new Error(i18n.t('errors.uploadCanceled')));
     });
 
     const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
     xhr.open('POST', fullUrl);
+
+    // Keep tenant header consistent even for XHR uploads
+    try {
+      const u = new URL(fullUrl, window.location.href);
+      const tenantId = window.localStorage.getItem(TENANT_STORAGE_KEY) || '';
+      if (u.pathname.startsWith('/api') && !u.pathname.startsWith('/api/tenants') && !tenantId) {
+        reject(new Error(i18n.t('errors.noTenantSelected')));
+        xhr.abort();
+        return;
+      }
+      if (tenantId && u.pathname.startsWith('/api') && !u.pathname.startsWith('/api/tenants')) {
+        xhr.setRequestHeader('X-Tenant-Id', tenantId);
+      }
+
+      const apiKey = getApiKeyValue()
+      if (apiKey && u.pathname.startsWith('/api')) {
+        xhr.setRequestHeader(getApiKeyHeaderName(), apiKey)
+      }
+    } catch {
+      // ignore
+    }
+
     xhr.send(formData);
   });
 }

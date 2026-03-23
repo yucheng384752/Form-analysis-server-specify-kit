@@ -1,5 +1,9 @@
 #  API路徑前綴問題修復報告
 
+> ⚠️ 歷史/Deprecated 文件：本報告（2025-12）記錄「當時」API prefix 修復狀態；其中 `/api/upload`、`/api/import`、`/api/validate`、`/api/errors.csv` 屬於舊流程端點，現已降權/Deprecated（僅供相容性）。
+> - 新開發/新腳本請以 v2 import jobs 為主（`/api/v2/import/jobs`，commit 使用 `/api/v2/import/jobs/{id}/commit`）。
+> - 參考文件：[dev-guides/USER_UPLOAD_FLOW.md](../../dev-guides/USER_UPLOAD_FLOW.md)
+
 ##  問題描述
 
 系統存在API路徑前綴配置混亂的問題：

@@ -1,4 +1,4 @@
-# Analytics API Test Script
+﻿# Analytics API Test Script
 # Test Date: 2026-01-12
 # Simplified version without encoding issues
 
@@ -14,10 +14,24 @@ Write-Host "`n=== Analytics API Test Suite ===" -ForegroundColor Cyan
 Write-Host "Base URL: $BaseUrl" -ForegroundColor Yellow
 Write-Host "Start Time: $testStartTime`n" -ForegroundColor Yellow
 
+# Get Tenant (required for /api/* endpoints)
+Write-Host "Getting Tenant..." -ForegroundColor Yellow
+try {
+    $tenants = Invoke-RestMethod -Uri "$BaseUrl/api/tenants" -Method GET
+    $tenants = @($tenants)
+    if (-not $tenants -or $tenants.Count -eq 0) { throw "No tenants found" }
+    $tenantId = $tenants[0].id
+    $headers = @{ "X-Tenant-Id" = "$tenantId" }
+    Write-Host "Using Tenant ID: $tenantId`n" -ForegroundColor Gray
+} catch {
+    Write-Host "[FAIL] Failed to get tenant: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+
 # Test 0: Health Check
 Write-Host "[Test 0] Health Check" -ForegroundColor Cyan
 try {
-    $response = Invoke-RestMethod -Uri "$BaseUrl/api/v2/analytics/health" -Method GET
+    $response = Invoke-RestMethod -Uri "$BaseUrl/api/v2/analytics/health" -Method GET -Headers $headers
     Write-Host "[PASS] Health: $($response.status)" -ForegroundColor Green
     Write-Host "  Config: max=$($response.config.max_records_per_request), rate=$($response.config.rate_limit_per_minute)/min" -ForegroundColor Gray
     $testResults += @{Test="Health"; Status="PASS"}
@@ -31,7 +45,7 @@ Write-Host "`n[Test 1] Single Server - Monthly Query (2025-09)" -ForegroundColor
 $start1 = Get-Date
 try {
     $url1 = "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025&month=9"
-    $response1 = Invoke-RestMethod -Uri $url1 -Method GET
+    $response1 = Invoke-RestMethod -Uri $url1 -Method GET -Headers $headers
     $duration1 = ((Get-Date) - $start1).TotalSeconds
     
     Write-Host "[PASS] Count: $($response1.count), Has Data: $($response1.has_data), Time: $([math]::Round($duration1, 2))s" -ForegroundColor Green
@@ -58,16 +72,16 @@ $start2 = Get-Date
 
 for ($i = 1; $i -le 3; $i++) {
     $jobs += Start-Job -ScriptBlock {
-        param($url)
+        param($url, $headers)
         $startTime = Get-Date
         try {
-            $response = Invoke-RestMethod -Uri $url -Method GET
+            $response = Invoke-RestMethod -Uri $url -Method GET -Headers $headers
             $duration = ((Get-Date) - $startTime).TotalSeconds
-            return @{Success=$true; Count=$response.count; Duration=$duration}
+            return [PSCustomObject]@{ Success = $true; Count = $response.count; Duration = $duration }
         } catch {
-            return @{Success=$false; Error=$_.Exception.Message}
+            return [PSCustomObject]@{ Success = $false; Error = $_.Exception.Message; Duration = $null; Count = $null }
         }
-    } -ArgumentList "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025&month=9"
+    } -ArgumentList "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025&month=9", $headers
 }
 
 $jobResults = $jobs | Wait-Job | Receive-Job
@@ -92,7 +106,7 @@ if ($successCount -eq 3) {
 Write-Host "`n[Test 3] Empty Data (Future Date)" -ForegroundColor Cyan
 try {
     $url3 = "$BaseUrl/api/v2/analytics/flatten/monthly?year=2050&month=12"
-    $response3 = Invoke-RestMethod -Uri $url3 -Method GET
+    $response3 = Invoke-RestMethod -Uri $url3 -Method GET -Headers $headers
     
     if ($response3.count -eq 0 -and $response3.has_data -eq $false -and $response3.data.Count -eq 0) {
         Write-Host "[PASS] Empty array semantics correct: count=0, has_data=false, data=[]" -ForegroundColor Green
@@ -114,7 +128,7 @@ $success = 0
 
 for ($i = 1; $i -le 35; $i++) {
     try {
-        $null = Invoke-RestMethod -Uri "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025&month=9" -Method GET -ErrorAction Stop
+        $null = Invoke-RestMethod -Uri "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025&month=9" -Method GET -Headers $headers -ErrorAction Stop
         $success++
         Write-Host "." -NoNewline -ForegroundColor Green
     } catch {
@@ -141,7 +155,7 @@ if ($blocked -gt 0) {
 Write-Host "`n[Test 5] Boundary - Invalid Year (1900)" -ForegroundColor Cyan
 try {
     $url5 = "$BaseUrl/api/v2/analytics/flatten/monthly?year=1900&month=1"
-    $response5 = Invoke-RestMethod -Uri $url5 -Method GET
+    $response5 = Invoke-RestMethod -Uri $url5 -Method GET -Headers $headers
     Write-Host "[FAIL] API accepted invalid year 1900" -ForegroundColor Red
     $testResults += @{Test="Invalid-Year"; Status="FAIL"}
 } catch {
@@ -159,7 +173,7 @@ try {
 Write-Host "`n[Test 6] Boundary - Invalid Month (13)" -ForegroundColor Cyan
 try {
     $url6 = "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025&month=13"
-    $response6 = Invoke-RestMethod -Uri $url6 -Method GET
+    $response6 = Invoke-RestMethod -Uri $url6 -Method GET -Headers $headers
     Write-Host "[FAIL] API accepted invalid month 13" -ForegroundColor Red
     $testResults += @{Test="Invalid-Month"; Status="FAIL"}
 } catch {
@@ -177,7 +191,7 @@ try {
 Write-Host "`n[Test 7] Boundary - Missing Parameter" -ForegroundColor Cyan
 try {
     $url7 = "$BaseUrl/api/v2/analytics/flatten/monthly?year=2025"
-    $response7 = Invoke-RestMethod -Uri $url7 -Method GET
+    $response7 = Invoke-RestMethod -Uri $url7 -Method GET -Headers $headers
     Write-Host "[FAIL] API accepted missing month parameter" -ForegroundColor Red
     $testResults += @{Test="Missing-Param"; Status="FAIL"}
 } catch {

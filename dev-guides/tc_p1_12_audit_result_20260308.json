@@ -1,0 +1,47 @@
+{
+  "input_count": 20,
+  "artifact_token_count": 38,
+  "baseline_summary": {
+    "requested_count": 20,
+    "resolved_count": 2,
+    "unmatched_count": 19,
+    "trace_attempted_count": 20,
+    "trace_resolved_count": 1
+  },
+  "recommended_count": 0,
+  "recommended_product_ids_by_trace_intersection": [],
+  "guaranteed_count_by_matches": 1,
+  "guaranteed_product_ids_by_matches": [
+    "20250909_P23_238-4_301"
+  ],
+  "pid_to_trace_token_intersection": {
+    "20250905_P24_238-2_301": [],
+    "20250902_P24_238-2_301": [],
+    "20250903_P24_238-2_301": [],
+    "20250909_P24_238-2_301": [],
+    "20250909_P24_238-2_303": [],
+    "20250910_P24_238-2_302": [],
+    "20250910_P24_238-2_303": [],
+    "20250912_P24_238-2_302": [],
+    "20250918_P03_238-1_304": [],
+    "20250912_P21_238-3_302": [],
+    "20250919_P03_238-1_302": [],
+    "20250909_P23_238-4_301": [],
+    "20250909_P23_238-4_302": [],
+    "20250919_P24_238-2_303": [],
+    "20250915_P21_238-3_302": [],
+    "20250915_P21_238-3_303": [],
+    "20250909_P23_238-4_304": [],
+    "20250916_P21_238-3_303": [],
+    "20250910_P23_238-4_303": [],
+    "20250910_P23_238-4_304": []
+  },
+  "rerun_summary_by_trace_intersection": null,
+  "rerun_summary_by_guaranteed_matches": {
+    "requested_count": 1,
+    "resolved_count": 2,
+    "unmatched_count": 0,
+    "trace_attempted_count": 1,
+    "trace_resolved_count": 1
+  }
+}
