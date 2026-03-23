@@ -1154,23 +1154,21 @@ async def get_field_options_v2(
             str(v[0]).strip() for v in result.fetchall() if v[0] and str(v[0]).strip()
         ]
 
-    # specification: 統一規格選項，從 P1/P2/P3 的 extras 中提取
+    # specification: 從 P2.format (row_data) 與 P3.specification (結構化欄位) 取 distinct 選項
     if field == "specification":
-        # Deduplicate across formatting variants, e.g. "PE32" vs "PE 32" vs "ＰＥ３２".
-        # We still return a human-friendly display value (stable by heuristic).
+        from app.models.p2_item_v2 import P2ItemV2
+        from app.models.p3_item_v2 import P3ItemV2
+
         display_by_key: dict[str, str] = {}
 
         def _normalize_display(s: str) -> str:
-            # NFKC happens in normalize_search_term already; keep a readable form.
             s2 = str(s).strip()
             s2 = re.sub(r"\s+", " ", s2)
-            # Make common ASCII tokens consistent (e.g. 'pe 32' -> 'PE 32').
             if re.fullmatch(r"[A-Za-z0-9 _\-\.]+", s2 or ""):
                 s2 = s2.upper()
             return s2
 
         def _score_display(s: str) -> tuple[int, int, int]:
-            # Prefer letter + space + digit boundary like 'PE 32'
             boundary_space = 1 if re.search(r"[A-Za-z]+\s+\d", s) else 0
             ascii_only = 1 if all(ord(ch) < 128 for ch in s) else 0
             return (boundary_space, ascii_only, -len(s))
@@ -1185,52 +1183,40 @@ async def get_field_options_v2(
             if not key:
                 return
             disp = _normalize_display(raw_s)
-
             existing = display_by_key.get(key)
             if existing is None or _score_display(disp) > _score_display(existing):
                 display_by_key[key] = disp
 
-        # P1: extras.Specification
-        p1_stmt = (
-            select(P1Record.extras)
-            .where(P1Record.tenant_id == current_tenant.id)
-            .limit(limit)
-        )
-        p1_result = await db.execute(p1_stmt)
-        for (extras,) in p1_result.fetchall():
-            if isinstance(extras, dict):
-                spec = (
-                    extras.get("Specification")
-                    or extras.get("specification")
-                    or extras.get("規格")
-                )
+        # P2: P2ItemV2.row_data->>'format' / 'Format' / '規格'
+        # 與搜尋過濾器使用相同來源（row_data），SELECT DISTINCT 效率高
+        for json_key in ("format", "Format", "規格"):
+            spec_col = func.jsonb_extract_path_text(
+                cast(P2ItemV2.row_data, JSONB), json_key
+            )
+            p2_spec_stmt = (
+                select(spec_col.label("spec"))
+                .where(P2ItemV2.tenant_id == current_tenant.id)
+                .where(spec_col.isnot(None))
+                .where(spec_col != "")
+                .distinct()
+                .limit(limit)
+            )
+            p2_spec_result = await db.execute(p2_spec_stmt)
+            for (spec,) in p2_spec_result.fetchall():
                 _maybe_add_spec(spec)
 
-        # P2: extras.format
-        p2_stmt = (
-            select(P2Record.extras)
-            .where(P2Record.tenant_id == current_tenant.id)
+        # P3: P3ItemV2.specification 結構化欄位，直接 SELECT DISTINCT
+        p3_spec_stmt = (
+            select(P3ItemV2.specification)
+            .where(P3ItemV2.tenant_id == current_tenant.id)
+            .where(P3ItemV2.specification.isnot(None))
+            .where(P3ItemV2.specification != "")
+            .distinct()
+            .order_by(P3ItemV2.specification)
             .limit(limit)
         )
-        p2_result = await db.execute(p2_stmt)
-        for (extras,) in p2_result.fetchall():
-            if isinstance(extras, dict):
-                spec = (
-                    extras.get("format") or extras.get("Format") or extras.get("規格")
-                )
-                _maybe_add_spec(spec)
-
-        # P3: extras.rows[0].Specification
-        p3_stmt = (
-            select(P3Record.extras)
-            .where(P3Record.tenant_id == current_tenant.id)
-            .limit(limit)
-        )
-        p3_result = await db.execute(p3_stmt)
-        for (extras,) in p3_result.fetchall():
-            row0 = _first_row(extras)
-            spec = _extract_spec_from_row(row0)
-
+        p3_spec_result = await db.execute(p3_spec_stmt)
+        for (spec,) in p3_spec_result.fetchall():
             _maybe_add_spec(spec)
 
         specs = sorted(display_by_key.values())
