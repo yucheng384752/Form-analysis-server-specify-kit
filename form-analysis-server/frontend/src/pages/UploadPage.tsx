@@ -764,7 +764,7 @@ export function UploadPage() {
       );
 
       // Poll status until completed/failed
-      const maxTries = 180; // ~3 minutes
+      const maxTries = 300; // ~5 minutes, 與後端 PDF_SERVER_TIMEOUT_SECONDS=300 一致
       for (let i = 0; i < maxTries; i++) {
         const s = await fetchPdfConvertStatus(target.processId);
         const status = String(s.status || '');

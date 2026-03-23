@@ -29,6 +29,11 @@ vi.mock('recharts', () => {
     ComposedChart: ({ children }: { children: React.ReactNode }) => React.createElement('div', null, children),
     BarChart: ({ children }: { children: React.ReactNode }) => React.createElement('div', null, children),
     Bar: ({ data, onClick, className, children }: { data?: Entry[]; onClick?: (payload: any) => void; className?: string; children: React.ReactNode }) => {
+      // Only render interactive buttons for Bars that have an onClick handler.
+      // Bars without onClick (e.g. ParetoChart's display-only bars) must not render
+      // duplicate button elements that would confuse role-based queries.
+      if (!onClick) return React.createElement('div', { className }, children)
+
       const barData = Array.isArray(data) && data.length > 0 ? data : [{ name: 'OK', value: 0 }, { name: 'NG', value: 0 }]
 
       return React.createElement(

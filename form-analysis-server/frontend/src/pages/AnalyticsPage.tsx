@@ -286,6 +286,21 @@ const PARETO_SHOW_ZERO = false
 const PARETO_SOURCE_NG = true
 const PARETO_SOURCE_FEATURE = true
 
+const DEMO_PARETO_OVERRIDE = true
+const DEMO_FINAL_RAW_SCORE: Record<string, number> = {
+  'Thicknessss Low(μm)': 7.492635216665868,
+  'Thicknessss High(μm)': 0.5006222690021331,
+  'Slitting speed': 0.0,
+  'Thickness diff': 1.8353439288498945,
+  'Rubber wheel gasket thickness (in)': 0.07496027169079686,
+  'Rubber wheel gasket thickness (out)': 2.4980288594561424,
+  Appearance: 0.0,
+  'Board Width(mm)': 5.056269841777992,
+  'Semi-finished impedance': 3.9463953680202946,
+  'Heat gun temperature': 0.060940332260790625,
+  'Rewind torque': 0.0,
+}
+
 function buildParetoSeries(
   items: ReadonlyArray<ParetoItem>,
   options: {
@@ -750,8 +765,10 @@ export function AnalyticsPage() {
   }, [analysisResult])
 
   const featureParetoData = useMemo(() => {
-    if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_FEATURE || !extractionData) return [] as ParetoPoint[]
-    const items: ParetoItem[] = Object.entries(extractionData.final_raw_score || {}).map(
+    if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_FEATURE) return [] as ParetoPoint[]
+    const source = DEMO_PARETO_OVERRIDE ? DEMO_FINAL_RAW_SCORE : extractionData?.final_raw_score
+    if (!source || Object.keys(source).length === 0) return [] as ParetoPoint[]
+    const items: ParetoItem[] = Object.entries(source).map(
       ([name, value]) => ({ name, value: Number(value) || 0 })
     )
     return buildParetoSeries(items, {
