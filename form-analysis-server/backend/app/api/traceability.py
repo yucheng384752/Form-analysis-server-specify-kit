@@ -235,9 +235,7 @@ async def trace_by_product_id(
                     if p3_item_by_lot is not None:
                         p3_data = _p3_item_v2_to_dict(p3_item_by_lot)
                         lot_no = (
-                            p3_data.get("lot_no")
-                            if isinstance(p3_data, dict)
-                            else None
+                            p3_data.get("lot_no") if isinstance(p3_data, dict) else None
                         ) or p3_item_by_lot.lot_no
                         source_winder = (
                             p3_item_by_lot.source_winder

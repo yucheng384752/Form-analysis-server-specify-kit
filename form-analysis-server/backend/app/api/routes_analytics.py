@@ -1,4 +1,4 @@
-﻿"""分析用 API 端點
+"""分析用 API 端點
 
 提供追溯資料扁平化查詢（支援多 server 並發呼叫）
 
@@ -292,7 +292,9 @@ class AnalyzeRequest(BaseModel):
     start_date: str | None = Field(default=None, description="YYYY-MM-DD")
     end_date: str | None = Field(default=None, description="YYYY-MM-DD")
     product_id: str | None = Field(default=None, description="客戶退貨產品編號")
-    product_ids: list[str] = Field(default_factory=list, description="客訴 product_id 清單")
+    product_ids: list[str] = Field(
+        default_factory=list, description="客訴 product_id 清單"
+    )
     stations: list[Literal["P2", "P3", "ALL"]] = Field(
         default_factory=list,
         description="站點篩選（作為 query 參數傳給分析 package）",
@@ -339,7 +341,9 @@ class ArtifactUnifiedSnapshotResponse(BaseModel):
 
 
 class ComplaintAnalysisRequest(BaseModel):
-    product_ids: list[str] = Field(default_factory=list, description="客訴 product_id 清單")
+    product_ids: list[str] = Field(
+        default_factory=list, description="客訴 product_id 清單"
+    )
     include_basic_stats: bool = Field(
         default=True,
         description="是否包含基本統計",
@@ -443,10 +447,7 @@ def _build_machine_distribution(df: pd.DataFrame) -> list[dict[str, Any]]:
         return []
 
     counts = series.value_counts()
-    return [
-        {"name": str(name), "count": int(count)}
-        for name, count in counts.items()
-    ]
+    return [{"name": str(name), "count": int(count)} for name, count in counts.items()]
 
 
 def _build_winder_distribution(df: pd.DataFrame) -> list[dict[str, Any]]:
@@ -483,10 +484,7 @@ def _build_winder_distribution(df: pd.DataFrame) -> list[dict[str, Any]]:
         return []
 
     counts = series.value_counts()
-    return [
-        {"name": str(name), "count": int(count)}
-        for name, count in counts.items()
-    ]
+    return [{"name": str(name), "count": int(count)} for name, count in counts.items()]
 
 
 _LOT_WINDER_RE = re.compile(r"^\d{6,8}[-_]\d{2}[-_]\d+$")
@@ -518,7 +516,10 @@ def _classify_unmatched_reason(
     artifact_row_count: int,
 ) -> tuple[str, str]:
     if not _looks_like_supported_product_id(requested_id):
-        return ("invalid_format", "Input product_id format is not supported for artifact matching")
+        return (
+            "invalid_format",
+            "Input product_id format is not supported for artifact matching",
+        )
     if not trace_candidates:
         return ("no_trace", "No traceability tokens were found for this product_id")
     if artifact_row_count <= 0:
@@ -537,7 +538,11 @@ async def _resolve_trace_tokens_from_db(
     for pid in requested_ids:
         candidates = [
             str(x).strip()
-            for x in (normalized_inputs.get(pid, []) if isinstance(normalized_inputs, dict) else [])
+            for x in (
+                normalized_inputs.get(pid, [])
+                if isinstance(normalized_inputs, dict)
+                else []
+            )
             if str(x).strip()
         ]
         if not candidates:
@@ -622,7 +627,11 @@ async def analyze(
             run_external_categorical_analysis_from_db,
         )
 
-        product_ids = [str(pid).strip() for pid in (payload.product_ids or []) if str(pid or "").strip()]
+        product_ids = [
+            str(pid).strip()
+            for pid in (payload.product_ids or [])
+            if str(pid or "").strip()
+        ]
         product_id = payload.product_id
 
         data = await run_external_categorical_analysis_from_db(
@@ -649,7 +658,9 @@ async def analyze(
             payload.stations,
             payload.start_date,
             payload.end_date,
-            (payload.product_id[:32] + "...") if payload.product_id and len(payload.product_id) > 32 else payload.product_id,
+            (payload.product_id[:32] + "...")
+            if payload.product_id and len(payload.product_id) > 32
+            else payload.product_id,
         )
         raise HTTPException(
             status_code=500, detail="Analytics package execution failed"
@@ -727,7 +738,9 @@ async def get_artifact_list(
     """
 
     if request:
-        check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/list")
+        check_rate_limit(
+            request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/list"
+        )
 
     try:
         from app.services.analytics_external import (
@@ -768,7 +781,9 @@ async def resolve_artifact_input(
     t0 = time.perf_counter()
 
     if request:
-        check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/resolve-input")
+        check_rate_limit(
+            request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/resolve-input"
+        )
 
     try:
         from app.services.analytics_external import (
@@ -821,9 +836,7 @@ async def resolve_artifact_input(
 
         if not trace_tokens:
             artifact_row_count = int(base.get("artifact_row_count") or 0)
-            base_normalized = (
-                base_normalized
-            )
+            base_normalized = base_normalized
             base_diag = (
                 base.get("match_diagnostics", {})
                 if isinstance(base.get("match_diagnostics", {}), dict)
@@ -836,7 +849,9 @@ async def resolve_artifact_input(
             )
             enriched_diag: dict[str, dict[str, Any]] = {}
             for pid in pids:
-                pid_base_diag = base_diag.get(pid) if isinstance(base_diag.get(pid), dict) else {}
+                pid_base_diag = (
+                    base_diag.get(pid) if isinstance(base_diag.get(pid), dict) else {}
+                )
                 reason_code = ""
                 reason_message = ""
                 if pid in base_unmatched:
@@ -846,8 +861,13 @@ async def resolve_artifact_input(
                         artifact_row_count=artifact_row_count,
                     )
                 enriched_diag[pid] = {
-                    "candidate_count": int(pid_base_diag.get("candidate_count") or len(base_normalized.get(pid, []))),
-                    "matched_by": pid_base_diag.get("matched_by", []) if isinstance(pid_base_diag.get("matched_by", []), list) else [],
+                    "candidate_count": int(
+                        pid_base_diag.get("candidate_count")
+                        or len(base_normalized.get(pid, []))
+                    ),
+                    "matched_by": pid_base_diag.get("matched_by", [])
+                    if isinstance(pid_base_diag.get("matched_by", []), list)
+                    else [],
                     "reason_code": reason_code,
                     "reason_message": reason_message,
                     "trace_source": trace_token_source.get(pid, ""),
@@ -865,7 +885,9 @@ async def resolve_artifact_input(
             unmatched_list = [str(x).strip() for x in base_unmatched if str(x).strip()]
             reason_counts: dict[str, int] = {}
             for pid in unmatched_list:
-                code = str((enriched_diag.get(pid) or {}).get("reason_code") or "").strip()
+                code = str(
+                    (enriched_diag.get(pid) or {}).get("reason_code") or ""
+                ).strip()
                 if not code:
                     continue
                 reason_counts[code] = int(reason_counts.get(code, 0)) + 1
@@ -873,13 +895,25 @@ async def resolve_artifact_input(
             return ArtifactInputResolveResponse(
                 requested=pids,
                 requested_count=len(pids),
-                normalized_inputs={pid: list(base_normalized.get(pid, [])) for pid in pids},
+                normalized_inputs={
+                    pid: list(base_normalized.get(pid, [])) for pid in pids
+                },
                 resolved=resolved_list,
                 resolved_count=len(resolved_list),
                 unmatched=unmatched_list,
                 unmatched_count=len(unmatched_list),
                 matches={
-                    pid: [str(x).strip() for x in ((base.get("matches", {}) or {}).get(pid, []) if isinstance((base.get("matches", {}) or {}).get(pid, []), list) else []) if str(x).strip()][:20]
+                    pid: [
+                        str(x).strip()
+                        for x in (
+                            (base.get("matches", {}) or {}).get(pid, [])
+                            if isinstance(
+                                (base.get("matches", {}) or {}).get(pid, []), list
+                            )
+                            else []
+                        )
+                        if str(x).strip()
+                    ][:20]
                     for pid in pids
                 },
                 match_diagnostics=enriched_diag,
@@ -906,11 +940,11 @@ async def resolve_artifact_input(
             if token_order
             else {"matches": {}, "resolved": []}
         )
-        token_matches = token_result.get("matches", {}) if isinstance(token_result, dict) else {}
-        artifact_row_count = int(base.get("artifact_row_count") or 0)
-        base_normalized = (
-            base_normalized
+        token_matches = (
+            token_result.get("matches", {}) if isinstance(token_result, dict) else {}
         )
+        artifact_row_count = int(base.get("artifact_row_count") or 0)
+        base_normalized = base_normalized
         base_diag = (
             base.get("match_diagnostics", {})
             if isinstance(base.get("match_diagnostics", {}), dict)
@@ -930,7 +964,9 @@ async def resolve_artifact_input(
             merged_resolved_seen.add(k)
             merged_resolved.append(s)
 
-        base_matches = base.get("matches", {}) if isinstance(base.get("matches", {}), dict) else {}
+        base_matches = (
+            base.get("matches", {}) if isinstance(base.get("matches", {}), dict) else {}
+        )
         for pid in pids:
             direct = base_matches.get(pid, []) if isinstance(base_matches, dict) else []
             hits: list[str] = []
@@ -965,9 +1001,15 @@ async def resolve_artifact_input(
         merged_unmatched = [pid for pid in pids if not merged_matches.get(pid)]
         merged_diag: dict[str, dict[str, Any]] = {}
         for pid in pids:
-            pid_base_diag = base_diag.get(pid) if isinstance(base_diag.get(pid), dict) else {}
+            pid_base_diag = (
+                base_diag.get(pid) if isinstance(base_diag.get(pid), dict) else {}
+            )
             matched_by_raw = pid_base_diag.get("matched_by", [])
-            matched_by = [str(x).strip() for x in matched_by_raw if str(x).strip()] if isinstance(matched_by_raw, list) else []
+            matched_by = (
+                [str(x).strip() for x in matched_by_raw if str(x).strip()]
+                if isinstance(matched_by_raw, list)
+                else []
+            )
             if not matched_by and merged_matches.get(pid):
                 # Fallback path: direct match was empty, but trace token mapping resolved hits.
                 matched_by = trace_tokens.get(pid, [])[:20]
@@ -980,7 +1022,10 @@ async def resolve_artifact_input(
                     artifact_row_count=artifact_row_count,
                 )
             merged_diag[pid] = {
-                "candidate_count": int(pid_base_diag.get("candidate_count") or len(base_normalized.get(pid, []))),
+                "candidate_count": int(
+                    pid_base_diag.get("candidate_count")
+                    or len(base_normalized.get(pid, []))
+                ),
                 "matched_by": matched_by[:20],
                 "reason_code": reason_code,
                 "reason_message": reason_message,
@@ -1026,7 +1071,9 @@ async def resolve_artifact_input(
     except KeyError:
         raise HTTPException(status_code=404, detail="Unknown analytics artifact key")
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to resolve analytics artifact input")
+        raise HTTPException(
+            status_code=500, detail="Failed to resolve analytics artifact input"
+        )
 
 
 @router.get(
@@ -1041,7 +1088,9 @@ async def get_artifact_unified_snapshot(
     """Get a unified aggregate snapshot for cross-view rendering."""
 
     if request:
-        check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/snapshot")
+        check_rate_limit(
+            request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/snapshot"
+        )
 
     try:
         from app.services.analytics_external import (
@@ -1065,17 +1114,22 @@ async def get_artifact_unified_snapshot(
     except KeyError:
         raise HTTPException(status_code=404, detail="Unknown analytics artifact key")
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to build analytics unified snapshot")
+        raise HTTPException(
+            status_code=500, detail="Failed to build analytics unified snapshot"
+        )
 
 
 class RealtimeAnalysisRequest(BaseModel):
     """即時 Analytical-Four 分析請求"""
+
     station: str = Field(default="P2", description="分析站點 (P1/P2/P3)")
     start_date: str | None = Field(default=None, description="開始日期 (YYYY-MM-DD)")
     end_date: str | None = Field(default=None, description="結束日期 (YYYY-MM-DD)")
     include_basic_stats: bool = Field(default=True, description="包含基本統計")
     include_outliers: bool = Field(default=True, description="包含異常檢測")
-    include_contribution: bool = Field(default=False, description="包含 PCA 貢獻度分析（較耗時）")
+    include_contribution: bool = Field(
+        default=False, description="包含 PCA 貢獻度分析（較耗時）"
+    )
 
 
 @router.post(
@@ -1091,24 +1145,25 @@ async def run_realtime_analysis(
 ) -> dict[str, Any]:
     """
     即時執行 Analytical-Four 分析
-    
+
     從 DB 撈取資料，直接呼叫 Analytical-Four 函式進行分析。
     這個端點不依賴預生成的 JSON 檔案，可即時取得分析結果。
-    
+
     支援的分析：
     - basic_statistics: 基本統計（mean, std, min, max, Q1, Q2, Q3）
     - outliers: 異常檢測（IQR / 3sigma）
     - contribution: PCA 貢獻度分析（T²/SPE）
     """
     import time
+
     t0 = time.perf_counter()
-    
+
     if request:
         check_rate_limit(request, endpoint="/api/v2/analytics/realtime-analysis")
-    
+
     try:
         from app.services.analytical_four_adapter import run_unified_analysis_from_db
-        
+
         result = await run_unified_analysis_from_db(
             db=session,
             tenant_id=current_tenant.id,
@@ -1119,12 +1174,12 @@ async def run_realtime_analysis(
             include_outliers=payload.include_outliers,
             include_contribution=payload.include_contribution,
         )
-        
+
         elapsed_ms = (time.perf_counter() - t0) * 1000
         result["elapsed_ms"] = round(elapsed_ms, 2)
-        
+
         return result
-        
+
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -1214,7 +1269,9 @@ async def analyze_complaint_products(
                 missing_stages.append("P1")
 
             mapping[pid] = {
-                "matched_stage": "trace_ok" if any(status.values()) else "trace_missing",
+                "matched_stage": "trace_ok"
+                if any(status.values())
+                else "trace_missing",
                 "missing_stages": missing_stages,
                 "trace_status": status,
             }
@@ -1279,7 +1336,9 @@ async def analyze_complaint_products(
         )
     except Exception:
         logger.exception("complaint-analysis failed")
-        raise HTTPException(status_code=500, detail="Failed to build complaint analysis payload")
+        raise HTTPException(
+            status_code=500, detail="Failed to build complaint analysis payload"
+        )
 
 
 class ExtractionAnalysisRequest(BaseModel):
@@ -1366,7 +1425,10 @@ async def get_artifact_detail(
     """
 
     if request:
-        check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/detail/{item_id}")
+        check_rate_limit(
+            request,
+            endpoint="/api/v2/analytics/artifacts/{artifact_key}/detail/{item_id}",
+        )
 
     try:
         from app.services.analytics_external import (

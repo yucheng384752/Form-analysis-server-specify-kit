@@ -20,8 +20,14 @@ def test_unified_snapshot_llm_reports_aggregates_station_and_feature(monkeypatch
         }
     ]
 
-    monkeypatch.setattr(analytics_external, "get_analytics_artifact_list_view", lambda *args, **kwargs: rows)
-    monkeypatch.setattr(analytics_external, "load_analytics_artifact", lambda *args, **kwargs: raw)
+    monkeypatch.setattr(
+        analytics_external,
+        "get_analytics_artifact_list_view",
+        lambda *args, **kwargs: rows,
+    )
+    monkeypatch.setattr(
+        analytics_external, "load_analytics_artifact", lambda *args, **kwargs: raw
+    )
 
     out = analytics_external.get_analytics_artifact_unified_snapshot(
         "llm_reports",
@@ -46,8 +52,14 @@ def test_unified_snapshot_rag_results_aggregates_station_and_feature(monkeypatch
         }
     }
 
-    monkeypatch.setattr(analytics_external, "get_analytics_artifact_list_view", lambda *args, **kwargs: rows)
-    monkeypatch.setattr(analytics_external, "load_analytics_artifact", lambda *args, **kwargs: raw)
+    monkeypatch.setattr(
+        analytics_external,
+        "get_analytics_artifact_list_view",
+        lambda *args, **kwargs: rows,
+    )
+    monkeypatch.setattr(
+        analytics_external, "load_analytics_artifact", lambda *args, **kwargs: raw
+    )
 
     out = analytics_external.get_analytics_artifact_unified_snapshot(
         "rag_results",

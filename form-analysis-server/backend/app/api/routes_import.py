@@ -75,7 +75,9 @@ def _compose_p3_product_id(
     mold = str(mold_no).strip()
     if not machine or not mold:
         return None
-    return f"{production_date.strftime('%Y%m%d')}_{machine}_{mold}_{int(production_lot)}"
+    return (
+        f"{production_date.strftime('%Y%m%d')}_{machine}_{mold}_{int(production_lot)}"
+    )
 
 
 def _build_p3_extras_rows(all_rows: list[dict]) -> list[dict]:

@@ -706,7 +706,7 @@ async def update_user(
             if other_count <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-            detail="Cannot remove the last manager user in this tenant",
+                    detail="Cannot remove the last manager user in this tenant",
                 )
 
     if not did_change:
@@ -816,7 +816,7 @@ async def delete_user(
             if other_count <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-            detail="Cannot remove the last manager user in this tenant",
+                    detail="Cannot remove the last manager user in this tenant",
                 )
 
     if bool(user.is_active):

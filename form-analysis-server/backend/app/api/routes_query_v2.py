@@ -556,7 +556,9 @@ def _extract_p2_item_date_yyyymmdd(item: Any) -> int | None:
     nested = raw.get("rows")
     if isinstance(nested, list) and nested and isinstance(nested[0], dict):
         row.update(nested[0])
-    return _to_yyyymmdd_from_record_production_date(_extract_production_date_from_row(row))
+    return _to_yyyymmdd_from_record_production_date(
+        _extract_production_date_from_row(row)
+    )
 
 
 def _extract_p2_item_slitting_result(item: Any) -> float | None:
@@ -2356,7 +2358,12 @@ async def query_records_dynamic_v2(
                 if not norms:
                     continue
                 preds.append(
-                    and_(*[_canon_sql(expr).like(f"%{_escape_like(n)}%", escape="\\") for n in norms])
+                    and_(
+                        *[
+                            _canon_sql(expr).like(f"%{_escape_like(n)}%", escape="\\")
+                            for n in norms
+                        ]
+                    )
                 )
                 continue
 
@@ -2442,9 +2449,7 @@ async def query_records_dynamic_v2(
             p2_stmt = p2_stmt.where(P2Record.lot_no_raw.ilike(f"%{lot_no_raw}%"))
 
         if (
-            specification_terms
-            or row_data_filters
-            or slitting_result is not None
+            specification_terms or row_data_filters or slitting_result is not None
         ) and dialect_name != "sqlite":
             p2_stmt = p2_stmt.join(P2ItemV2, P2Record.id == P2ItemV2.p2_record_id)
             for spec in specification_terms:
@@ -2595,7 +2600,9 @@ async def query_records_dynamic_v2(
             if thickness_min_f is not None and thickness_max_f is not None:
                 items = [item for item in items if _p2_item_matches_thickness(item)]
             if slitting_result is not None:
-                items = [item for item in items if _p2_item_matches_slitting_result(item)]
+                items = [
+                    item for item in items if _p2_item_matches_slitting_result(item)
+                ]
             if row_data_filters:
                 items = [item for item in items if _p2_item_matches_row_data(item)]
 

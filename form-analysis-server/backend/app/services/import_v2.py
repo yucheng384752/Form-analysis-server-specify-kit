@@ -1338,7 +1338,11 @@ class ImportService:
                     "date",
                     "Date",
                 ]:
-                    if key in nested and nested[key] is not None and str(nested[key]).strip():
+                    if (
+                        key in nested
+                        and nested[key] is not None
+                        and str(nested[key]).strip()
+                    ):
                         candidates.append(nested[key])
 
         for v in candidates:
@@ -1347,7 +1351,9 @@ class ImportService:
                 return int(ymd)
         return None
 
-    def _extract_p2_item_slitting_result(self, row: dict[str, Any] | None) -> float | None:
+    def _extract_p2_item_slitting_result(
+        self, row: dict[str, Any] | None
+    ) -> float | None:
         if not isinstance(row, dict):
             return None
 
@@ -1383,7 +1389,11 @@ class ImportService:
                     "分條結果",
                     "分條結果(成品)",
                 ]:
-                    if key in nested and nested[key] is not None and str(nested[key]).strip():
+                    if (
+                        key in nested
+                        and nested[key] is not None
+                        and str(nested[key]).strip()
+                    ):
                         candidates.append(nested[key])
 
         for v in candidates:

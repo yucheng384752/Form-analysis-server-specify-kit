@@ -5,9 +5,7 @@ def test_matches_any_product_id_short_and_long_format_alias():
     # User input format (from complaint list): YYMMDD-P24-2382-301
     product_ids = ["250905-P24-2382-301"]
     # System-side format used in analytics workflows: YYYYMMDD_P24_238-2_301
-    assert _matches_any_product_id(
-        "20250905_P24_238-2_301", product_ids=product_ids
-    )
+    assert _matches_any_product_id("20250905_P24_238-2_301", product_ids=product_ids)
 
 
 def test_matches_any_product_id_keeps_backward_substring_behavior():

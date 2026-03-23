@@ -26,4 +26,3 @@ def test_compose_p3_product_id_uses_production_lot_as_last_segment():
         production_lot=302,
     )
     assert pid == "20250930_P24_238-4_302"
-

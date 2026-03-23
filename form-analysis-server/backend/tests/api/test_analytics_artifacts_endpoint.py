@@ -22,7 +22,9 @@ async def client(db_session):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -165,13 +167,23 @@ async def test_v2_analytics_complaint_analysis_ok(client, monkeypatch, db_sessio
     def fake_write_csv(df):
         pass
 
-    async def fake_unified(*, db, tenant_id, product_ids, start_date, end_date, station, **kw):
+    async def fake_unified(
+        *, db, tenant_id, product_ids, start_date, end_date, station, **kw
+    ):
         return {"station": station, "status": "ok"}
 
     monkeypatch.setattr(traceability, "trace_by_product_id", fake_trace_by_product_id)
-    monkeypatch.setattr(analytics_data_fetcher, "fetch_merged_by_product_ids", fake_fetch_merged_by_product_ids)
-    monkeypatch.setattr(analytics_external, "write_complain_csv_from_df", fake_write_csv)
-    monkeypatch.setattr(analytical_four_adapter, "run_unified_analysis_from_db", fake_unified)
+    monkeypatch.setattr(
+        analytics_data_fetcher,
+        "fetch_merged_by_product_ids",
+        fake_fetch_merged_by_product_ids,
+    )
+    monkeypatch.setattr(
+        analytics_external, "write_complain_csv_from_df", fake_write_csv
+    )
+    monkeypatch.setattr(
+        analytical_four_adapter, "run_unified_analysis_from_db", fake_unified
+    )
 
     headers = {"X-Tenant-Id": str(tenant.id)}
     resp = await client.post(
@@ -195,7 +207,9 @@ async def test_v2_analytics_complaint_analysis_ok(client, monkeypatch, db_sessio
 
 
 @pytest.mark.asyncio
-async def test_v2_analytics_complaint_analysis_all_unmatched_returns_diagnostics_only(client, monkeypatch, db_session):
+async def test_v2_analytics_complaint_analysis_all_unmatched_returns_diagnostics_only(
+    client, monkeypatch, db_session
+):
     tenant = await _create_tenant(db_session)
 
     import pandas as pd
@@ -217,13 +231,23 @@ async def test_v2_analytics_complaint_analysis_all_unmatched_returns_diagnostics
     def fake_write_csv(df):
         pass
 
-    async def fake_unified(*, db, tenant_id, product_ids, start_date, end_date, station, **kw):
+    async def fake_unified(
+        *, db, tenant_id, product_ids, start_date, end_date, station, **kw
+    ):
         return {"station": station, "status": "no_data"}
 
     monkeypatch.setattr(traceability, "trace_by_product_id", fake_trace_by_product_id)
-    monkeypatch.setattr(analytics_data_fetcher, "fetch_merged_by_product_ids", fake_fetch_merged_by_product_ids)
-    monkeypatch.setattr(analytics_external, "write_complain_csv_from_df", fake_write_csv)
-    monkeypatch.setattr(analytical_four_adapter, "run_unified_analysis_from_db", fake_unified)
+    monkeypatch.setattr(
+        analytics_data_fetcher,
+        "fetch_merged_by_product_ids",
+        fake_fetch_merged_by_product_ids,
+    )
+    monkeypatch.setattr(
+        analytics_external, "write_complain_csv_from_df", fake_write_csv
+    )
+    monkeypatch.setattr(
+        analytical_four_adapter, "run_unified_analysis_from_db", fake_unified
+    )
 
     headers = {"X-Tenant-Id": str(tenant.id)}
     resp = await client.post(
@@ -242,7 +266,9 @@ async def test_v2_analytics_complaint_analysis_all_unmatched_returns_diagnostics
 
 
 @pytest.mark.asyncio
-async def test_v2_analytics_complaint_analysis_partial_hit_keeps_analysis_and_diagnostics(client, monkeypatch, db_session):
+async def test_v2_analytics_complaint_analysis_partial_hit_keeps_analysis_and_diagnostics(
+    client, monkeypatch, db_session
+):
     tenant = await _create_tenant(db_session)
 
     import pandas as pd
@@ -270,13 +296,23 @@ async def test_v2_analytics_complaint_analysis_partial_hit_keeps_analysis_and_di
     def fake_write_csv(df):
         pass
 
-    async def fake_unified(*, db, tenant_id, product_ids, start_date, end_date, station, **kw):
+    async def fake_unified(
+        *, db, tenant_id, product_ids, start_date, end_date, station, **kw
+    ):
         return {"station": station, "status": "ok"}
 
     monkeypatch.setattr(traceability, "trace_by_product_id", fake_trace_by_product_id)
-    monkeypatch.setattr(analytics_data_fetcher, "fetch_merged_by_product_ids", fake_fetch_merged_by_product_ids)
-    monkeypatch.setattr(analytics_external, "write_complain_csv_from_df", fake_write_csv)
-    monkeypatch.setattr(analytical_four_adapter, "run_unified_analysis_from_db", fake_unified)
+    monkeypatch.setattr(
+        analytics_data_fetcher,
+        "fetch_merged_by_product_ids",
+        fake_fetch_merged_by_product_ids,
+    )
+    monkeypatch.setattr(
+        analytics_external, "write_complain_csv_from_df", fake_write_csv
+    )
+    monkeypatch.setattr(
+        analytical_four_adapter, "run_unified_analysis_from_db", fake_unified
+    )
 
     headers = {"X-Tenant-Id": str(tenant.id)}
     resp = await client.post(
@@ -298,7 +334,9 @@ async def test_v2_analytics_complaint_analysis_partial_hit_keeps_analysis_and_di
 async def test_v2_analytics_artifacts_unknown_key_404(client, db_session):
     tenant = await _create_tenant(db_session)
     headers = {"X-Tenant-Id": str(tenant.id)}
-    resp = await client.get("/api/v2/analytics/artifacts/not_a_real_key", headers=headers)
+    resp = await client.get(
+        "/api/v2/analytics/artifacts/not_a_real_key", headers=headers
+    )
     assert resp.status_code == 404
 
 
@@ -337,7 +375,9 @@ async def test_v2_analytics_artifacts_resolve_input_ok(client, monkeypatch, db_s
 
 
 @pytest.mark.asyncio
-async def test_v2_analytics_artifacts_resolve_input_with_trace_tokens(client, monkeypatch, db_session):
+async def test_v2_analytics_artifacts_resolve_input_with_trace_tokens(
+    client, monkeypatch, db_session
+):
     tenant = await _create_tenant(db_session)
     from app.api import traceability
     from app.services import analytics_external
@@ -360,7 +400,12 @@ async def test_v2_analytics_artifacts_resolve_input_with_trace_tokens(client, mo
                 "unmatched": [],
                 "matches": {"2507173_02_19": ["2507173_02_19"]},
             }
-        return {"requested": pids, "resolved": [], "unmatched": pids, "matches": {x: [] for x in pids}}
+        return {
+            "requested": pids,
+            "resolved": [],
+            "unmatched": pids,
+            "matches": {x: [] for x in pids},
+        }
 
     async def fake_trace_by_product_id(*, product_id, db, current_tenant):
         assert product_id == "20250902_P24_238-2_301"
@@ -372,7 +417,9 @@ async def test_v2_analytics_artifacts_resolve_input_with_trace_tokens(client, mo
             }
         }
 
-    monkeypatch.setattr(analytics_external, "resolve_artifact_product_inputs", fake_resolve)
+    monkeypatch.setattr(
+        analytics_external, "resolve_artifact_product_inputs", fake_resolve
+    )
     monkeypatch.setattr(traceability, "trace_by_product_id", fake_trace_by_product_id)
 
     headers = {"X-Tenant-Id": str(tenant.id)}
@@ -485,7 +532,9 @@ async def test_v2_analytics_artifacts_resolve_input_prefers_db_trace_lot_tokens(
         _ = (product_id, db, current_tenant)
         raise HTTPException(status_code=404, detail="no trace")
 
-    monkeypatch.setattr(analytics_external, "resolve_artifact_product_inputs", fake_resolve)
+    monkeypatch.setattr(
+        analytics_external, "resolve_artifact_product_inputs", fake_resolve
+    )
     monkeypatch.setattr(traceability, "trace_by_product_id", fake_trace_by_product_id)
 
     headers = {"X-Tenant-Id": str(tenant.id)}
@@ -502,7 +551,9 @@ async def test_v2_analytics_artifacts_resolve_input_prefers_db_trace_lot_tokens(
 
 
 @pytest.mark.asyncio
-async def test_v2_analytics_artifacts_rate_limit_returns_retry_after_header(client, monkeypatch, db_session):
+async def test_v2_analytics_artifacts_rate_limit_returns_retry_after_header(
+    client, monkeypatch, db_session
+):
     tenant = await _create_tenant(db_session)
 
     from app.api import routes_analytics
@@ -521,7 +572,9 @@ async def test_v2_analytics_artifacts_rate_limit_returns_retry_after_header(clie
         "list_analytics_artifacts",
         lambda: [FakeInfo("serialized_events", "ut_serialized_results.json", True)],
     )
-    monkeypatch.setattr(routes_analytics.AnalyticsConfig, "RATE_LIMIT_REQUESTS_PER_MINUTE", 1)
+    monkeypatch.setattr(
+        routes_analytics.AnalyticsConfig, "RATE_LIMIT_REQUESTS_PER_MINUTE", 1
+    )
     routes_analytics._rate_limit_store.clear()
 
     headers = {"X-Tenant-Id": str(tenant.id)}
@@ -540,7 +593,9 @@ async def test_v2_analytics_artifacts_rate_limit_returns_retry_after_header(clie
 
 
 @pytest.mark.asyncio
-async def test_v2_analytics_artifacts_resolve_input_reason_invalid_format(client, monkeypatch, db_session):
+async def test_v2_analytics_artifacts_resolve_input_reason_invalid_format(
+    client, monkeypatch, db_session
+):
     tenant = await _create_tenant(db_session)
     from app.api import traceability
     from app.services import analytics_external
@@ -583,7 +638,9 @@ async def test_v2_analytics_artifacts_resolve_input_reason_invalid_format(client
 
 
 @pytest.mark.asyncio
-async def test_v2_analytics_artifacts_resolve_input_reason_no_trace(client, monkeypatch, db_session):
+async def test_v2_analytics_artifacts_resolve_input_reason_no_trace(
+    client, monkeypatch, db_session
+):
     tenant = await _create_tenant(db_session)
     from app.api import traceability
     from app.services import analytics_external
@@ -627,7 +684,9 @@ async def test_v2_analytics_artifacts_resolve_input_reason_no_trace(client, monk
 
 
 @pytest.mark.asyncio
-async def test_v2_analytics_artifacts_resolve_input_reason_artifact_no_data(client, monkeypatch, db_session):
+async def test_v2_analytics_artifacts_resolve_input_reason_artifact_no_data(
+    client, monkeypatch, db_session
+):
     tenant = await _create_tenant(db_session)
     from app.api import traceability
     from app.services import analytics_external
@@ -655,7 +714,9 @@ async def test_v2_analytics_artifacts_resolve_input_reason_artifact_no_data(clie
                 "resolved": [],
                 "unmatched": [trace_token],
                 "matches": {trace_token: []},
-                "match_diagnostics": {trace_token: {"candidate_count": 1, "matched_by": []}},
+                "match_diagnostics": {
+                    trace_token: {"candidate_count": 1, "matched_by": []}
+                },
             }
         return {
             "requested": pids,
@@ -664,7 +725,9 @@ async def test_v2_analytics_artifacts_resolve_input_reason_artifact_no_data(clie
             "resolved": [],
             "unmatched": pids,
             "matches": {x: [] for x in pids},
-            "match_diagnostics": {x: {"candidate_count": 1, "matched_by": []} for x in pids},
+            "match_diagnostics": {
+                x: {"candidate_count": 1, "matched_by": []} for x in pids
+            },
         }
 
     async def fake_trace_by_product_id(*, product_id, db, current_tenant):
@@ -677,7 +740,9 @@ async def test_v2_analytics_artifacts_resolve_input_reason_artifact_no_data(clie
             }
         }
 
-    monkeypatch.setattr(analytics_external, "resolve_artifact_product_inputs", fake_resolve)
+    monkeypatch.setattr(
+        analytics_external, "resolve_artifact_product_inputs", fake_resolve
+    )
     monkeypatch.setattr(traceability, "trace_by_product_id", fake_trace_by_product_id)
 
     headers = {"X-Tenant-Id": str(tenant.id)}
@@ -700,7 +765,9 @@ async def test_v2_analytics_artifacts_resolve_input_reason_artifact_no_data(clie
 
 
 @pytest.mark.asyncio
-async def test_v2_analytics_artifacts_resolve_input_normalized_hit_fields(client, monkeypatch, db_session):
+async def test_v2_analytics_artifacts_resolve_input_normalized_hit_fields(
+    client, monkeypatch, db_session
+):
     tenant = await _create_tenant(db_session)
     from app.api import traceability
     from app.services import analytics_external
@@ -718,7 +785,9 @@ async def test_v2_analytics_artifacts_resolve_input_normalized_hit_fields(client
             "resolved": ["2507173_02_19"],
             "unmatched": [],
             "matches": {pid: ["2507173_02_19"]},
-            "match_diagnostics": {pid: {"candidate_count": 2, "matched_by": [normalized]}},
+            "match_diagnostics": {
+                pid: {"candidate_count": 2, "matched_by": [normalized]}
+            },
         },
     )
 

@@ -125,18 +125,26 @@ def resolve_artifacts_dir(*, paths: AnalyticsExternalPaths | None = None) -> Pat
 
 
 def _resolve_analytical_four_config_path(paths: AnalyticsExternalPaths) -> Path:
-    preferred = paths.analytical_four_root / "data" / "raw" / "config" / "ut_config_v5.json"
+    preferred = (
+        paths.analytical_four_root / "data" / "raw" / "config" / "ut_config_v5.json"
+    )
     if preferred.exists():
         return preferred
     return paths.config_path
 
 
-def _resolve_complain_csv_path(*, config: dict[str, Any], analytical_four_root: Path) -> Path:
+def _resolve_complain_csv_path(
+    *, config: dict[str, Any], analytical_four_root: Path
+) -> Path:
     data_source = config.get("data_source", {}) if isinstance(config, dict) else {}
-    current_data = data_source.get("current_data", {}) if isinstance(data_source, dict) else {}
+    current_data = (
+        data_source.get("current_data", {}) if isinstance(data_source, dict) else {}
+    )
     raw_path = str(current_data.get("descriptive") or "").strip()
     if not raw_path:
-        raise ValueError("Missing data_source.current_data.descriptive in analytics config")
+        raise ValueError(
+            "Missing data_source.current_data.descriptive in analytics config"
+        )
 
     path = Path(raw_path)
     if not path.is_absolute():
@@ -163,11 +171,16 @@ def write_complain_csv_from_df(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False, encoding="utf-8-sig")
-    logger.info("Complaint CSV written", extra={"path": str(output_path), "rows": int(len(df.index))})
+    logger.info(
+        "Complaint CSV written",
+        extra={"path": str(output_path), "rows": int(len(df.index))},
+    )
     return output_path
 
 
-def list_analytics_artifacts(*, artifacts_dir: Path | None = None) -> list[AnalyticsArtifactInfo]:
+def list_analytics_artifacts(
+    *, artifacts_dir: Path | None = None
+) -> list[AnalyticsArtifactInfo]:
     paths = resolve_external_paths()
     base = artifacts_dir or resolve_artifacts_dir(paths=paths)
 
@@ -363,18 +376,45 @@ def get_analytics_artifact_list_view(
         for item in raw:
             if not isinstance(item, dict):
                 continue
-            event_id = _to_str(item.get("event_id")).strip() or _to_str(item.get("id")).strip()
+            event_id = (
+                _to_str(item.get("event_id")).strip() or _to_str(item.get("id")).strip()
+            )
             event_date = item.get("event_date")
             ctx = item.get("context") if isinstance(item.get("context"), dict) else {}
-            produce_no = _to_str(ctx.get("Produce_No.") or ctx.get("produce_no") or ctx.get("LOT NO.") or ctx.get("lot_no")).strip()
-            winder = _to_str(ctx.get("Winder number") or ctx.get("Winder") or "").strip()
-            slitting = _to_str(ctx.get("Slitting machine") or ctx.get("Slitting") or "").strip()
+            produce_no = _to_str(
+                ctx.get("Produce_No.")
+                or ctx.get("produce_no")
+                or ctx.get("LOT NO.")
+                or ctx.get("lot_no")
+            ).strip()
+            winder = _to_str(
+                ctx.get("Winder number") or ctx.get("Winder") or ""
+            ).strip()
+            slitting = _to_str(
+                ctx.get("Slitting machine") or ctx.get("Slitting") or ""
+            ).strip()
 
-            detected = item.get("detected_by_IQR") if isinstance(item.get("detected_by_IQR"), dict) else {}
+            detected = (
+                item.get("detected_by_IQR")
+                if isinstance(item.get("detected_by_IQR"), dict)
+                else {}
+            )
             iqr_count = len(detected)
-            ranked = item.get("ranked_features") if isinstance(item.get("ranked_features"), dict) else {}
-            t2 = ranked.get("T2_feature") if isinstance(ranked.get("T2_feature"), list) else []
-            spe = ranked.get("SPE_feature") if isinstance(ranked.get("SPE_feature"), list) else []
+            ranked = (
+                item.get("ranked_features")
+                if isinstance(item.get("ranked_features"), dict)
+                else {}
+            )
+            t2 = (
+                ranked.get("T2_feature")
+                if isinstance(ranked.get("T2_feature"), list)
+                else []
+            )
+            spe = (
+                ranked.get("SPE_feature")
+                if isinstance(ranked.get("SPE_feature"), list)
+                else []
+            )
 
             if not event_id:
                 continue
@@ -413,13 +453,23 @@ def get_analytics_artifact_list_view(
             analysis_dimension = _to_str(item.get("analysis_dimension") or "").strip()
             sample_count = int(_safe_number(item.get("sample_count")))
             ctx = item.get("context") if isinstance(item.get("context"), dict) else {}
-            ctx_preview = " / ".join([f"{k}: {_to_str(v)}" for k, v in list(ctx.items())[:4]])
-            core_features = item.get("core_features") if isinstance(item.get("core_features"), list) else []
-            event_ids = item.get("event_ids") if isinstance(item.get("event_ids"), list) else []
+            ctx_preview = " / ".join(
+                [f"{k}: {_to_str(v)}" for k, v in list(ctx.items())[:4]]
+            )
+            core_features = (
+                item.get("core_features")
+                if isinstance(item.get("core_features"), list)
+                else []
+            )
+            event_ids = (
+                item.get("event_ids") if isinstance(item.get("event_ids"), list) else []
+            )
 
             if not summary_id:
                 continue
-            if not _matches_any_product_id(summary_id, analysis_dimension, ctx_preview, product_ids=pids):
+            if not _matches_any_product_id(
+                summary_id, analysis_dimension, ctx_preview, product_ids=pids
+            ):
                 continue
 
             out.append(
@@ -455,10 +505,22 @@ def get_analytics_artifact_list_view(
             row = v if isinstance(v, dict) else {}
             x_t2 = float(_safe_number(row.get("x_T2")))
             x_spe = float(_safe_number(row.get("x_SPE")))
-            t2 = row.get("T2_feature") if isinstance(row.get("T2_feature"), list) else []
-            spe = row.get("SPE_feature") if isinstance(row.get("SPE_feature"), list) else []
-            t2_top = _to_str(t2[0].get("feature")) if t2 and isinstance(t2[0], dict) else ""
-            spe_top = _to_str(spe[0].get("feature")) if spe and isinstance(spe[0], dict) else ""
+            t2 = (
+                row.get("T2_feature") if isinstance(row.get("T2_feature"), list) else []
+            )
+            spe = (
+                row.get("SPE_feature")
+                if isinstance(row.get("SPE_feature"), list)
+                else []
+            )
+            t2_top = (
+                _to_str(t2[0].get("feature")) if t2 and isinstance(t2[0], dict) else ""
+            )
+            spe_top = (
+                _to_str(spe[0].get("feature"))
+                if spe and isinstance(spe[0], dict)
+                else ""
+            )
             out.append(
                 {
                     "id": event_id,
@@ -468,7 +530,10 @@ def get_analytics_artifact_list_view(
                     "spe_top": spe_top,
                 }
             )
-        out.sort(key=lambda r: max(float(r.get("x_T2") or 0), float(r.get("x_SPE") or 0)), reverse=True)
+        out.sort(
+            key=lambda r: max(float(r.get("x_T2") or 0), float(r.get("x_SPE") or 0)),
+            reverse=True,
+        )
         logger.info(
             "artifact_list_view key=%s input_pids=%d output_rows=%d elapsed_ms=%.1f",
             key,
@@ -501,7 +566,13 @@ def get_analytics_artifact_list_view(
                     "sop_count": int(sop_count),
                 }
             )
-        out.sort(key=lambda r: (int(r.get("sop_count") or 0), int(r.get("feature_count") or 0)), reverse=True)
+        out.sort(
+            key=lambda r: (
+                int(r.get("sop_count") or 0),
+                int(r.get("feature_count") or 0),
+            ),
+            reverse=True,
+        )
         logger.info(
             "artifact_list_view key=%s input_pids=%d output_rows=%d elapsed_ms=%.1f",
             key,
@@ -521,9 +592,17 @@ def get_analytics_artifact_list_view(
             if not event_id:
                 return None
             event_time = report.get("event_time")
-            main = report.get("main_anomalies") if isinstance(report.get("main_anomalies"), dict) else {}
+            main = (
+                report.get("main_anomalies")
+                if isinstance(report.get("main_anomalies"), dict)
+                else {}
+            )
             total = int(_safe_number(main.get("total_anomalies")))
-            return {"event_id": event_id, "event_time": event_time, "total_anomalies": total}
+            return {
+                "event_id": event_id,
+                "event_time": event_time,
+                "total_anomalies": total,
+            }
 
         rows: list[dict[str, Any]] = []
         if isinstance(raw, list):
@@ -545,7 +624,11 @@ def get_analytics_artifact_list_view(
                             rows.append(s)
 
         if pids:
-            rows = [r for r in rows if _matches_any_product_id(_to_str(r.get("event_id")), product_ids=pids)]
+            rows = [
+                r
+                for r in rows
+                if _matches_any_product_id(_to_str(r.get("event_id")), product_ids=pids)
+            ]
         rows.sort(key=lambda r: int(r.get("total_anomalies") or 0), reverse=True)
         logger.info(
             "artifact_list_view key=%s input_pids=%d output_rows=%d elapsed_ms=%.1f",
@@ -649,11 +732,24 @@ def get_analytics_artifact_unified_snapshot(
             if pids and not _matches_any_product_id(event_id, product_ids=pids):
                 continue
 
-            main = report.get("main_anomalies") if isinstance(report.get("main_anomalies"), dict) else {}
-            by_station = main.get("by_station") if isinstance(main.get("by_station"), dict) else {}
+            main = (
+                report.get("main_anomalies")
+                if isinstance(report.get("main_anomalies"), dict)
+                else {}
+            )
+            by_station = (
+                main.get("by_station")
+                if isinstance(main.get("by_station"), dict)
+                else {}
+            )
             for station, payload in by_station.items():
                 station_name = _to_str(station).strip() or "Unknown"
-                anomalies = payload.get("anomalies") if isinstance(payload, dict) and isinstance(payload.get("anomalies"), list) else []
+                anomalies = (
+                    payload.get("anomalies")
+                    if isinstance(payload, dict)
+                    and isinstance(payload.get("anomalies"), list)
+                    else []
+                )
                 _inc(station_counter, station_name, max(1, len(anomalies)))
                 for it in anomalies:
                     if not isinstance(it, dict):
@@ -730,7 +826,9 @@ def get_analytics_artifact_unified_snapshot(
         metrics["total_events"] = int(total_events)
         metrics["total_core_features"] = int(total_core_features)
 
-    def _to_sorted_rows(counter: dict[str, int], *, limit: int | None) -> list[dict[str, Any]]:
+    def _to_sorted_rows(
+        counter: dict[str, int], *, limit: int | None
+    ) -> list[dict[str, Any]]:
         items = sorted(counter.items(), key=lambda kv: kv[1], reverse=True)
         if limit is not None:
             items = items[:limit]
@@ -776,16 +874,41 @@ def get_analytics_artifact_detail_view(
             raise KeyError("Event not found")
 
         ctx = found.get("context") if isinstance(found.get("context"), dict) else {}
-        produce_no = _to_str(ctx.get("Produce_No.") or ctx.get("produce_no") or ctx.get("LOT NO.") or ctx.get("lot_no")).strip()
+        produce_no = _to_str(
+            ctx.get("Produce_No.")
+            or ctx.get("produce_no")
+            or ctx.get("LOT NO.")
+            or ctx.get("lot_no")
+        ).strip()
         winder = _to_str(ctx.get("Winder number") or ctx.get("Winder") or "").strip()
-        slitting = _to_str(ctx.get("Slitting machine") or ctx.get("Slitting") or "").strip()
+        slitting = _to_str(
+            ctx.get("Slitting machine") or ctx.get("Slitting") or ""
+        ).strip()
 
-        detected = found.get("detected_by_IQR") if isinstance(found.get("detected_by_IQR"), dict) else {}
-        iqr_features = sorted([_to_str(k).strip() for k in detected.keys() if _to_str(k).strip()])
+        detected = (
+            found.get("detected_by_IQR")
+            if isinstance(found.get("detected_by_IQR"), dict)
+            else {}
+        )
+        iqr_features = sorted(
+            [_to_str(k).strip() for k in detected.keys() if _to_str(k).strip()]
+        )
 
-        ranked = found.get("ranked_features") if isinstance(found.get("ranked_features"), dict) else {}
-        t2 = ranked.get("T2_feature") if isinstance(ranked.get("T2_feature"), list) else []
-        spe = ranked.get("SPE_feature") if isinstance(ranked.get("SPE_feature"), list) else []
+        ranked = (
+            found.get("ranked_features")
+            if isinstance(found.get("ranked_features"), dict)
+            else {}
+        )
+        t2 = (
+            ranked.get("T2_feature")
+            if isinstance(ranked.get("T2_feature"), list)
+            else []
+        )
+        spe = (
+            ranked.get("SPE_feature")
+            if isinstance(ranked.get("SPE_feature"), list)
+            else []
+        )
 
         def _top_features(items: list[Any]) -> list[dict[str, Any]]:
             out: list[dict[str, Any]] = []
@@ -836,7 +959,11 @@ def get_analytics_artifact_detail_view(
         if not found:
             raise KeyError("Summary not found")
 
-        core = found.get("core_features") if isinstance(found.get("core_features"), list) else []
+        core = (
+            found.get("core_features")
+            if isinstance(found.get("core_features"), list)
+            else []
+        )
         rows: list[dict[str, Any]] = []
         for it in core:
             if not isinstance(it, dict):
@@ -844,8 +971,14 @@ def get_analytics_artifact_detail_view(
             feature = _to_str(it.get("feature") or "").strip()
             if not feature:
                 continue
-            evidence = it.get("evidence") if isinstance(it.get("evidence"), dict) else {}
-            iqr = evidence.get("IQR") if isinstance(evidence.get("IQR"), (int, float, str, dict)) else evidence.get("iqr")
+            evidence = (
+                it.get("evidence") if isinstance(it.get("evidence"), dict) else {}
+            )
+            iqr = (
+                evidence.get("IQR")
+                if isinstance(evidence.get("IQR"), (int, float, str, dict))
+                else evidence.get("iqr")
+            )
 
             def _freq(v: Any) -> int:
                 if v is None:
@@ -865,23 +998,60 @@ def get_analytics_artifact_detail_view(
                 return 0
 
             iqr_f = _freq(iqr)
-            ranked = evidence.get("ranked_features") if isinstance(evidence.get("ranked_features"), dict) else (
-                evidence.get("rank") if isinstance(evidence.get("rank"), dict) else {}
+            ranked = (
+                evidence.get("ranked_features")
+                if isinstance(evidence.get("ranked_features"), dict)
+                else (
+                    evidence.get("rank")
+                    if isinstance(evidence.get("rank"), dict)
+                    else {}
+                )
             )
-            t2_f = _freq(ranked.get("T2_feature") or ranked.get("t2_feature") or ranked.get("T2") or ranked.get("t2"))
-            spe_f = _freq(ranked.get("SPE_feature") or ranked.get("spe_feature") or ranked.get("SPE") or ranked.get("spe"))
+            t2_f = _freq(
+                ranked.get("T2_feature")
+                or ranked.get("t2_feature")
+                or ranked.get("T2")
+                or ranked.get("t2")
+            )
+            spe_f = _freq(
+                ranked.get("SPE_feature")
+                or ranked.get("spe_feature")
+                or ranked.get("SPE")
+                or ranked.get("spe")
+            )
             total = iqr_f + t2_f + spe_f
-            rows.append({"feature": feature, "iqr_freq": iqr_f, "t2_freq": t2_f, "spe_freq": spe_f, "total": total})
+            rows.append(
+                {
+                    "feature": feature,
+                    "iqr_freq": iqr_f,
+                    "t2_freq": t2_f,
+                    "spe_freq": spe_f,
+                    "total": total,
+                }
+            )
 
-        rows.sort(key=lambda r: (int(r.get("total") or 0), int(r.get("iqr_freq") or 0), str(r.get("feature") or "")), reverse=True)
+        rows.sort(
+            key=lambda r: (
+                int(r.get("total") or 0),
+                int(r.get("iqr_freq") or 0),
+                str(r.get("feature") or ""),
+            ),
+            reverse=True,
+        )
 
         ctx = found.get("context") if isinstance(found.get("context"), dict) else {}
-        ctx_preview = " / ".join([f"{k}: {_to_str(v)}" for k, v in list(ctx.items())[:8]])
-        event_ids = found.get("event_ids") if isinstance(found.get("event_ids"), list) else []
+        ctx_preview = " / ".join(
+            [f"{k}: {_to_str(v)}" for k, v in list(ctx.items())[:8]]
+        )
+        event_ids = (
+            found.get("event_ids") if isinstance(found.get("event_ids"), list) else []
+        )
 
         out = {
             "summary_id": want_id,
-            "analysis_dimension": _to_str(found.get("analysis_dimension") or "").strip(),
+            "analysis_dimension": _to_str(
+                found.get("analysis_dimension") or ""
+            ).strip(),
             "sample_count": int(_safe_number(found.get("sample_count"))),
             "context_preview": ctx_preview,
             "event_count": int(len(event_ids)),
@@ -996,7 +1166,11 @@ def get_analytics_artifact_detail_view(
         report: dict[str, Any] | None = None
         if isinstance(raw, list):
             for it in raw:
-                if isinstance(it, dict) and _to_str(it.get("event_id") or it.get("id") or "").strip() == want_id:
+                if (
+                    isinstance(it, dict)
+                    and _to_str(it.get("event_id") or it.get("id") or "").strip()
+                    == want_id
+                ):
                     report = it
                     break
         elif isinstance(raw, dict):
@@ -1007,22 +1181,36 @@ def get_analytics_artifact_detail_view(
                 report = raw.get(want_id)  # type: ignore[assignment]
             else:
                 for _, it in raw.items():
-                    if isinstance(it, dict) and _to_str(it.get("event_id") or it.get("id") or "").strip() == want_id:
+                    if (
+                        isinstance(it, dict)
+                        and _to_str(it.get("event_id") or it.get("id") or "").strip()
+                        == want_id
+                    ):
                         report = it
                         break
 
         if not report:
             raise KeyError("Report not found")
 
-        main = report.get("main_anomalies") if isinstance(report.get("main_anomalies"), dict) else {}
+        main = (
+            report.get("main_anomalies")
+            if isinstance(report.get("main_anomalies"), dict)
+            else {}
+        )
         total = int(_safe_number(main.get("total_anomalies")))
-        by_station = main.get("by_station") if isinstance(main.get("by_station"), dict) else {}
+        by_station = (
+            main.get("by_station") if isinstance(main.get("by_station"), dict) else {}
+        )
 
         stations_out: list[dict[str, Any]] = []
         for station, payload in by_station.items():
             if not isinstance(payload, dict):
                 continue
-            anomalies = payload.get("anomalies") if isinstance(payload.get("anomalies"), list) else []
+            anomalies = (
+                payload.get("anomalies")
+                if isinstance(payload.get("anomalies"), list)
+                else []
+            )
             rows: list[dict[str, Any]] = []
             for it in anomalies[:200]:
                 if not isinstance(it, dict):
@@ -1030,8 +1218,12 @@ def get_analytics_artifact_detail_view(
                 rows.append(
                     {
                         "feature_name": _to_str(it.get("feature_name") or "").strip(),
-                        "detection_method": _to_str(it.get("detection_method") or "").strip(),
-                        "problem_description": _to_str(it.get("problem_description") or "").strip(),
+                        "detection_method": _to_str(
+                            it.get("detection_method") or ""
+                        ).strip(),
+                        "problem_description": _to_str(
+                            it.get("problem_description") or ""
+                        ).strip(),
                     }
                 )
             if rows:
@@ -1076,17 +1268,24 @@ def resolve_artifact_product_inputs(
             "match_diagnostics": {},
         }
 
-    rows = get_analytics_artifact_list_view(key, product_ids=None, artifacts_dir=artifacts_dir)
+    rows = get_analytics_artifact_list_view(
+        key, product_ids=None, artifacts_dir=artifacts_dir
+    )
     if not isinstance(rows, list):
         return {
             "requested": requested,
             "artifact_row_count": 0,
-            "normalized_inputs": {pid: _normalize_artifact_input_candidates(pid) for pid in requested},
+            "normalized_inputs": {
+                pid: _normalize_artifact_input_candidates(pid) for pid in requested
+            },
             "resolved": [],
             "unmatched": requested,
             "matches": {pid: [] for pid in requested},
             "match_diagnostics": {
-                pid: {"candidate_count": len(_normalize_artifact_input_candidates(pid)), "matched_by": []}
+                pid: {
+                    "candidate_count": len(_normalize_artifact_input_candidates(pid)),
+                    "matched_by": [],
+                }
                 for pid in requested
             },
         }
@@ -1135,7 +1334,12 @@ def resolve_artifact_product_inputs(
                 ):
                     matched_by.add(candidate)
 
-            for token in [produce_no, event_id, summary_id, _to_str(row.get("id")).strip()]:
+            for token in [
+                produce_no,
+                event_id,
+                summary_id,
+                _to_str(row.get("id")).strip(),
+            ]:
                 t = token.strip()
                 if not t:
                     continue
@@ -1296,7 +1500,7 @@ def _normalize_station_selection_for_product_id(
 
 def _parse_date_to_yyyymmdd(value: Any) -> int | None:
     import re
-    
+
     if value is None:
         return None
 
@@ -1311,7 +1515,7 @@ def _parse_date_to_yyyymmdd(value: Any) -> int | None:
     if not s:
         return None
 
-    # 民國年格式: "114年8月20日11:00" 或 "114年8月20日" 
+    # 民國年格式: "114年8月20日11:00" 或 "114年8月20日"
     roc_pattern = r"(\d{2,3})年(\d{1,2})月(\d{1,2})日"
     roc_match = re.search(roc_pattern, s)
     if roc_match:
@@ -1505,7 +1709,11 @@ def _filter_df(
 
     logger.info(
         "[DEBUG] _filter_df station=%s: date_col=%s, start=%s, end=%s, input_rows=%d",
-        station, date_col, start_i, end_i, len(out),
+        station,
+        date_col,
+        start_i,
+        end_i,
+        len(out),
     )
 
     if date_col and (start_i or end_i):
@@ -1619,8 +1827,12 @@ def run_external_categorical_analysis(
             # If the merged CSV doesn't include this station's target, just skip.
             continue
 
-        present_categorical_cols = [c for c in categorical_cols if c in station_df.columns]
-        missing_categorical_cols = [c for c in categorical_cols if c not in station_df.columns]
+        present_categorical_cols = [
+            c for c in categorical_cols if c in station_df.columns
+        ]
+        missing_categorical_cols = [
+            c for c in categorical_cols if c not in station_df.columns
+        ]
         if missing_categorical_cols:
             logger.warning(
                 "Analytics categorical columns missing in merged CSV for %s: %s",
@@ -1676,10 +1888,10 @@ async def run_external_categorical_analysis_from_db(
 ) -> dict[str, Any]:
     """
     從資料庫撈取資料並執行 Analytical-Four categorical analysis。
-    
+
     這是 run_external_categorical_analysis 的 async DB 版本，
     解決直方圖顯示時資料來源與 NG 查詢資料來源不一致的問題。
-    
+
     Args:
         db: AsyncSession
         tenant_id: UUID
@@ -1688,7 +1900,7 @@ async def run_external_categorical_analysis_from_db(
         product_id: 產品編號（可選）
         product_ids: 客訴 product_id 列表（可選，提供時忽略日期範圍）
         stations: 站點列表 ["P2", "P3", "ALL"]
-        
+
     Returns:
         dict: 分析結果 JSON，符合前端預期格式
     """
@@ -1696,24 +1908,26 @@ async def run_external_categorical_analysis_from_db(
         fetch_merged_by_product_ids,
         fetch_merged_p1p2p3_from_db,
     )
-    
-    product_ids = [str(pid).strip() for pid in (product_ids or []) if str(pid or "").strip()]
+
+    product_ids = [
+        str(pid).strip() for pid in (product_ids or []) if str(pid or "").strip()
+    ]
     if product_id:
         stations = _normalize_station_selection_for_product_id(stations, product_id)
-    
+
     paths = resolve_external_paths()
-    
+
     if not paths.config_path.exists():
         raise FileNotFoundError(f"Analytics config not found: {paths.config_path}")
-    
+
     _ensure_analytical_four_importable(paths.analytical_four_root)
-    
+
     from analysis.descriptive.categorical_analyzer import (
         CategoricalAnalyzer,  # type: ignore
     )
-    
+
     config = _load_json(paths.config_path)
-    
+
     # Fetch from DB instead of reading CSV
     if product_ids:
         df = await fetch_merged_by_product_ids(
@@ -1729,7 +1943,7 @@ async def run_external_categorical_analysis_from_db(
             end_date=end_date,
             stations=[str(s) for s in stations],
         )
-    
+
     if df.empty:
         logger.warning(
             "No data found in DB for analysis: tenant=%s, range=%s~%s, stations=%s",
@@ -1739,17 +1953,22 @@ async def run_external_categorical_analysis_from_db(
             stations,
         )
         return {}
-    
+
     analyzer = CategoricalAnalyzer()
     combined: dict[str, Any] = {}
-    
+
     logger.info("[DEBUG] DataFrame columns after DB fetch: %s", list(df.columns))
     logger.info("[DEBUG] DataFrame shape: %s", df.shape)
-    
+
     for station in _station_codes_from_request(stations):
         target_col, categorical_cols = _extract_station_config(config, station)
-        logger.info("[DEBUG] Station %s: target_col=%s, categorical_cols=%s", station, target_col, categorical_cols)
-        
+        logger.info(
+            "[DEBUG] Station %s: target_col=%s, categorical_cols=%s",
+            station,
+            target_col,
+            categorical_cols,
+        )
+
         station_df = _filter_df(
             df,
             start_date=None if product_ids else start_date,
@@ -1757,8 +1976,10 @@ async def run_external_categorical_analysis_from_db(
             product_id=None if product_ids else product_id,
             station=station,
         )
-        logger.info("[DEBUG] After _filter_df for %s: shape=%s", station, station_df.shape)
-        
+        logger.info(
+            "[DEBUG] After _filter_df for %s: shape=%s", station, station_df.shape
+        )
+
         if target_col not in station_df.columns:
             logger.warning(
                 "Target column %s not found in DB data for station %s",
@@ -1766,10 +1987,18 @@ async def run_external_categorical_analysis_from_db(
                 station,
             )
             continue
-        
-        present_categorical_cols = [c for c in categorical_cols if c in station_df.columns]
-        missing_categorical_cols = [c for c in categorical_cols if c not in station_df.columns]
-        logger.info("[DEBUG] Station %s: present_categorical_cols=%s", station, present_categorical_cols)
+
+        present_categorical_cols = [
+            c for c in categorical_cols if c in station_df.columns
+        ]
+        missing_categorical_cols = [
+            c for c in categorical_cols if c not in station_df.columns
+        ]
+        logger.info(
+            "[DEBUG] Station %s: present_categorical_cols=%s",
+            station,
+            present_categorical_cols,
+        )
         if missing_categorical_cols:
             logger.warning(
                 "Analytics categorical columns missing in DB data for %s: %s",
@@ -1777,15 +2006,21 @@ async def run_external_categorical_analysis_from_db(
                 missing_categorical_cols,
             )
         if not present_categorical_cols:
-            logger.warning("[DEBUG] No present_categorical_cols for %s, skipping", station)
+            logger.warning(
+                "[DEBUG] No present_categorical_cols for %s, skipping", station
+            )
             continue
-        
+
         station_df = station_df[station_df[target_col].notna()].copy()
-        logger.info("[DEBUG] After notna filter for %s: shape=%s", station, station_df.shape)
+        logger.info(
+            "[DEBUG] After notna filter for %s: shape=%s", station, station_df.shape
+        )
         if station_df.empty:
-            logger.warning("[DEBUG] station_df empty after notna filter for %s", station)
+            logger.warning(
+                "[DEBUG] station_df empty after notna filter for %s", station
+            )
             continue
-        
+
         if hasattr(analyzer, "analyze_target_distribution_by_category"):
             result = analyzer.analyze_target_distribution_by_category(
                 data=station_df,
@@ -1800,14 +2035,21 @@ async def run_external_categorical_analysis_from_db(
                 categorical_cols=present_categorical_cols,
                 normalize=True,
             )
-        
-        logger.info("[DEBUG] Station %s analysis result keys: %s", station, list(result.keys()) if result else "EMPTY")
-        
+
+        logger.info(
+            "[DEBUG] Station %s analysis result keys: %s",
+            station,
+            list(result.keys()) if result else "EMPTY",
+        )
+
         if len(_station_codes_from_request(stations)) > 1:
             for feature_name, buckets in result.items():
                 combined[f"{station}.{feature_name}"] = buckets
         else:
             combined.update(result)
-    
-    logger.info("[DEBUG] Final combined result keys: %s", list(combined.keys()) if combined else "EMPTY")
+
+    logger.info(
+        "[DEBUG] Final combined result keys: %s",
+        list(combined.keys()) if combined else "EMPTY",
+    )
     return combined

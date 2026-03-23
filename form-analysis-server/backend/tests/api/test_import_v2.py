@@ -258,13 +258,7 @@ async def test_validate_import_job_ignores_leading_blank_rows(client, db_session
     await db_session.refresh(tenant)
 
     # Include multiple blank rows before the first valid row.
-    csv_content = (
-        "lot_no,Any,Other\n"
-        ",,\n"
-        " , , \n"
-        ",,\n"
-        "2503033_01,10.5,abc\n"
-    )
+    csv_content = "lot_no,Any,Other\n,,\n , , \n,,\n2503033_01,10.5,abc\n"
     files = [("files", ("P1_2503033_01.csv", csv_content.encode("utf-8"), "text/csv"))]
     data = {"table_code": "P1"}
     headers = {"X-Tenant-Id": str(tenant.id)}

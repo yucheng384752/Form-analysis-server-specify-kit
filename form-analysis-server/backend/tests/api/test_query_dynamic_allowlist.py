@@ -307,7 +307,9 @@ async def test_v2_query_dynamic_rejects_invalid_row_data_key(client, db_session)
 
 
 @pytest.mark.asyncio
-async def test_v2_query_dynamic_p2_winder_and_striped_results_eq_zero(client, db_session):
+async def test_v2_query_dynamic_p2_winder_and_striped_results_eq_zero(
+    client, db_session
+):
     tenant = await _create_tenant(db_session)
 
     lot_ng_num = "2234567_20"
@@ -524,13 +526,9 @@ async def test_v2_query_dynamic_p2_winder_and_striped_results_with_roc_datetime_
     client, db_session
 ):
     tenant = await _create_tenant(db_session)
-    assert (
-        csv_field_mapper._normalize_date_to_yyyymmdd("114年8月27日14:30") == 20250827
-    )
+    assert csv_field_mapper._normalize_date_to_yyyymmdd("114年8月27日14:30") == 20250827
 
-    pragma_result = await db_session.execute(
-        text("PRAGMA table_info(p2_items_v2)")
-    )
+    pragma_result = await db_session.execute(text("PRAGMA table_info(p2_items_v2)"))
     p2_item_columns = {row[1] for row in pragma_result.all()}
     for col_name in ("production_date_yyyymmdd", "trace_lot_no"):
         if col_name not in p2_item_columns:
@@ -538,16 +536,18 @@ async def test_v2_query_dynamic_p2_winder_and_striped_results_with_roc_datetime_
                 text(
                     "ALTER TABLE p2_items_v2 ADD COLUMN "
                     + col_name
-                    + (" INTEGER" if col_name == "production_date_yyyymmdd" else " VARCHAR(32)")
+                    + (
+                        " INTEGER"
+                        if col_name == "production_date_yyyymmdd"
+                        else " VARCHAR(32)"
+                    )
                 )
             )
             p2_item_columns.add(col_name)
 
     if "production_date_yyyymmdd" not in p2_item_columns:
         await db_session.execute(
-            text(
-                "ALTER TABLE p2_items_v2 ADD COLUMN production_date_yyyymmdd INTEGER"
-            )
+            text("ALTER TABLE p2_items_v2 ADD COLUMN production_date_yyyymmdd INTEGER")
         )
 
     lot_in_range = "2234567_01"
@@ -592,7 +592,11 @@ async def test_v2_query_dynamic_p2_winder_and_striped_results_with_roc_datetime_
             "data_type": "P2",
             "filters": [
                 {"field": "winder_number", "op": "eq", "value": 1},
-                {"field": "production_date", "op": "between", "value": ["2025-08-01", "2025-08-31"]},
+                {
+                    "field": "production_date",
+                    "op": "between",
+                    "value": ["2025-08-01", "2025-08-31"],
+                },
                 {"field": "row_data.Striped Results", "op": "eq", "value": 0},
             ],
             "page": 1,

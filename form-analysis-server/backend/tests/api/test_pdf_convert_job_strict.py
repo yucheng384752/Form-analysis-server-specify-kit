@@ -57,7 +57,9 @@ async def test_pdf_convert_status_not_started(client, db_session_clean):
 
 
 @pytest.mark.asyncio
-async def test_pdf_convert_trigger_creates_job_and_status(client, db_session_clean, monkeypatch):
+async def test_pdf_convert_trigger_creates_job_and_status(
+    client, db_session_clean, monkeypatch
+):
     tenant = Tenant(name="T1", code="t1", is_default=True, is_active=True)
     db_session_clean.add(tenant)
     await db_session_clean.commit()

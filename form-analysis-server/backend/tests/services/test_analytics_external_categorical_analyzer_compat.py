@@ -33,12 +33,16 @@ def _install_fake_categorical_analyzer_module(*, tmp_path: Path, mode: str):
             calls["called"] = "new"
             calls["categorical_cols"] = list(categorical_cols)
             # Return minimal shape expected by the endpoint.
-            return {"feature_a": {"x": {"0": 0.5, "1": 0.5, "total_count": 2, "count_0": 1}}}
+            return {
+                "feature_a": {"x": {"0": 0.5, "1": 0.5, "total_count": 2, "count_0": 1}}
+            }
 
         def analyze(self, *, data, target_col, categorical_cols, normalize=True):
             calls["called"] = "old"
             calls["categorical_cols"] = list(categorical_cols)
-            return {"feature_a": {"x": {"0": 1.0, "1": 0.0, "total_count": 1, "count_0": 1}}}
+            return {
+                "feature_a": {"x": {"0": 1.0, "1": 0.0, "total_count": 1, "count_0": 1}}
+            }
 
     if mode == "new":
         # Remove old method to ensure we pick the new method.
@@ -82,7 +86,9 @@ def _write_inputs(tmp_path: Path):
     return config_path, csv_path
 
 
-def test_run_external_categorical_analysis_uses_new_api_when_available(monkeypatch, tmp_path):
+def test_run_external_categorical_analysis_uses_new_api_when_available(
+    monkeypatch, tmp_path
+):
     calls = _install_fake_categorical_analyzer_module(tmp_path=tmp_path, mode="new")
     config_path, csv_path = _write_inputs(tmp_path)
 

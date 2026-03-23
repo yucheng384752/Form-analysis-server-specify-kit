@@ -82,4 +82,3 @@ async def test_traceability_product_accepts_lot_winder_input(client, db_session_
         payload = resp.json()
         assert payload.get("p3", {}).get("lot_no") == lot_no_raw
         assert payload.get("p3", {}).get("source_winder") == 19
-

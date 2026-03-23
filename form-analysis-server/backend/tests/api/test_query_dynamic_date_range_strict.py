@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from datetime import datetime, timezone
 
 import pytest
@@ -43,7 +43,9 @@ async def _create_tenant(db_session_clean) -> Tenant:
 
 
 @pytest.mark.asyncio
-async def test_dynamic_date_range_excludes_out_of_range_and_null_dates(client, db_session_clean):
+async def test_dynamic_date_range_excludes_out_of_range_and_null_dates(
+    client, db_session_clean
+):
     tenant = await _create_tenant(db_session_clean)
 
     lot = "2507173_02"
@@ -197,7 +199,9 @@ async def test_dynamic_date_range_includes_p2_when_date_exists_in_nested_rows(
         "page_size": 50,
     }
 
-    resp = await client.post("/api/v2/query/records/dynamic", json=payload, headers=headers)
+    resp = await client.post(
+        "/api/v2/query/records/dynamic", json=payload, headers=headers
+    )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["total_count"] == 1
@@ -249,7 +253,9 @@ async def test_dynamic_date_range_prefers_structured_p2_item_date_column(
         "page_size": 50,
     }
 
-    resp = await client.post("/api/v2/query/records/dynamic", json=payload, headers=headers)
+    resp = await client.post(
+        "/api/v2/query/records/dynamic", json=payload, headers=headers
+    )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["total_count"] == 1
