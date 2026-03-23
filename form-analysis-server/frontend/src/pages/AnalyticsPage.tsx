@@ -398,7 +398,7 @@ export function AnalyticsPage() {
   const [extractionLoading, setExtractionLoading] = useState(false)
 
   const [artifactView, setArtifactView] = useState<ViewKey>('events')
-  const [analysisChartMode, setAnalysisChartMode] = useState<'heatmap' | 'bar'>('heatmap')
+  const [analysisChartMode, setAnalysisChartMode] = useState<'heatmap' | 'bar'>('bar')
 
   const artifactsSectionRef = useRef<HTMLDivElement | null>(null)
 
@@ -742,16 +742,20 @@ export function AnalyticsPage() {
     const winderCat = categoryCards.find((cat) => /winder/i.test(cat.category))
     if (!winderCat) return []
     const sorted = winderCat.items
-      .map((item) => ({ name: item.label || item.key, count: item.ng, total: item.total }))
+      .map((item) => ({
+        name: item.label || item.key,
+        count: productIdMode ? item.total : item.ng,
+        total: item.total,
+      }))
       .filter((d) => d.name)
       .sort((a, b) => b.count - a.count)
-    const totalNg = sorted.reduce((s, d) => s + d.count, 0)
+    const totalCount = sorted.reduce((s, d) => s + d.count, 0)
     let cum = 0
     return sorted.map((d) => {
       cum += d.count
-      return { ...d, cumPct: totalNg > 0 ? round3((cum / totalNg) * 100) : 0 }
+      return { ...d, cumPct: totalCount > 0 ? round3((cum / totalCount) * 100) : 0 }
     })
-  }, [categoryCards])
+  }, [categoryCards, productIdMode])
 
   const ngParetoData = useMemo(() => {
     if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_NG || !analysisResult) return [] as ParetoPoint[]
@@ -1937,51 +1941,6 @@ export function AnalyticsPage() {
           ) : null}
 
           <section className="analytics-card">
-            <div className="analytics-actions" style={{ justifyContent: 'flex-start', marginTop: 0, gap: 8 }}>
-              {!productIdMode ? (
-                <button
-                  type="button"
-                  className={analysisChartMode === 'heatmap' ? 'btn-primary' : 'btn-secondary'}
-                  onClick={() => setAnalysisChartMode('heatmap')}
-                >
-                  {t('analytics.views.heatmap')}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className={analysisChartMode === 'bar' ? 'btn-primary' : 'btn-secondary'}
-                onClick={() => setAnalysisChartMode('bar')}
-              >
-                {t('analytics.views.bar')}
-              </button>
-            </div>
-
-            {!productIdMode && analysisChartMode === 'heatmap' ? (
-              analysisHeatmapRows.length > 0 ? (
-                <div className="analytics-heatmap">
-                  <div className="analytics-heatmap-head">
-                    <div>{t('analytics.heatmap.category')}</div>
-                    <div>{t('analytics.heatmap.value')}</div>
-                    <div>{t('analytics.heatmap.ngRate')}</div>
-                    <div>{t('analytics.heatmap.sample')}</div>
-                  </div>
-                  {analysisHeatmapRows.map((row) => (
-                    <div
-                      key={`${row.category}:${row.key}`}
-                      className="analytics-heatmap-row"
-                      style={{ background: heatColor(row.ngRate) }}
-                    >
-                      <div title={row.category}>{row.category}</div>
-                      <div title={row.key}>{row.key}</div>
-                      <div>{pct(row.ng, row.total)}%</div>
-                      <div>{row.total}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="analytics-empty">{t('analytics.noData')}</div>
-              )
-            ) : null}
 
             {analysisChartMode === 'bar' ? (
             categoryCards.length > 0 ? (
@@ -2079,7 +2038,7 @@ export function AnalyticsPage() {
             )
             ) : null}
 
-            {winderChartData.length > 0 ? (
+            {winderChartData.length > 0 && !productIdMode ? (
               <div style={{ marginTop: '1.5rem' }}>
                 <div className="analytics-card-title">Winder Number 累積直方圖</div>
                 <div className="analytics-chart-wrap" style={{ height: 280, minHeight: 280, marginTop: '0.75rem' }}>
@@ -2096,7 +2055,7 @@ export function AnalyticsPage() {
                         }}
                       />
                       <Legend />
-                      <Bar yAxisId="left" dataKey="count" name="NG數量" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                      <Bar yAxisId="left" dataKey="count" name={productIdMode ? '客訴數量' : 'NG數量'} fill="#2563eb" radius={[6, 6, 0, 0]} />
                       <Line yAxisId="right" dataKey="cumPct" name="累積%" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
