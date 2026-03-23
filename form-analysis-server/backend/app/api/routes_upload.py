@@ -54,7 +54,6 @@ from app.schemas.upload import (
 )
 from app.services.audit_events import write_audit_event_best_effort
 from app.services.pdf_conversion import (
-    PdfServerNotConfigured,
     process_pdf_conversion_job_background,
 )
 from app.services.validation import ValidationError, file_validation_service

@@ -127,7 +127,7 @@ def validate_and_prepare_df(
 
 async def run_basic_statistics_from_db(
     *,
-    db: "AsyncSession",
+    db: AsyncSession,
     tenant_id: UUID,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -231,7 +231,7 @@ async def run_basic_statistics_from_db(
 
 async def run_compare_outliers_from_db(
     *,
-    db: "AsyncSession",
+    db: AsyncSession,
     tenant_id: UUID,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -366,7 +366,7 @@ async def run_compare_outliers_from_db(
 
 async def run_contribution_analysis_from_db(
     *,
-    db: "AsyncSession",
+    db: AsyncSession,
     tenant_id: UUID,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -542,7 +542,7 @@ async def run_contribution_analysis_from_db(
 
 async def run_serialization_from_db(
     *,
-    db: "AsyncSession",
+    db: AsyncSession,
     tenant_id: UUID,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -574,7 +574,6 @@ async def run_serialization_from_db(
     _ensure_analytical_four_importable(paths.analytical_four_root)
     
     # Import Analytical-Four components
-    from analysis.models import SerializationInputs
     from serializer import SerializerFactory
     
     # Load config
@@ -659,7 +658,7 @@ async def run_serialization_from_db(
 
 async def run_unified_analysis_from_db(
     *,
-    db: "AsyncSession",
+    db: AsyncSession,
     tenant_id: UUID,
     product_ids: list[str] | None = None,
     start_date: str | None = None,
@@ -755,7 +754,7 @@ async def run_unified_analysis_from_db(
 
 async def run_extraction_analysis_from_db(
     *,
-    db: "AsyncSession",
+    db: AsyncSession,
     tenant_id: UUID,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -780,7 +779,11 @@ async def run_extraction_analysis_from_db(
     from analysis.diagnostic.comparator import Comparator
     from analysis.diagnostic.contribution import ContributionAnalyzer
     from analysis.diagnostic.extraction import Extractor
-    from analysis.models import CompareOutliersResults, DataFrameSummary, StatisticsSummary
+    from analysis.models import (
+        CompareOutliersResults,
+        DataFrameSummary,
+        StatisticsSummary,
+    )
 
     config = load_analytical_config()
     target_col, numerical_cols, categorical_cols, id_col = get_station_config(config, station)

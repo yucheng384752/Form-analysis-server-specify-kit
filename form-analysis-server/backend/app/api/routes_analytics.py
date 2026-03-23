@@ -12,10 +12,10 @@ import logging
 import math
 import re
 import time
-import pandas as pd
-import pandas as pd
 from datetime import UTC, datetime
 from typing import Any, Literal
+
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -618,7 +618,9 @@ async def analyze(
 
     # Use DB-based analysis to ensure data consistency with NG drill-down
     try:
-        from app.services.analytics_external import run_external_categorical_analysis_from_db
+        from app.services.analytics_external import (
+            run_external_categorical_analysis_from_db,
+        )
 
         product_ids = [str(pid).strip() for pid in (payload.product_ids or []) if str(pid or "").strip()]
         product_id = payload.product_id
@@ -692,7 +694,10 @@ async def get_artifact(artifact_key: str, request: Request = None) -> Any:
         check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}")
 
     try:
-        from app.services.analytics_external import get_analytics_artifact_list_view, parse_artifact_key
+        from app.services.analytics_external import (
+            get_analytics_artifact_list_view,
+            parse_artifact_key,
+        )
 
         key = parse_artifact_key(artifact_key)
         return get_analytics_artifact_list_view(key)
@@ -725,7 +730,11 @@ async def get_artifact_list(
         check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/list")
 
     try:
-        from app.services.analytics_external import get_analytics_artifact_list_view, parse_artifact_key, _split_product_ids
+        from app.services.analytics_external import (
+            _split_product_ids,
+            get_analytics_artifact_list_view,
+            parse_artifact_key,
+        )
 
         key = parse_artifact_key(artifact_key)
         pids = _split_product_ids(product_ids)
@@ -1142,7 +1151,10 @@ async def analyze_complaint_products(
     try:
         from app.api.traceability import trace_by_product_id
         from app.services.analytical_four_adapter import run_unified_analysis_from_db
-        from app.services.analytics_data_fetcher import fetch_merged_by_product_ids, _normalize_product_id
+        from app.services.analytics_data_fetcher import (
+            _normalize_product_id,
+            fetch_merged_by_product_ids,
+        )
         from app.services.analytics_external import write_complain_csv_from_df
 
         requested_ids: list[str] = []
@@ -1357,7 +1369,10 @@ async def get_artifact_detail(
         check_rate_limit(request, endpoint="/api/v2/analytics/artifacts/{artifact_key}/detail/{item_id}")
 
     try:
-        from app.services.analytics_external import get_analytics_artifact_detail_view, parse_artifact_key
+        from app.services.analytics_external import (
+            get_analytics_artifact_detail_view,
+            parse_artifact_key,
+        )
 
         key = parse_artifact_key(artifact_key)
         return get_analytics_artifact_detail_view(key, item_id)

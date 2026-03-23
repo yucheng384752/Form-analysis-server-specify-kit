@@ -10,8 +10,8 @@ from app.core.config import get_settings
 from app.main import app
 from app.models.core.schema_registry import TableRegistry
 from app.models.core.tenant import Tenant
-from app.models.p2_item_v2 import P2ItemV2
 from app.models.p1_record import P1Record
+from app.models.p2_item_v2 import P2ItemV2
 from app.models.p2_record import P2Record
 
 settings = get_settings()

@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 from app.api.deps import get_db
 from app.main import app
@@ -142,11 +141,14 @@ async def test_v2_analytics_artifacts_snapshot_ok(client, monkeypatch, db_sessio
 async def test_v2_analytics_complaint_analysis_ok(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
 
-    from app.api import traceability
-    from app.services import analytics_data_fetcher, analytics_external
-    from app.services import analytical_four_adapter
-
     import pandas as pd
+
+    from app.api import traceability
+    from app.services import (
+        analytical_four_adapter,
+        analytics_data_fetcher,
+        analytics_external,
+    )
 
     async def fake_trace_by_product_id(*, product_id, db, current_tenant):
         _ = (db, current_tenant)
@@ -196,11 +198,14 @@ async def test_v2_analytics_complaint_analysis_ok(client, monkeypatch, db_sessio
 async def test_v2_analytics_complaint_analysis_all_unmatched_returns_diagnostics_only(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
 
-    from app.api import traceability
-    from app.services import analytics_data_fetcher, analytics_external
-    from app.services import analytical_four_adapter
-
     import pandas as pd
+
+    from app.api import traceability
+    from app.services import (
+        analytical_four_adapter,
+        analytics_data_fetcher,
+        analytics_external,
+    )
 
     async def fake_trace_by_product_id(*, product_id, db, current_tenant):
         _ = (product_id, db, current_tenant)
@@ -240,11 +245,14 @@ async def test_v2_analytics_complaint_analysis_all_unmatched_returns_diagnostics
 async def test_v2_analytics_complaint_analysis_partial_hit_keeps_analysis_and_diagnostics(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
 
-    from app.api import traceability
-    from app.services import analytics_data_fetcher, analytics_external
-    from app.services import analytical_four_adapter
-
     import pandas as pd
+
+    from app.api import traceability
+    from app.services import (
+        analytical_four_adapter,
+        analytics_data_fetcher,
+        analytics_external,
+    )
 
     async def fake_trace_by_product_id(*, product_id, db, current_tenant):
         _ = (db, current_tenant)
@@ -331,8 +339,8 @@ async def test_v2_analytics_artifacts_resolve_input_ok(client, monkeypatch, db_s
 @pytest.mark.asyncio
 async def test_v2_analytics_artifacts_resolve_input_with_trace_tokens(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
-    from app.services import analytics_external
     from app.api import traceability
+    from app.services import analytics_external
 
     def fake_resolve(_key, **kwargs):
         pids = kwargs.get("product_ids", [])
@@ -392,8 +400,8 @@ async def test_v2_analytics_artifacts_resolve_input_prefers_db_trace_lot_tokens(
     client, monkeypatch, db_session
 ):
     tenant = await _create_tenant(db_session)
-    from app.services import analytics_external
     from app.api import traceability
+    from app.services import analytics_external
 
     lot_raw = "2507173_02"
     lot_norm = normalize_lot_no(lot_raw)
@@ -534,8 +542,8 @@ async def test_v2_analytics_artifacts_rate_limit_returns_retry_after_header(clie
 @pytest.mark.asyncio
 async def test_v2_analytics_artifacts_resolve_input_reason_invalid_format(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
-    from app.services import analytics_external
     from app.api import traceability
+    from app.services import analytics_external
 
     monkeypatch.setattr(
         analytics_external,
@@ -577,8 +585,8 @@ async def test_v2_analytics_artifacts_resolve_input_reason_invalid_format(client
 @pytest.mark.asyncio
 async def test_v2_analytics_artifacts_resolve_input_reason_no_trace(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
-    from app.services import analytics_external
     from app.api import traceability
+    from app.services import analytics_external
 
     pid = "20250101_P99_999-9_999"
     monkeypatch.setattr(
@@ -621,8 +629,8 @@ async def test_v2_analytics_artifacts_resolve_input_reason_no_trace(client, monk
 @pytest.mark.asyncio
 async def test_v2_analytics_artifacts_resolve_input_reason_artifact_no_data(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
-    from app.services import analytics_external
     from app.api import traceability
+    from app.services import analytics_external
 
     pid = "20250909_P23_238-4_301"
     trace_token = "2507173_02_19"
@@ -694,8 +702,8 @@ async def test_v2_analytics_artifacts_resolve_input_reason_artifact_no_data(clie
 @pytest.mark.asyncio
 async def test_v2_analytics_artifacts_resolve_input_normalized_hit_fields(client, monkeypatch, db_session):
     tenant = await _create_tenant(db_session)
-    from app.services import analytics_external
     from app.api import traceability
+    from app.services import analytics_external
 
     pid = "20250909-P23-238-4-301"
     normalized = "20250909_P23_238-4_301"

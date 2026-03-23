@@ -86,8 +86,8 @@ async def test_load_analytical_config(mock_analytical_four):
 async def test_get_station_config(mock_analytical_four):
     """測試提取站點設定"""
     from app.services.analytical_four_adapter import (
-        load_analytical_config,
         get_station_config,
+        load_analytical_config,
     )
     
     config = load_analytical_config(mock_analytical_four.config_path)
@@ -101,6 +101,7 @@ async def test_get_station_config(mock_analytical_four):
 async def test_validate_and_prepare_df():
     """測試 DataFrame 驗證和準備"""
     import pandas as pd
+
     from app.services.analytical_four_adapter import validate_and_prepare_df
     
     df = pd.DataFrame({

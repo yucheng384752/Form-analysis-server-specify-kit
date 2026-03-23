@@ -3,7 +3,15 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import relationship
 

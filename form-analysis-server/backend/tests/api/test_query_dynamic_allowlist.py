@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import insert, text
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import insert, text
 
 from app.api.deps import get_db
 from app.main import app
@@ -12,8 +12,8 @@ from app.models.p2_item_v2 import P2ItemV2
 from app.models.p2_record import P2Record
 from app.models.p3_item_v2 import P3ItemV2
 from app.models.p3_record import P3Record
-from app.utils.normalization import normalize_lot_no
 from app.services.csv_field_mapper import csv_field_mapper
+from app.utils.normalization import normalize_lot_no
 
 
 @pytest.fixture

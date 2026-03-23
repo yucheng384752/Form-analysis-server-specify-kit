@@ -289,7 +289,7 @@ def extract_p3_year_month_day(row_data: dict[str, Any]) -> str | None:
 
 
 async def fetch_merged_p1p2p3_from_db(
-    db: "AsyncSession",
+    db: AsyncSession,
     tenant_id: UUID,
     *,
     start_date: str | None = None,
@@ -511,7 +511,7 @@ async def fetch_merged_p1p2p3_from_db(
 
 
 async def fetch_merged_by_product_ids(
-    db: "AsyncSession",
+    db: AsyncSession,
     tenant_id: UUID,
     product_ids: list[str],
 ) -> pd.DataFrame:
@@ -860,7 +860,7 @@ def _get_first_match(data: dict[str, Any], keys: list[str]) -> Any:
 
 
 async def fetch_p2_ng_records_from_db(
-    db: "AsyncSession",
+    db: AsyncSession,
     tenant_id: UUID,
     *,
     start_date: str | None = None,

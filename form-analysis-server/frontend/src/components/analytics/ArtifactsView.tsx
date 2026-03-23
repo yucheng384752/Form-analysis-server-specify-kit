@@ -271,8 +271,9 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
         setListDataError(String(e?.message || e))
         setComplaintAnalysis(null)
       } finally {
-        if (reqSeq !== listDataReqSeqRef.current) return
-        setLoadingListData(false)
+        if (reqSeq === listDataReqSeqRef.current) {
+          setLoadingListData(false)
+        }
       }
     })()
   }, [artifactKey, productIdFilters, requestOpts])
