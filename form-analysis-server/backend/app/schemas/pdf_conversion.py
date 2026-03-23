@@ -1,5 +1,5 @@
 import uuid
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from app.schemas.upload import UploadErrorResponse
 
 
-class PdfConversionStatus(str, Enum):
+class PdfConversionStatus(StrEnum):
     NOT_STARTED = "NOT_STARTED"
     QUEUED = "QUEUED"
     UPLOADING = "UPLOADING"

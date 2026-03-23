@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, func
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
-class ImportJobStatus(str, Enum):
+class ImportJobStatus(StrEnum):
     UPLOADED = "UPLOADED"
     PARSING = "PARSING"
     VALIDATING = "VALIDATING"

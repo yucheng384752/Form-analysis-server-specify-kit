@@ -6,13 +6,13 @@ CSV 欄位映射器
 """
 
 import re
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import pandas as pd
 
 
-class CSVType(str, Enum):
+class CSVType(StrEnum):
     """CSV 檔案類型"""
 
     P1 = "P1"

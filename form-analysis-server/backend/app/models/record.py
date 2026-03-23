@@ -10,7 +10,7 @@ Please do not use this model for new features.
 
 import uuid
 from datetime import date, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, Date, DateTime, Float, Index, Integer, String, Text, func
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from app.models.p3_item import P3Item
 
 
-class DataType(str, Enum):
+class DataType(StrEnum):
     """資料類型枚舉"""
 
     P1 = "P1"  # 產品基本資料

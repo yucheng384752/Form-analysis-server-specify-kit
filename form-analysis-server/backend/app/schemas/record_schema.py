@@ -7,7 +7,7 @@
 import re
 import uuid
 from datetime import date, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -75,7 +75,7 @@ class RecordCreate(RecordBase):
     )
 
 
-class DataType(str, Enum):
+class DataType(StrEnum):
     """資料類型枚舉"""
 
     P1 = "P1"
