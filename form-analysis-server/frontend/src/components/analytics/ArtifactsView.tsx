@@ -763,7 +763,11 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
     const rows = complaintAnalysis?.winder_distribution ?? []
     const base = rows
       .filter((x) => x && typeof x.name === 'string')
-      .map((x) => ({ name: x.name, count: Number(x.count) || 0 }))
+      .map((x) => ({
+        name: x.name,
+        count: Number(x.count) || 0,
+        items: x.items ?? [],
+      }))
       .filter((x) => x.name.trim() && x.count > 0)
       .sort((a, b) => b.count - a.count)
       .slice(0, 12)
@@ -858,10 +862,28 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
                               <YAxis yAxisId="left" allowDecimals={false} />
                               <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
                               <Tooltip
-                                formatter={(value, name) => {
-                                  const n = typeof value === 'number' ? value : Number(value)
-                                  if (name === 'cumPct') return [`${n.toFixed(2)}%`, '累積']
-                                  return [Number.isFinite(n) ? n : value, '筆數']
+                                content={({ active, payload }) => {
+                                  if (!active || !payload?.length) return null
+                                  const d = payload[0]?.payload as { name: string; count: number; cumPct: number; items: { product_id: string; count: number }[] }
+                                  return (
+                                    <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
+                                      <div style={{ fontWeight: 700, marginBottom: 4 }}>Winder: {d.name}</div>
+                                      <div>筆數：{d.count}</div>
+                                      <div>累積：{d.cumPct.toFixed(2)}%</div>
+                                      {d.items && d.items.length > 0 && (
+                                        <div style={{ marginTop: 6 }}>
+                                          <div style={{ fontWeight: 600, marginBottom: 2 }}>客訴編號細項：</div>
+                                          {d.items.slice(0, 10).map((it) => (
+                                            <div key={it.product_id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                                              <span style={{ color: '#6b7280' }}>{it.product_id}</span>
+                                              <span>{it.count}</span>
+                                            </div>
+                                          ))}
+                                          {d.items.length > 10 && <div style={{ color: '#9ca3af' }}>…還有 {d.items.length - 10} 項</div>}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
                                 }}
                               />
                               <Legend />

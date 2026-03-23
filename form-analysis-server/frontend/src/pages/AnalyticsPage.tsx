@@ -229,6 +229,7 @@ function normalizeAnalysisResult(input: unknown): AnalysisResult | null {
     if (!isPlainObject(bucket)) continue
     const inner: Record<string, RatioNode> = {}
     for (const [key, rawNode] of Object.entries(bucket)) {
+      if (key === '__MISSING__') continue
       if (!isPlainObject(rawNode)) continue
       const node = rawNode as RatioNode
       inner[key] = node
@@ -240,21 +241,25 @@ function normalizeAnalysisResult(input: unknown): AnalysisResult | null {
 
 
 function pickOverallNode(result: AnalysisResult): { category: string; key: string; node: RatioNode } | null {
-  let best: { category: string; key: string; node: RatioNode } | null = null
+  let bestCategory: string | null = null
   let bestTotal = -1
   let bestNg = -1
   for (const [category, bucket] of Object.entries(result)) {
-    for (const [key, node] of Object.entries(bucket)) {
-      const total = Number(node?.total_count ?? 0) || 0
-      const ng = Number(node?.count_0 ?? 0) || 0
-      if (total > bestTotal || (total === bestTotal && ng > bestNg)) {
-        best = { category, key, node }
-        bestTotal = total
-        bestNg = ng
-      }
+    let catTotal = 0
+    let catNg = 0
+    for (const node of Object.values(bucket)) {
+      catTotal += Number(node?.total_count ?? 0) || 0
+      catNg += Number(node?.count_0 ?? 0) || 0
+    }
+    if (catTotal > bestTotal || (catTotal === bestTotal && catNg > bestNg)) {
+      bestCategory = category
+      bestTotal = catTotal
+      bestNg = catNg
     }
   }
-  return best
+  if (!bestCategory) return null
+  const syntheticNode: RatioNode = { total_count: bestTotal, count_0: bestNg }
+  return { category: bestCategory, key: '__all__', node: syntheticNode }
 }
 
 function pct(n: number, d: number): number {

@@ -54,6 +54,7 @@ export type ArtifactUnifiedSnapshot = {
 export type MachineDistributionBucket = {
   name: string
   count: number
+  items?: { product_id: string; count: number }[]
 }
 
 export type ComplaintAnalysisResult = {
