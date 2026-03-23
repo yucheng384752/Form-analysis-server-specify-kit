@@ -773,10 +773,16 @@ export function ArtifactsView(props: { view: ViewKey; tenantHeaders?: Record<str
       .slice(0, 12)
     const total = base.reduce((acc, item) => acc + item.count, 0) || 1
     let running = 0
-    return base.map((item) => {
+    const result = base.map((item) => {
       running += item.count
       return { ...item, cumPct: (running / total) * 100 }
     })
+    console.log(`[Analytics] Winder 分布：共 ${result.length} 個，總筆數=${total}`)
+    result.forEach((r) => {
+      const sub = r.items.length > 0 ? r.items.slice(0, 5) : []
+      console.log(`  Winder ${r.name}: count=${r.count}, cumPct=${r.cumPct.toFixed(1)}%${sub.length ? `，前5細項=${JSON.stringify(sub)}` : ''}`)
+    })
+    return result
   }, [complaintAnalysis?.winder_distribution])
 
   const complaintOnlyView = productIdFilters.length > 0

@@ -225,17 +225,22 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function normalizeAnalysisResult(input: unknown): AnalysisResult | null {
   if (!isPlainObject(input)) return null
   const result: AnalysisResult = {}
+  let missingSkipped = 0
   for (const [category, bucket] of Object.entries(input)) {
     if (!isPlainObject(bucket)) continue
     const inner: Record<string, RatioNode> = {}
     for (const [key, rawNode] of Object.entries(bucket)) {
-      if (key === '__MISSING__') continue
+      if (key === '__MISSING__') { missingSkipped++; continue }
       if (!isPlainObject(rawNode)) continue
       const node = rawNode as RatioNode
       inner[key] = node
     }
     if (Object.keys(inner).length > 0) result[category] = inner
   }
+  if (missingSkipped > 0) {
+    console.log(`[Analytics] 過濾掉 __MISSING__ 分類：${missingSkipped} 個`)
+  }
+  console.log('[Analytics] normalizeAnalysisResult → 分類數:', Object.keys(result).length, '分類列表:', Object.keys(result))
   return Object.keys(result).length > 0 ? result : null
 }
 
@@ -244,6 +249,7 @@ function pickOverallNode(result: AnalysisResult): { category: string; key: strin
   let bestCategory: string | null = null
   let bestTotal = -1
   let bestNg = -1
+  const summary: Record<string, { total: number; ng: number; keyCount: number }> = {}
   for (const [category, bucket] of Object.entries(result)) {
     let catTotal = 0
     let catNg = 0
@@ -251,12 +257,15 @@ function pickOverallNode(result: AnalysisResult): { category: string; key: strin
       catTotal += Number(node?.total_count ?? 0) || 0
       catNg += Number(node?.count_0 ?? 0) || 0
     }
+    summary[category] = { total: catTotal, ng: catNg, keyCount: Object.keys(bucket).length }
     if (catTotal > bestTotal || (catTotal === bestTotal && catNg > bestNg)) {
       bestCategory = category
       bestTotal = catTotal
       bestNg = catNg
     }
   }
+  console.log('[Analytics] pickOverallNode 各分類彙總:', summary)
+  console.log(`[Analytics] pickOverallNode → 最佳分類: "${bestCategory}", total=${bestTotal}, NG=${bestNg}, NG率=${bestTotal ? ((bestNg / bestTotal) * 100).toFixed(2) : 0}%`)
   if (!bestCategory) return null
   const syntheticNode: RatioNode = { total_count: bestTotal, count_0: bestNg }
   return { category: bestCategory, key: '__all__', node: syntheticNode }
