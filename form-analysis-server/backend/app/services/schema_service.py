@@ -189,6 +189,208 @@ class SchemaService:
         )
         return list(result.scalars().all())
 
+    # ==================================================================
+    # CRUD mutations (Phase 4 — admin management)
+    # ==================================================================
+
+    # -- Station CRUD --------------------------------------------------
+
+    async def create_station(
+        self, tenant_id: UUID, code: str, name: str, sort_order: int = 0, has_items: bool = False
+    ) -> Station:
+        station = Station(
+            tenant_id=tenant_id, code=code, name=name, sort_order=sort_order, has_items=has_items
+        )
+        self.session.add(station)
+        await self.session.flush()
+        return station
+
+    async def update_station(
+        self, tenant_id: UUID, code: str, patch: dict[str, Any]
+    ) -> Station | None:
+        station = await self.get_station(tenant_id, code)
+        if not station:
+            return None
+        for k in ("name", "sort_order", "has_items"):
+            if k in patch:
+                setattr(station, k, patch[k])
+        await self.session.flush()
+        return station
+
+    async def delete_station(self, tenant_id: UUID, code: str) -> bool:
+        station = await self.get_station(tenant_id, code)
+        if not station:
+            return False
+        await self.session.delete(station)
+        await self.session.flush()
+        return True
+
+    # -- Schema CRUD ---------------------------------------------------
+
+    async def upsert_schema(
+        self,
+        tenant_id: UUID,
+        station_code: str,
+        record_fields: list[dict[str, Any]],
+        item_fields: list[dict[str, Any]] | None = None,
+        unique_key_fields: list[str] | None = None,
+        csv_signature_columns: list[str] | None = None,
+        csv_filename_pattern: str | None = None,
+        csv_field_mapping: dict[str, Any] | None = None,
+    ) -> StationSchema | None:
+        station = await self.get_station(tenant_id, station_code)
+        if not station:
+            return None
+
+        existing = await self.get_active_schema(tenant_id, station_code)
+        if existing:
+            existing.record_fields = record_fields
+            existing.item_fields = item_fields
+            existing.unique_key_fields = unique_key_fields or existing.unique_key_fields
+            existing.csv_signature_columns = csv_signature_columns
+            existing.csv_filename_pattern = csv_filename_pattern
+            existing.csv_field_mapping = csv_field_mapping
+            await self.session.flush()
+            return existing
+
+        schema = StationSchema(
+            station_id=station.id,
+            version=1,
+            is_active=True,
+            record_fields=record_fields,
+            item_fields=item_fields,
+            unique_key_fields=unique_key_fields or [],
+            csv_signature_columns=csv_signature_columns,
+            csv_filename_pattern=csv_filename_pattern,
+            csv_field_mapping=csv_field_mapping,
+        )
+        self.session.add(schema)
+        await self.session.flush()
+        return schema
+
+    # -- Validation Rule CRUD ------------------------------------------
+
+    async def create_validation_rule(
+        self, tenant_id: UUID, station_id: UUID | None, field_name: str,
+        rule_type: str, rule_config: dict[str, Any],
+    ) -> ValidationRule:
+        rule = ValidationRule(
+            tenant_id=tenant_id, station_id=station_id, field_name=field_name,
+            rule_type=rule_type, rule_config=rule_config,
+        )
+        self.session.add(rule)
+        await self.session.flush()
+        return rule
+
+    async def update_validation_rule(
+        self, rule_id: UUID, patch: dict[str, Any]
+    ) -> ValidationRule | None:
+        result = await self.session.execute(
+            select(ValidationRule).where(ValidationRule.id == rule_id)
+        )
+        rule = result.scalar_one_or_none()
+        if not rule:
+            return None
+        for k in ("field_name", "rule_type", "rule_config", "is_active"):
+            if k in patch:
+                setattr(rule, k, patch[k])
+        await self.session.flush()
+        return rule
+
+    async def delete_validation_rule(self, rule_id: UUID) -> bool:
+        result = await self.session.execute(
+            select(ValidationRule).where(ValidationRule.id == rule_id)
+        )
+        rule = result.scalar_one_or_none()
+        if not rule:
+            return False
+        await self.session.delete(rule)
+        await self.session.flush()
+        return True
+
+    # -- Analytics Mapping CRUD ----------------------------------------
+
+    async def create_analytics_mapping(
+        self, tenant_id: UUID, station_id: UUID, source_path: str,
+        output_column: str, output_order: int, data_type: str = "string",
+        null_if_missing: bool = True,
+    ) -> AnalyticsMapping:
+        mapping = AnalyticsMapping(
+            tenant_id=tenant_id, station_id=station_id, source_path=source_path,
+            output_column=output_column, output_order=output_order,
+            data_type=data_type, null_if_missing=null_if_missing,
+        )
+        self.session.add(mapping)
+        await self.session.flush()
+        return mapping
+
+    async def update_analytics_mapping(
+        self, mapping_id: UUID, patch: dict[str, Any]
+    ) -> AnalyticsMapping | None:
+        result = await self.session.execute(
+            select(AnalyticsMapping).where(AnalyticsMapping.id == mapping_id)
+        )
+        mapping = result.scalar_one_or_none()
+        if not mapping:
+            return None
+        for k in ("source_path", "output_column", "output_order", "data_type", "null_if_missing"):
+            if k in patch:
+                setattr(mapping, k, patch[k])
+        await self.session.flush()
+        return mapping
+
+    async def delete_analytics_mapping(self, mapping_id: UUID) -> bool:
+        result = await self.session.execute(
+            select(AnalyticsMapping).where(AnalyticsMapping.id == mapping_id)
+        )
+        mapping = result.scalar_one_or_none()
+        if not mapping:
+            return False
+        await self.session.delete(mapping)
+        await self.session.flush()
+        return True
+
+    # -- Station Link CRUD ---------------------------------------------
+
+    async def create_station_link(
+        self, tenant_id: UUID, from_station_id: UUID, to_station_id: UUID,
+        link_type: str, link_config: dict[str, Any] | None = None, sort_order: int = 0,
+    ) -> StationLink:
+        link = StationLink(
+            tenant_id=tenant_id, from_station_id=from_station_id,
+            to_station_id=to_station_id, link_type=link_type,
+            link_config=link_config or {}, sort_order=sort_order,
+        )
+        self.session.add(link)
+        await self.session.flush()
+        return link
+
+    async def update_station_link(
+        self, link_id: UUID, patch: dict[str, Any]
+    ) -> StationLink | None:
+        result = await self.session.execute(
+            select(StationLink).where(StationLink.id == link_id)
+        )
+        link = result.scalar_one_or_none()
+        if not link:
+            return None
+        for k in ("link_type", "link_config", "sort_order"):
+            if k in patch:
+                setattr(link, k, patch[k])
+        await self.session.flush()
+        return link
+
+    async def delete_station_link(self, link_id: UUID) -> bool:
+        result = await self.session.execute(
+            select(StationLink).where(StationLink.id == link_id)
+        )
+        link = result.scalar_one_or_none()
+        if not link:
+            return False
+        await self.session.delete(link)
+        await self.session.flush()
+        return True
+
 
 # ------------------------------------------------------------------
 # Helpers

@@ -12,7 +12,13 @@ import {
 import { setApiKeyValue } from '../services/auth'
 import { clearTenantId, ensureTenantIdWithOptions, getTenantId, setTenantId, TENANT_STORAGE_KEY } from '../services/tenant'
 import { getTenantLabelById, writeTenantMap } from '../services/tenantMap'
+import { StationManager } from '../components/admin/StationManager'
+import { ValidationRuleManager } from '../components/admin/ValidationRuleManager'
+import { AnalyticsMappingManager } from '../components/admin/AnalyticsMappingManager'
+import { StationLinkManager } from '../components/admin/StationLinkManager'
 import './../styles/admin-page.css'
+
+type AdminTab = 'general' | 'stations' | 'validation' | 'analytics' | 'links'
 
 type TenantRow = {
   id: string
@@ -59,6 +65,7 @@ function maskKey(raw: string) {
 
 export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?: () => void } = {}) {
   const { showToast } = useToast()
+  const [activeTab, setActiveTab] = useState<AdminTab>('general')
 
   const [adminKeyDraft, setAdminKeyDraft] = useState('')
   const [storedAdminKeyMasked, setStoredAdminKeyMasked] = useState(() => maskKey(getAdminApiKeyValue()))
@@ -548,9 +555,35 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
     refreshTenants()
   }, [])
 
+  const TABS: { key: AdminTab; label: string }[] = [
+    { key: 'general', label: 'General' },
+    { key: 'stations', label: 'Stations' },
+    { key: 'validation', label: 'Validation Rules' },
+    { key: 'analytics', label: 'Analytics Mappings' },
+    { key: 'links', label: 'Station Links' },
+  ]
+
   return (
     <div className="admin-page">
-      <section className="register-card">
+      <nav className="admin-tab-bar" style={{ display: 'flex', gap: 4, marginBottom: 8, borderBottom: '1px solid #e5e7eb', paddingBottom: 4 }}>
+        {TABS.map(tab => (
+          <button
+            key={tab.key}
+            className={`btn btn-small${activeTab === tab.key ? ' btn-primary' : ''}`}
+            onClick={() => setActiveTab(tab.key)}
+            style={{ borderRadius: '8px 8px 0 0' }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {activeTab === 'stations' && <StationManager showToast={showToast} />}
+      {activeTab === 'validation' && <ValidationRuleManager showToast={showToast} />}
+      {activeTab === 'analytics' && <AnalyticsMappingManager showToast={showToast} />}
+      {activeTab === 'links' && <StationLinkManager showToast={showToast} />}
+
+      {activeTab === 'general' && <><section className="register-card">
         <h2 className="register-title">管理者模式</h2>
         <p className="register-hint">此頁面只在你明確提供管理者金鑰時，才會在呼叫端點時帶入 `X-Admin-API-Key`。</p>
 
@@ -949,7 +982,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
             </tbody>
           </table>
         </div>
-      </section>
+      </section></>}
     </div>
   )
 }
