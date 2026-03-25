@@ -239,6 +239,13 @@ class Settings(BaseSettings):
         ]
         return set(methods) or {"POST", "PUT", "PATCH", "DELETE"}
 
+    # Generic schema feature flag (Phase 1 dual-write)
+    use_generic_schema: bool = Field(
+        default=False,
+        description="Enable generic schema tables (stations/generic_records). False = legacy P1/P2/P3 only.",
+        alias="USE_GENERIC_SCHEMA",
+    )
+
     # Database connection pool settings
     database_echo: bool = Field(
         default=False, description="Enable SQLAlchemy SQL logging"
