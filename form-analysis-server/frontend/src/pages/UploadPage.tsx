@@ -763,8 +763,9 @@ export function UploadPage() {
         )
       );
 
-      // Poll status until completed/failed
-      const maxTries = 300; // ~5 minutes, 與後端 PDF_SERVER_TIMEOUT_SECONDS=300 一致
+      // Poll status until completed/failed (no hard cap — backend job will
+      // eventually resolve to COMPLETED or FAILED; 1800 iterations ≈ 30 min safety net)
+      const maxTries = 1800;
       for (let i = 0; i < maxTries; i++) {
         const s = await fetchPdfConvertStatus(target.processId);
         const status = String(s.status || '');

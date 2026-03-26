@@ -61,10 +61,10 @@ class Settings(BaseSettings):
     #     alias="PDF_SERVER_CONVERT_PATH",
     # )
     pdf_server_timeout_seconds: int = Field(
-        default=300,
+        default=1800,
         ge=1,
-        le=600,
-        description="Timeout (seconds) for PDF server requests",
+        le=3600,
+        description="Read-timeout (seconds) for PDF server requests; controls how long to wait for a response from the external PDF conversion service",
         alias="PDF_SERVER_TIMEOUT_SECONDS",
     )
     pdf_server_max_concurrent: int = Field(

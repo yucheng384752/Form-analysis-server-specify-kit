@@ -93,9 +93,16 @@ async def _call_pdf_server_convert(
         # e.g., "http://host:port" -> "http://host:port/process"
         url = url.rstrip("/") + "/process"
 
-    timeout_seconds = int(getattr(settings, "pdf_server_timeout_seconds", 300))
+    timeout_seconds = int(getattr(settings, "pdf_server_timeout_seconds", 1800))
+    # Use granular timeout: short connect (30s), long read/write for large PDFs
+    timeout = httpx.Timeout(
+        connect=30.0,
+        read=float(timeout_seconds),
+        write=60.0,
+        pool=30.0,
+    )
 
-    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+    async with httpx.AsyncClient(timeout=timeout) as client:
         if url.rstrip("/").lower().endswith("/process"):
             # Legacy/LLM Table Processor style: /process expects multipart fields:
             # - table: required (P1/P2/P3)
