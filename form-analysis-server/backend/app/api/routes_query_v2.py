@@ -1189,10 +1189,16 @@ async def get_field_options_v2(
 
         # P2: P2ItemV2.row_data->>'format' / 'Format' / '規格'
         # 與搜尋過濾器使用相同來源（row_data），SELECT DISTINCT 效率高
+        dialect_name = (db.get_bind().dialect.name if db.get_bind() else "").lower()
         for json_key in ("format", "Format", "規格"):
-            spec_col = func.jsonb_extract_path_text(
-                cast(P2ItemV2.row_data, JSONB), json_key
-            )
+            if dialect_name == "postgresql":
+                spec_col = func.jsonb_extract_path_text(
+                    cast(P2ItemV2.row_data, JSONB), json_key
+                )
+            else:
+                spec_col = func.json_extract(
+                    cast(P2ItemV2.row_data, JSON), f"$.{json_key}"
+                )
             p2_spec_stmt = (
                 select(spec_col.label("spec"))
                 .where(P2ItemV2.tenant_id == current_tenant.id)

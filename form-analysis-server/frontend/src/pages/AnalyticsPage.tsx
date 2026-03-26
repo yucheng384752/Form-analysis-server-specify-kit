@@ -293,27 +293,8 @@ type ParetoItem = { name: string; value: number }
 type ParetoPoint = { name: string; value: number; cumPct: number }
 
 const PARETO_ENABLED_DAILY = true
-const PARETO_TOP_N = 12
-const PARETO_CUM_THRESHOLD = 0.8
-const PARETO_MIN_COUNT = 1
-const PARETO_SHOW_ZERO = false
-const PARETO_SOURCE_NG = true
 const PARETO_SOURCE_FEATURE = true
 
-const DEMO_PARETO_OVERRIDE = true
-const DEMO_FINAL_RAW_SCORE: Record<string, number> = {
-  'Thicknessss Low(μm)': 7.492635216665868,
-  'Thicknessss High(μm)': 0.5006222690021331,
-  'Slitting speed': 0.0,
-  'Thickness diff': 1.8353439288498945,
-  'Rubber wheel gasket thickness (in)': 0.07496027169079686,
-  'Rubber wheel gasket thickness (out)': 2.4980288594561424,
-  Appearance: 0.0,
-  'Board Width(mm)': 5.056269841777992,
-  'Semi-finished impedance': 3.9463953680202946,
-  'Heat gun temperature': 0.060940332260790625,
-  'Rewind torque': 0.0,
-}
 
 function buildParetoSeries(
   items: ReadonlyArray<ParetoItem>,
@@ -713,31 +694,6 @@ export function AnalyticsPage() {
     return categories
   }, [analysisResult])
 
-  const analysisHeatmapRows = useMemo(() => {
-    const rows: Array<{
-      category: string
-      key: string
-      ok: number
-      ng: number
-      total: number
-      ngRate: number
-    }> = []
-    for (const cat of categoryCards) {
-      for (const item of cat.items) {
-        rows.push({
-          category: cat.category,
-          key: item.key,
-          ok: item.ok,
-          ng: item.ng,
-          total: item.total,
-          ngRate: item.total > 0 ? item.ng / item.total : 0,
-        })
-      }
-    }
-    rows.sort((a, b) => b.ngRate - a.ngRate || b.total - a.total)
-    return rows.slice(0, 80)
-  }, [categoryCards])
-
   const winderChartData = useMemo(() => {
     const winderCat = categoryCards.find((cat) => /winder/i.test(cat.category))
     if (!winderCat) return []
@@ -757,51 +713,30 @@ export function AnalyticsPage() {
     })
   }, [categoryCards, productIdMode])
 
-  const ngParetoData = useMemo(() => {
-    if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_NG || !analysisResult) return [] as ParetoPoint[]
-    const candidates = ['P2.NG_code', 'NG_code', 'P3.NG_code']
-    let bucket: Record<string, RatioNode> | null = null
-    for (const key of candidates) {
-      const entry = analysisResult[key]
-      if (entry && typeof entry === 'object') {
-        bucket = entry as Record<string, RatioNode>
-        break
-      }
-    }
-    if (!bucket) return []
-    const items: ParetoItem[] = Object.entries(bucket)
-      .map(([name, node]) => ({
-        name,
-        value: Number(node?.count_0 ?? 0) || 0,
-      }))
-    return buildParetoSeries(items, {
-      topN: PARETO_TOP_N,
-      cumThreshold: PARETO_CUM_THRESHOLD,
-      minValue: PARETO_MIN_COUNT,
-      showZero: PARETO_SHOW_ZERO,
-    })
-  }, [analysisResult])
-
   const featureParetoData = useMemo(() => {
     if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_FEATURE) return [] as ParetoPoint[]
-    const source = DEMO_PARETO_OVERRIDE ? DEMO_FINAL_RAW_SCORE : extractionData?.final_raw_score
+    const source = extractionData?.final_raw_score
     if (!source || Object.keys(source).length === 0) return [] as ParetoPoint[]
     const items: ParetoItem[] = Object.entries(source).map(
       ([name, value]) => ({ name, value: Number(value) || 0 })
     )
     return buildParetoSeries(items, {
-      topN: PARETO_TOP_N,
-      cumThreshold: PARETO_CUM_THRESHOLD,
-      minValue: PARETO_MIN_COUNT,
-      showZero: PARETO_SHOW_ZERO,
+      minValue: 0,
+      showZero: true,
     })
   }, [extractionData])
 
-  const heatColor = useCallback((rate: number) => {
-    const r = Math.max(0, Math.min(1, Number.isFinite(rate) ? rate : 0))
-    const lightness = 96 - r * 42
-    return `hsl(0 82% ${lightness}%)`
-  }, [])
+  const renderParetoItem = (
+    loading: boolean,
+    data: ParetoPoint[],
+    title: string,
+    valueLabel: string,
+    cumLabel: string,
+  ) => {
+    if (loading) return <div className="analytics-empty">{t('analytics.loading')} ({title})</div>
+    if (data.length === 0) return <div className="analytics-empty">{t('analytics.pareto.noData')}</div>
+    return <ParetoChart title={title} data={data} valueLabel={valueLabel} cumLabel={cumLabel} />
+  }
 
   const computeAutoRunKey = useCallback(() => {
     // Date analysis key should not depend on product_id; product_id uses manual run.
@@ -1665,7 +1600,7 @@ export function AnalyticsPage() {
             {ngError ? <div className="analytics-error">{ngError}</div> : null}
 
             {PARETO_ENABLED_DAILY ? (
-              <div style={{ marginBottom: 16 }}>
+              <div style={{ marginTop: 16, marginBottom: 16 }}>
                 <div
                   style={{
                     display: 'grid',
@@ -1673,32 +1608,12 @@ export function AnalyticsPage() {
                     gap: 12,
                   }}
                 >
-                  {PARETO_SOURCE_NG ? (
-                    ngParetoData.length > 0 ? (
-                      <ParetoChart
-                        title="NG Pareto (count_0)"
-                        data={ngParetoData}
-                        valueLabel="NG數量"
-                        cumLabel="累積%"
-                      />
-                    ) : (
-                      <div className="analytics-empty">NG Pareto 暫無資料</div>
-                    )
-                  ) : null}
-
-                  {PARETO_SOURCE_FEATURE ? (
-                    extractionLoading ? (
-                      <div className="analytics-empty">{t('analytics.loading')} (Feature Pareto)</div>
-                    ) : featureParetoData.length > 0 ? (
-                      <ParetoChart
-                        title="Feature Pareto (final_raw_score)"
-                        data={featureParetoData}
-                        valueLabel="Final Score"
-                        cumLabel="累積%"
-                      />
-                    ) : (
-                      <div className="analytics-empty">Feature Pareto 暫無資料</div>
-                    )
+                  {PARETO_SOURCE_FEATURE ? renderParetoItem(
+                    extractionLoading,
+                    featureParetoData,
+                    t('analytics.pareto.featureTitle'),
+                    t('analytics.pareto.valueLabel'),
+                    t('analytics.pareto.cumLabel'),
                   ) : null}
                 </div>
 
@@ -1927,6 +1842,10 @@ export function AnalyticsPage() {
                       cy="50%"
                       outerRadius={90}
                       label={({ name }) => `${name}`}
+                      onClick={(data) => {
+                        if (data?.kind === 'NG') enterNgMode()
+                      }}
+                      style={{ cursor: 'pointer' }}
                     >
                       {pieData.map((_, i) => (
                         <Cell key={i} fill={colors[i % colors.length]} />
