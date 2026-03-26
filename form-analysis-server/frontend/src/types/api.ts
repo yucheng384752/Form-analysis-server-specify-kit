@@ -81,3 +81,87 @@ export type UploadStatus = 'idle' | 'uploading' | 'validating' | 'success' | 'er
 
 // 檔案類型
 export type FileType = 'p1' | 'p2' | 'p3' | 'qc';
+
+// ============================================================
+// Generic Schema Types (Phase 3 — schema-driven UI)
+// ============================================================
+
+export type FieldType = 'string' | 'integer' | 'float' | 'date' | 'boolean' | 'enum';
+
+export interface FieldDef {
+  name: string;
+  type: FieldType;
+  label: Record<string, string>;
+  required?: boolean;
+  filterable?: boolean;
+  indexed?: boolean;
+  unit?: string;
+  min?: number;
+  max?: number;
+  enum_values?: Array<{ value: any; label: Record<string, string> }>;
+}
+
+export interface StationInfo {
+  id: string;
+  code: string;
+  name: string;
+  sort_order: number;
+  has_items: boolean;
+}
+
+export interface StationSchema {
+  station_code: string;
+  version: number;
+  record_fields: FieldDef[];
+  item_fields?: FieldDef[];
+  unique_key_fields: string[];
+}
+
+export interface GenericRecord {
+  id: string;
+  station_code: string;
+  lot_no_raw: string;
+  lot_no_norm: number;
+  data: Record<string, any>;
+  items?: GenericRecordItem[];
+  created_at: string;
+}
+
+export interface GenericRecordItem {
+  id: string;
+  row_no: number;
+  data: Record<string, any>;
+}
+
+export interface StationLinkInfo {
+  id: string;
+  from_station_code: string;
+  to_station_code: string;
+  link_type: string;
+  link_config: Record<string, any>;
+}
+
+export interface TraceNode {
+  station_code: string;
+  station_name: string;
+  record: {
+    id: string;
+    lot_no_raw: string;
+    lot_no_norm: number;
+    data: Record<string, any>;
+    created_at: string | null;
+  } | null;
+  items: Array<{
+    id: string;
+    row_no: number;
+    data: Record<string, any>;
+  }>;
+}
+
+export interface ValidationRuleInfo {
+  id: string;
+  field_name: string;
+  rule_type: string;
+  rule_config: Record<string, any>;
+  station_id?: string | null;
+}

@@ -483,8 +483,32 @@ def _build_winder_distribution(df: pd.DataFrame) -> list[dict[str, Any]]:
     if series.empty:
         return []
 
+    # Detect product_id column for sub-breakdown
+    product_id_candidates = [
+        "Produce_No.",
+        "product_id",
+        "Product_id",
+        "Product ID",
+        "produce_no",
+    ]
+    pid_col = next((c for c in product_id_candidates if c in df.columns), None)
+
+    working = df.loc[series.index].copy()
+    working["_winder"] = series
+
     counts = series.value_counts()
-    return [{"name": str(name), "count": int(count)} for name, count in counts.items()]
+    result = []
+    for name, count in counts.items():
+        entry: dict[str, Any] = {"name": str(name), "count": int(count)}
+        if pid_col:
+            sub_df = working[working["_winder"] == name][pid_col].dropna().astype(str)
+            sub_counts = sub_df.value_counts()
+            entry["items"] = [
+                {"product_id": str(pid), "count": int(c)}
+                for pid, c in sub_counts.items()
+            ]
+        result.append(entry)
+    return result
 
 
 _LOT_WINDER_RE = re.compile(r"^\d{6,8}[-_]\d{2}[-_]\d+$")

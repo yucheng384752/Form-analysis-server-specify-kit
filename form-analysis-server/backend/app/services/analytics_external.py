@@ -2021,6 +2021,21 @@ async def run_external_categorical_analysis_from_db(
             )
             continue
 
+        # Normalize specification-like columns: strip whitespace and collapse internal spaces
+        # so "PE 32" and "PE32" are treated as the same category.
+        # Note: no dtype guard — pandas StringDtype and object are both handled via astype(str).
+        for col in present_categorical_cols:
+            if "specification" in col.lower():
+                try:
+                    station_df[col] = (
+                        station_df[col]
+                        .astype(str)
+                        .str.strip()
+                        .str.replace(r"\s+", "", regex=True)
+                    )
+                except Exception:
+                    pass
+
         if hasattr(analyzer, "analyze_target_distribution_by_category"):
             result = analyzer.analyze_target_distribution_by_category(
                 data=station_df,

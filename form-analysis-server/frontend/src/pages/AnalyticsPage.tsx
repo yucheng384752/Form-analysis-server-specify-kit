@@ -225,36 +225,50 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function normalizeAnalysisResult(input: unknown): AnalysisResult | null {
   if (!isPlainObject(input)) return null
   const result: AnalysisResult = {}
+  let missingSkipped = 0
   for (const [category, bucket] of Object.entries(input)) {
     if (!isPlainObject(bucket)) continue
     const inner: Record<string, RatioNode> = {}
     for (const [key, rawNode] of Object.entries(bucket)) {
+      if (key === '__MISSING__') { missingSkipped++; continue }
       if (!isPlainObject(rawNode)) continue
       const node = rawNode as RatioNode
       inner[key] = node
     }
     if (Object.keys(inner).length > 0) result[category] = inner
   }
+  if (missingSkipped > 0) {
+    console.log(`[Analytics] 過濾掉 __MISSING__ 分類：${missingSkipped} 個`)
+  }
+  console.log('[Analytics] normalizeAnalysisResult → 分類數:', Object.keys(result).length, '分類列表:', Object.keys(result))
   return Object.keys(result).length > 0 ? result : null
 }
 
 
 function pickOverallNode(result: AnalysisResult): { category: string; key: string; node: RatioNode } | null {
-  let best: { category: string; key: string; node: RatioNode } | null = null
+  let bestCategory: string | null = null
   let bestTotal = -1
   let bestNg = -1
+  const summary: Record<string, { total: number; ng: number; keyCount: number }> = {}
   for (const [category, bucket] of Object.entries(result)) {
-    for (const [key, node] of Object.entries(bucket)) {
-      const total = Number(node?.total_count ?? 0) || 0
-      const ng = Number(node?.count_0 ?? 0) || 0
-      if (total > bestTotal || (total === bestTotal && ng > bestNg)) {
-        best = { category, key, node }
-        bestTotal = total
-        bestNg = ng
-      }
+    let catTotal = 0
+    let catNg = 0
+    for (const node of Object.values(bucket)) {
+      catTotal += Number(node?.total_count ?? 0) || 0
+      catNg += Number(node?.count_0 ?? 0) || 0
+    }
+    summary[category] = { total: catTotal, ng: catNg, keyCount: Object.keys(bucket).length }
+    if (catTotal > bestTotal || (catTotal === bestTotal && catNg > bestNg)) {
+      bestCategory = category
+      bestTotal = catTotal
+      bestNg = catNg
     }
   }
-  return best
+  console.log('[Analytics] pickOverallNode 各分類彙總:', summary)
+  console.log(`[Analytics] pickOverallNode → 最佳分類: "${bestCategory}", total=${bestTotal}, NG=${bestNg}, NG率=${bestTotal ? ((bestNg / bestTotal) * 100).toFixed(2) : 0}%`)
+  if (!bestCategory) return null
+  const syntheticNode: RatioNode = { total_count: bestTotal, count_0: bestNg }
+  return { category: bestCategory, key: '__all__', node: syntheticNode }
 }
 
 function pct(n: number, d: number): number {
@@ -279,27 +293,8 @@ type ParetoItem = { name: string; value: number }
 type ParetoPoint = { name: string; value: number; cumPct: number }
 
 const PARETO_ENABLED_DAILY = true
-const PARETO_TOP_N = 12
-const PARETO_CUM_THRESHOLD = 0.8
-const PARETO_MIN_COUNT = 1
-const PARETO_SHOW_ZERO = false
-const PARETO_SOURCE_NG = true
 const PARETO_SOURCE_FEATURE = true
 
-const DEMO_PARETO_OVERRIDE = true
-const DEMO_FINAL_RAW_SCORE: Record<string, number> = {
-  'Thicknessss Low(μm)': 7.492635216665868,
-  'Thicknessss High(μm)': 0.5006222690021331,
-  'Slitting speed': 0.0,
-  'Thickness diff': 1.8353439288498945,
-  'Rubber wheel gasket thickness (in)': 0.07496027169079686,
-  'Rubber wheel gasket thickness (out)': 2.4980288594561424,
-  Appearance: 0.0,
-  'Board Width(mm)': 5.056269841777992,
-  'Semi-finished impedance': 3.9463953680202946,
-  'Heat gun temperature': 0.060940332260790625,
-  'Rewind torque': 0.0,
-}
 
 function buildParetoSeries(
   items: ReadonlyArray<ParetoItem>,
@@ -384,7 +379,7 @@ export function AnalyticsPage() {
   const [extractionLoading, setExtractionLoading] = useState(false)
 
   const [artifactView, setArtifactView] = useState<ViewKey>('events')
-  const [analysisChartMode, setAnalysisChartMode] = useState<'heatmap' | 'bar'>('heatmap')
+  const [analysisChartMode, setAnalysisChartMode] = useState<'heatmap' | 'bar'>('bar')
 
   const artifactsSectionRef = useRef<HTMLDivElement | null>(null)
 
@@ -699,91 +694,49 @@ export function AnalyticsPage() {
     return categories
   }, [analysisResult])
 
-  const analysisHeatmapRows = useMemo(() => {
-    const rows: Array<{
-      category: string
-      key: string
-      ok: number
-      ng: number
-      total: number
-      ngRate: number
-    }> = []
-    for (const cat of categoryCards) {
-      for (const item of cat.items) {
-        rows.push({
-          category: cat.category,
-          key: item.key,
-          ok: item.ok,
-          ng: item.ng,
-          total: item.total,
-          ngRate: item.total > 0 ? item.ng / item.total : 0,
-        })
-      }
-    }
-    rows.sort((a, b) => b.ngRate - a.ngRate || b.total - a.total)
-    return rows.slice(0, 80)
-  }, [categoryCards])
-
   const winderChartData = useMemo(() => {
     const winderCat = categoryCards.find((cat) => /winder/i.test(cat.category))
     if (!winderCat) return []
     const sorted = winderCat.items
-      .map((item) => ({ name: item.label || item.key, count: item.ng, total: item.total }))
+      .map((item) => ({
+        name: item.label || item.key,
+        count: productIdMode ? item.total : item.ng,
+        total: item.total,
+      }))
       .filter((d) => d.name)
       .sort((a, b) => b.count - a.count)
-    const totalNg = sorted.reduce((s, d) => s + d.count, 0)
+    const totalCount = sorted.reduce((s, d) => s + d.count, 0)
     let cum = 0
     return sorted.map((d) => {
       cum += d.count
-      return { ...d, cumPct: totalNg > 0 ? round3((cum / totalNg) * 100) : 0 }
+      return { ...d, cumPct: totalCount > 0 ? round3((cum / totalCount) * 100) : 0 }
     })
-  }, [categoryCards])
-
-  const ngParetoData = useMemo(() => {
-    if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_NG || !analysisResult) return [] as ParetoPoint[]
-    const candidates = ['P2.NG_code', 'NG_code', 'P3.NG_code']
-    let bucket: Record<string, RatioNode> | null = null
-    for (const key of candidates) {
-      const entry = analysisResult[key]
-      if (entry && typeof entry === 'object') {
-        bucket = entry as Record<string, RatioNode>
-        break
-      }
-    }
-    if (!bucket) return []
-    const items: ParetoItem[] = Object.entries(bucket)
-      .map(([name, node]) => ({
-        name,
-        value: Number(node?.count_0 ?? 0) || 0,
-      }))
-    return buildParetoSeries(items, {
-      topN: PARETO_TOP_N,
-      cumThreshold: PARETO_CUM_THRESHOLD,
-      minValue: PARETO_MIN_COUNT,
-      showZero: PARETO_SHOW_ZERO,
-    })
-  }, [analysisResult])
+  }, [categoryCards, productIdMode])
 
   const featureParetoData = useMemo(() => {
     if (!PARETO_ENABLED_DAILY || !PARETO_SOURCE_FEATURE) return [] as ParetoPoint[]
-    const source = DEMO_PARETO_OVERRIDE ? DEMO_FINAL_RAW_SCORE : extractionData?.final_raw_score
+    const source = extractionData?.final_raw_score
     if (!source || Object.keys(source).length === 0) return [] as ParetoPoint[]
     const items: ParetoItem[] = Object.entries(source).map(
       ([name, value]) => ({ name, value: Number(value) || 0 })
     )
     return buildParetoSeries(items, {
-      topN: PARETO_TOP_N,
-      cumThreshold: PARETO_CUM_THRESHOLD,
-      minValue: PARETO_MIN_COUNT,
-      showZero: PARETO_SHOW_ZERO,
+      minValue: 0,
+      showZero: true,
     })
   }, [extractionData])
 
-  const heatColor = useCallback((rate: number) => {
-    const r = Math.max(0, Math.min(1, Number.isFinite(rate) ? rate : 0))
-    const lightness = 96 - r * 42
-    return `hsl(0 82% ${lightness}%)`
-  }, [])
+  const renderParetoItem = (
+    loading: boolean,
+    data: ParetoPoint[],
+    title: string,
+    valueLabel: string,
+    cumLabel: string,
+  ) => {
+    if (loading) return <div className="analytics-empty">{t('analytics.loading')} ({title})</div>
+    if (data.length === 0) return <div className="analytics-empty">{t('analytics.pareto.noData')}</div>
+    return <ParetoChart title={title} data={data} valueLabel={valueLabel} cumLabel={cumLabel} />
+  }
 
   const computeAutoRunKey = useCallback(() => {
     // Date analysis key should not depend on product_id; product_id uses manual run.
@@ -1647,7 +1600,7 @@ export function AnalyticsPage() {
             {ngError ? <div className="analytics-error">{ngError}</div> : null}
 
             {PARETO_ENABLED_DAILY ? (
-              <div style={{ marginBottom: 16 }}>
+              <div style={{ marginTop: 16, marginBottom: 16 }}>
                 <div
                   style={{
                     display: 'grid',
@@ -1655,32 +1608,12 @@ export function AnalyticsPage() {
                     gap: 12,
                   }}
                 >
-                  {PARETO_SOURCE_NG ? (
-                    ngParetoData.length > 0 ? (
-                      <ParetoChart
-                        title="NG Pareto (count_0)"
-                        data={ngParetoData}
-                        valueLabel="NG數量"
-                        cumLabel="累積%"
-                      />
-                    ) : (
-                      <div className="analytics-empty">NG Pareto 暫無資料</div>
-                    )
-                  ) : null}
-
-                  {PARETO_SOURCE_FEATURE ? (
-                    extractionLoading ? (
-                      <div className="analytics-empty">{t('analytics.loading')} (Feature Pareto)</div>
-                    ) : featureParetoData.length > 0 ? (
-                      <ParetoChart
-                        title="Feature Pareto (final_raw_score)"
-                        data={featureParetoData}
-                        valueLabel="Final Score"
-                        cumLabel="累積%"
-                      />
-                    ) : (
-                      <div className="analytics-empty">Feature Pareto 暫無資料</div>
-                    )
+                  {PARETO_SOURCE_FEATURE ? renderParetoItem(
+                    extractionLoading,
+                    featureParetoData,
+                    t('analytics.pareto.featureTitle'),
+                    t('analytics.pareto.valueLabel'),
+                    t('analytics.pareto.cumLabel'),
                   ) : null}
                 </div>
 
@@ -1892,8 +1825,8 @@ export function AnalyticsPage() {
         <>
           <div className="analytics-section-header">{t('analytics.moldingAnalysis')}</div>
 
-          {/* OK/NG 圓餅圖 */}
-          {overall.total > 0 ? (
+          {/* OK/NG 圓餅圖：客訴模式（productIdMode）下隱藏 */}
+          {overall.total > 0 && !productIdMode ? (
             <section className="analytics-card" style={{ marginBottom: 16 }}>
               <h4 style={{ margin: '0 0 8px', fontWeight: 600 }}>
                 OK / NG ({overall.total} {t('analytics.totalRecords', 'pcs')})
@@ -1909,6 +1842,10 @@ export function AnalyticsPage() {
                       cy="50%"
                       outerRadius={90}
                       label={({ name }) => `${name}`}
+                      onClick={(data) => {
+                        if (data?.kind === 'NG') enterNgMode()
+                      }}
+                      style={{ cursor: 'pointer' }}
                     >
                       {pieData.map((_, i) => (
                         <Cell key={i} fill={colors[i % colors.length]} />
@@ -1923,51 +1860,6 @@ export function AnalyticsPage() {
           ) : null}
 
           <section className="analytics-card">
-            <div className="analytics-actions" style={{ justifyContent: 'flex-start', marginTop: 0, gap: 8 }}>
-              {!productIdMode ? (
-                <button
-                  type="button"
-                  className={analysisChartMode === 'heatmap' ? 'btn-primary' : 'btn-secondary'}
-                  onClick={() => setAnalysisChartMode('heatmap')}
-                >
-                  {t('analytics.views.heatmap')}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className={analysisChartMode === 'bar' ? 'btn-primary' : 'btn-secondary'}
-                onClick={() => setAnalysisChartMode('bar')}
-              >
-                {t('analytics.views.bar')}
-              </button>
-            </div>
-
-            {!productIdMode && analysisChartMode === 'heatmap' ? (
-              analysisHeatmapRows.length > 0 ? (
-                <div className="analytics-heatmap">
-                  <div className="analytics-heatmap-head">
-                    <div>{t('analytics.heatmap.category')}</div>
-                    <div>{t('analytics.heatmap.value')}</div>
-                    <div>{t('analytics.heatmap.ngRate')}</div>
-                    <div>{t('analytics.heatmap.sample')}</div>
-                  </div>
-                  {analysisHeatmapRows.map((row) => (
-                    <div
-                      key={`${row.category}:${row.key}`}
-                      className="analytics-heatmap-row"
-                      style={{ background: heatColor(row.ngRate) }}
-                    >
-                      <div title={row.category}>{row.category}</div>
-                      <div title={row.key}>{row.key}</div>
-                      <div>{pct(row.ng, row.total)}%</div>
-                      <div>{row.total}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="analytics-empty">{t('analytics.noData')}</div>
-              )
-            ) : null}
 
             {analysisChartMode === 'bar' ? (
             categoryCards.length > 0 ? (
@@ -2065,7 +1957,7 @@ export function AnalyticsPage() {
             )
             ) : null}
 
-            {winderChartData.length > 0 ? (
+            {winderChartData.length > 0 && !productIdMode ? (
               <div style={{ marginTop: '1.5rem' }}>
                 <div className="analytics-card-title">Winder Number 累積直方圖</div>
                 <div className="analytics-chart-wrap" style={{ height: 280, minHeight: 280, marginTop: '0.75rem' }}>
@@ -2082,7 +1974,7 @@ export function AnalyticsPage() {
                         }}
                       />
                       <Legend />
-                      <Bar yAxisId="left" dataKey="count" name="NG數量" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                      <Bar yAxisId="left" dataKey="count" name={productIdMode ? '客訴數量' : 'NG數量'} fill="#2563eb" radius={[6, 6, 0, 0]} />
                       <Line yAxisId="right" dataKey="cumPct" name="累積%" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
                     </ComposedChart>
                   </ResponsiveContainer>

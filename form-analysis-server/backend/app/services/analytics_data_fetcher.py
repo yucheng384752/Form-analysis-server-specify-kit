@@ -603,6 +603,7 @@ async def fetch_merged_by_product_ids(
         lot_no_raw: str | None = None
         lot_no_norm: int | None = None
         source_winder: int | None = None
+        p2_item = None
 
         if p3_item:
             p3_row = p3_item.row_data or {}
@@ -642,6 +643,16 @@ async def fetch_merged_by_product_ids(
                 source_winder = p3_item.source_winder
 
         # Step 2: Find P2 by lot_no_norm and winder
+        # If source_winder wasn't stored on the P3 item, try to derive it from
+        # the P3 lot_no format "YYYYDDD_MM_WW" (e.g. "2507173_02_17" → 17).
+        if source_winder is None and lot_no_raw:
+            parts = str(lot_no_raw).strip().split("_")
+            if len(parts) >= 3:
+                try:
+                    source_winder = int(parts[2])
+                except (ValueError, TypeError):
+                    pass
+
         if lot_no_norm is not None:
             p2_stmt = (
                 select(P2ItemV2)
@@ -679,8 +690,15 @@ async def fetch_merged_by_product_ids(
                 lot_no_raw=lot_no_raw,
             )
             # Fallback: ensure Winder number from structured field
-            if merged_row.get("Winder number") is None and source_winder is not None:
-                merged_row["Winder number"] = source_winder
+            if merged_row.get("Winder number") is None:
+                if p2_item is not None and p2_item.winder_number is not None:
+                    merged_row["Winder number"] = p2_item.winder_number
+                elif source_winder is not None:
+                    merged_row["Winder number"] = source_winder
+            # Fallback: ensure Striped Results from structured field so
+            # CategoricalAnalyzer target-column filter does not drop the row
+            if merged_row.get("Striped Results") is None and p2_item is not None and p2_item.slitting_result is not None:
+                merged_row["Striped Results"] = p2_item.slitting_result
             # Add original product_id for reference
             merged_row["_original_product_id"] = raw_pid
             merged_row["_normalized_product_id"] = pid

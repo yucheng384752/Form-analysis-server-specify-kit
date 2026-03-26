@@ -1,9 +1,11 @@
 """資料庫模型定義"""
 
+from .analytics_mapping import AnalyticsMapping
 from .audit import EditReason, RowEdit
 from .core.audit_event import AuditEvent
 from .core.tenant import Tenant
 from .core.tenant_api_key import TenantApiKey
+from .generic_record import GenericRecord, GenericRecordItem
 from .p1_record import P1Record
 from .p2_item import P2Item
 from .p2_item_v2 import P2ItemV2
@@ -14,8 +16,10 @@ from .p3_record import P3Record
 from .pdf_conversion_job import PdfConversionJob
 from .pdf_upload import PdfUpload
 from .record import Record
+from .station import Station, StationLink, StationSchema
 from .upload_error import UploadError
 from .upload_job import UploadJob
+from .validation_rule import ValidationRule
 
 __all__ = [
     "UploadJob",
@@ -35,4 +39,12 @@ __all__ = [
     "RowEdit",
     "PdfUpload",
     "PdfConversionJob",
+    # Generic schema models
+    "Station",
+    "StationSchema",
+    "StationLink",
+    "GenericRecord",
+    "GenericRecordItem",
+    "ValidationRule",
+    "AnalyticsMapping",
 ]

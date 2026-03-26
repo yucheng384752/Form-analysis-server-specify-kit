@@ -27,8 +27,11 @@ from app.models.p3_record import P3Record
 from app.models.import_job import ImportJob, ImportFile, StagingRow
 from app.models.upload_job import UploadJob
 from app.models.upload_error import UploadError
-# Record is deprecated but kept for reference if needed, though we are moving away from it.
-# from app.models.record import Record
+# Generic schema models (Phase 1)
+from app.models.station import Station, StationSchema, StationLink
+from app.models.generic_record import GenericRecord, GenericRecordItem
+from app.models.validation_rule import ValidationRule
+from app.models.analytics_mapping import AnalyticsMapping
 
 # Alembic 配置物件
 config = context.config

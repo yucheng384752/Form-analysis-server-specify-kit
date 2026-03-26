@@ -41,7 +41,7 @@ from app.api import (
     routes_ut,
     routes_validate,
 )
-from app.api import traceability as routes_traceability
+from app.api import routes_stations, traceability as routes_traceability
 from app.api.deps import get_current_tenant
 from app.core.auth import hash_api_key
 from app.core.config import get_settings
@@ -162,6 +162,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         )
             except Exception as e:
                 print(f" Warning: failed to normalize tenant roles: {e}")
+
+            # 2.6) Seed generic station definitions (Phase 1 generalization)
+            if settings.use_generic_schema:
+                try:
+                    from app.core.seed_stations import seed_stations
+
+                    await seed_stations(async_session_factory)
+                    print(" Generic station definitions seeded")
+                except Exception as e:
+                    print(f" Warning: failed to seed stations: {e}")
 
             # 3) Optional: bootstrap a manager user (for first-time setup)
             try:
@@ -615,6 +625,14 @@ app.include_router(
     tags=["UT Data"],
     dependencies=tenant_deps,
 )
+
+# Generic Station API (Phase 2 — gated by USE_GENERIC_SCHEMA)
+if settings.use_generic_schema:
+    app.include_router(
+        routes_stations.router,
+        tags=["Stations (Generic)"],
+        dependencies=tenant_deps,
+    )
 
 
 @app.get("/", tags=["Root"])
