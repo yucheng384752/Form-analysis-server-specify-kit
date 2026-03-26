@@ -763,11 +763,29 @@ export function UploadPage() {
         )
       );
 
-      // Poll status until completed/failed (no hard cap — backend job will
-      // eventually resolve to COMPLETED or FAILED; 1800 iterations ≈ 30 min safety net)
+      // Poll status until completed/failed.
+      // Backend job will eventually resolve; 1800 iterations ≈ 30 min safety net.
+      // Individual poll failures are tolerated (transient network / proxy errors)
+      // to avoid aborting while the backend is still working.
       const maxTries = 1800;
+      const maxConsecutiveErrors = 10;
+      let consecutiveErrors = 0;
       for (let i = 0; i < maxTries; i++) {
-        const s = await fetchPdfConvertStatus(target.processId);
+        let s: any;
+        try {
+          s = await fetchPdfConvertStatus(target.processId);
+          consecutiveErrors = 0; // reset on success
+        } catch {
+          consecutiveErrors++;
+          if (consecutiveErrors >= maxConsecutiveErrors) {
+            showToast('error', t('upload.toast.pdfConvertFailed'));
+            return;
+          }
+          // Transient error — wait longer before retrying
+          await new Promise((r) => setTimeout(r, 3000));
+          continue;
+        }
+
         const status = String(s.status || '');
         const progress = typeof s.progress === 'number' ? s.progress : toPdfConvertProgress(status);
         const errorSummary = s.error_summary;
