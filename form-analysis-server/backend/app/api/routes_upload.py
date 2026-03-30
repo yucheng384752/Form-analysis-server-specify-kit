@@ -45,6 +45,7 @@ from app.schemas.pdf_conversion import (
     PdfConvertOutputFile,
     PdfConvertOutputsResponse,
     PdfConvertStatusResponse,
+    PdfConvertTriggerRequest,
     PdfConvertTriggerResponse,
 )
 from app.schemas.upload import (
@@ -1151,6 +1152,7 @@ async def trigger_pdf_convert(
     process_id: uuid.UUID,
     background_tasks: BackgroundTasks,
     http_request: Request,
+    body: PdfConvertTriggerRequest = None,
     db: AsyncSession = Depends(get_db),
 ) -> PdfConvertTriggerResponse:
     tenant_id = getattr(getattr(http_request, "state", None), "tenant_id", None)
@@ -1211,6 +1213,8 @@ async def trigger_pdf_convert(
         getattr(http_request, "state", None), "auth_api_key_label", None
     )
 
+    winder_number = (body.winder_number if body else None)
+
     job = PdfConversionJob(
         process_id=process_id,
         tenant_id=tenant_id,
@@ -1218,6 +1222,7 @@ async def trigger_pdf_convert(
         progress=0,
         actor_api_key_id=actor_api_key_id,
         actor_label_snapshot=actor_api_key_label,
+        winder_number=winder_number,
     )
     db.add(job)
     await db.commit()

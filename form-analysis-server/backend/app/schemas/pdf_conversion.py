@@ -16,6 +16,15 @@ class PdfConversionStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class PdfConvertTriggerRequest(BaseModel):
+    winder_number: int | None = Field(
+        default=None,
+        ge=1,
+        le=20,
+        description="P2 收卷機編號（1-20），上傳 P2 PDF 時由使用者指定",
+    )
+
+
 class PdfConvertTriggerResponse(BaseModel):
     job_id: uuid.UUID
     status: PdfConversionStatus

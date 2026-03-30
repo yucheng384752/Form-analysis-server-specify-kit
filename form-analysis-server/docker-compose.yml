@@ -55,7 +55,7 @@ services:
       # External PDF conversion server (optional)
       - PDF_SERVER_URL=${PDF_SERVER_URL:-}
       - PDF_SERVER_CONVERT_PATH=${PDF_SERVER_CONVERT_PATH:-/convert}
-      - PDF_SERVER_TIMEOUT_SECONDS=${PDF_SERVER_TIMEOUT_SECONDS:-60}
+      - PDF_SERVER_TIMEOUT_SECONDS=${PDF_SERVER_TIMEOUT_SECONDS:-1800}
       - PDF_SERVER_TABLE=${PDF_SERVER_TABLE:-}
 
       # External analytics inputs (Analytical-Four + september_v2)
@@ -66,6 +66,8 @@ services:
       - ANALYTICS_MERGED_CSV_PATH=${ANALYTICS_MERGED_CSV_PATH:-/external/september_v2/merged_p1_p2_p3.csv}
     ports:
       - "${HOST_API_PORT:-18002}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app
       - upload_data:/app/uploads

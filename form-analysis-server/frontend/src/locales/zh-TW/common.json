@@ -433,6 +433,7 @@
       "header": "{{title}} - {{fileName}}（共 {{rowCount}} 行，{{colCount}} 個欄位）",
       "errorSummary": "發現 {{count}} 個驗證錯誤",
       "cellErrorTitle": "錯誤：{{message}}",
+      "emptyCellTitle": "此欄位為空白",
       "errorCodeLabel": "錯誤程式碼: {{code}}",
       "hintEdit": "提示：點擊任意儲存格即可直接編輯內容",
       "hintPreview": "提示：此版本不提供編輯；如需修正請修改 CSV 後重新上傳",
@@ -477,6 +478,21 @@
         "doneWithFailures": "一鍵驗證完成：通過 {{ok}}、有錯誤 {{errors}}、失敗 {{failed}}",
         "doneWithErrors": "一鍵驗證完成：通過 {{ok}}、有錯誤 {{errors}}",
         "doneAllPassed": "一鍵驗證完成：全部通過（{{ok}}）"
+      }
+    },
+    "batchConvert": {
+      "buttonLabel": "一鍵轉檔 ({{count}})",
+      "buttonLabelBusy": "一鍵轉檔中...",
+      "title": {
+        "busy": "目前有檔案在轉檔中",
+        "ready": "一鍵轉檔 {{count}} 個 PDF 檔案"
+      },
+      "toast": {
+        "noEligible": "沒有需要轉檔的 PDF 檔案",
+        "start": "開始一鍵轉檔：共 {{count}} 個 PDF 檔案",
+        "progress": "一鍵轉檔中：{{current}}/{{total}}（{{fileName}}）",
+        "doneWithFailures": "一鍵轉檔完成：成功 {{ok}}、失敗 {{failed}}",
+        "doneAllPassed": "一鍵轉檔完成：全部成功（{{ok}}）"
       }
     },
     "batchImport": {
@@ -777,6 +793,13 @@
       "value": "值",
       "ngRate": "NG 比率",
       "sample": "樣本數"
+    },
+    "pareto": {
+      "featureTitle": "Feature Pareto (final_raw_score)",
+      "ngTitle": "NG Code Pareto",
+      "valueLabel": "Final Score",
+      "cumLabel": "累積%",
+      "noData": "暫無資料"
     }
   },
   "errors": {

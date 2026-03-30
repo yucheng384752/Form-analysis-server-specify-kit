@@ -62,7 +62,7 @@ services:
       # External PDF conversion server (optional)
       - PDF_SERVER_URL=${PDF_SERVER_URL:-}
       - PDF_SERVER_CONVERT_PATH=${PDF_SERVER_CONVERT_PATH:-/convert}
-      - PDF_SERVER_TIMEOUT_SECONDS=${PDF_SERVER_TIMEOUT_SECONDS:-60}
+      - PDF_SERVER_TIMEOUT_SECONDS=${PDF_SERVER_TIMEOUT_SECONDS:-1800}
       - PDF_SERVER_TABLE=${PDF_SERVER_TABLE:-}
       # External analytics (mounted read-only)
       - ANALYTICAL_FOUR_PATH=${ANALYTICAL_FOUR_PATH:-/external/Analytical-Four}
@@ -71,6 +71,8 @@ services:
       - ANALYTICS_MERGED_CSV_PATH=${ANALYTICS_MERGED_CSV_PATH:-/external/september_v2/merged_p1_p2_p3.csv}
     ports:
       - "${HOST_API_PORT:-18102}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Demo 環境不掛載源碼，只掛載必要的資料目錄
       - upload_demo_data:/app/uploads

@@ -17,6 +17,7 @@ export interface CsvData {
   rows: string[][];
   colWidths: number[];
   starCells: Set<string>;
+  emptyCells: Set<string>;
 }
 
 export interface UploadedFile {
@@ -98,7 +99,7 @@ async function parseCsv(file: File): Promise<CsvData> {
   const text = await file.text();
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (!lines.length) {
-    return { headers: [], rows: [], colWidths: [], starCells: new Set() };
+    return { headers: [], rows: [], colWidths: [], starCells: new Set(), emptyCells: new Set() };
   }
   const rows = lines.map((line) => line.split(","));
   const headers = rows[0];
@@ -106,10 +107,15 @@ async function parseCsv(file: File): Promise<CsvData> {
 
   // 偵測帶 * 或前後空格的儲存格，標記為顯著值
   const starCells = new Set<string>();
+  // 偵測空白儲存格
+  const emptyCells = new Set<string>();
   for (let r = 0; r < dataRows.length; r++) {
     for (let c = 0; c < dataRows[r].length; c++) {
       const raw = dataRows[r][c];
-      if (!raw) continue;
+      if (raw == null || raw.trim() === '') {
+        emptyCells.add(`${r}_${c}`);
+        continue;
+      }
       let marked = false;
       let cleaned = raw;
       // 偵測 *
@@ -145,7 +151,7 @@ async function parseCsv(file: File): Promise<CsvData> {
     Math.max(80, Math.min(len * 10, 260))
   );
 
-  return { headers, rows: dataRows, colWidths: pixelWidths, starCells };
+  return { headers, rows: dataRows, colWidths: pixelWidths, starCells, emptyCells };
 }
 
 export function UploadPage() {
@@ -153,6 +159,7 @@ export function UploadPage() {
   const [confirmTargetId, setConfirmTargetId] = useState<string | null>(null);
   const [showBatchImportConfirm, setShowBatchImportConfirm] = useState(false);
   const [isValidatingAll, setIsValidatingAll] = useState(false);
+  const [isConvertingAll, setIsConvertingAll] = useState(false);
   const { t } = useTranslation();
   const { showToast } = useToast();
 
@@ -715,6 +722,46 @@ export function UploadPage() {
     }
   };
 
+  const fileEligibleForConvert = (f: UploadedFile): boolean => {
+    if (f.type !== 'PDF') return false;
+    if (!f.isValidated) return false;
+    if (f.pdfConvertStatus === 'queued' || f.pdfConvertStatus === 'uploading' || f.pdfConvertStatus === 'processing' || f.pdfConvertStatus === 'completed') return false;
+    return true;
+  };
+
+  const handleConvertAll = async () => {
+    const currentFiles = filesRef.current;
+    const targets = currentFiles.filter(fileEligibleForConvert);
+    if (targets.length === 0) {
+      showToast('info', t('upload.batchConvert.toast.noEligible'));
+      return;
+    }
+
+    setIsConvertingAll(true);
+    showToast('info', t('upload.batchConvert.toast.start', { count: targets.length }), { key: 'convertAll', durationMs: null });
+
+    let okCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < targets.length; i++) {
+      const f = targets[i];
+      showToast('info', t('upload.batchConvert.toast.progress', { current: i + 1, total: targets.length, fileName: f.name }), { key: 'convertAll', durationMs: null });
+      try {
+        await handlePdfConvert(f.id);
+        okCount += 1;
+      } catch {
+        failCount += 1;
+      }
+    }
+
+    setIsConvertingAll(false);
+    if (failCount > 0) {
+      showToast('error', t('upload.batchConvert.toast.doneWithFailures', { ok: okCount, failed: failCount }), { key: 'convertAll', durationMs: 2500 });
+    } else {
+      showToast('success', t('upload.batchConvert.toast.doneAllPassed', { ok: okCount }), { key: 'convertAll', durationMs: 2500 });
+    }
+  };
+
   const handlePdfConvert = async (fileId: string) => {
     const target = files.find((f) => f.id === fileId);
     if (!target) return;
@@ -763,10 +810,29 @@ export function UploadPage() {
         )
       );
 
-      // Poll status until completed/failed
-      const maxTries = 300; // ~5 minutes, 與後端 PDF_SERVER_TIMEOUT_SECONDS=300 一致
+      // Poll status until completed/failed.
+      // Backend job will eventually resolve; 1800 iterations ≈ 30 min safety net.
+      // Individual poll failures are tolerated (transient network / proxy errors)
+      // to avoid aborting while the backend is still working.
+      const maxTries = 1800;
+      const maxConsecutiveErrors = 10;
+      let consecutiveErrors = 0;
       for (let i = 0; i < maxTries; i++) {
-        const s = await fetchPdfConvertStatus(target.processId);
+        let s: any;
+        try {
+          s = await fetchPdfConvertStatus(target.processId);
+          consecutiveErrors = 0; // reset on success
+        } catch {
+          consecutiveErrors++;
+          if (consecutiveErrors >= maxConsecutiveErrors) {
+            showToast('error', t('upload.toast.pdfConvertFailed'));
+            return;
+          }
+          // Transient error — wait longer before retrying
+          await new Promise((r) => setTimeout(r, 3000));
+          continue;
+        }
+
         const status = String(s.status || '');
         const progress = typeof s.progress === 'number' ? s.progress : toPdfConvertProgress(status);
         const errorSummary = s.error_summary;
@@ -1310,6 +1376,26 @@ export function UploadPage() {
                     {isValidatingAll
                       ? t('upload.batchValidate.buttonLabelBusy')
                       : t('upload.batchValidate.buttonLabel', { count: eligibleCount })}
+                  </button>
+                );
+              })()}
+              {(() => {
+                const convertEligibleCount = files.filter(fileEligibleForConvert).length;
+                if (convertEligibleCount === 0 && !isConvertingAll) return null;
+                const anyConverting = files.some((f) => f.pdfConvertStatus === 'queued' || f.pdfConvertStatus === 'uploading' || f.pdfConvertStatus === 'processing');
+                const disabled = isConvertingAll || anyConverting || convertEligibleCount === 0;
+
+                return (
+                  <button
+                    className={`btn-secondary ${disabled ? 'btn-secondary--disabled' : ''}`}
+                    onClick={handleConvertAll}
+                    disabled={disabled}
+                    title={disabled ? t('upload.batchConvert.title.busy') : t('upload.batchConvert.title.ready', { count: convertEligibleCount })}
+                    style={{ marginRight: '10px' }}
+                  >
+                    {isConvertingAll
+                      ? t('upload.batchConvert.buttonLabelBusy')
+                      : t('upload.batchConvert.buttonLabel', { count: convertEligibleCount })}
                   </button>
                 );
               })()}
@@ -1927,6 +2013,8 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                     const cellError = getCellError(originalRowIndex, cIdx);
                     const hasError = !!cellError;
                     const isStar = csv.starCells?.has(`${originalRowIndex}_${cIdx}`);
+                    const isEmpty = csv.emptyCells?.has(`${originalRowIndex}_${cIdx}`);
+                    const isWarning = isStar || isEmpty;
 
                     return (
                       <td
@@ -1935,10 +2023,10 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                           width: `${csv.colWidths[cIdx] ?? 160}px`,
                           position: 'relative'
                         }}
-                        title={hasError ? t('upload.csvEditor.cellErrorTitle', { message: cellError.message }) : isStar ? t('upload.csvEditor.starCellTitle', { defaultValue: '此欄位為顯著值 (原始資料含 * 或前後空格)' }) : ''}
+                        title={hasError ? t('upload.csvEditor.cellErrorTitle', { message: cellError.message }) : isEmpty ? t('upload.csvEditor.emptyCellTitle', { defaultValue: '此欄位為空白' }) : isStar ? t('upload.csvEditor.starCellTitle', { defaultValue: '此欄位為顯著值 (原始資料含 * 或前後空格)' }) : ''}
                       >
                         <input
-                          className={`csv-editor__cell-input ${hasError ? 'csv-editor__cell-input--error' : isStar ? 'csv-editor__cell-input--star' : ''}`}
+                          className={`csv-editor__cell-input ${hasError ? 'csv-editor__cell-input--error' : isWarning ? 'csv-editor__cell-input--star' : ''}`}
                           value={cell ?? ''}
                           readOnly={!EDIT_ENABLED}
                           onChange={(e) => {
@@ -1949,7 +2037,7 @@ function CsvEditor({ file, csv, onCellChange }: CsvEditorProps) {
                             backgroundColor: '#fecaca',
                             borderColor: '#dc2626',
                             color: '#dc2626'
-                          } : isStar ? {
+                          } : isWarning ? {
                             backgroundColor: '#fefce8',
                             borderColor: '#eab308',
                           } : {}}

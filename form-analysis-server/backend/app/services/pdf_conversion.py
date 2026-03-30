@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import csv
 import io
 import re
 import uuid
@@ -93,9 +94,16 @@ async def _call_pdf_server_convert(
         # e.g., "http://host:port" -> "http://host:port/process"
         url = url.rstrip("/") + "/process"
 
-    timeout_seconds = int(getattr(settings, "pdf_server_timeout_seconds", 300))
+    timeout_seconds = int(getattr(settings, "pdf_server_timeout_seconds", 1800))
+    # Use granular timeout: short connect (30s), long read/write for large PDFs
+    timeout = httpx.Timeout(
+        connect=30.0,
+        read=float(timeout_seconds),
+        write=60.0,
+        pool=30.0,
+    )
 
-    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+    async with httpx.AsyncClient(timeout=timeout) as client:
         if url.rstrip("/").lower().endswith("/process"):
             # Legacy/LLM Table Processor style: /process expects multipart fields:
             # - table: required (P1/P2/P3)
@@ -256,6 +264,40 @@ def _extract_csv_texts(
     return {name: csv_text}, name
 
 
+def _inject_winder_into_csv(content: bytes) -> bytes:
+    """P2 CSV 固定 20 筆，依列順序注入 Winder number 1–20。
+
+    第 1 列 → Winder number = 1，第 2 列 → 2，…，第 20 列 → 20。
+    若 CSV 已有 Winder number（或同義欄位）則跳過，避免覆蓋 PDF 轉出的原始值。
+    """
+    WINDER_KEY = "Winder number"
+    WINDER_SYNONYMS = {"Winder", "Winder number", "winder", "winder_number", "收卷機", "收卷機編號"}
+
+    text = content.decode("utf-8", errors="replace")
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        return content
+
+    # Skip injection if any winder-like column already exists
+    if any(f in WINDER_SYNONYMS for f in reader.fieldnames):
+        return content
+
+    # Insert before the "規格/format" column if present; otherwise prepend.
+    SPEC_SYNONYMS = {"format", "Format", "規格", "specification", "Specification"}
+    existing = list(reader.fieldnames)
+    insert_idx = next(
+        (i for i, f in enumerate(existing) if f in SPEC_SYNONYMS), 0
+    )
+    fieldnames = existing[:insert_idx] + [WINDER_KEY] + existing[insert_idx:]
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for row_idx, row in enumerate(reader):
+        row[WINDER_KEY] = str(row_idx + 1)  # 第 1 列 → 1, 第 2 列 → 2, …
+        writer.writerow(row)
+    return out.getvalue().encode("utf-8")
+
+
 async def _auto_ingest_converted_csvs(
     *,
     db,
@@ -298,6 +340,16 @@ async def _auto_ingest_converted_csvs(
         if not file_content:
             # Skip empty outputs rather than failing the whole background auto-ingest.
             continue
+
+        # Inject sequential Winder number (1–20) only for P2 CSVs.
+        table_type = _infer_table_from_filename(filename)
+        if table_type == "P2":
+            injected = _inject_winder_into_csv(file_content)
+            if injected is not file_content:
+                # Write back to disk so the outputs endpoint also returns injected content.
+                csv_path.write_bytes(injected)
+                file_content = injected
+
         if len(file_content) > MAX_CSV_BYTES:
             raise ValidationError(message=f"CSV 檔案大小超過 10MB：{csv_path.name}")
 
@@ -333,13 +385,23 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
 
     settings = get_settings()
 
+    # ------------------------------------------------------------------
+    # Phase 1: load job + upload metadata, update status → PROCESSING,
+    #          then RELEASE the DB session so the pool stays available
+    #          for other requests while the external call runs.
+    # ------------------------------------------------------------------
+    process_id: uuid.UUID | None = None
+    pdf_path_str: str | None = None
+    upload_filename: str | None = None
+
     async with database.async_session_factory() as db:
         stmt = select(PdfConversionJob).where(PdfConversionJob.id == job_id)
         job = (await db.execute(stmt)).scalar_one_or_none()
         if not job:
             return
 
-        # Load upload record
+        process_id = job.process_id
+
         upload = (
             await db.execute(
                 select(PdfUpload).where(PdfUpload.process_id == job.process_id)
@@ -355,46 +417,91 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
             await db.commit()
             return
 
-        try:
-            job.status = PdfConversionStatus.UPLOADING
-            job.progress = 15
-            job.started_at = datetime.now(UTC)
-            await db.commit()
+        pdf_path_str = upload.storage_path
+        upload_filename = upload.filename
 
-            pdf_path = Path(upload.storage_path)
-            if not pdf_path.exists():
-                raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+        job.status = PdfConversionStatus.UPLOADING
+        job.progress = 15
+        job.started_at = datetime.now(UTC)
+        await db.commit()
+    # --- DB session released here ---
 
-            pdf_bytes = pdf_path.read_bytes()
+    # ------------------------------------------------------------------
+    # Phase 2: read PDF bytes and call external server (may take minutes).
+    #          No DB session is held during this phase.
+    # ------------------------------------------------------------------
+    result: dict[str, Any] | None = None
+    convert_error: Exception | None = None
+    convert_error_stage: str = "convert"
 
+    try:
+        pdf_path = Path(pdf_path_str)
+        if not pdf_path.exists():
+            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+        pdf_bytes = pdf_path.read_bytes()
+
+        # Update status → PROCESSING (short DB touch)
+        async with database.async_session_factory() as db:
+            job = (await db.execute(
+                select(PdfConversionJob).where(PdfConversionJob.id == job_id)
+            )).scalar_one()
             job.status = PdfConversionStatus.PROCESSING
             job.progress = 45
             await db.commit()
 
-            # Call external server (with concurrency limiter to avoid overwhelming it)
-            sem = _get_pdf_convert_semaphore()
-            async with sem:
-                logger.info(
-                    "Calling PDF server for conversion",
-                    job_id=str(job_id),
-                    filename=upload.filename,
-                )
-                result = await _call_pdf_server_convert(
-                    pdf_bytes=pdf_bytes,
-                    filename=upload.filename,
-                    options={
-                        "output_format": "csv",
-                    },
-                )
+        # Call external server (with concurrency limiter)
+        sem = _get_pdf_convert_semaphore()
+        async with sem:
+            logger.info(
+                "Calling PDF server for conversion",
+                job_id=str(job_id),
+                filename=upload_filename,
+            )
+            result = await _call_pdf_server_convert(
+                pdf_bytes=pdf_bytes,
+                filename=upload_filename or "upload.pdf",
+                options={
+                    "output_format": "csv",
+                },
+            )
 
+    except PdfServerNotConfigured as e:
+        convert_error = e
+        convert_error_stage = "config"
+    except Exception as e:
+        logger.exception(
+            "PDF conversion job failed",
+            job_id=str(job_id),
+            process_id=str(process_id),
+        )
+        convert_error = e
+        convert_error_stage = "convert"
+
+    # ------------------------------------------------------------------
+    # Phase 3: write results back to DB (fresh session).
+    # ------------------------------------------------------------------
+    async with database.async_session_factory() as db:
+        job = (await db.execute(
+            select(PdfConversionJob).where(PdfConversionJob.id == job_id)
+        )).scalar_one()
+
+        if convert_error is not None:
+            job.status = PdfConversionStatus.FAILED
+            job.progress = 100
+            job.error_summary = _to_error_summary(convert_error, stage=convert_error_stage)
+            job.finished_at = datetime.now(UTC)
+            await db.commit()
+            return
+
+        try:
             job.progress = 70
             await db.commit()
 
             csvs, selected_name = _extract_csv_texts(
-                result, pdf_filename=upload.filename
+                result, pdf_filename=upload_filename or "upload.pdf"
             )
 
-            out_dir = Path(settings.upload_temp_dir) / "pdf" / str(upload.process_id)
+            out_dir = Path(settings.upload_temp_dir) / "pdf" / str(process_id)
             out_dir.mkdir(parents=True, exist_ok=True)
 
             output_paths: list[str] = []
@@ -408,7 +515,6 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
                     selected_path = str(out_path)
 
             if not selected_path:
-                # Should not happen, but keep defensive.
                 selected_path = output_paths[0]
 
             job.status = PdfConversionStatus.COMPLETED
@@ -420,7 +526,6 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
             await db.commit()
 
             # Auto-ingest converted CSVs into existing validation flow.
-            # This is best-effort and should NOT change conversion status.
             try:
                 resolved_base = Path(settings.upload_temp_dir).resolve()
                 await _auto_ingest_converted_csvs(
@@ -437,18 +542,11 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
                     error=str(e),
                 )
 
-        except PdfServerNotConfigured as e:
-            job.status = PdfConversionStatus.FAILED
-            job.progress = 100
-            job.error_summary = _to_error_summary(e, stage="config")
-            job.finished_at = datetime.now(UTC)
-            await db.commit()
-
         except Exception as e:
             logger.exception(
-                "PDF conversion job failed",
+                "PDF conversion post-processing failed",
                 job_id=str(job_id),
-                process_id=str(job.process_id),
+                process_id=str(process_id),
             )
             job.status = PdfConversionStatus.FAILED
             job.progress = 100
