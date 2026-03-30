@@ -246,10 +246,11 @@ function normalizeAnalysisResult(input: unknown): AnalysisResult | null {
 
 
 function pickOverallNode(result: AnalysisResult): { category: string; key: string; node: RatioNode } | null {
-  let bestCategory: string | null = null
-  let bestTotal = -1
-  let bestNg = -1
-  const summary: Record<string, { total: number; ng: number; keyCount: number }> = {}
+  const categories = Object.keys(result)
+  if (categories.length === 0) return null
+
+  // Compute total/NG per category
+  const catStats: Record<string, { total: number; ng: number }> = {}
   for (const [category, bucket] of Object.entries(result)) {
     let catTotal = 0
     let catNg = 0
@@ -257,18 +258,50 @@ function pickOverallNode(result: AnalysisResult): { category: string; key: strin
       catTotal += Number(node?.total_count ?? 0) || 0
       catNg += Number(node?.count_0 ?? 0) || 0
     }
-    summary[category] = { total: catTotal, ng: catNg, keyCount: Object.keys(bucket).length }
-    if (catTotal > bestTotal || (catTotal === bestTotal && catNg > bestNg)) {
-      bestCategory = category
-      bestTotal = catTotal
-      bestNg = catNg
-    }
+    catStats[category] = { total: catTotal, ng: catNg }
   }
-  console.log('[Analytics] pickOverallNode 各分類彙總:', summary)
-  console.log(`[Analytics] pickOverallNode → 最佳分類: "${bestCategory}", total=${bestTotal}, NG=${bestNg}, NG率=${bestTotal ? ((bestNg / bestTotal) * 100).toFixed(2) : 0}%`)
-  if (!bestCategory) return null
-  const syntheticNode: RatioNode = { total_count: bestTotal, count_0: bestNg }
-  return { category: bestCategory, key: '__all__', node: syntheticNode }
+
+  // Detect multi-station mode: backend prefixes all keys with P2./P3. when
+  // multiple stations are requested.
+  const allPrefixed = categories.every((cat) => /^P[23]\./i.test(cat))
+
+  let overallTotal: number
+  let overallNg: number
+
+  if (allPrefixed) {
+    // Multi-station: group by station prefix, take one representative per
+    // station (all categories within the same station share the same total),
+    // then sum across stations.
+    const stationBest: Record<string, { total: number; ng: number }> = {}
+    for (const [category, stats] of Object.entries(catStats)) {
+      const station = category.split('.')[0].toUpperCase()
+      if (!stationBest[station] || stats.total > stationBest[station].total) {
+        stationBest[station] = stats
+      }
+    }
+    overallTotal = 0
+    overallNg = 0
+    for (const { total, ng } of Object.values(stationBest)) {
+      overallTotal += total
+      overallNg += ng
+    }
+    console.log('[Analytics] pickOverallNode multi-station:', stationBest, `→ total=${overallTotal}, NG=${overallNg}`)
+  } else {
+    // Single station: all categories have the same total; pick the highest.
+    let best: { total: number; ng: number } = { total: 0, ng: 0 }
+    for (const stats of Object.values(catStats)) {
+      if (stats.total > best.total || (stats.total === best.total && stats.ng > best.ng)) {
+        best = stats
+      }
+    }
+    overallTotal = best.total
+    overallNg = best.ng
+    console.log(`[Analytics] pickOverallNode single-station → total=${overallTotal}, NG=${overallNg}`)
+  }
+
+  if (overallTotal === 0) return null
+  const syntheticNode: RatioNode = { total_count: overallTotal, count_0: overallNg }
+  return { category: '__overall__', key: '__all__', node: syntheticNode }
 }
 
 function pct(n: number, d: number): number {
@@ -804,7 +837,7 @@ export function AnalyticsPage() {
           return normalized
         }
 
-        const normalized = await requestAnalyze(hasProductIds ? ['P2', 'P3'] : chosenStations)
+        const normalized = await requestAnalyze(chosenStations)
 
         // Race condition check: ignore stale responses
         if (currentRequestId !== analyzeRequestIdRef.current) {
@@ -1974,13 +2007,21 @@ export function AnalyticsPage() {
                         }}
                       />
                       <Legend />
-                      <Bar yAxisId="left" dataKey="count" name={productIdMode ? '客訴數量' : 'NG數量'} fill="#2563eb" radius={[6, 6, 0, 0]} />
+                      <Bar
+                        yAxisId="left"
+                        dataKey="count"
+                        name={productIdMode ? '客訴數量' : 'NG數量'}
+                        fill="#2563eb"
+                        radius={[6, 6, 0, 0]}
+                        onClick={() => { if (!productIdMode) enterNgMode() }}
+                      />
                       <Line yAxisId="right" dataKey="cumPct" name="累積%" type="monotone" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               </div>
             ) : null}
+
           </section>
 
         </>

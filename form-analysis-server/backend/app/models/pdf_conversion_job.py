@@ -124,3 +124,9 @@ class PdfConversionJob(Base):
         nullable=True,
         comment="API key label snapshot",
     )
+
+    winder_number: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="P2 winder number provided by user at conversion trigger time (1-20)",
+    )

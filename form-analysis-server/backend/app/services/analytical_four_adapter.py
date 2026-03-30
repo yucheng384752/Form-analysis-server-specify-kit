@@ -868,6 +868,20 @@ async def run_extraction_analysis_from_db(
             numerical_cols,
         )
         present_numerical = [c for c in numerical_cols if c in present_cols]
+
+        # Filter out columns that are mostly NaN (< 50% non-null)
+        min_non_null = max(1, len(prepared_df) * 0.5)
+        usable_numerical = [
+            c for c in present_numerical
+            if prepared_df[c].notna().sum() >= min_non_null
+        ]
+        dropped_cols = set(present_numerical) - set(usable_numerical)
+        if dropped_cols:
+            logger.info(
+                "Dropped columns with insufficient data: %s", sorted(dropped_cols)
+            )
+        present_numerical = usable_numerical
+
         if len(present_numerical) < 2:
             logger.warning(
                 "Need at least 2 numerical columns for extraction, got %d",
@@ -998,6 +1012,34 @@ async def run_extraction_analysis_from_db(
         sorted_features = sorted(
             merged.final_raw_score.items(), key=lambda x: x[1], reverse=True
         )
+
+        # Fallback: when PCA/IQR finds no outliers, compute NG-vs-OK mean
+        # difference as a simple feature importance metric so that the
+        # Pareto chart still has data to display.
+        if not sorted_features and target_col in df.columns:
+            logger.info(
+                "No outliers detected; computing NG-vs-OK fallback for Pareto"
+            )
+            target_series = df[target_col].astype(str)
+            ng_mask = target_series == "0"
+            ok_mask = target_series == "1"
+            if ng_mask.any() and ok_mask.any():
+                fallback_scores: dict[str, float] = {}
+                for col in present_numerical:
+                    if col not in df.columns:
+                        continue
+                    col_data = pd.to_numeric(df[col], errors="coerce")
+                    ng_mean = col_data[ng_mask].mean()
+                    ok_mean = col_data[ok_mask].mean()
+                    col_std = col_data.std()
+                    if pd.notna(ng_mean) and pd.notna(ok_mean) and col_std > 0:
+                        fallback_scores[col] = abs(float(ng_mean - ok_mean) / col_std)
+                if fallback_scores:
+                    sorted_features = sorted(
+                        fallback_scores.items(), key=lambda x: x[1], reverse=True
+                    )
+                    merged.final_raw_score = dict(sorted_features)
+                    # boundary_count/spe/t2 remain empty — only final_raw_score populated
 
         result = {
             "boundary_count": {

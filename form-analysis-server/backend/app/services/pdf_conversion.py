@@ -341,12 +341,14 @@ async def _auto_ingest_converted_csvs(
             # Skip empty outputs rather than failing the whole background auto-ingest.
             continue
 
-        # Inject sequential Winder number (1–20) if not already present.
-        injected = _inject_winder_into_csv(file_content)
-        if injected is not file_content:
-            # Write back to disk so the outputs endpoint also returns injected content.
-            csv_path.write_bytes(injected)
-            file_content = injected
+        # Inject sequential Winder number (1–20) only for P2 CSVs.
+        table_type = _infer_table_from_filename(filename)
+        if table_type == "P2":
+            injected = _inject_winder_into_csv(file_content)
+            if injected is not file_content:
+                # Write back to disk so the outputs endpoint also returns injected content.
+                csv_path.write_bytes(injected)
+                file_content = injected
 
         if len(file_content) > MAX_CSV_BYTES:
             raise ValidationError(message=f"CSV 檔案大小超過 10MB：{csv_path.name}")

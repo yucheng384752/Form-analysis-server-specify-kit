@@ -299,6 +299,7 @@
       "header": "{{title}} - {{fileName}} ({{rowCount}} rows, {{colCount}} columns)",
       "errorSummary": "Found {{count}} validation error(s)",
       "cellErrorTitle": "Error: {{message}}",
+      "emptyCellTitle": "This field is empty",
       "errorCodeLabel": "Error code: {{code}}",
       "hintEdit": "Tip: click any cell to edit",
       "hintPreview": "Tip: editing is not available. Please fix the CSV and upload again.",
@@ -383,6 +384,21 @@
           "processing": "Processing"
         }
       },
+    "batchConvert": {
+      "buttonLabel": "Convert all PDFs ({{count}})",
+      "buttonLabelBusy": "Converting...",
+      "title": {
+        "busy": "Some files are being converted",
+        "ready": "Convert {{count}} PDF files"
+      },
+      "toast": {
+        "noEligible": "No PDF files to convert",
+        "start": "Starting convert-all: {{count}} PDF files",
+        "progress": "Converting: {{current}}/{{total}} ({{fileName}})",
+        "doneWithFailures": "Convert-all finished: {{ok}} succeeded, {{failed}} failed",
+        "doneAllPassed": "Convert-all finished: all succeeded ({{ok}})"
+      }
+    },
     "batchImport": {
       "buttonLabel": "Import all ({{count}})",
       "errorBadge": "{{count}} errors",
@@ -819,6 +835,13 @@
       "value": "Value",
       "ngRate": "NG rate",
       "sample": "Samples"
+    },
+    "pareto": {
+      "featureTitle": "Feature Pareto (final_raw_score)",
+      "ngTitle": "NG Code Pareto",
+      "valueLabel": "Final Score",
+      "cumLabel": "Cumulative %",
+      "noData": "No data"
     }
   }
 }
