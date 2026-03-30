@@ -64,6 +64,9 @@ services:
       - SEPTEMBER_V2_PATH=${SEPTEMBER_V2_PATH:-/external/september_v2}
       - ANALYTICS_CONFIG_PATH=${ANALYTICS_CONFIG_PATH:-/external/september_v2/config/ut_config_v3.json}
       - ANALYTICS_MERGED_CSV_PATH=${ANALYTICS_MERGED_CSV_PATH:-/external/september_v2/merged_p1_p2_p3.csv}
+
+      # Generic schema feature flag (Phase 2)
+      - USE_GENERIC_SCHEMA=${USE_GENERIC_SCHEMA:-false}
     ports:
       - "${HOST_API_PORT:-18002}:8000"
     extra_hosts:
