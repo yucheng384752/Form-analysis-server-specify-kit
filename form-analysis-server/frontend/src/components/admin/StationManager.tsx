@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { StationInfo } from '../../types/api';
 import {
   fetchStations,
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export function StationManager({ showToast }: Props) {
+  const { t } = useTranslation();
   const [stations, setStations] = useState<StationInfo[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -40,7 +42,7 @@ export function StationManager({ showToast }: Props) {
       const data = await fetchStations();
       setStations(data);
     } catch (err: any) {
-      showToast('error', err.message || 'Failed to load stations');
+      showToast('error', err.message || t('admin.stations.toast.failedLoad'));
     } finally {
       setLoading(false);
     }
@@ -50,13 +52,13 @@ export function StationManager({ showToast }: Props) {
 
   const handleCreate = async () => {
     if (!newCode.trim() || !newName.trim()) {
-      showToast('error', 'Code and Name are required');
+      showToast('error', t('admin.stations.toast.requiredFields'));
       return;
     }
     setCreating(true);
     try {
       await createStation({ code: newCode.trim(), name: newName.trim(), sort_order: newSort, has_items: newHasItems });
-      showToast('success', `Station ${newCode} created`);
+      showToast('success', t('admin.stations.toast.created', { code: newCode }));
       setNewCode(''); setNewName(''); setNewSort(0); setNewHasItems(false);
       await refresh();
     } catch (err: any) {
@@ -67,10 +69,10 @@ export function StationManager({ showToast }: Props) {
   };
 
   const handleDelete = async (code: string) => {
-    if (!confirm(`Delete station ${code}? This will also delete its schema, records, and links.`)) return;
+    if (!confirm(t('admin.stations.confirm.delete', { code }))) return;
     try {
       await deleteStation(code);
-      showToast('success', `Station ${code} deleted`);
+      showToast('success', t('admin.stations.toast.deleted', { code }));
       await refresh();
     } catch (err: any) {
       showToast('error', err.message);
@@ -82,7 +84,7 @@ export function StationManager({ showToast }: Props) {
     if (!v || v === station.name) return;
     try {
       await updateStation(station.code, { name: v });
-      showToast('success', `Station ${station.code} updated`);
+      showToast('success', t('admin.stations.toast.updated', { code: station.code }));
       await refresh();
     } catch (err: any) {
       showToast('error', err.message);
@@ -131,10 +133,10 @@ export function StationManager({ showToast }: Props) {
     try {
       const parsed = JSON.parse(schemaJson);
       await upsertStationSchema(editingSchemaCode, parsed);
-      showToast('success', `Schema for ${editingSchemaCode} saved`);
+      showToast('success', t('admin.stations.schema.saved', { code: editingSchemaCode }));
       setEditingSchemaCode(null);
     } catch (err: any) {
-      showToast('error', err.message || 'Invalid JSON');
+      showToast('error', err.message || t('admin.stations.toast.invalidJson'));
     }
   };
 
@@ -142,37 +144,37 @@ export function StationManager({ showToast }: Props) {
     <section className="register-card">
       <div className="admin-header-row">
         <div>
-          <h2 className="register-title">Station Management</h2>
-          <p className="register-hint">Manage workstations and their schema definitions.</p>
+          <h2 className="register-title">{t('admin.stations.title')}</h2>
+          <p className="register-hint">{t('admin.stations.subtitle')}</p>
         </div>
         <button className="btn" onClick={refresh} disabled={loading}>
-          {loading ? 'Loading...' : 'Refresh'}
+          {t('admin.stations.btn.refresh')}
         </button>
       </div>
 
       <details className="register-details">
-        <summary className="register-summary">Add Station</summary>
+        <summary className="register-summary">{t('admin.stations.form.title')}</summary>
         <div className="admin-form-grid">
           <label className="register-label">
-            Code
-            <input className="register-input" value={newCode} onChange={e => setNewCode(e.target.value)} placeholder="e.g. P4" />
+            {t('admin.stations.form.code')}
+            <input className="register-input" value={newCode} onChange={e => setNewCode(e.target.value)} placeholder={t('admin.stations.form.codePlaceholder')} />
           </label>
           <label className="register-label">
-            Name
-            <input className="register-input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Assembly" />
+            {t('admin.stations.form.name')}
+            <input className="register-input" value={newName} onChange={e => setNewName(e.target.value)} placeholder={t('admin.stations.form.namePlaceholder')} />
           </label>
           <label className="register-label">
-            Sort Order
+            {t('admin.stations.form.sortOrder')}
             <input className="register-input" type="number" value={newSort} onChange={e => setNewSort(Number(e.target.value))} />
           </label>
           <label className="register-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input type="checkbox" checked={newHasItems} onChange={e => setNewHasItems(e.target.checked)} />
-            Has Items
+            {t('admin.stations.form.hasItems')}
           </label>
         </div>
         <div className="register-actions">
           <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
-            {creating ? 'Creating...' : 'Create Station'}
+            {creating ? t('admin.stations.btn.creating') : t('admin.stations.btn.create')}
           </button>
         </div>
       </details>
@@ -181,11 +183,11 @@ export function StationManager({ showToast }: Props) {
         <table className="admin-table">
           <thead>
             <tr>
-              <th>Code</th>
-              <th>Name</th>
-              <th>Sort</th>
-              <th>Has Items</th>
-              <th>Actions</th>
+              <th>{t('admin.stations.table.colCode')}</th>
+              <th>{t('admin.stations.table.colName')}</th>
+              <th>{t('admin.stations.table.colSort')}</th>
+              <th>{t('admin.stations.table.colHasItems')}</th>
+              <th>{t('admin.stations.table.colActions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -213,16 +215,16 @@ export function StationManager({ showToast }: Props) {
                 </td>
                 <td>
                   <button className="btn btn-small" onClick={() => openSchemaEditor(s.code)}>
-                    Schema
+                    {t('admin.stations.btn.schema')}
                   </button>
                   <button className="btn btn-small" onClick={() => handleDelete(s.code)} style={{ marginLeft: 8 }}>
-                    Delete
+                    {t('admin.stations.btn.delete')}
                   </button>
                 </td>
               </tr>
             ))}
             {!stations.length && (
-              <tr><td colSpan={5} className="admin-empty">No stations</td></tr>
+              <tr><td colSpan={5} className="admin-empty">{t('admin.stations.table.empty')}</td></tr>
             )}
           </tbody>
         </table>
@@ -231,14 +233,14 @@ export function StationManager({ showToast }: Props) {
       {editingSchemaCode && (
         <div style={{ marginTop: 16, padding: 16, border: '1px solid #e5e7eb', borderRadius: 12, background: '#fafafa' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>Schema: {editingSchemaCode}</h3>
+            <h3 style={{ margin: 0 }}>{t('admin.stations.schema.title', { code: editingSchemaCode })}</h3>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" onClick={handleSaveSchema}>Save</button>
-              <button className="btn" onClick={() => setEditingSchemaCode(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSaveSchema}>{t('admin.stations.btn.save')}</button>
+              <button className="btn" onClick={() => setEditingSchemaCode(null)}>{t('admin.stations.btn.cancel')}</button>
             </div>
           </div>
           {schemaLoading ? (
-            <p>Loading schema...</p>
+            <p>{t('admin.stations.schema.loading')}</p>
           ) : (
             <textarea
               value={schemaJson}

@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { StationInfo, ValidationRuleInfo } from '../../types/api';
 import {
   fetchStations,
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export function ValidationRuleManager({ showToast }: Props) {
+  const { t } = useTranslation();
   const [stations, setStations] = useState<StationInfo[]>([]);
   const [selectedCode, setSelectedCode] = useState('');
   const [rules, setRules] = useState<ValidationRuleInfo[]>([]);
@@ -48,14 +50,14 @@ export function ValidationRuleManager({ showToast }: Props) {
 
   const handleCreate = async () => {
     if (!newField.trim()) {
-      showToast('error', 'Field name is required');
+      showToast('error', t('admin.validation.toast.fieldRequired'));
       return;
     }
     let config: Record<string, unknown>;
     try {
       config = JSON.parse(newConfigJson);
     } catch {
-      showToast('error', 'Invalid JSON in rule config');
+      showToast('error', t('admin.validation.toast.invalidJson'));
       return;
     }
     setCreating(true);
@@ -66,7 +68,7 @@ export function ValidationRuleManager({ showToast }: Props) {
         rule_config: config,
         station_code: selectedCode || null,
       });
-      showToast('success', 'Validation rule created');
+      showToast('success', t('admin.validation.toast.created'));
       setNewField(''); setNewConfigJson('{}');
       await loadRules();
     } catch (err: any) {
@@ -86,10 +88,10 @@ export function ValidationRuleManager({ showToast }: Props) {
   };
 
   const handleDelete = async (rule: ValidationRuleInfo) => {
-    if (!confirm(`Delete validation rule for field "${rule.field_name}"?`)) return;
+    if (!confirm(t('admin.validation.confirm.delete', { field: rule.field_name }))) return;
     try {
       await deleteValidationRule(rule.id);
-      showToast('success', 'Rule deleted');
+      showToast('success', t('admin.validation.toast.deleted'));
       await loadRules();
     } catch (err: any) {
       showToast('error', err.message);
@@ -100,8 +102,8 @@ export function ValidationRuleManager({ showToast }: Props) {
     <section className="register-card">
       <div className="admin-header-row">
         <div>
-          <h2 className="register-title">Validation Rules</h2>
-          <p className="register-hint">Manage enum, range, regex, and required validation rules per station.</p>
+          <h2 className="register-title">{t('admin.validation.title')}</h2>
+          <p className="register-hint">{t('admin.validation.subtitle')}</p>
         </div>
         <div className="admin-header-actions">
           <select
@@ -109,27 +111,27 @@ export function ValidationRuleManager({ showToast }: Props) {
             value={selectedCode}
             onChange={e => setSelectedCode(e.target.value)}
           >
-            <option value="">Select station...</option>
+            <option value="">{t('admin.validation.selectStation')}</option>
             {stations.map(s => (
               <option key={s.id} value={s.code}>{s.code} ({s.name})</option>
             ))}
           </select>
           <button className="btn" onClick={loadRules} disabled={loading || !selectedCode}>
-            {loading ? 'Loading...' : 'Load Rules'}
+            {loading ? t('common.loading') : t('admin.validation.btn.load')}
           </button>
         </div>
       </div>
 
       {selectedCode && (
         <details className="register-details">
-          <summary className="register-summary">Add Rule</summary>
+          <summary className="register-summary">{t('admin.validation.form.title')}</summary>
           <div className="admin-form-grid">
             <label className="register-label">
-              Field Name
-              <input className="register-input" value={newField} onChange={e => setNewField(e.target.value)} placeholder="e.g. material_grade" />
+              {t('admin.validation.form.fieldName')}
+              <input className="register-input" value={newField} onChange={e => setNewField(e.target.value)} placeholder={t('admin.validation.form.fieldNamePlaceholder')} />
             </label>
             <label className="register-label">
-              Rule Type
+              {t('admin.validation.form.ruleType')}
               <select className="register-input" value={newType} onChange={e => setNewType(e.target.value)}>
                 <option value="enum">enum</option>
                 <option value="range">range</option>
@@ -138,20 +140,20 @@ export function ValidationRuleManager({ showToast }: Props) {
               </select>
             </label>
             <label className="register-label">
-              Config (JSON)
+              {t('admin.validation.form.config')}
               <textarea
                 className="register-input"
                 value={newConfigJson}
                 onChange={e => setNewConfigJson(e.target.value)}
                 rows={3}
                 style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
-                placeholder='{"values": ["H2","H5","H8"]}'
+                placeholder={t('admin.validation.form.configPlaceholder')}
               />
             </label>
           </div>
           <div className="register-actions">
             <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
-              {creating ? 'Creating...' : 'Create Rule'}
+              {creating ? t('admin.validation.btn.creating') : t('admin.validation.btn.create')}
             </button>
           </div>
         </details>
@@ -161,10 +163,10 @@ export function ValidationRuleManager({ showToast }: Props) {
         <table className="admin-table">
           <thead>
             <tr>
-              <th>Field</th>
-              <th>Type</th>
-              <th>Config</th>
-              <th>Actions</th>
+              <th>{t('admin.validation.table.colField')}</th>
+              <th>{t('admin.validation.table.colType')}</th>
+              <th>{t('admin.validation.table.colConfig')}</th>
+              <th>{t('admin.validation.table.colActions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -177,16 +179,16 @@ export function ValidationRuleManager({ showToast }: Props) {
                 </td>
                 <td>
                   <button className="btn btn-small" onClick={() => handleToggleActive(r)}>
-                    Toggle
+                    {t('admin.validation.btn.toggle')}
                   </button>
                   <button className="btn btn-small" onClick={() => handleDelete(r)} style={{ marginLeft: 8 }}>
-                    Delete
+                    {t('admin.validation.btn.delete')}
                   </button>
                 </td>
               </tr>
             ))}
             {!rules.length && (
-              <tr><td colSpan={4} className="admin-empty">{selectedCode ? 'No rules' : 'Select a station first'}</td></tr>
+              <tr><td colSpan={4} className="admin-empty">{selectedCode ? t('admin.validation.table.emptyNoRules') : t('admin.validation.table.emptySelectFirst')}</td></tr>
             )}
           </tbody>
         </table>

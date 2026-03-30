@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { StationInfo } from '../../types/api';
 import {
   fetchStations,
@@ -27,6 +28,7 @@ interface Props {
 }
 
 export function AnalyticsMappingManager({ showToast }: Props) {
+  const { t } = useTranslation();
   const [stations, setStations] = useState<StationInfo[]>([]);
   const [selectedCode, setSelectedCode] = useState('');
   const [mappings, setMappings] = useState<MappingRow[]>([]);
@@ -58,7 +60,7 @@ export function AnalyticsMappingManager({ showToast }: Props) {
 
   const handleCreate = async () => {
     if (!newSource.trim() || !newColumn.trim()) {
-      showToast('error', 'Source path and output column are required');
+      showToast('error', t('admin.analytics.toast.requiredFields'));
       return;
     }
     setCreating(true);
@@ -70,7 +72,7 @@ export function AnalyticsMappingManager({ showToast }: Props) {
         output_order: newOrder,
         data_type: newDataType,
       });
-      showToast('success', 'Mapping created');
+      showToast('success', t('admin.analytics.toast.created'));
       setNewSource(''); setNewColumn(''); setNewOrder(0);
       await loadMappings();
     } catch (err: any) {
@@ -92,10 +94,10 @@ export function AnalyticsMappingManager({ showToast }: Props) {
   };
 
   const handleDelete = async (m: MappingRow) => {
-    if (!confirm(`Delete mapping "${m.output_column}"?`)) return;
+    if (!confirm(t('admin.analytics.confirm.delete', { column: m.output_column }))) return;
     try {
       await deleteAnalyticsMapping(m.id);
-      showToast('success', 'Mapping deleted');
+      showToast('success', t('admin.analytics.toast.deleted'));
       await loadMappings();
     } catch (err: any) {
       showToast('error', err.message);
@@ -106,8 +108,8 @@ export function AnalyticsMappingManager({ showToast }: Props) {
     <section className="register-card">
       <div className="admin-header-row">
         <div>
-          <h2 className="register-title">Analytics Mappings</h2>
-          <p className="register-hint">Map JSONB data paths to named analytics output columns.</p>
+          <h2 className="register-title">{t('admin.analytics.title')}</h2>
+          <p className="register-hint">{t('admin.analytics.subtitle')}</p>
         </div>
         <div className="admin-header-actions">
           <select
@@ -115,35 +117,35 @@ export function AnalyticsMappingManager({ showToast }: Props) {
             value={selectedCode}
             onChange={e => setSelectedCode(e.target.value)}
           >
-            <option value="">Select station...</option>
+            <option value="">{t('admin.analytics.selectStation')}</option>
             {stations.map(s => (
               <option key={s.id} value={s.code}>{s.code} ({s.name})</option>
             ))}
           </select>
           <button className="btn" onClick={loadMappings} disabled={loading || !selectedCode}>
-            {loading ? 'Loading...' : 'Load Mappings'}
+            {loading ? t('common.loading') : t('admin.analytics.btn.load')}
           </button>
         </div>
       </div>
 
       {selectedCode && (
         <details className="register-details">
-          <summary className="register-summary">Add Mapping</summary>
+          <summary className="register-summary">{t('admin.analytics.form.title')}</summary>
           <div className="admin-form-grid">
             <label className="register-label">
-              Source Path
-              <input className="register-input" value={newSource} onChange={e => setNewSource(e.target.value)} placeholder="e.g. record.data.thickness" />
+              {t('admin.analytics.form.sourcePath')}
+              <input className="register-input" value={newSource} onChange={e => setNewSource(e.target.value)} placeholder={t('admin.analytics.form.sourcePathPlaceholder')} />
             </label>
             <label className="register-label">
-              Output Column
-              <input className="register-input" value={newColumn} onChange={e => setNewColumn(e.target.value)} placeholder="e.g. thickness_mm" />
+              {t('admin.analytics.form.outputColumn')}
+              <input className="register-input" value={newColumn} onChange={e => setNewColumn(e.target.value)} placeholder={t('admin.analytics.form.outputColumnPlaceholder')} />
             </label>
             <label className="register-label">
-              Order
+              {t('admin.analytics.form.order')}
               <input className="register-input" type="number" value={newOrder} onChange={e => setNewOrder(Number(e.target.value))} />
             </label>
             <label className="register-label">
-              Data Type
+              {t('admin.analytics.form.dataType')}
               <select className="register-input" value={newDataType} onChange={e => setNewDataType(e.target.value)}>
                 <option value="string">string</option>
                 <option value="integer">integer</option>
@@ -155,7 +157,7 @@ export function AnalyticsMappingManager({ showToast }: Props) {
           </div>
           <div className="register-actions">
             <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
-              {creating ? 'Creating...' : 'Create Mapping'}
+              {creating ? t('admin.analytics.btn.creating') : t('admin.analytics.btn.create')}
             </button>
           </div>
         </details>
@@ -165,11 +167,11 @@ export function AnalyticsMappingManager({ showToast }: Props) {
         <table className="admin-table">
           <thead>
             <tr>
-              <th>Order</th>
-              <th>Source Path</th>
-              <th>Output Column</th>
-              <th>Type</th>
-              <th>Actions</th>
+              <th>{t('admin.analytics.table.colOrder')}</th>
+              <th>{t('admin.analytics.table.colSourcePath')}</th>
+              <th>{t('admin.analytics.table.colOutputColumn')}</th>
+              <th>{t('admin.analytics.table.colType')}</th>
+              <th>{t('admin.analytics.table.colActions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -188,12 +190,12 @@ export function AnalyticsMappingManager({ showToast }: Props) {
                 <td className="admin-mono">{m.output_column}</td>
                 <td><span className="pill pill-ok">{m.data_type}</span></td>
                 <td>
-                  <button className="btn btn-small" onClick={() => handleDelete(m)}>Delete</button>
+                  <button className="btn btn-small" onClick={() => handleDelete(m)}>{t('admin.analytics.btn.delete')}</button>
                 </td>
               </tr>
             ))}
             {!mappings.length && (
-              <tr><td colSpan={5} className="admin-empty">{selectedCode ? 'No mappings' : 'Select a station first'}</td></tr>
+              <tr><td colSpan={5} className="admin-empty">{selectedCode ? t('admin.analytics.table.emptyNoMappings') : t('admin.analytics.table.emptySelectFirst')}</td></tr>
             )}
           </tbody>
         </table>

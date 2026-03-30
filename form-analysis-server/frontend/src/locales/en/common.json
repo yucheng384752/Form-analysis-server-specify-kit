@@ -843,5 +843,347 @@
       "cumLabel": "Cumulative %",
       "noData": "No data"
     }
+  },
+  "admin": {
+    "tabs": {
+      "general": "General",
+      "stations": "Stations",
+      "validation": "Validation Rules",
+      "analytics": "Analytics Mappings",
+      "links": "Station Links"
+    },
+    "general": {
+      "title": "Admin Mode",
+      "hint": "This page only sends X-Admin-API-Key when you explicitly provide a key.",
+      "keyLabel": "Current Admin Key",
+      "keyNotSet": "(not set)",
+      "statusLabel": "Admin Mode Status",
+      "statusEnabled": "Enabled",
+      "statusDisabled": "Disabled",
+      "inputLabel": "Admin API Key",
+      "inputPlaceholder": "Enter X-Admin-API-Key",
+      "btn": {
+        "save": "Save",
+        "saving": "Verifying…",
+        "clear": "Clear",
+        "disable": "Disable"
+      },
+      "toast": {
+        "keyRequired": "Please enter an admin API key",
+        "keyInvalid": "Invalid admin API key",
+        "keySuccess": "Admin key verified: admin mode unlocked",
+        "keyNetworkError": "Failed to verify admin key (network or server error)",
+        "keyCleared": "Admin key cleared (localStorage)",
+        "disabled": "Admin mode disabled (this session)",
+        "diagSuccess": "Diagnostics updated",
+        "diagError": "Diagnostics failed: check backend and admin key",
+        "diagNetworkError": "Diagnostics failed (network or server error)"
+      },
+      "diag": {
+        "title": "Diagnostics (WhoAmI / Bootstrap Status)",
+        "btn": "Refresh Diagnostics",
+        "btnLoading": "Refreshing…",
+        "tenantMismatch": "Note: localStorage tenant is {{local}} but whoami reports {{remote}}. Use the tenant table below to sync."
+      },
+      "init": {
+        "title": "Initialization (first run / empty DB)",
+        "hint": "Tools for creating or selecting a tenant (writes to localStorage: {{key}}).",
+        "currentTenant": "Current Tenant",
+        "notSet": "(not set)",
+        "btn": {
+          "autoInit": "Auto-create / select tenant",
+          "clearTenant": "Clear tenant",
+          "bootstrap": "Create first tenant (bootstrap)"
+        },
+        "hasTenantsHint": "Active tenant detected — bootstrap button hidden to prevent duplicates.",
+        "requireKey": "Please set an admin API key first",
+        "toast": {
+          "noTenant": "Could not determine tenant (multiple tenants, no default)",
+          "tenantReady": "Tenant ready: {{label}}",
+          "tenantCleared": "Tenant cleared (localStorage)",
+          "initError": "Failed to initialize tenant",
+          "bootstrapError": "Failed to create tenant (network or server error)",
+          "bootstrapCreated": "Tenant created: {{code}}"
+        }
+      }
+    },
+    "tenants": {
+      "title": "Tenant Management",
+      "hint": "Admin key required for full CRUD (create / edit / disable / set default).",
+      "showInactive": "Show inactive tenants",
+      "btn": {
+        "refresh": "Refresh",
+        "refreshing": "Refreshing…",
+        "create": "Create Tenant",
+        "creating": "Creating…",
+        "setDefault": "Set Default",
+        "applyCurrent": "Set as Current",
+        "enable": "Enable",
+        "disable": "Disable",
+        "delete": "Delete"
+      },
+      "form": {
+        "title": "Add Tenant",
+        "name": "Name",
+        "code": "Code",
+        "default": "Default",
+        "yes": "Yes",
+        "no": "No"
+      },
+      "table": {
+        "colArea": "Area",
+        "colCode": "Code",
+        "colName": "Name",
+        "colDefault": "Default",
+        "colActive": "Active",
+        "colActions": "Actions",
+        "empty": "No tenants",
+        "notLoaded": "Not loaded",
+        "pillDefault": "Default",
+        "pillActive": "Active",
+        "pillInactive": "Inactive"
+      },
+      "toast": {
+        "updated": "Tenant updated",
+        "updateError": "Failed to update tenant (HTTP {{status}})",
+        "updateNetworkError": "Failed to update tenant (network or server error)",
+        "loadError": "Failed to load tenants (HTTP {{status}})",
+        "loadNetworkError": "Failed to load tenants (network or server error)",
+        "created": "Tenant created: {{code}}",
+        "createError": "Failed to create tenant (HTTP {{status}})",
+        "createNetworkError": "Failed to create tenant (network or server error)",
+        "deleted": "Tenant deleted (disabled): {{code}}",
+        "deleteError": "Failed to delete tenant (HTTP {{status}})",
+        "deleteNetworkError": "Failed to delete tenant (network or server error)",
+        "switched": "Switched to tenant: {{code}} ({{name}})",
+        "switchedWithKey": "Switched to tenant: {{code}} ({{name}}) — API key obtained",
+        "switchError": "Failed to get API key (HTTP {{status}})",
+        "switchNetworkError": "Failed to switch tenant (network or server error)"
+      },
+      "confirm": {
+        "delete": "Delete tenant {{code}}?\n(This is a safe disable: is_active=false)"
+      },
+      "requireKey": "Please enter a tenant name",
+      "requireCode": "Please enter a tenant code"
+    },
+    "users": {
+      "title": "Tenant User Management",
+      "hint": "Edit username / role / active status. Password changes are TODO.",
+      "selectTenantPlaceholder": "Select tenant…",
+      "btn": {
+        "loadUsers": "Load Users",
+        "loading": "Loading…"
+      },
+      "form": {
+        "title": "Add User (password required; password change is TODO)",
+        "username": "Username",
+        "password": "Password",
+        "passwordPlaceholder": "At least 8 characters",
+        "role": "Role",
+        "roleUser": "User",
+        "roleManager": "Manager",
+        "btn": {
+          "create": "Create User",
+          "creating": "Creating…"
+        }
+      },
+      "table": {
+        "colUsername": "Username",
+        "colTenant": "Tenant",
+        "colRole": "Role",
+        "colActive": "Active",
+        "colLastLogin": "Last Login",
+        "colActions": "Actions",
+        "empty": "No users",
+        "notLoaded": "Not loaded",
+        "moveToPlaceholder": "Move to…",
+        "btn": {
+          "move": "Move",
+          "moving": "Moving…",
+          "enable": "Enable",
+          "disable": "Disable"
+        }
+      },
+      "toast": {
+        "selectTenantFirst": "Please select a tenant first",
+        "usernameRequired": "Please enter a username",
+        "passwordTooShort": "Password must be at least 8 characters",
+        "created": "User created: {{username}}",
+        "createError": "Failed to create user (HTTP {{status}})",
+        "createNetworkError": "Failed to create user (network or server error)",
+        "updated": "User updated",
+        "updateError": "Failed to update user (HTTP {{status}})",
+        "updateNetworkError": "Failed to update user (network or server error)",
+        "deleted": "User deleted (disabled)",
+        "deleteError": "Failed to delete user (HTTP {{status}})",
+        "deleteNetworkError": "Failed to delete user (network or server error)",
+        "moved": "User moved: {{username}} → {{target}}",
+        "moveSelectFirst": "Please select a target tenant",
+        "moveAlreadyThere": "User is already in this tenant",
+        "moveError": "Failed to move user (HTTP {{status}})",
+        "moveNetworkError": "Failed to move user (network or server error)",
+        "loadError": "Failed to load users (HTTP {{status}})",
+        "loadNetworkError": "Failed to load users (network or server error)"
+      },
+      "confirm": {
+        "delete": "Delete user {{username}}?\n(This is a safe disable: is_active=false)",
+        "move": "Move user {{username}} to tenant {{target}}?\n\nNote: this revokes their current API key — they will need to log in again."
+      }
+    },
+    "stations": {
+      "title": "Station Management",
+      "subtitle": "Manage workstations and their schema definitions.",
+      "btn": {
+        "refresh": "Refresh",
+        "create": "Create Station",
+        "creating": "Creating…",
+        "schema": "Schema",
+        "delete": "Delete",
+        "save": "Save",
+        "cancel": "Cancel"
+      },
+      "form": {
+        "title": "Add Station",
+        "code": "Code",
+        "codePlaceholder": "e.g. P4",
+        "name": "Name",
+        "namePlaceholder": "e.g. Assembly",
+        "sortOrder": "Sort Order",
+        "hasItems": "Has Items"
+      },
+      "table": {
+        "colCode": "Code",
+        "colName": "Name",
+        "colSort": "Sort",
+        "colHasItems": "Has Items",
+        "colActions": "Actions",
+        "empty": "No stations"
+      },
+      "schema": {
+        "title": "Schema: {{code}}",
+        "loading": "Loading schema…",
+        "saved": "Schema for {{code}} saved"
+      },
+      "toast": {
+        "created": "Station {{code}} created",
+        "updated": "Station {{code}} updated",
+        "deleted": "Station {{code}} deleted",
+        "failedLoad": "Failed to load stations",
+        "requiredFields": "Code and Name are required",
+        "invalidJson": "Invalid JSON"
+      },
+      "confirm": {
+        "delete": "Delete station {{code}}? This will also delete its schema, records, and links."
+      }
+    },
+    "validation": {
+      "title": "Validation Rules",
+      "subtitle": "Manage enum, range, regex, and required validation rules per station.",
+      "selectStation": "Select station…",
+      "btn": {
+        "load": "Load Rules",
+        "create": "Create Rule",
+        "creating": "Creating…",
+        "toggle": "Toggle",
+        "delete": "Delete"
+      },
+      "form": {
+        "title": "Add Rule",
+        "fieldName": "Field Name",
+        "fieldNamePlaceholder": "e.g. material_grade",
+        "ruleType": "Rule Type",
+        "config": "Config (JSON)",
+        "configPlaceholder": "{\"values\": [\"H2\",\"H5\",\"H8\"]}"
+      },
+      "table": {
+        "colField": "Field",
+        "colType": "Type",
+        "colConfig": "Config",
+        "colActions": "Actions",
+        "emptyNoRules": "No rules for this station",
+        "emptySelectFirst": "Select a station first"
+      },
+      "toast": {
+        "created": "Validation rule created",
+        "deleted": "Rule deleted",
+        "fieldRequired": "Field name is required",
+        "invalidJson": "Invalid JSON in rule config"
+      },
+      "confirm": {
+        "delete": "Delete validation rule for field \"{{field}}\"?"
+      }
+    },
+    "analytics": {
+      "title": "Analytics Mappings",
+      "subtitle": "Map JSONB data paths to named analytics output columns.",
+      "selectStation": "Select station…",
+      "btn": {
+        "load": "Load Mappings",
+        "create": "Create Mapping",
+        "creating": "Creating…",
+        "delete": "Delete"
+      },
+      "form": {
+        "title": "Add Mapping",
+        "sourcePath": "Source Path",
+        "sourcePathPlaceholder": "e.g. record.data.thickness",
+        "outputColumn": "Output Column",
+        "outputColumnPlaceholder": "e.g. thickness_mm",
+        "order": "Order",
+        "dataType": "Data Type"
+      },
+      "table": {
+        "colOrder": "Order",
+        "colSourcePath": "Source Path",
+        "colOutputColumn": "Output Column",
+        "colType": "Type",
+        "colActions": "Actions",
+        "emptyNoMappings": "No mappings for this station",
+        "emptySelectFirst": "Select a station first"
+      },
+      "toast": {
+        "created": "Mapping created",
+        "deleted": "Mapping deleted",
+        "requiredFields": "Source path and output column are required"
+      },
+      "confirm": {
+        "delete": "Delete mapping \"{{column}}\"?"
+      }
+    },
+    "links": {
+      "title": "Station Links (Traceability)",
+      "subtitle": "Define traceability relationships between stations.",
+      "btn": {
+        "refresh": "Refresh",
+        "create": "Create Link",
+        "creating": "Creating…",
+        "delete": "Delete"
+      },
+      "form": {
+        "title": "Add Link",
+        "fromStation": "From Station",
+        "toStation": "To Station",
+        "stationPlaceholder": "Select…",
+        "linkType": "Link Type",
+        "sortOrder": "Sort Order"
+      },
+      "table": {
+        "colFrom": "From",
+        "colTo": "To",
+        "colType": "Type",
+        "colSort": "Sort",
+        "colActions": "Actions",
+        "empty": "No links"
+      },
+      "toast": {
+        "created": "Link created: {{from}} → {{to}}",
+        "deleted": "Link deleted",
+        "requiredStations": "Select both From and To stations",
+        "sameStation": "From and To cannot be the same station"
+      },
+      "confirm": {
+        "delete": "Delete link {{from}} → {{to}}?"
+      }
+    }
   }
 }

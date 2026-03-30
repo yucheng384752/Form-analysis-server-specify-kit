@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type KeyboardEventHandler } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useToast } from '../components/common/ToastContext'
 import {
   clearAdminApiKeyValue,
@@ -64,6 +65,7 @@ function maskKey(raw: string) {
 }
 
 export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?: () => void } = {}) {
+  const { t } = useTranslation()
   const { showToast } = useToast()
   const [activeTab, setActiveTab] = useState<AdminTab>('general')
 
@@ -138,7 +140,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
   const handleSaveAdminKey = async () => {
     const trimmed = adminKeyDraft.trim()
     if (!trimmed) {
-      showToast('error', '請輸入管理者金鑰')
+      showToast('error', t('admin.general.toast.keyRequired'))
       return
     }
 
@@ -154,7 +156,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         const detail = (body as any)?.detail
-        showToast('error', typeof detail === 'string' ? detail : '管理者金鑰無效')
+        showToast('error', typeof detail === 'string' ? detail : t('admin.general.toast.keyInvalid'))
         clearAdminApiKeyValue()
         clearAdminUnlockedInSession()
         props?.onAdminLocked?.()
@@ -168,10 +170,10 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       props?.onAdminUnlocked?.()
       setAdminKeyDraft('')
       setStoredAdminKeyMasked(maskKey(trimmed))
-      showToast('success', '管理者金鑰驗證成功：已解鎖管理者模式')
+      showToast('success', t('admin.general.toast.keySuccess'))
       void refreshDiagnostics()
     } catch {
-      showToast('error', '管理者金鑰驗證失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.general.toast.keyNetworkError'))
     } finally {
       setAdminKeySaving(false)
     }
@@ -183,7 +185,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
     setAdminUnlocked(false)
     setStoredAdminKeyMasked('')
     props?.onAdminLocked?.()
-    showToast('info', '已清除管理者金鑰（localStorage）')
+    showToast('info', t('admin.general.toast.keyCleared'))
   }
 
   const handleDisableAdminMode = () => {
@@ -191,7 +193,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
     clearAdminUnlockedInSession()
     setAdminUnlocked(false)
     props?.onAdminLocked?.()
-    showToast('info', '已停用管理者模式（本次 session）')
+    showToast('info', t('admin.general.toast.disabled'))
   }
 
   const refreshDiagnostics = async () => {
@@ -210,12 +212,12 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       if (bootRes.ok) setBootstrapStatus(bootBody as BootstrapStatus)
 
       if (!whoRes.ok && !bootRes.ok) {
-        showToast('error', '自檢失敗：請確認後端可連線，且管理者金鑰正確')
+        showToast('error', t('admin.general.toast.diagError'))
         return
       }
-      showToast('success', '已更新自檢資訊')
+      showToast('success', t('admin.general.toast.diagSuccess'))
     } catch {
-      showToast('error', '自檢失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.general.toast.diagNetworkError'))
     } finally {
       setDiagLoading(false)
     }
@@ -231,7 +233,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       const body = await res.json().catch(() => ({}))
       const detail = (body as any)?.detail
       if (!res.ok) {
-        showToast('error', typeof detail === 'string' ? detail : `建立 Tenant 失敗 (HTTP ${res.status})`)
+        showToast('error', typeof detail === 'string' ? detail : t('admin.tenants.toast.createError', { status: res.status }))
         return
       }
 
@@ -240,10 +242,10 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
         setTenantId(id)
         setStoredTenantIdState(id)
       }
-      showToast('success', `已建立區域：${String((body as any)?.code || '') || '（已建立）'}`)
+      showToast('success', t('admin.general.init.toast.bootstrapCreated', { code: String((body as any)?.code || '') || '（已建立）' }))
       await refreshTenants()
     } catch {
-      showToast('error', '建立區域失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.general.init.toast.bootstrapError'))
     }
   }
 
@@ -251,20 +253,20 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
     try {
       const id = await ensureTenantIdWithOptions({ notify: true, reason: 'bootstrap', allowAdminBootstrap: true })
       if (!id) {
-        showToast('error', '無法自動決定區域（可能存在多個區域且沒有預設）')
+        showToast('error', t('admin.general.init.toast.noTenant'))
         return
       }
       setStoredTenantIdState(id)
-      showToast('success', `區域已就緒：${getTenantLabelById(id) || '（未知）'}`)
+      showToast('success', t('admin.general.init.toast.tenantReady', { label: getTenantLabelById(id) || t('common.unknown') }))
     } catch {
-      showToast('error', '初始化場域（tenant）失敗')
+      showToast('error', t('admin.general.init.toast.initError'))
     }
   }
 
   const handleClearTenant = () => {
     clearTenantId()
     setStoredTenantIdState('')
-    showToast('info', '已清除區域（localStorage）')
+    showToast('info', t('admin.general.init.toast.tenantCleared'))
   }
 
   const handleSetCurrentTenant = async (tenant: TenantRow) => {
@@ -272,7 +274,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
     setStoredTenantIdState(tenant.id)
 
     if (!hasAdminKey) {
-      showToast('success', `已切換目前區域：${tenant.code} (${tenant.name})`)
+      showToast('success', t('admin.tenants.toast.switched', { code: tenant.code, name: tenant.name }))
       return
     }
 
@@ -286,7 +288,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       if (!res.ok) {
         showToast(
           'error',
-          typeof (body as any)?.detail === 'string' ? (body as any).detail : `取得 API 金鑰（API key）失敗 (HTTP ${res.status})`,
+          typeof (body as any)?.detail === 'string' ? (body as any).detail : t('admin.tenants.toast.switchError', { status: res.status }),
         )
         return
       }
@@ -294,9 +296,9 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       const apiKey = String((body as any)?.api_key || '').trim()
       if (apiKey) setApiKeyValue(apiKey)
 
-      showToast('success', `已切換區域：${tenant.code} (${tenant.name})，並取得可用 API 金鑰（API key）`)
+      showToast('success', t('admin.tenants.toast.switchedWithKey', { code: tenant.code, name: tenant.name }))
     } catch {
-      showToast('error', '切換區域失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.tenants.toast.switchNetworkError'))
     }
   }
 
@@ -309,7 +311,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       const res = await fetch(`/api/tenants${suffix}`, { headers: getAdminHeaders() })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-      showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `取得場域（tenants）失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : t('admin.tenants.toast.loadError', { status: res.status }))
         setTenants(null)
         return
       }
@@ -320,7 +322,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
         setSelectedTenantCode(rows[0].code)
       }
     } catch {
-    showToast('error', '取得場域（tenants）失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.tenants.toast.loadNetworkError'))
       setTenants(null)
     } finally {
       setLoadingTenants(false)
@@ -336,13 +338,13 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `更新場域（tenant）失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : t('admin.tenants.toast.updateError', { status: res.status }))
         return
       }
-      showToast('success', '已更新場域（tenant）')
+      showToast('success', t('admin.tenants.toast.updated'))
       await refreshTenants()
     } catch {
-    showToast('error', '更新場域（tenant）失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.tenants.toast.updateNetworkError'))
     }
   }
 
@@ -350,11 +352,11 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
     const name = createTenantName.trim()
     const code = createTenantCode.trim()
     if (!name) {
-      showToast('error', '請輸入區域名稱')
+      showToast('error', t('admin.tenants.requireKey'))
       return
     }
     if (!code) {
-      showToast('error', '請輸入區域代碼')
+      showToast('error', t('admin.tenants.requireCode'))
       return
     }
 
@@ -367,23 +369,23 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `建立區域失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : t('admin.tenants.toast.createError', { status: res.status }))
         return
       }
-      showToast('success', `已建立區域：${code}`)
+      showToast('success', t('admin.tenants.toast.created', { code }))
       setCreateTenantName('')
       setCreateTenantCode('')
       setCreateTenantDefault(false)
       await refreshTenants()
     } catch {
-      showToast('error', '建立區域失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.tenants.toast.createNetworkError'))
     } finally {
       setCreateTenantLoading(false)
     }
   }
 
   const deleteTenant = async (tenant: TenantRow) => {
-    if (!confirm(`確定要刪除區域 ${tenant.code}？\n（此操作為安全停用：is_active=false）`)) return
+    if (!confirm(t('admin.tenants.confirm.delete', { code: tenant.code }))) return
     try {
       const res = await fetch(`/api/tenants/${tenant.id}`, {
         method: 'DELETE',
@@ -391,13 +393,13 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `刪除區域失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : t('admin.tenants.toast.deleteError', { status: res.status }))
         return
       }
-      showToast('success', `已刪除（停用）區域：${tenant.code}`)
+      showToast('success', t('admin.tenants.toast.deleted', { code: tenant.code }))
       await refreshTenants()
     } catch {
-      showToast('error', '刪除區域失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.tenants.toast.deleteNetworkError'))
     }
   }
 
@@ -408,7 +410,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
   const refreshUsers = async () => {
     const code = selectedTenantCode.trim()
     if (!code) {
-      showToast('error', '請先選擇場域（tenant）')
+      showToast('error', t('admin.users.toast.selectTenantFirst'))
       return
     }
 
@@ -418,13 +420,13 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       const res = await fetch(`/api/auth/users?${params.toString()}`, { headers: getAdminHeaders() })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `取得使用者失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : t('admin.users.toast.loadError', { status: res.status }))
         setUsers(null)
         return
       }
       setUsers(Array.isArray(body) ? (body as TenantUserRow[]) : [])
     } catch {
-      showToast('error', '取得使用者失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.users.toast.loadNetworkError'))
       setUsers(null)
     } finally {
       setLoadingUsers(false)
@@ -440,28 +442,28 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `更新使用者失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : t('admin.users.toast.updateError', { status: res.status }))
         return
       }
-      showToast('success', '已更新使用者')
+      showToast('success', t('admin.users.toast.updated'))
       await refreshUsers()
     } catch {
-      showToast('error', '更新使用者失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.users.toast.updateNetworkError'))
     }
   }
 
   const moveUserToTenant = async (user: TenantUserRow) => {
     const targetCode = (moveUserTargets[user.id] || '').trim()
     if (!targetCode) {
-      showToast('error', '請先選擇要綁定的場域（tenant）')
+      showToast('error', t('admin.users.toast.moveSelectFirst'))
       return
     }
     if (targetCode === (user.tenant_code || '')) {
-      showToast('info', '使用者已在此場域（tenant），不需修改')
+      showToast('info', t('admin.users.toast.moveAlreadyThere'))
       return
     }
 
-    if (!confirm(`確定要將使用者 ${user.username} 改綁定到場域（tenant） ${targetCode}？\n\n注意：會撤銷此使用者現有的登入 API 金鑰（API key），需要重新登入。`)) return
+    if (!confirm(t('admin.users.confirm.move', { username: user.username, target: targetCode }))) return
 
     setMovingUserId(user.id)
     try {
@@ -472,10 +474,10 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `改綁定失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : t('admin.users.toast.moveError', { status: res.status }))
         return
       }
-      showToast('success', `已改綁定：${user.username} → ${targetCode}`)
+      showToast('success', t('admin.users.toast.moved', { username: user.username, target: targetCode }))
       setMoveUserTargets((prev) => {
         const next = { ...prev }
         delete next[user.id]
@@ -483,14 +485,14 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       })
       await refreshUsers()
     } catch {
-      showToast('error', '改綁定失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.users.toast.moveNetworkError'))
     } finally {
       setMovingUserId(null)
     }
   }
 
   const deleteUser = async (user: TenantUserRow) => {
-    if (!confirm(`確定要刪除使用者 ${user.username}？\n（此操作為安全停用：is_active=false）`)) return
+    if (!confirm(t('admin.users.confirm.delete', { username: user.username }))) return
     try {
       const res = await fetch(`/api/auth/users/${user.id}`, {
         method: 'DELETE',
@@ -498,13 +500,13 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `刪除使用者失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : t('admin.users.toast.deleteError', { status: res.status }))
         return
       }
-      showToast('success', '已刪除（停用）使用者')
+      showToast('success', t('admin.users.toast.deleted'))
       await refreshUsers()
     } catch {
-      showToast('error', '刪除使用者失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.users.toast.deleteNetworkError'))
     }
   }
 
@@ -514,15 +516,15 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
     const password = createPassword
 
     if (!code) {
-      showToast('error', '請先選擇場域（tenant）')
+      showToast('error', t('admin.users.toast.selectTenantFirst'))
       return
     }
     if (!username) {
-      showToast('error', '請輸入 username')
+      showToast('error', t('admin.users.toast.usernameRequired'))
       return
     }
     if (!password || password.length < 8) {
-      showToast('error', '請輸入至少 8 碼密碼（建立使用者需要）')
+      showToast('error', t('admin.users.toast.passwordTooShort'))
       return
     }
 
@@ -535,16 +537,16 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : `建立使用者失敗 (HTTP ${res.status})`)
+        showToast('error', typeof (body as any)?.detail === 'string' ? (body as any).detail : t('admin.users.toast.createError', { status: res.status }))
         return
       }
-      showToast('success', `已建立使用者：${username}`)
+      showToast('success', t('admin.users.toast.created', { username }))
       setCreateUsername('')
       setCreatePassword('')
       setCreateRole('user')
       await refreshUsers()
     } catch {
-      showToast('error', '建立使用者失敗（網路或伺服器未啟動）')
+      showToast('error', t('admin.users.toast.createNetworkError'))
     } finally {
       setCreatingUser(false)
     }
@@ -556,11 +558,11 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
   }, [])
 
   const TABS: { key: AdminTab; label: string }[] = [
-    { key: 'general', label: 'General' },
-    { key: 'stations', label: 'Stations' },
-    { key: 'validation', label: 'Validation Rules' },
-    { key: 'analytics', label: 'Analytics Mappings' },
-    { key: 'links', label: 'Station Links' },
+    { key: 'general', label: t('admin.tabs.general') },
+    { key: 'stations', label: t('admin.tabs.stations') },
+    { key: 'validation', label: t('admin.tabs.validation') },
+    { key: 'analytics', label: t('admin.tabs.analytics') },
+    { key: 'links', label: t('admin.tabs.links') },
   ]
 
   return (
@@ -584,56 +586,55 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       {activeTab === 'links' && <StationLinkManager showToast={showToast} />}
 
       {activeTab === 'general' && <><section className="register-card">
-        <h2 className="register-title">管理者模式</h2>
-        <p className="register-hint">此頁面只在你明確提供管理者金鑰時，才會在呼叫端點時帶入 `X-Admin-API-Key`。</p>
+        <h2 className="register-title">{t('admin.general.title')}</h2>
+        <p className="register-hint">{t('admin.general.hint')}</p>
 
         <div className="register-row">
           <div className="register-kv">
-            <div className="register-k">目前管理者金鑰</div>
-            <div className="register-v">{storedAdminKeyMasked || '（未設定）'}</div>
+            <div className="register-k">{t('admin.general.keyLabel')}</div>
+            <div className="register-v">{storedAdminKeyMasked || t('admin.general.keyNotSet')}</div>
           </div>
           <div className="register-kv">
-            <div className="register-k">管理者模式狀態</div>
-            <div className="register-v">{adminUnlocked ? <span className="pill pill-ok">已啟用</span> : <span className="pill pill-off">已停用</span>}</div>
+            <div className="register-k">{t('admin.general.statusLabel')}</div>
+            <div className="register-v">{adminUnlocked ? <span className="pill pill-ok">{t('admin.general.statusEnabled')}</span> : <span className="pill pill-off">{t('admin.general.statusDisabled')}</span>}</div>
           </div>
         </div>
 
         <div className="register-form">
           <label className="register-label">
-            管理者金鑰
+            {t('admin.general.inputLabel')}
             <input
               className="register-input"
               value={adminKeyDraft}
               onChange={(e) => setAdminKeyDraft(e.target.value)}
               onKeyDown={handleAdminKeyDraftKeyDown}
-              placeholder="輸入 X-Admin-API-Key"
+              placeholder={t('admin.general.inputPlaceholder')}
             />
           </label>
 
           <div className="register-actions">
             <button className="btn btn-primary" onClick={handleSaveAdminKey} disabled={adminKeySaving}>
-              {adminKeySaving ? '驗證中…' : '保存'}
+              {adminKeySaving ? t('admin.general.btn.saving') : t('admin.general.btn.save')}
             </button>
             <button className="btn" onClick={handleClearAdminKey} disabled={adminKeySaving}>
-              清除
+              {t('admin.general.btn.clear')}
             </button>
             <button className="btn" onClick={handleDisableAdminMode} disabled={adminKeySaving || !adminUnlocked}>
-              停用
+              {t('admin.general.btn.disable')}
             </button>
           </div>
 
           <details className="register-details" open>
-            <summary className="register-summary">自檢（WhoAmI / Bootstrap Status）</summary>
+            <summary className="register-summary">{t('admin.general.diag.title')}</summary>
             <div className="register-actions">
               <button className="btn" onClick={refreshDiagnostics} disabled={diagLoading}>
-                {diagLoading ? '更新中…' : '更新自檢資訊'}
+                {diagLoading ? t('admin.general.diag.btnLoading') : t('admin.general.diag.btn')}
               </button>
             </div>
 
             {whoami && storedTenantId && String(whoami.tenant_id || '') && String(whoami.tenant_id || '') !== storedTenantId ? (
               <p className="register-hint" style={{ color: '#b45309' }}>
-                提醒：目前瀏覽器儲存（localStorage）的區域為 <code>{storedTenantLabel || '（未知）'}</code>，但身分（whoami）回報的場域（tenant）為 <code>{whoamiTenantLabel || '—'}</code>。
-                若要同步，請到下方「區域管理」點「套用為目前區域」。
+                {t('admin.general.diag.tenantMismatch', { local: storedTenantLabel || t('common.unknown'), remote: whoamiTenantLabel || '—' })}
               </p>
             ) : null}
 
@@ -673,32 +674,32 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
           </details>
 
           <details className="register-details" open>
-            <summary className="register-summary">初始化（第一次／空資料庫）</summary>
+            <summary className="register-summary">{t('admin.general.init.title')}</summary>
             <p className="register-hint">
-              這裡提供建立/選擇區域的工具（會寫入 localStorage：{TENANT_STORAGE_KEY}）。
+              {t('admin.general.init.hint', { key: TENANT_STORAGE_KEY })}
             </p>
 
             <div className="register-row">
               <div className="register-kv">
-                <div className="register-k">目前區域</div>
-                <div className="register-v">{storedTenantId ? <code title={storedTenantId}>{storedTenantLabel || '（未知）'}</code> : <span className="muted">（未設定）</span>}</div>
+                <div className="register-k">{t('admin.general.init.currentTenant')}</div>
+                <div className="register-v">{storedTenantId ? <code title={storedTenantId}>{storedTenantLabel || t('common.unknown')}</code> : <span className="muted">{t('admin.general.init.notSet')}</span>}</div>
               </div>
               <div className="register-actions">
-                <button className="btn" onClick={handleAutoInitTenant} disabled={!hasAdminKey} title={!hasAdminKey ? '請先設定管理者金鑰' : ''}>
-                  一鍵建立/選擇區域
+                <button className="btn" onClick={handleAutoInitTenant} disabled={!hasAdminKey} title={!hasAdminKey ? t('admin.general.init.requireKey') : ''}>
+                  {t('admin.general.init.btn.autoInit')}
                 </button>
-                <button className="btn" onClick={handleClearTenant}>清除區域</button>
+                <button className="btn" onClick={handleClearTenant}>{t('admin.general.init.btn.clearTenant')}</button>
               </div>
             </div>
 
             {!hasAnyActiveTenant ? (
               <div className="register-actions">
-                <button className="btn btn-primary" onClick={handleBootstrapFirstTenant} disabled={!hasAdminKey} title={!hasAdminKey ? '請先設定管理者金鑰' : ''}>
-                  建立第一個區域（bootstrap）
+                <button className="btn btn-primary" onClick={handleBootstrapFirstTenant} disabled={!hasAdminKey} title={!hasAdminKey ? t('admin.general.init.requireKey') : ''}>
+                  {t('admin.general.init.btn.bootstrap')}
                 </button>
               </div>
             ) : (
-              <p className="register-hint">已偵測到有效區域，此初始化（bootstrap）按鈕已隱藏（避免誤建）。</p>
+              <p className="register-hint">{t('admin.general.init.hasTenantsHint')}</p>
             )}
           </details>
         </div>
@@ -707,8 +708,8 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       <section className="register-card">
         <div className="admin-header-row">
           <div>
-            <h2 className="register-title">區域管理</h2>
-            <p className="register-hint">需要管理者金鑰才能完整 CRUD（新增/編輯/停用/設預設）。</p>
+            <h2 className="register-title">{t('admin.tenants.title')}</h2>
+            <p className="register-hint">{t('admin.tenants.hint')}</p>
           </div>
           <div className="admin-header-actions">
             <label className="register-hint" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -717,40 +718,40 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
                 checked={showInactiveTenants}
                 onChange={(e) => setShowInactiveTenants(e.target.checked)}
               />
-              顯示停用區域
+              {t('admin.tenants.showInactive')}
             </label>
             <button className="btn" onClick={refreshTenants} disabled={loadingTenants}>
-              {loadingTenants ? '更新中…' : '重新整理'}
+              {loadingTenants ? t('admin.tenants.btn.refreshing') : t('admin.tenants.btn.refresh')}
             </button>
           </div>
         </div>
 
         <details className="register-details">
-          <summary className="register-summary">新增區域</summary>
+          <summary className="register-summary">{t('admin.tenants.form.title')}</summary>
           <div className="admin-form-grid">
             <label className="register-label">
-              name
+              {t('admin.tenants.form.name')}
               <input className="register-input" value={createTenantName} onChange={(e) => setCreateTenantName(e.target.value)} />
             </label>
             <label className="register-label">
-              代碼（Code）
+              {t('admin.tenants.form.code')}
               <input className="register-input" value={createTenantCode} onChange={(e) => setCreateTenantCode(e.target.value)} />
             </label>
             <label className="register-label">
-              預設（Default）
+              {t('admin.tenants.form.default')}
               <select
                 className="register-input"
                 value={createTenantDefault ? 'yes' : 'no'}
                 onChange={(e) => setCreateTenantDefault(e.target.value === 'yes')}
               >
-                <option value="no">否（No）</option>
-                <option value="yes">是（Yes）</option>
+                <option value="no">{t('admin.tenants.form.no')}</option>
+                <option value="yes">{t('admin.tenants.form.yes')}</option>
               </select>
             </label>
           </div>
           <div className="register-actions">
             <button className="btn btn-primary" onClick={createTenant} disabled={!hasAdminKey || createTenantLoading}>
-              {createTenantLoading ? '建立中…' : '建立區域'}
+              {createTenantLoading ? t('admin.tenants.btn.creating') : t('admin.tenants.btn.create')}
             </button>
           </div>
         </details>
@@ -759,65 +760,65 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
           <table className="admin-table">
             <thead>
               <tr>
-                <th>區域（Area）</th>
-                <th>代碼（Code）</th>
-                <th>名稱（Name）</th>
-                <th>預設（Default）</th>
-                <th>狀態（Active）</th>
-                <th>操作（Actions）</th>
+                <th>{t('admin.tenants.table.colArea')}</th>
+                <th>{t('admin.tenants.table.colCode')}</th>
+                <th>{t('admin.tenants.table.colName')}</th>
+                <th>{t('admin.tenants.table.colDefault')}</th>
+                <th>{t('admin.tenants.table.colActive')}</th>
+                <th>{t('admin.tenants.table.colActions')}</th>
               </tr>
             </thead>
             <tbody>
-              {(tenants || []).map((t) => (
-                <tr key={t.id}>
-                  <td className="admin-mono"><span title={t.id}>{getTenantLabelById(t.id) || '（未知）'}</span></td>
-                  <td>{t.code}</td>
+              {(tenants || []).map((tenant) => (
+                <tr key={tenant.id}>
+                  <td className="admin-mono"><span title={tenant.id}>{getTenantLabelById(tenant.id) || t('common.unknown')}</span></td>
+                  <td>{tenant.code}</td>
                   <td>
                     <input
                       className="admin-inline-input"
-                      defaultValue={t.name}
+                      defaultValue={tenant.name}
                       onBlur={(e) => {
                         const v = e.target.value.trim()
-                        if (v && v !== t.name) patchTenant(t.id, { name: v })
+                        if (v && v !== tenant.name) patchTenant(tenant.id, { name: v })
                       }}
                     />
                   </td>
                   <td>
-                    <span className={t.is_default ? 'pill pill-ok' : 'pill pill-off'}>{t.is_default ? '預設（Default）' : '—'}</span>
+                    <span className={tenant.is_default ? 'pill pill-ok' : 'pill pill-off'}>{tenant.is_default ? t('admin.tenants.table.pillDefault') : '—'}</span>
                   </td>
                   <td>
-                    <span className={t.is_active ? 'pill pill-ok' : 'pill pill-off'}>{t.is_active ? '啟用' : '停用'}</span>
+                    <span className={tenant.is_active ? 'pill pill-ok' : 'pill pill-off'}>{tenant.is_active ? t('admin.tenants.table.pillActive') : t('admin.tenants.table.pillInactive')}</span>
                   </td>
                   <td>
-                    <button className="btn btn-small" onClick={() => handleSetCurrentTenant(t)}>
-                      套用為目前區域
+                    <button className="btn btn-small" onClick={() => handleSetCurrentTenant(tenant)}>
+                      {t('admin.tenants.btn.applyCurrent')}
                     </button>
                     <button
                       className="btn btn-small"
-                      onClick={() => toggleTenantActive(t, !t.is_active)}
+                      onClick={() => toggleTenantActive(tenant, !tenant.is_active)}
                       disabled={!hasAdminKey}
-                      title={!hasAdminKey ? '請先設定管理者金鑰' : ''}
+                      title={!hasAdminKey ? t('admin.general.init.requireKey') : ''}
                       style={{ marginLeft: 8 }}
                     >
-                      {t.is_active ? '停用' : '啟用'}
+                      {tenant.is_active ? t('admin.tenants.btn.disable') : t('admin.tenants.btn.enable')}
                     </button>
                     <button
                       className="btn btn-small"
-                      onClick={() => patchTenant(t.id, { is_default: true })}
+                      onClick={() => patchTenant(tenant.id, { is_default: true })}
                       disabled={!hasAdminKey}
-                      title={!hasAdminKey ? '請先設定管理者金鑰' : ''}
+                      title={!hasAdminKey ? t('admin.general.init.requireKey') : ''}
                       style={{ marginLeft: 8 }}
                     >
-                      設為預設
+                      {t('admin.tenants.btn.setDefault')}
                     </button>
                     <button
                       className="btn btn-small"
-                      onClick={() => deleteTenant(t)}
+                      onClick={() => deleteTenant(tenant)}
                       disabled={!hasAdminKey}
-                      title={!hasAdminKey ? '請先設定管理者金鑰' : ''}
+                      title={!hasAdminKey ? t('admin.general.init.requireKey') : ''}
                       style={{ marginLeft: 8 }}
                     >
-                      刪除
+                      {t('admin.tenants.btn.delete')}
                     </button>
                   </td>
                 </tr>
@@ -825,7 +826,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
               {!tenants?.length && (
                 <tr>
                   <td colSpan={6} className="admin-empty">
-                    {tenants === null ? '尚未載入' : '沒有場域（tenants）'}
+                    {tenants === null ? t('admin.tenants.table.notLoaded') : t('admin.tenants.table.empty')}
                   </td>
                 </tr>
               )}
@@ -837,8 +838,8 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
       <section className="register-card">
         <div className="admin-header-row">
           <div>
-            <h2 className="register-title">場域（Tenant）使用者管理</h2>
-            <p className="register-hint">可修改帳號（Username）/ 角色（Role）/ 啟用停用；密碼修改先不做（待辦，TODO）。</p>
+            <h2 className="register-title">{t('admin.users.title')}</h2>
+            <p className="register-hint">{t('admin.users.hint')}</p>
           </div>
           <div className="admin-header-actions">
             <select
@@ -846,47 +847,47 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
               value={selectedTenantCode}
               onChange={(e) => setSelectedTenantCode(e.target.value)}
             >
-              <option value="">選擇場域（Tenant）…</option>
-              {(tenants || []).map((t) => (
-                <option key={t.id} value={t.code}>
-                  {t.code} ({t.name})
+              <option value="">{t('admin.users.selectTenantPlaceholder')}</option>
+              {(tenants || []).map((tenant) => (
+                <option key={tenant.id} value={tenant.code}>
+                  {tenant.code} ({tenant.name})
                 </option>
               ))}
             </select>
             <button className="btn" onClick={refreshUsers} disabled={loadingUsers}>
-              {loadingUsers ? '更新中…' : '載入使用者'}
+              {loadingUsers ? t('admin.users.btn.loading') : t('admin.users.btn.loadUsers')}
             </button>
           </div>
         </div>
 
         <details className="register-details">
-          <summary className="register-summary">新增使用者（需密碼；密碼修改仍為待辦，TODO）</summary>
+          <summary className="register-summary">{t('admin.users.form.title')}</summary>
           <div className="admin-form-grid">
             <label className="register-label">
-              帳號（Username）
+              {t('admin.users.form.username')}
               <input className="register-input" value={createUsername} onChange={(e) => setCreateUsername(e.target.value)} />
             </label>
             <label className="register-label">
-              密碼（Password）
+              {t('admin.users.form.password')}
               <input
                 className="register-input"
                 type="password"
                 value={createPassword}
                 onChange={(e) => setCreatePassword(e.target.value)}
-                placeholder="至少 8 碼"
+                placeholder={t('admin.users.form.passwordPlaceholder')}
               />
             </label>
             <label className="register-label">
-              角色（Role）
+              {t('admin.users.form.role')}
               <select className="register-input" value={createRole} onChange={(e) => setCreateRole(e.target.value as any)}>
-                <option value="user">使用者（User）</option>
-                <option value="manager">管理者（Manager）</option>
+                <option value="user">{t('admin.users.form.roleUser')}</option>
+                <option value="manager">{t('admin.users.form.roleManager')}</option>
               </select>
             </label>
           </div>
           <div className="register-actions">
             <button className="btn btn-primary" onClick={createUser} disabled={creatingUser}>
-              {creatingUser ? '建立中…' : '建立使用者'}
+              {creatingUser ? t('admin.users.form.btn.creating') : t('admin.users.form.btn.create')}
             </button>
           </div>
         </details>
@@ -895,12 +896,12 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
           <table className="admin-table">
             <thead>
               <tr>
-                <th>帳號（Username）</th>
-                <th>場域（Tenant）</th>
-                <th>角色（Role）</th>
-                <th>狀態（Active）</th>
-                <th>最後登入（Last login）</th>
-                <th>操作（Actions）</th>
+                <th>{t('admin.users.table.colUsername')}</th>
+                <th>{t('admin.users.table.colTenant')}</th>
+                <th>{t('admin.users.table.colRole')}</th>
+                <th>{t('admin.users.table.colActive')}</th>
+                <th>{t('admin.users.table.colLastLogin')}</th>
+                <th>{t('admin.users.table.colActions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -929,15 +930,15 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
                           }))
                         }
                       >
-                        <option value="">改綁定到…</option>
-                        {(tenants || []).map((t) => (
-                          <option key={t.id} value={t.code}>
-                            {t.code} ({t.name})
+                        <option value="">{t('admin.users.table.moveToPlaceholder')}</option>
+                        {(tenants || []).map((tenant) => (
+                          <option key={tenant.id} value={tenant.code}>
+                            {tenant.code} ({tenant.name})
                           </option>
                         ))}
                       </select>
                       <button className="btn btn-small" onClick={() => moveUserToTenant(u)} disabled={movingUserId === u.id}>
-                        {movingUserId === u.id ? '處理中…' : '改綁定'}
+                        {movingUserId === u.id ? t('admin.users.table.btn.moving') : t('admin.users.table.btn.move')}
                       </button>
                     </div>
                   </td>
@@ -950,8 +951,8 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
                         if (v !== u.role) patchUser(u.id, { role: v })
                       }}
                     >
-                      <option value="user">使用者（User）</option>
-                      <option value="manager">管理者（Manager）</option>
+                      <option value="user">{t('admin.users.form.roleUser')}</option>
+                      <option value="manager">{t('admin.users.form.roleManager')}</option>
                     </select>
                   </td>
                   <td>
@@ -964,10 +965,10 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
                   <td className="admin-mono">{u.last_login_at || '—'}</td>
                   <td>
                     <button className="btn btn-small" onClick={() => patchUser(u.id, { is_active: !u.is_active })}>
-                      {u.is_active ? '停用' : '啟用'}
+                      {u.is_active ? t('admin.users.table.btn.disable') : t('admin.users.table.btn.enable')}
                     </button>
                     <button className="btn btn-small" onClick={() => deleteUser(u)} style={{ marginLeft: 8 }}>
-                      停用
+                      {t('admin.users.table.btn.disable')}
                     </button>
                   </td>
                 </tr>
@@ -975,7 +976,7 @@ export function AdminPage(props: { onAdminUnlocked?: () => void; onAdminLocked?:
               {!users?.length && (
                 <tr>
                   <td colSpan={6} className="admin-empty">
-                    {users === null ? '尚未載入' : '沒有使用者'}
+                    {users === null ? t('admin.users.table.notLoaded') : t('admin.users.table.empty')}
                   </td>
                 </tr>
               )}

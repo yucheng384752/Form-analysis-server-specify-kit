@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { StationInfo, StationLinkInfo } from '../../types/api';
 import {
   fetchStations,
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export function StationLinkManager({ showToast }: Props) {
+  const { t } = useTranslation();
   const [stations, setStations] = useState<StationInfo[]>([]);
   const [links, setLinks] = useState<StationLinkInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,11 +51,11 @@ export function StationLinkManager({ showToast }: Props) {
 
   const handleCreate = async () => {
     if (!fromCode || !toCode) {
-      showToast('error', 'Select both From and To stations');
+      showToast('error', t('admin.links.toast.requiredStations'));
       return;
     }
     if (fromCode === toCode) {
-      showToast('error', 'From and To cannot be the same station');
+      showToast('error', t('admin.links.toast.sameStation'));
       return;
     }
     setCreating(true);
@@ -64,7 +66,7 @@ export function StationLinkManager({ showToast }: Props) {
         link_type: linkType,
         sort_order: sortOrder,
       });
-      showToast('success', `Link ${fromCode} -> ${toCode} created`);
+      showToast('success', t('admin.links.toast.created', { from: fromCode, to: toCode }));
       setFromCode(''); setToCode(''); setSortOrder(0);
       await refresh();
     } catch (err: any) {
@@ -86,10 +88,10 @@ export function StationLinkManager({ showToast }: Props) {
   };
 
   const handleDelete = async (link: StationLinkInfo) => {
-    if (!confirm(`Delete link ${link.from_station_code} -> ${link.to_station_code}?`)) return;
+    if (!confirm(t('admin.links.confirm.delete', { from: link.from_station_code, to: link.to_station_code }))) return;
     try {
       await deleteStationLink(link.id);
-      showToast('success', 'Link deleted');
+      showToast('success', t('admin.links.toast.deleted'));
       await refresh();
     } catch (err: any) {
       showToast('error', err.message);
@@ -100,50 +102,50 @@ export function StationLinkManager({ showToast }: Props) {
     <section className="register-card">
       <div className="admin-header-row">
         <div>
-          <h2 className="register-title">Station Links (Traceability)</h2>
-          <p className="register-hint">Define traceability relationships between stations.</p>
+          <h2 className="register-title">{t('admin.links.title')}</h2>
+          <p className="register-hint">{t('admin.links.subtitle')}</p>
         </div>
         <button className="btn" onClick={refresh} disabled={loading}>
-          {loading ? 'Loading...' : 'Refresh'}
+          {loading ? t('common.loading') : t('admin.links.btn.refresh')}
         </button>
       </div>
 
       <details className="register-details">
-        <summary className="register-summary">Add Link</summary>
+        <summary className="register-summary">{t('admin.links.form.title')}</summary>
         <div className="admin-form-grid">
           <label className="register-label">
-            From Station
+            {t('admin.links.form.fromStation')}
             <select className="register-input" value={fromCode} onChange={e => setFromCode(e.target.value)}>
-              <option value="">Select...</option>
+              <option value="">{t('admin.links.form.stationPlaceholder')}</option>
               {stations.map(s => (
                 <option key={s.id} value={s.code}>{s.code} ({s.name})</option>
               ))}
             </select>
           </label>
           <label className="register-label">
-            To Station
+            {t('admin.links.form.toStation')}
             <select className="register-input" value={toCode} onChange={e => setToCode(e.target.value)}>
-              <option value="">Select...</option>
+              <option value="">{t('admin.links.form.stationPlaceholder')}</option>
               {stations.map(s => (
                 <option key={s.id} value={s.code}>{s.code} ({s.name})</option>
               ))}
             </select>
           </label>
           <label className="register-label">
-            Link Type
+            {t('admin.links.form.linkType')}
             <select className="register-input" value={linkType} onChange={e => setLinkType(e.target.value)}>
               <option value="lot_no">lot_no</option>
               <option value="custom">custom</option>
             </select>
           </label>
           <label className="register-label">
-            Sort Order
+            {t('admin.links.form.sortOrder')}
             <input className="register-input" type="number" value={sortOrder} onChange={e => setSortOrder(Number(e.target.value))} />
           </label>
         </div>
         <div className="register-actions">
           <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
-            {creating ? 'Creating...' : 'Create Link'}
+            {creating ? t('admin.links.btn.creating') : t('admin.links.btn.create')}
           </button>
         </div>
       </details>
@@ -152,11 +154,11 @@ export function StationLinkManager({ showToast }: Props) {
         <table className="admin-table">
           <thead>
             <tr>
-              <th>From</th>
-              <th>To</th>
-              <th>Type</th>
-              <th>Sort</th>
-              <th>Actions</th>
+              <th>{t('admin.links.table.colFrom')}</th>
+              <th>{t('admin.links.table.colTo')}</th>
+              <th>{t('admin.links.table.colType')}</th>
+              <th>{t('admin.links.table.colSort')}</th>
+              <th>{t('admin.links.table.colActions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -175,12 +177,12 @@ export function StationLinkManager({ showToast }: Props) {
                   />
                 </td>
                 <td>
-                  <button className="btn btn-small" onClick={() => handleDelete(l)}>Delete</button>
+                  <button className="btn btn-small" onClick={() => handleDelete(l)}>{t('admin.links.btn.delete')}</button>
                 </td>
               </tr>
             ))}
             {!links.length && (
-              <tr><td colSpan={5} className="admin-empty">No links</td></tr>
+              <tr><td colSpan={5} className="admin-empty">{t('admin.links.table.empty')}</td></tr>
             )}
           </tbody>
         </table>
