@@ -74,8 +74,10 @@ services:
     volumes:
       - ./backend:/app
       - upload_data:/app/uploads
-      - ${SEPTEMBER_V2_HOST_PATH:-C:/Users/yucheng/Desktop/september_v2}:/external/september_v2:ro
-      - ${ANALYTICAL_FOUR_HOST_PATH:-C:/Users/yucheng/Desktop/Analytical/Analytical-Four}:/external/Analytical-Four:ro
+      # External analytics (optional): set SEPTEMBER_V2_HOST_PATH / ANALYTICAL_FOUR_HOST_PATH in .env.dev
+      # If unset, empty local placeholder dirs are mounted so Docker doesn't fail.
+      - ${SEPTEMBER_V2_HOST_PATH:-./.external/september_v2}:/external/september_v2:ro
+      - ${ANALYTICAL_FOUR_HOST_PATH:-./.external/Analytical-Four}:/external/Analytical-Four:ro
     networks:
       - app-network
     healthcheck:
