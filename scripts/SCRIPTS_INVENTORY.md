@@ -15,6 +15,12 @@
 | `stop-system.bat` | 停止所有環境 | 同時停止 dev + demo |
 | `build-demo-images.bat` | 重建 Demo 映像 | 用於強制重建 |
 
+### 資料庫備份/還原
+| 腳本 | 用途 | 備註 |
+|------|------|------|
+| `backup-db.bat` | 匯出資料庫為 .sql 檔 | 支援 `--demo`，輸出到 `backups/` |
+| `restore-db.bat` | 從 .sql 檔還原資料庫 | 支援 `--demo`，會先停 backend 避免衝突 |
+
 ### 診斷/監控
 | 腳本 | 用途 | 備註 |
 |------|------|------|

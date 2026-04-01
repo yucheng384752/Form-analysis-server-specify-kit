@@ -68,7 +68,7 @@ if errorlevel 1 (
     docker compose version >nul 2>&1
     if errorlevel 1 (
         echo [ERROR] Docker Compose is not available.
-        echo   Install Docker Desktop (includes Compose) or install docker-compose separately.
+        echo   Install Docker Desktop ^(includes Compose^) or install docker-compose separately.
         call :maybe_pause
         exit /b 1
     ) else (
@@ -118,13 +118,13 @@ set "PORT_CONFLICT=0"
 for %%p in (!HOST_DB_PORT! !HOST_API_PORT! !HOST_FRONTEND_PORT!) do (
     netstat -an | findstr "LISTENING" | findstr ":%%p " >nul 2>&1
     if not errorlevel 1 (
-        :: Check if the process is our own Docker container (allow re-start)
+        REM Check if the process is our own Docker container
         docker ps --format "{{.Ports}}" 2>nul | findstr ":%%p->" >nul 2>&1
         if errorlevel 1 (
             echo   [WARN] Port %%p is already in use by another process.
             set "PORT_CONFLICT=1"
         ) else (
-            echo   - Port %%p: in use by existing dev container (will be replaced^)
+            echo   - Port %%p: in use by existing dev container ^(will be replaced^)
         )
     ) else (
         echo   - Port %%p: available
@@ -163,7 +163,7 @@ echo [4/6] Stopping existing dev containers...
 cd /d "%SERVER_PATH%"
 
 if "!RESET_DB!"=="1" (
-    echo   (--reset-db) Removing containers AND volumes...
+    echo   ^(--reset-db^) Removing containers AND volumes...
     %DOCKER_COMPOSE% -p form-analysis-dev --env-file .env.dev down --remove-orphans -v
 ) else (
     %DOCKER_COMPOSE% -p form-analysis-dev --env-file .env.dev down --remove-orphans
@@ -172,7 +172,7 @@ if "!RESET_DB!"=="1" (
 :: ── Phase 5: Build ^& Start ─────────────────────────────────────────────────
 echo.
 if "!FORCE_BUILD!"=="1" (
-    echo [5/6] Starting dev stack (force rebuild)...
+    echo [5/6] Starting dev stack ^(force rebuild^)...
     %DOCKER_COMPOSE% -p form-analysis-dev --env-file .env.dev up -d --build
 ) else (
     :: Smart build: only use --build if no images exist yet
@@ -183,10 +183,10 @@ if "!FORCE_BUILD!"=="1" (
     if errorlevel 1 set "NEEDS_BUILD=1"
 
     if "!NEEDS_BUILD!"=="1" (
-        echo [5/6] Starting dev stack (first build — this may take a few minutes)...
+        echo [5/6] Starting dev stack ^(first build — this may take a few minutes^)...
         %DOCKER_COMPOSE% -p form-analysis-dev --env-file .env.dev up -d --build
     ) else (
-        echo [5/6] Starting dev stack (images exist, skipping rebuild)...
+        echo [5/6] Starting dev stack ^(images exist, skipping rebuild^)...
         echo   Tip: use --build flag to force rebuild if code changed.
         %DOCKER_COMPOSE% -p form-analysis-dev --env-file .env.dev up -d
     )
@@ -200,9 +200,9 @@ if errorlevel 1 (
     echo ────────────────────────────────────────
     echo.
     echo Common causes:
-    echo   - Port conflict (check ports !HOST_DB_PORT!, !HOST_API_PORT!, !HOST_FRONTEND_PORT!)
-    echo   - Docker out of disk space (run: docker system df)
-    echo   - Dockerfile syntax error (run with --build to see details)
+    echo   - Port conflict ^(check ports !HOST_DB_PORT!, !HOST_API_PORT!, !HOST_FRONTEND_PORT!^)
+    echo   - Docker out of disk space ^(run: docker system df^)
+    echo   - Dockerfile syntax error ^(run with --build to see details^)
     call :maybe_pause
     exit /b 1
 )
