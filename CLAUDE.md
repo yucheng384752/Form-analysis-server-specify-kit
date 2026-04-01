@@ -23,13 +23,21 @@ All URLs must use `127.0.0.1`, not `localhost` (IPv6 issue on Windows).
 ### Start / Stop
 
 ```powershell
-# Dev
+# Dev (auto-creates .env.dev on first run, checks ports, smart build)
 cd scripts && .\start-dev.bat
-cd scripts && .\stop-system.bat
+cd scripts && .\stop-dev.bat
+
+# Dev with options
+cd scripts && .\start-dev.bat --build       # Force rebuild images
+cd scripts && .\start-dev.bat --reset-db    # Remove DB volume and start fresh
+cd scripts && .\stop-dev.bat --reset-db     # Stop and remove DB volume
 
 # Demo
 cd scripts && .\start-demo.bat
 cd scripts && .\stop-demo.bat
+
+# Stop all environments at once
+cd scripts && .\stop-system.bat
 ```
 
 ### Promote Dev code → Demo image

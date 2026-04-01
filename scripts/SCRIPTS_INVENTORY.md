@@ -1,6 +1,6 @@
 # 腳本清單與用途
 
-> 更新日期：2026-03-09
+> 更新日期：2026-03-30
 > 用途：記錄 scripts/ 目錄下各腳本的狀態與功能
 
 ## 🟢 現行使用中腳本
@@ -8,10 +8,11 @@
 ### 環境啟動/停止
 | 腳本 | 用途 | 備註 |
 |------|------|------|
+| `start-dev.bat` | 啟動 Dev 環境 | Port 180xx, 自動建立 .env.dev、端口檢查、智慧建置。支援 `--build`、`--reset-db` |
+| `stop-dev.bat` | 停止 Dev 環境 | 使用 `-p form-analysis-dev`。支援 `--reset-db` 清除 DB |
 | `start-demo.bat` | 啟動 Demo 環境 | Port 181xx, `-p form-analysis-demo` |
-| `start-dev.bat` | 啟動 Dev 環境 | Port 180xx, `-p form-analysis-dev` |
 | `stop-demo.bat` | 停止 Demo 環境 | |
-| `stop-system.bat` | 停止 Docker 系統 | 通用停止腳本 |
+| `stop-system.bat` | 停止所有環境 | 同時停止 dev + demo |
 | `build-demo-images.bat` | 重建 Demo 映像 | 用於強制重建 |
 
 ### 診斷/監控
