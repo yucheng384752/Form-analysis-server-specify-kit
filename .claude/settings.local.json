@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(test:*)",
+      "Bash(./stop-dev.bat)",
+      "Bash(cmd.exe /c stop-dev.bat)",
+      "Bash(docker-compose:*)",
+      "Bash(docker exec:*)",
+      "Bash(winpty docker exec form_analysis_api ls -la /external/)",
+      "Bash(docker inspect:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker ps:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
