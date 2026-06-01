@@ -17,6 +17,7 @@ from app.core.password import hash_password, verify_password
 from app.models.core.tenant import Tenant
 from app.models.core.tenant_api_key import TenantApiKey
 from app.models.core.tenant_user import TenantUser
+from app.core.monitoring import report_user_action
 from app.services.audit_events import write_audit_event_best_effort
 
 router = APIRouter()
@@ -1099,6 +1100,7 @@ async def issue_tenant_api_key(
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
+    request: Request,
     payload: LoginRequest = Body(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1165,6 +1167,13 @@ async def login(
     ).scalar_one_or_none()
 
     if not user or not verify_password(payload.password, user.password_hash):
+        _client_ip = request.client.host if request.client else "unknown"
+        report_user_action(
+            action="login",
+            state="failed",
+            describe=f"user={username} tenant={tenant.code} ip={_client_ip}",
+            level="WARNING",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
@@ -1203,6 +1212,13 @@ async def login(
         pass
 
     await db.commit()
+
+    _client_ip = request.client.host if request.client else "unknown"
+    report_user_action(
+        action="login",
+        state="success",
+        describe=f"user={username} tenant={tenant.code} role={user.role} ip={_client_ip}",
+    )
 
     header_name = getattr(settings, "auth_api_key_header", "X-API-Key")
     return LoginResponse(

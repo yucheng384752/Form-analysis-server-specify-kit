@@ -59,8 +59,8 @@ from app.models.core.tenant_user import TenantUser
 # Initialize application settings
 settings = get_settings()
 
-# Setup structured logging
-setup_logging(settings.log_level, settings.log_format)
+# Setup structured logging (pass monitor level so the remote processor is configured)
+setup_logging(settings.log_level, settings.log_format, settings.monitor_log_min_level)
 
 
 @asynccontextmanager
@@ -195,6 +195,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         print(f" Warning: failed to run startup seed: {e}")
 
+    # Start remote monitoring (heartbeat + log forwarding) if configured
+    if settings.monitor_server_url:
+        from app.core.monitoring import init_monitoring, start_heartbeat
+
+        init_monitoring(
+            server_url=settings.monitor_server_url,
+            source=settings.monitor_source,
+        )
+        start_heartbeat(settings.monitor_heartbeat_interval)
+
     print(f" Form Analysis API starting on {settings.api_host}:{settings.api_port}")
     print(
         f" Database: PostgreSQL - {settings.database_url.split('@')[-1]}"
@@ -206,6 +216,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     # Shutdown
+    if settings.monitor_server_url:
+        from app.core.monitoring import stop_heartbeat
+
+        stop_heartbeat()
+
     print(" Form Analysis API shutting down...")
 
 

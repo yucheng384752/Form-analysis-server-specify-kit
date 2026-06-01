@@ -239,6 +239,29 @@ class Settings(BaseSettings):
         ]
         return set(methods) or {"POST", "PUT", "PATCH", "DELETE"}
 
+    # Remote monitoring (LogCollectClient)
+    monitor_server_url: str = Field(
+        default="",
+        description="Remote monitor server URL, e.g. http://192.168.178.151:8000. Empty = disabled.",
+        alias="MONITOR_SERVER_URL",
+    )
+    monitor_source: str = Field(
+        default="form-analysis-server",
+        description="Source label sent with every heartbeat / log to the monitor.",
+        alias="MONITOR_SOURCE",
+    )
+    monitor_heartbeat_interval: int = Field(
+        default=60,
+        ge=10,
+        description="Heartbeat interval in seconds.",
+        alias="MONITOR_HEARTBEAT_INTERVAL",
+    )
+    monitor_log_min_level: str = Field(
+        default="WARNING",
+        description="Minimum structlog level to forward to the monitor (WARNING | ERROR | CRITICAL).",
+        alias="MONITOR_LOG_MIN_LEVEL",
+    )
+
     # Generic schema feature flag (Phase 1 dual-write)
     use_generic_schema: bool = Field(
         default=False,
