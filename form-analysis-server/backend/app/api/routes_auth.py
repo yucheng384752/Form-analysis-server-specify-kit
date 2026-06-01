@@ -492,6 +492,13 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
 
+    _ip = request.client.host if request.client else "unknown"
+    report_user_action(
+        action="create_user",
+        state="success",
+        describe=f"user={username} role={payload.role} tenant={tenant.code} ip={_ip}",
+    )
+
     return CreateUserResponse(
         id=str(user.id),
         tenant_id=str(tenant.id),
@@ -724,6 +731,13 @@ async def update_user(
             detail="Update violates uniqueness constraints",
         )
 
+    _ip = request.client.host if request.client else "unknown"
+    report_user_action(
+        action="update_user",
+        state="success",
+        describe=f"user_id={user_id} tenant={t_code} ip={_ip}",
+    )
+
     created_at = None
     last_login_at = None
     try:
@@ -825,6 +839,13 @@ async def delete_user(
         await db.commit()
     else:
         await db.commit()
+
+    _ip = request.client.host if request.client else "unknown"
+    report_user_action(
+        action="delete_user",
+        state="success",
+        describe=f"user_id={user_id} tenant={t_code} ip={_ip}",
+    )
 
     created_at = None
     last_login_at = None
@@ -966,6 +987,13 @@ async def rebind_user_tenant(
             detail="Rebind violates uniqueness constraints",
         )
 
+    _ip = request.client.host if request.client else "unknown"
+    report_user_action(
+        action="rebind_user_tenant",
+        state="success",
+        describe=f"user_id={user_id} target_tenant={target_tenant.code} ip={_ip}",
+    )
+
     created_at = None
     last_login_at = None
     try:
@@ -1087,6 +1115,13 @@ async def issue_tenant_api_key(
     )
     db.add(api_key_row)
     await db.commit()
+
+    _ip = request.client.host if request.client else "unknown"
+    report_user_action(
+        action="issue_tenant_api_key",
+        state="success",
+        describe=f"tenant={tenant.code} label={label} ip={_ip}",
+    )
 
     header_name = getattr(settings, "auth_api_key_header", "X-API-Key")
     return IssueTenantApiKeyResponse(
@@ -1315,6 +1350,13 @@ async def change_my_password(
         user_agent=request.headers.get("user-agent"),
     )
 
+    _ip = request.client.host if request.client else "unknown"
+    report_user_action(
+        action="change_password",
+        state="success",
+        describe=f"user={user.username} ip={_ip}",
+    )
+
     return None
 
 
@@ -1421,6 +1463,13 @@ async def reset_user_password(
         metadata={"target_user_id": str(target.id), "generated": generated},
         client_host=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
+    )
+
+    _ip = request.client.host if request.client else "unknown"
+    report_user_action(
+        action="reset_password",
+        state="success",
+        describe=f"target={target.username} user_id={user_id} ip={_ip}",
     )
 
     return ResetUserPasswordResponse(
