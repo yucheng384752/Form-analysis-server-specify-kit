@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_tenant
 from app.config.analytics_config import AnalyticsConfig
 from app.core.database import get_db
+from app.core.monitoring import report_user_action
 from app.models.core.tenant import Tenant
 from app.models.p2_item_v2 import P2ItemV2
 from app.models.p2_record import P2Record
@@ -179,6 +180,13 @@ async def flatten_by_month(
     if result["count"] >= AnalyticsConfig.AUTO_GZIP_THRESHOLD:
         result["metadata"]["compression"] = "gzip"
 
+    _ip = request.client.host if request and request.client else "unknown"
+    report_user_action(
+        action="analytics_flatten_monthly",
+        state="success",
+        describe=f"year={year} month={month} count={result['count']} ip={_ip}",
+    )
+
     return result
 
 
@@ -247,6 +255,13 @@ async def flatten_by_product_ids(
     # 決定壓縮策略
     if result["count"] >= AnalyticsConfig.AUTO_GZIP_THRESHOLD:
         result["metadata"]["compression"] = "gzip"
+
+    _ip = request.client.host if request and request.client else "unknown"
+    report_user_action(
+        action="analytics_flatten_by_ids",
+        state="success",
+        describe=f"ids={len(product_ids)} count={result['count']} ip={_ip}",
+    )
 
     return result
 
@@ -666,6 +681,12 @@ async def analyze(
             product_id=product_id,
             product_ids=product_ids,
             stations=payload.stations,
+        )
+        _ip = request.client.host if request and request.client else "unknown"
+        report_user_action(
+            action="analytics_analyze",
+            state="success",
+            describe=f"tenant={current_tenant.code} ids={len(product_ids)} stations={payload.stations} ip={_ip}",
         )
         return data
     except FileNotFoundError:
@@ -1202,6 +1223,13 @@ async def run_realtime_analysis(
         elapsed_ms = (time.perf_counter() - t0) * 1000
         result["elapsed_ms"] = round(elapsed_ms, 2)
 
+        _ip = request.client.host if request and request.client else "unknown"
+        report_user_action(
+            action="analytics_realtime",
+            state="success",
+            describe=f"tenant={current_tenant.code} station={payload.station} ip={_ip}",
+        )
+
         return result
 
     except FileNotFoundError as e:
@@ -1343,6 +1371,13 @@ async def analyze_complaint_products(
 
         total_ms = (time.perf_counter() - t0) * 1000
 
+        _ip = request.client.host if request and request.client else "unknown"
+        report_user_action(
+            action="analytics_complaint",
+            state="success",
+            describe=f"tenant={current_tenant.code} ids={len(requested_ids)} resolved={resolved_count} ip={_ip}",
+        )
+
         return ComplaintAnalysisResponse(
             requested_ids=requested_ids,
             mapping=mapping,
@@ -1414,6 +1449,13 @@ async def run_extraction_analysis(
         )
 
         elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+        _ip = request.client.host if request and request.client else "unknown"
+        report_user_action(
+            action="analytics_extraction",
+            state="success",
+            describe=f"tenant={current_tenant.code} station={payload.station} ids={len(payload.product_ids)} ip={_ip}",
+        )
 
         if not result or "error" in result:
             return ExtractionAnalysisResponse(
