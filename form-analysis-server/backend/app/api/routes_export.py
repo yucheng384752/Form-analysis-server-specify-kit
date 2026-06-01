@@ -8,12 +8,13 @@ import csv
 import io
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.monitoring import report_user_action
 from app.models.upload_error import UploadError
 from app.models.upload_job import UploadJob
 
@@ -109,6 +110,7 @@ router = APIRouter()
     tags=["資料匯出"],
 )
 async def export_errors_csv(
+    http_request: Request,
     process_id: UUID = Query(
         ...,
         description="處理流程識別碼",
@@ -186,6 +188,13 @@ async def export_errors_csv(
     filename = f"errors_{process_id}.csv"
 
     # 6. 回傳 CSV 檔案
+    _ip = http_request.client.host if http_request.client else "unknown"
+    report_user_action(
+        action="export_errors_csv",
+        state="success",
+        describe=f"process_id={process_id} errors={len(errors)} ip={_ip}",
+    )
+
     return Response(
         content=csv_content.encode("utf-8-sig"),  # 使用 UTF-8 BOM 確保中文正確顯示
         media_type="text/csv",

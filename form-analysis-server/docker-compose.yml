@@ -67,6 +67,12 @@ services:
 
       # Generic schema feature flag (Phase 2)
       - USE_GENERIC_SCHEMA=${USE_GENERIC_SCHEMA:-false}
+
+      # Remote monitoring (LogCollectClient)
+      - MONITOR_SERVER_URL=${MONITOR_SERVER_URL:-}
+      - MONITOR_SOURCE=${MONITOR_SOURCE:-form-analysis-server}
+      - MONITOR_HEARTBEAT_INTERVAL=${MONITOR_HEARTBEAT_INTERVAL:-60}
+      - MONITOR_LOG_MIN_LEVEL=${MONITOR_LOG_MIN_LEVEL:-WARNING}
     ports:
       - "${HOST_API_PORT:-18002}:8000"
     extra_hosts:

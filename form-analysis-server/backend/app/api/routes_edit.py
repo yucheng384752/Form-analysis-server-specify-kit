@@ -14,6 +14,7 @@ from app.schemas.audit import (
     EditRecordRequest,
     RowEditResponse,
 )
+from app.core.monitoring import report_user_action
 from app.services.audit_events import write_audit_event_best_effort
 
 router = APIRouter()
@@ -104,6 +105,14 @@ async def create_edit_reason(
     db.add(reason)
     await db.commit()
     await db.refresh(reason)
+
+    _ip = http_request.client.host if http_request and http_request.client else "unknown"
+    report_user_action(
+        action="create_edit_reason",
+        state="success",
+        describe=f"code={payload.reason_code} tenant={resolved_tenant_id} ip={_ip}",
+    )
+
     return reason
 
 
@@ -148,6 +157,14 @@ async def update_edit_reason(
 
     await db.commit()
     await db.refresh(reason)
+
+    _ip = http_request.client.host if http_request and http_request.client else "unknown"
+    report_user_action(
+        action="update_edit_reason",
+        state="success",
+        describe=f"reason_id={reason_id} tenant={resolved_tenant_id} ip={_ip}",
+    )
+
     return reason
 
 
@@ -374,6 +391,13 @@ async def update_record(
             user_agent=http_request.headers.get("user-agent"),
         )
 
+        _ip = http_request.client.host if http_request.client else "unknown"
+        report_user_action(
+            action="update_record",
+            state="success",
+            describe=f"table={table_code.upper()} record={record_id} fields={changed_fields} ip={_ip}",
+        )
+
     return json_friendly(
         {c.name: getattr(record, c.name) for c in record.__table__.columns}
     )
@@ -432,6 +456,13 @@ async def init_default_reasons(
         await db.commit()
         for r in created:
             await db.refresh(r)
+
+        _ip = http_request.client.host if http_request and http_request.client else "unknown"
+        report_user_action(
+            action="init_edit_reasons",
+            state="success",
+            describe=f"created={len(created)} tenant={resolved_tenant_id} ip={_ip}",
+        )
 
     # Return all
     query = (

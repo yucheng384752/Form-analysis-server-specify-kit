@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_tenant
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.monitoring import report_user_action
 from app.models.core.tenant import Tenant
 from app.services.generic_traceability import GenericTraceabilityService
 from app.services.generic_validator import GenericValidator
@@ -328,6 +329,11 @@ async def create_station(
         tenant.id, body.code, body.name, body.sort_order, body.has_items
     )
     await db.commit()
+    report_user_action(
+        action="create_station",
+        state="success",
+        describe=f"code={body.code} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
+    )
     return StationOut(
         id=str(station.id), code=station.code, name=station.name,
         sort_order=station.sort_order, has_items=station.has_items,
@@ -349,6 +355,11 @@ async def update_station(
     if not station:
         raise HTTPException(404, f"Station {code} not found")
     await db.commit()
+    report_user_action(
+        action="update_station",
+        state="success",
+        describe=f"code={code} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
+    )
     return StationOut(
         id=str(station.id), code=station.code, name=station.name,
         sort_order=station.sort_order, has_items=station.has_items,
@@ -368,6 +379,11 @@ async def delete_station(
     if not deleted:
         raise HTTPException(404, f"Station {code} not found")
     await db.commit()
+    report_user_action(
+        action="delete_station",
+        state="success",
+        describe=f"code={code} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
+    )
 
 
 # -- Schema CRUD ------------------------------------------------------
@@ -395,6 +411,11 @@ async def upsert_station_schema(
     if not schema:
         raise HTTPException(404, f"Station {code} not found")
     await db.commit()
+    report_user_action(
+        action="upsert_station_schema",
+        state="success",
+        describe=f"code={code} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
+    )
     station = await svc.get_station(tenant.id, code)
     return StationSchemaOut(
         station_code=station.code if station else code,
@@ -427,6 +448,11 @@ async def create_validation_rule(
         tenant.id, station_id, body.field_name, body.rule_type, body.rule_config,
     )
     await db.commit()
+    report_user_action(
+        action="create_validation_rule",
+        state="success",
+        describe=f"field={body.field_name} type={body.rule_type} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
+    )
     return ValidationRuleOut(
         id=str(rule.id), field_name=rule.field_name, rule_type=rule.rule_type,
         rule_config=rule.rule_config, station_id=str(rule.station_id) if rule.station_id else None,
@@ -447,6 +473,11 @@ async def update_validation_rule(
     if not rule:
         raise HTTPException(404, "Validation rule not found")
     await db.commit()
+    report_user_action(
+        action="update_validation_rule",
+        state="success",
+        describe=f"rule_id={rule_id} ip={request.client.host if request.client else 'unknown'}",
+    )
     return ValidationRuleOut(
         id=str(rule.id), field_name=rule.field_name, rule_type=rule.rule_type,
         rule_config=rule.rule_config, station_id=str(rule.station_id) if rule.station_id else None,
@@ -465,6 +496,11 @@ async def delete_validation_rule(
     if not deleted:
         raise HTTPException(404, "Validation rule not found")
     await db.commit()
+    report_user_action(
+        action="delete_validation_rule",
+        state="success",
+        describe=f"rule_id={rule_id} ip={request.client.host if request.client else 'unknown'}",
+    )
 
 
 # -- Analytics Mapping CRUD -------------------------------------------
@@ -487,6 +523,11 @@ async def create_analytics_mapping(
         body.output_order, body.data_type, body.null_if_missing,
     )
     await db.commit()
+    report_user_action(
+        action="create_analytics_mapping",
+        state="success",
+        describe=f"station={body.station_code} col={body.output_column} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
+    )
     return AnalyticsMappingOut(
         id=str(mapping.id), source_path=mapping.source_path,
         output_column=mapping.output_column, output_order=mapping.output_order,
@@ -508,6 +549,11 @@ async def update_analytics_mapping(
     if not mapping:
         raise HTTPException(404, "Analytics mapping not found")
     await db.commit()
+    report_user_action(
+        action="update_analytics_mapping",
+        state="success",
+        describe=f"mapping_id={mapping_id} ip={request.client.host if request.client else 'unknown'}",
+    )
     return AnalyticsMappingOut(
         id=str(mapping.id), source_path=mapping.source_path,
         output_column=mapping.output_column, output_order=mapping.output_order,
@@ -527,6 +573,11 @@ async def delete_analytics_mapping(
     if not deleted:
         raise HTTPException(404, "Analytics mapping not found")
     await db.commit()
+    report_user_action(
+        action="delete_analytics_mapping",
+        state="success",
+        describe=f"mapping_id={mapping_id} ip={request.client.host if request.client else 'unknown'}",
+    )
 
 
 # -- Station Link CRUD ------------------------------------------------
@@ -551,6 +602,11 @@ async def create_station_link(
         tenant.id, from_st.id, to_st.id, body.link_type, body.link_config, body.sort_order,
     )
     await db.commit()
+    report_user_action(
+        action="create_station_link",
+        state="success",
+        describe=f"{body.from_station_code}->{body.to_station_code} type={body.link_type} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
+    )
     return StationLinkOut(
         id=str(link.id), from_station_code=body.from_station_code,
         to_station_code=body.to_station_code, link_type=link.link_type,
@@ -573,6 +629,11 @@ async def update_station_link(
     if not link:
         raise HTTPException(404, "Station link not found")
     await db.commit()
+    report_user_action(
+        action="update_station_link",
+        state="success",
+        describe=f"link_id={link_id} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
+    )
     stations = await svc.list_stations(tenant.id)
     station_map = {s.id: s.code for s in stations}
     return StationLinkOut(
@@ -595,3 +656,8 @@ async def delete_station_link(
     if not deleted:
         raise HTTPException(404, "Station link not found")
     await db.commit()
+    report_user_action(
+        action="delete_station_link",
+        state="success",
+        describe=f"link_id={link_id} ip={request.client.host if request.client else 'unknown'}",
+    )

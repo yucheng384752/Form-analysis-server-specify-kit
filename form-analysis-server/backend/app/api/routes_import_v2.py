@@ -28,6 +28,7 @@ from app.models.core.tenant import Tenant
 from app.models.import_job import ImportFile, ImportJob, ImportJobStatus, StagingRow
 from app.models.upload_job import UploadJob
 from app.schemas.import_job import ImportJobErrorRow, ImportJobRead
+from app.core.monitoring import report_user_action
 from app.services.audit_events import write_audit_event_best_effort
 from app.services.import_v2 import ImportService
 
@@ -292,6 +293,13 @@ async def create_import_job(
         user_agent=request.headers.get("user-agent"),
     )
 
+    _ip = request.client.host if request.client else "unknown"
+    report_user_action(
+        action="import_job_create",
+        state="success",
+        describe=f"job={job.id} table={table_code} files={len(files)} tenant={current_tenant.code} ip={_ip}",
+    )
+
     # Eager load files for response
     # In async sqlalchemy, relationships are lazy by default.
     # We might need to select with options or rely on implicit loading if session is open (but await is needed)
@@ -475,6 +483,13 @@ async def create_import_job_from_upload_job(
         user_agent=request.headers.get("user-agent"),
     )
 
+    _ip = request.client.host if request.client else "unknown"
+    report_user_action(
+        action="import_job_create",
+        state="success",
+        describe=f"job={job_id} table={table_code} tenant={current_tenant.code} ip={_ip}",
+    )
+
     from sqlalchemy.orm import selectinload
 
     stmt = (
@@ -626,6 +641,13 @@ async def commit_import_job(
             user_agent=request.headers.get("user-agent"),
         )
 
+        _ip = request.client.host if request.client else "unknown"
+        report_user_action(
+            action="import_job_commit",
+            state="requested",
+            describe=f"job={job.id} tenant={current_tenant.code} ip={_ip}",
+        )
+
     # In tests we need deterministic behavior; commit synchronously.
     if settings.environment.lower() == "testing":
         service = ImportService(db)
@@ -711,6 +733,13 @@ async def cancel_import_job(
             },
             client_host=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
+        )
+
+        _ip = request.client.host if request.client else "unknown"
+        report_user_action(
+            action="import_job_cancel",
+            state="success",
+            describe=f"job={job.id} tenant={current_tenant.code} ip={_ip}",
         )
 
     from sqlalchemy.orm import selectinload
