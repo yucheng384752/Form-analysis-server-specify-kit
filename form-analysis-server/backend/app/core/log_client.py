@@ -8,10 +8,12 @@ instead of requests so no extra dependency is needed.
 import socket
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
+
+_TZ_TAIPEI = timezone(timedelta(hours=8))
 
 
 class LogCollectClient:
@@ -40,7 +42,7 @@ class LogCollectClient:
         payload = {
             "Action": action,
             "State": state,
-            "Timestemp": self._format_time(timestemp or datetime.now()),
+            "Timestemp": self._format_time(timestemp or datetime.now(_TZ_TAIPEI)),
             "Describe": describe,
             "source": self.source,
             "host": self.host,
@@ -57,7 +59,7 @@ class LogCollectClient:
             "source": self.source,
             "host": self.host,
             "State": state,
-            "Timestemp": self._format_time(timestemp or datetime.now()),
+            "Timestemp": self._format_time(timestemp or datetime.now(_TZ_TAIPEI)),
         }
         return self._post("/api/heartbeat", payload)
 
@@ -97,4 +99,7 @@ class LogCollectClient:
 
     @staticmethod
     def _format_time(value: datetime) -> str:
-        return value.strftime("%Y-%m-%d %H:%M:%S")
+        # Convert aware datetimes to UTC+8; treat naive as UTC+8 directly.
+        if value.tzinfo is not None:
+            value = value.astimezone(_TZ_TAIPEI)
+        return value.strftime("%Y-%m-%d %H:%M:%S+08:00")
