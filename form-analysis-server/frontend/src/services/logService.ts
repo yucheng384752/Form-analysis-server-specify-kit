@@ -4,6 +4,7 @@
  */
 
 import { apiRequest } from './api';
+import { getAdminApiKeyHeaderName, getAdminApiKeyValue } from './adminAuth';
 import i18n from '../i18n'
 
 export interface LogEntry {
@@ -14,7 +15,6 @@ export interface LogEntry {
   extra_data: Record<string, any>;
   is_json: boolean;
   raw_line: string;
-  highlighted_message?: string;
 }
 
 export interface LogFile {
@@ -78,6 +78,11 @@ export interface LogViewFilters {
 class LogService {
   private readonly baseUrl = '/api/logs';
 
+  private getAdminHeaders(): Record<string, string> {
+    const key = getAdminApiKeyValue();
+    return key ? { [getAdminApiKeyHeaderName()]: key } : {};
+  }
+
   /**
    * 獲取所有可用的日誌檔案
    */
@@ -85,6 +90,7 @@ class LogService {
     const response = await apiRequest<{ files: Record<string, LogFile> }>({
       url: `${this.baseUrl}/files`,
       method: 'GET',
+      headers: this.getAdminHeaders(),
     });
     return response.files;
   }
@@ -106,6 +112,7 @@ class LogService {
     return await apiRequest<LogViewResponse>({
       url: `${this.baseUrl}/view/${logType}?${params.toString()}`,
       method: 'GET',
+      headers: this.getAdminHeaders(),
     });
   }
 
@@ -116,6 +123,7 @@ class LogService {
     return await apiRequest<LogStats>({
       url: `${this.baseUrl}/stats`,
       method: 'GET',
+      headers: this.getAdminHeaders(),
     });
   }
 
@@ -143,6 +151,7 @@ class LogService {
     return await apiRequest<LogSearchResponse>({
       url: `${this.baseUrl}/search?${params.toString()}`,
       method: 'GET',
+      headers: this.getAdminHeaders(),
     });
   }
 
@@ -162,6 +171,7 @@ class LogService {
     return await apiRequest({
       url: `${this.baseUrl}/cleanup`,
       method: 'DELETE',
+      headers: this.getAdminHeaders(),
     });
   }
 
@@ -171,7 +181,9 @@ class LogService {
   async downloadLogFile(logType: string): Promise<void> {
     try {
       const API_BASE_URL = (import.meta.env?.VITE_API_URL as string) || 'http://localhost:8000';
-      const response = await fetch(`${API_BASE_URL}${this.baseUrl}/download/${logType}`);
+      const response = await fetch(`${API_BASE_URL}${this.baseUrl}/download/${logType}`, {
+        headers: this.getAdminHeaders(),
+      });
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }

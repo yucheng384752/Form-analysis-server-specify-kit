@@ -1,0 +1,270 @@
+.dev-logs-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.dev-logs-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dev-logs-header h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.35rem;
+}
+
+.dev-logs-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+.dev-logs-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.dev-logs-actions .btn-primary,
+.dev-logs-actions .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.dev-logs-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 100px minmax(220px, 1fr);
+  gap: 0.75rem;
+  align-items: end;
+  padding: 0.9rem;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.dev-logs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.dev-logs-field span {
+  color: #52606d;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dev-logs-field select,
+.dev-logs-field input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 0.9rem;
+  padding: 0 0.65rem;
+}
+
+.dev-logs-search {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 38px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0 0.65rem;
+}
+
+.dev-logs-search input {
+  height: auto;
+  border: 0;
+  padding: 0;
+  outline: 0;
+}
+
+.dev-logs-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.dev-logs-level {
+  min-width: 78px;
+  height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.dev-logs-level.is-active {
+  background: #111827;
+  border-color: #111827;
+  color: #ffffff;
+}
+
+.dev-logs-error {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.9rem;
+}
+
+.dev-logs-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.dev-logs-summary span {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid #dbe3ee;
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.dev-logs-table-wrap {
+  overflow: auto;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.dev-logs-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.dev-logs-table th,
+.dev-logs-table td {
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid #edf2f7;
+  text-align: left;
+  vertical-align: top;
+}
+
+.dev-logs-table th {
+  background: #f8fafc;
+  color: #52606d;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.dev-logs-table th:nth-child(1),
+.dev-logs-time {
+  width: 190px;
+}
+
+.dev-logs-table th:nth-child(2) {
+  width: 120px;
+}
+
+.dev-logs-table th:nth-child(3),
+.dev-logs-line {
+  width: 80px;
+}
+
+.dev-logs-time,
+.dev-logs-line {
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.dev-logs-message {
+  color: #1f2937;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.dev-logs-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  height: 24px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.dev-logs-badge.is-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.dev-logs-badge.is-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.dev-logs-badge.is-info {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.dev-logs-badge.is-debug,
+.dev-logs-badge.is-default {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.dev-logs-empty {
+  height: 120px;
+  color: #64748b;
+  text-align: center;
+}
+
+.dev-logs-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.is-spinning {
+  animation: dev-logs-spin 1s linear infinite;
+}
+
+@keyframes dev-logs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .dev-logs-header {
+    flex-direction: column;
+  }
+
+  .dev-logs-actions {
+    width: 100%;
+  }
+
+  .dev-logs-actions .btn-primary,
+  .dev-logs-actions .btn-secondary {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .dev-logs-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
