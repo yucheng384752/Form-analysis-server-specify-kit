@@ -24,6 +24,11 @@ __pycache__/
 venv/
 env/
 .env
+**/.env
+**/.env.*
+!**/.env.example
+!**/*.env.example
+!**/.env.*.example
 
 # 忽略資料庫檔案
 *.db
@@ -99,6 +104,13 @@ out/
 .env.production
 .env.development
 .env.*.local
+
+# 資料庫備份檔 (本機產生)
+backups/*.sql
+
+# 外部分析資料佔位目錄內容
+form-analysis-server/.external/september_v2/
+form-analysis-server/.external/Analytical-Four/
 
 # 其他暫存/備份
 *.bak
