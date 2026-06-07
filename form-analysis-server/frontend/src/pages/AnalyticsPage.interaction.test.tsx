@@ -64,6 +64,13 @@ vi.mock('recharts', () => {
 type FetchCall = [RequestInfo | URL, RequestInit | undefined]
 
 describe('AnalyticsPage interaction regression', () => {
+  const clickFirstNgBar = async (user: ReturnType<typeof userEvent.setup>) => {
+    await waitFor(() => {
+      expect(screen.getAllByTestId('recharts-bar-1-NG').length).toBeGreaterThan(0)
+    })
+    await user.click(screen.getAllByTestId('recharts-bar-1-NG')[0])
+  }
+
   const toYmd = (date: Date): string => {
     const y = date.getFullYear()
     const m = String(date.getMonth() + 1).padStart(2, '0')
@@ -150,12 +157,7 @@ describe('AnalyticsPage interaction regression', () => {
     render(<AnalyticsPage />)
 
     await user.click(screen.getByRole('button', { name: /Analyze/i }))
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Bar/i })).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByRole('button', { name: /Bar/i }))
-    await user.click(screen.getByRole('button', { name: /^NG$/i }))
+    await clickFirstNgBar(user)
 
     await waitFor(() => {
       expect(screen.getByText('LOT-001')).toBeInTheDocument()
@@ -252,13 +254,7 @@ describe('AnalyticsPage interaction regression', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /Analyze/i }))
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Bar/i })).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByRole('button', { name: /Bar/i }))
-    await user.click(screen.getByRole('button', { name: /^NG$/i }))
+    await clickFirstNgBar(user)
 
     await waitFor(() => {
       expect(screen.getByText('LOT-2025-08-01')).toBeInTheDocument()
@@ -346,11 +342,7 @@ describe('AnalyticsPage interaction regression', () => {
 
     render(<AnalyticsPage />)
     await user.click(screen.getByRole('button', { name: /Analyze/i }))
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Bar/i })).toBeInTheDocument()
-    })
-    await user.click(screen.getByRole('button', { name: /Bar/i }))
-    await user.click(screen.getByRole('button', { name: /^NG$/i }))
+    await clickFirstNgBar(user)
     await waitFor(() => {
       expect(screen.getByText('LOT-FALLBACK-001')).toBeInTheDocument()
     })
