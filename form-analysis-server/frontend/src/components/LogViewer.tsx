@@ -251,11 +251,7 @@ const LogViewer: React.FC<LogViewerProps> = ({ className }) => {
             </div>
             
             <div className="font-mono text-sm text-gray-800 break-all">
-              {entry.highlighted_message ? (
-                <div dangerouslySetInnerHTML={{ __html: entry.highlighted_message }} />
-              ) : (
-                entry.message
-              )}
+              {entry.message}
             </div>
             
             {entry.extra_data && Object.keys(entry.extra_data).length > 0 && (

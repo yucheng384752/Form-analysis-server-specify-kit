@@ -31,6 +31,7 @@ function getUrlString(input: any): string {
 describe('installGlobalFetchWrapper (registration -> tenant header)', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     vi.restoreAllMocks()
   })
 
@@ -53,7 +54,7 @@ describe('installGlobalFetchWrapper (registration -> tenant header)', () => {
 
   it('after bootstrap (UT/ut) stores tenant id and auto-injects X-Tenant-Id for /api calls', async () => {
     // Simulate admin bootstrap key exists in browser.
-    window.localStorage.setItem(ADMIN_API_KEY_STORAGE_KEY, 'adminkey-1')
+    window.sessionStorage.setItem(ADMIN_API_KEY_STORAGE_KEY, 'adminkey-1')
 
     const calls: Array<{ url: string; headers: Record<string, string>; init?: RequestInit }> = []
 

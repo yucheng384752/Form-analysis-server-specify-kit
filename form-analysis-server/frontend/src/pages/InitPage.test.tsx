@@ -15,6 +15,7 @@ vi.mock('../components/common/ToastContext', () => ({
 describe.skip('InitPage (deprecated)', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
   })
 
   it('gates tenant bootstrap behind admin key', async () => {
@@ -34,7 +35,8 @@ describe.skip('InitPage (deprecated)', () => {
       await user.click(screen.getByRole('button', { name: '啟用管理者模式' }))
     })
 
-    expect(window.localStorage.getItem(ADMIN_API_KEY_STORAGE_KEY)).toBe('admin-key-123')
+    expect(window.sessionStorage.getItem(ADMIN_API_KEY_STORAGE_KEY)).toBe('admin-key-123')
+    expect(window.localStorage.getItem(ADMIN_API_KEY_STORAGE_KEY)).toBeNull()
     expect(screen.getByRole('button', { name: '建立場域（Tenant）' })).toBeInTheDocument()
   })
 })

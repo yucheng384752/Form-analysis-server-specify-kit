@@ -11,6 +11,7 @@ import {
 describe('auth helpers (strict)', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     ;(globalThis as any).__FORM_ANALYSIS_ENV__ = { VITE_API_KEY: '', VITE_API_KEY_HEADER: '' }
   })
 
@@ -22,10 +23,12 @@ describe('auth helpers (strict)', () => {
     expect(getApiKeyHeaderName()).toBe('X-API-Key')
   })
 
-  it('reads api key from localStorage first', () => {
+  it('migrates legacy api key from localStorage to sessionStorage first', () => {
     window.localStorage.setItem(API_KEY_STORAGE_KEY, '  abc  ')
     ;(globalThis as any).__FORM_ANALYSIS_ENV__.VITE_API_KEY = 'env'
     expect(getApiKeyValue()).toBe('abc')
+    expect(window.sessionStorage.getItem(API_KEY_STORAGE_KEY)).toBe('abc')
+    expect(window.localStorage.getItem(API_KEY_STORAGE_KEY)).toBeNull()
   })
 
   it('falls back to env var when localStorage missing', () => {
@@ -38,21 +41,26 @@ describe('auth helpers (strict)', () => {
     expect(getApiKeyHeaderName()).toBe('Authorization')
   })
 
-  it('setApiKeyValue stores trimmed key in localStorage (and getApiKeyValue reads it)', () => {
+  it('setApiKeyValue stores trimmed key in sessionStorage (and getApiKeyValue reads it)', () => {
     setApiKeyValue('  abc123  ')
-    expect(window.localStorage.getItem(API_KEY_STORAGE_KEY)).toBe('abc123')
+    expect(window.sessionStorage.getItem(API_KEY_STORAGE_KEY)).toBe('abc123')
+    expect(window.localStorage.getItem(API_KEY_STORAGE_KEY)).toBeNull()
     expect(getApiKeyValue()).toBe('abc123')
   })
 
-  it('setApiKeyValue with empty input removes localStorage key', () => {
+  it('setApiKeyValue with empty input removes stored keys', () => {
+    window.sessionStorage.setItem(API_KEY_STORAGE_KEY, 'will-be-removed')
     window.localStorage.setItem(API_KEY_STORAGE_KEY, 'will-be-removed')
     setApiKeyValue('   ')
+    expect(window.sessionStorage.getItem(API_KEY_STORAGE_KEY)).toBeNull()
     expect(window.localStorage.getItem(API_KEY_STORAGE_KEY)).toBeNull()
   })
 
-  it('clearApiKeyValue removes localStorage key', () => {
+  it('clearApiKeyValue removes stored keys', () => {
+    window.sessionStorage.setItem(API_KEY_STORAGE_KEY, 'will-be-removed')
     window.localStorage.setItem(API_KEY_STORAGE_KEY, 'will-be-removed')
     clearApiKeyValue()
+    expect(window.sessionStorage.getItem(API_KEY_STORAGE_KEY)).toBeNull()
     expect(window.localStorage.getItem(API_KEY_STORAGE_KEY)).toBeNull()
   })
 })
