@@ -107,6 +107,97 @@ async def test_create_import_job_invalid_table(client, db_session):
     assert response.status_code == 400, response.text
 
 
+@pytest.mark.asyncio
+async def test_create_import_job_rejects_path_filename(client, db_session):
+    tenant = Tenant(
+        name=f"Traversal Tenant {uuid.uuid4()}",
+        code=f"traversal_{uuid.uuid4()}",
+        is_default=False,
+    )
+    db_session.add(tenant)
+
+    stmt = select(TableRegistry).where(TableRegistry.table_code == "P1")
+    result = await db_session.execute(stmt)
+    table = result.scalar_one_or_none()
+    if not table:
+        db_session.add(TableRegistry(table_code="P1", display_name="P1 Records"))
+
+    await db_session.commit()
+    await db_session.refresh(tenant)
+
+    response = await client.post(
+        "/api/v2/import/jobs",
+        files=[("files", ("../evil.csv", b"content", "text/csv"))],
+        data={"table_code": "P1"},
+        headers={"X-Tenant-Id": str(tenant.id)},
+    )
+
+    assert response.status_code == 400, response.text
+    assert "path components" in response.text
+
+
+@pytest.mark.asyncio
+async def test_create_import_job_rejects_unsupported_extension(client, db_session):
+    tenant = Tenant(
+        name=f"Extension Tenant {uuid.uuid4()}",
+        code=f"extension_{uuid.uuid4()}",
+        is_default=False,
+    )
+    db_session.add(tenant)
+
+    stmt = select(TableRegistry).where(TableRegistry.table_code == "P1")
+    result = await db_session.execute(stmt)
+    table = result.scalar_one_or_none()
+    if not table:
+        db_session.add(TableRegistry(table_code="P1", display_name="P1 Records"))
+
+    await db_session.commit()
+    await db_session.refresh(tenant)
+
+    response = await client.post(
+        "/api/v2/import/jobs",
+        files=[("files", ("payload.html", b"<script>alert(1)</script>", "text/html"))],
+        data={"table_code": "P1"},
+        headers={"X-Tenant-Id": str(tenant.id)},
+    )
+
+    assert response.status_code == 400, response.text
+    assert "Unsupported file extension" in response.text
+
+
+@pytest.mark.asyncio
+async def test_create_import_job_rejects_oversized_upload(client, db_session):
+    tenant = Tenant(
+        name=f"Oversize Tenant {uuid.uuid4()}",
+        code=f"oversize_{uuid.uuid4()}",
+        is_default=False,
+    )
+    db_session.add(tenant)
+
+    stmt = select(TableRegistry).where(TableRegistry.table_code == "P1")
+    result = await db_session.execute(stmt)
+    table = result.scalar_one_or_none()
+    if not table:
+        db_session.add(TableRegistry(table_code="P1", display_name="P1 Records"))
+
+    await db_session.commit()
+    await db_session.refresh(tenant)
+
+    previous_limit = settings.max_upload_size_mb
+    settings.max_upload_size_mb = 1
+    try:
+        response = await client.post(
+            "/api/v2/import/jobs",
+            files=[("files", ("large.csv", b"a" * (1024 * 1024 + 1), "text/csv"))],
+            data={"table_code": "P1"},
+            headers={"X-Tenant-Id": str(tenant.id)},
+        )
+    finally:
+        settings.max_upload_size_mb = previous_limit
+
+    assert response.status_code == 413, response.text
+
+
 from sqlalchemy import select
 
 from app.models.import_job import ImportJobStatus, StagingRow

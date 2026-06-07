@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -118,9 +118,14 @@ class Settings(BaseSettings):
     # Lightweight auth (API key) - for blocking public scanning/attacks
     # Prefer a reverse proxy / WAF for stronger protection.
     auth_mode: str = Field(
-        default="off",
+        default="api_key",
         description="Auth mode: off|api_key",
         alias="AUTH_MODE",
+    )
+    allow_auth_off: bool = Field(
+        default=False,
+        description="Explicitly allow AUTH_MODE=off. Never enable in production.",
+        alias="ALLOW_AUTH_OFF",
     )
     auth_api_key_header: str = Field(
         default="X-API-Key",
@@ -336,6 +341,30 @@ class Settings(BaseSettings):
             or self.reload
             or os.getenv("DEV_MODE", "false").lower() == "true"
         )
+
+    @model_validator(mode="after")
+    def validate_security_defaults(self) -> "Settings":
+        env = (self.environment or "").strip().lower()
+        auth_mode = (self.auth_mode or "").strip().lower()
+        if env == "production" and auth_mode == "off" and not self.allow_auth_off:
+            raise ValueError(
+                "AUTH_MODE=off is not allowed in production unless "
+                "ALLOW_AUTH_OFF=true is explicitly set"
+            )
+
+        insecure_secret_keys = {
+            "qI5s1RT9GCr8wlqnfh1XxOZBO_47lSqedali3vHGOVk",
+            "change-this-in-production-must-be-32-chars-minimum",
+            "your_secret_key_here_minimum_32_characters_required",
+            "demo-secret-key-at-least-32-characters",
+            "dev-secret-key-at-least-32-characters-long",
+            "development-secret-key-32-chars-min",
+            "test-secret-key-change-in-production",
+        }
+        if env == "production" and self.secret_key in insecure_secret_keys:
+            raise ValueError("Production SECRET_KEY must be rotated from example values")
+
+        return self
 
 
 @lru_cache

@@ -1,35 +1,45 @@
-"""
-日誌管理 API 路由
-提供日誌查看、搜尋、統計等功能
-"""
-
 import json
-import re
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
-
 router = APIRouter(tags=["logs"])
 
-# 日誌目錄配置
 LOGS_DIR = Path("logs")
 
 
-class LogEntry:
-    """日誌條目類"""
+def _normalize_log_level(level: str) -> str:
+    normalized = str(level or "").upper()
+    if normalized == "WARN":
+        return "WARNING"
+    return normalized
 
+
+def _require_log_admin(request: Request) -> None:
+    state = getattr(request, "state", None)
+    if bool(getattr(state, "is_admin", False)):
+        return
+    if getattr(state, "actor_role", None) == "manager":
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Manager privileges required",
+    )
+
+
+class LogEntry:
     def __init__(self, line: str, line_number: int):
         self.line_number = line_number
         self.raw_line = line
 
         try:
-            # 嘗試解析 JSON 格式
             data = json.loads(line.strip())
             self.timestamp = data.get("timestamp", "")
             self.level = data.get("level", "INFO")
@@ -41,14 +51,13 @@ class LogEntry:
             }
             self.is_json = True
         except (json.JSONDecodeError, AttributeError):
-            # 純文字格式
             self.timestamp = ""
             self.level = "INFO"
             self.message = line.strip()
             self.extra_data = {}
             self.is_json = False
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "line_number": self.line_number,
             "timestamp": self.timestamp,
@@ -61,11 +70,9 @@ class LogEntry:
 
 
 def get_log_files() -> dict[str, Path]:
-    """獲取可用的日誌檔案"""
-    log_files = {}
+    log_files: dict[str, Path] = {}
 
     if LOGS_DIR.exists():
-        # 主要日誌檔案
         app_log = LOGS_DIR / "app.log"
         error_log = LOGS_DIR / "error.log"
 
@@ -74,7 +81,6 @@ def get_log_files() -> dict[str, Path]:
         if error_log.exists():
             log_files["error"] = error_log
 
-        # 備份日誌檔案
         for backup_file in LOGS_DIR.glob("*.log.*"):
             if backup_file.is_file():
                 log_files[backup_file.name] = backup_file
@@ -83,35 +89,32 @@ def get_log_files() -> dict[str, Path]:
 
 
 def parse_time_filter(
-    hours: int | None = None, start_time: str | None = None, end_time: str | None = None
-) -> tuple:
-    """解析時間過濾條件"""
-
+    hours: int | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
+) -> tuple[datetime | None, datetime | None]:
     now = datetime.now(UTC)
 
     if hours:
-        start_dt = now - timedelta(hours=hours)
-        end_dt = now
-    elif start_time and end_time:
-        try:
-            start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-            end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
-        except ValueError:
-            start_dt = None
-            end_dt = None
-    else:
-        start_dt = None
-        end_dt = None
+        return now - timedelta(hours=hours), now
 
-    return start_dt, end_dt
+    if start_time and end_time:
+        try:
+            return (
+                datetime.fromisoformat(start_time.replace("Z", "+00:00")),
+                datetime.fromisoformat(end_time.replace("Z", "+00:00")),
+            )
+        except ValueError:
+            return None, None
+
+    return None, None
 
 
 @router.get("/files")
-async def list_log_files():
-    """列出所有可用的日誌檔案"""
+async def list_log_files(request: Request):
+    _require_log_admin(request)
     try:
         log_files = get_log_files()
-
         result = {}
         for name, path in log_files.items():
             stat = path.stat()
@@ -123,84 +126,76 @@ async def list_log_files():
                 "path": str(path),
             }
 
-        logger.info("日誌檔案列表查詢", file_count=len(result))
+        logger.info("Log files listed", file_count=len(result))
         return {"files": result}
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("獲取日誌檔案列表失敗", error=str(e))
+        logger.error("Failed to list log files", error=str(e))
         raise HTTPException(status_code=500, detail="Failed to get log files")
 
 
 @router.get("/view/{log_type}")
 async def view_logs(
+    request: Request,
     log_type: str,
-    limit: int = Query(50, ge=1, le=1000, description="返回的日誌條數"),
-    offset: int = Query(0, ge=0, description="跳過的日誌條數"),
-    level: str | None = Query(None, description="日誌級別過濾"),
-    search: str | None = Query(None, description="搜尋關鍵字"),
-    hours: int | None = Query(None, ge=1, description="最近N小時的日誌"),
-    start_time: str | None = Query(None, description="開始時間 (ISO format)"),
-    end_time: str | None = Query(None, description="結束時間 (ISO format)"),
+    limit: int = Query(50, ge=1, le=1000, description="Number of entries"),
+    offset: int = Query(0, ge=0, description="Offset"),
+    level: str | None = Query(None, description="Log level filter"),
+    search: str | None = Query(None, description="Message search filter"),
+    hours: int | None = Query(None, ge=1, description="Recent hours filter"),
+    start_time: str | None = Query(None, description="Start time (ISO format)"),
+    end_time: str | None = Query(None, description="End time (ISO format)"),
 ):
-    """查看指定類型的日誌"""
+    _require_log_admin(request)
     try:
         log_files = get_log_files()
-
         if log_type not in log_files:
             raise HTTPException(
                 status_code=404, detail=f"Log file '{log_type}' not found"
             )
 
-        log_file = log_files[log_type]
+        entries: list[LogEntry] = []
+        with open(log_files[log_type], encoding="utf-8") as f:
+            for i, line in enumerate(f, 1):
+                if line.strip():
+                    entries.append(LogEntry(line, i))
 
-        # 讀取日誌檔案
-        with open(log_file, encoding="utf-8") as f:
-            lines = f.readlines()
-
-        # 解析日誌條目
-        entries = []
-        for i, line in enumerate(lines, 1):
-            if line.strip():
-                entry = LogEntry(line, i)
-                entries.append(entry)
-
-        # 時間過濾
         start_dt, end_dt = parse_time_filter(hours, start_time, end_time)
         if start_dt and end_dt:
             filtered_entries = []
             for entry in entries:
-                if entry.timestamp:
-                    try:
-                        entry_time = datetime.fromisoformat(
-                            entry.timestamp.replace("Z", "+00:00")
-                        )
-                        if start_dt <= entry_time <= end_dt:
-                            filtered_entries.append(entry)
-                    except ValueError:
-                        continue
+                if not entry.timestamp:
+                    continue
+                try:
+                    entry_time = datetime.fromisoformat(
+                        entry.timestamp.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    continue
+                if start_dt <= entry_time <= end_dt:
+                    filtered_entries.append(entry)
             entries = filtered_entries
 
-        # 級別過濾
         if level:
-            entries = [e for e in entries if e.level.upper() == level.upper()]
+            requested_level = _normalize_log_level(level)
+            entries = [
+                e for e in entries if _normalize_log_level(e.level) == requested_level
+            ]
 
-        # 關鍵字搜尋
         if search:
             entries = [e for e in entries if search.lower() in e.message.lower()]
 
-        # 分頁
         total = len(entries)
-        entries = entries[offset : offset + limit]
-
-        # 轉換為字典格式
-        result_entries = [entry.to_dict() for entry in entries]
+        result_entries = [
+            entry.to_dict() for entry in entries[offset : offset + limit]
+        ]
 
         logger.info(
-            "日誌查看請求",
+            "Logs viewed",
             log_type=log_type,
             total=total,
             returned=len(result_entries),
-            filters={"level": level, "search": search, "hours": hours},
         )
 
         return {
@@ -220,19 +215,19 @@ async def view_logs(
                 "end_time": end_time,
             },
         }
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("查看日誌失敗", log_type=log_type, error=str(e))
+        logger.error("Failed to view logs", log_type=log_type, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to view logs: {str(e)}")
 
 
 @router.get("/stats")
-async def get_log_stats():
-    """獲取日誌統計資訊"""
+async def get_log_stats(request: Request):
+    _require_log_admin(request)
     try:
         log_files = get_log_files()
-
-        stats = {
+        stats: dict[str, Any] = {
             "files": {},
             "total_size": 0,
             "level_distribution": defaultdict(int),
@@ -240,118 +235,83 @@ async def get_log_stats():
             "recent_activity": [],
         }
 
-        # 檔案統計
         for name, path in log_files.items():
-            file_stat = path.stat()
+            stat = path.stat()
             stats["files"][name] = {
-                "size": file_stat.st_size,
-                "size_mb": round(file_stat.st_size / 1024 / 1024, 2),
-                "modified": datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
+                "size": stat.st_size,
+                "size_mb": round(stat.st_size / 1024 / 1024, 2),
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "lines": 0,
             }
-            stats["total_size"] += file_stat.st_size
-
-        # 分析主要日誌檔案
-        if "app" in log_files:
-            with open(log_files["app"], encoding="utf-8") as f:
-                lines = f.readlines()
+            stats["total_size"] += stat.st_size
 
             recent_entries = []
-            for line in lines[-100:]:  # 分析最近100條
-                if line.strip():
-                    entry = LogEntry(line, 0)
-
-                    # 級別統計
-                    stats["level_distribution"][entry.level.upper()] += 1
-
-                    # API 使用統計
-                    message_lower = entry.message.lower()
-                    if "upload" in message_lower or "上傳" in message_lower:
-                        stats["api_usage"]["upload"] += 1
-                    elif "query" in message_lower or "查詢" in message_lower:
-                        stats["api_usage"]["query"] += 1
-                    elif "import" in message_lower or "匯入" in message_lower:
-                        stats["api_usage"]["import"] += 1
-
-                    # 最近活動
+            with open(path, encoding="utf-8") as f:
+                for line_num, line in enumerate(f, 1):
+                    stats["files"][name]["lines"] = line_num
+                    if not line.strip():
+                        continue
+                    entry = LogEntry(line, line_num)
+                    stats["level_distribution"][entry.level] += 1
+                    message = entry.message.lower()
+                    if "api" in message or "request" in message:
+                        stats["api_usage"][entry.level] += 1
                     if len(recent_entries) < 10:
-                        recent_entries.append(
-                            {
-                                "timestamp": entry.timestamp,
-                                "level": entry.level,
-                                "message": entry.message[:100]
-                                + ("..." if len(entry.message) > 100 else ""),
-                            }
-                        )
+                        recent_entries.append(entry.to_dict())
 
             stats["recent_activity"] = recent_entries
 
-        # 轉換 defaultdict 為普通 dict
         stats["level_distribution"] = dict(stats["level_distribution"])
         stats["api_usage"] = dict(stats["api_usage"])
         stats["total_size_mb"] = round(stats["total_size"] / 1024 / 1024, 2)
 
-        logger.info("日誌統計查詢完成", file_count=len(log_files))
+        logger.info("Log stats calculated", file_count=len(log_files))
         return stats
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("獲取日誌統計失敗", error=str(e))
+        logger.error("Failed to get log statistics", error=str(e))
         raise HTTPException(status_code=500, detail="Failed to get log statistics")
 
 
 @router.get("/search")
 async def search_logs(
-    query: str = Query(..., description="搜尋關鍵字"),
-    log_type: str = Query("app", description="日誌類型"),
-    limit: int = Query(100, ge=1, le=1000, description="最大返回結果數"),
-    case_sensitive: bool = Query(False, description="是否區分大小寫"),
+    request: Request,
+    query: str = Query(..., description="Search query"),
+    log_type: str = Query("app", description="Log type"),
+    limit: int = Query(100, ge=1, le=1000, description="Max results"),
+    case_sensitive: bool = Query(False, description="Case-sensitive search"),
 ):
-    """搜尋日誌內容"""
+    _require_log_admin(request)
     try:
         log_files = get_log_files()
-
         if log_type not in log_files:
             raise HTTPException(
                 status_code=404, detail=f"Log file '{log_type}' not found"
             )
 
-        log_file = log_files[log_type]
-
         results = []
-        with open(log_file, encoding="utf-8") as f:
+        search_query = query if case_sensitive else query.lower()
+        with open(log_files[log_type], encoding="utf-8") as f:
             for line_num, line in enumerate(f, 1):
                 line_content = line.strip()
                 if not line_content:
                     continue
 
-                # 搜尋匹配
                 search_text = line_content if case_sensitive else line_content.lower()
-                search_query = query if case_sensitive else query.lower()
+                if search_query not in search_text:
+                    continue
 
-                if search_query in search_text:
-                    entry = LogEntry(line, line_num)
-                    result = entry.to_dict()
-
-                    # 高亮顯示匹配的關鍵字
-                    if not case_sensitive:
-                        # 大小寫不敏感的高亮
-                        pattern = re.compile(re.escape(query), re.IGNORECASE)
-                        result["highlighted_message"] = pattern.sub(
-                            f"<mark>{query}</mark>", entry.message
-                        )
-                    else:
-                        result["highlighted_message"] = entry.message.replace(
-                            query, f"<mark>{query}</mark>"
-                        )
-
-                    results.append(result)
-
-                    if len(results) >= limit:
-                        break
+                results.append(LogEntry(line, line_num).to_dict())
+                if len(results) >= limit:
+                    break
 
         logger.info(
-            "日誌搜尋完成", query=query, log_type=log_type, results_count=len(results)
+            "Log search completed",
+            query=query,
+            log_type=log_type,
+            results_count=len(results),
         )
-
         return {
             "results": results,
             "query": query,
@@ -360,80 +320,75 @@ async def search_logs(
             "case_sensitive": case_sensitive,
             "truncated": len(results) >= limit,
         }
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("搜尋日誌失敗", query=query, error=str(e))
+        logger.error("Failed to search logs", query=query, error=str(e))
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
 @router.delete("/cleanup")
-async def cleanup_old_logs():
-    """清理舊的日誌備份檔案"""
+async def cleanup_old_logs(request: Request):
+    _require_log_admin(request)
     try:
         if not LOGS_DIR.exists():
             return {"message": "No log directory found", "cleaned_files": []}
 
-        # 找出所有備份檔案 (*.log.*)
         backup_files = list(LOGS_DIR.glob("*.log.*"))
-
         cleaned_files = []
+        total_size = 0
+
+        cutoff_time = datetime.now().timestamp() - (30 * 24 * 60 * 60)
         for file_path in backup_files:
-            if file_path.is_file():
-                file_size = file_path.stat().st_size
-                file_path.unlink()  # 刪除檔案
+            if file_path.stat().st_mtime < cutoff_time:
+                size = file_path.stat().st_size
+                file_path.unlink()
                 cleaned_files.append(
                     {
-                        "name": file_path.name,
-                        "size": file_size,
-                        "size_mb": round(file_size / 1024 / 1024, 2),
+                        "filename": file_path.name,
+                        "size": size,
+                        "size_mb": round(size / 1024 / 1024, 2),
                     }
                 )
-
-        total_size = sum(f["size"] for f in cleaned_files)
+                total_size += size
 
         logger.info(
-            "日誌清理完成",
+            "Old logs cleaned",
             cleaned_count=len(cleaned_files),
             total_size_mb=round(total_size / 1024 / 1024, 2),
         )
-
         return {
             "message": f"Successfully cleaned {len(cleaned_files)} backup files",
             "cleaned_files": cleaned_files,
             "total_size_freed": total_size,
             "total_size_freed_mb": round(total_size / 1024 / 1024, 2),
         }
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("清理日誌失敗", error=str(e))
+        logger.error("Failed to clean logs", error=str(e))
         raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
 
 
 @router.get("/download/{log_type}")
-async def download_log_file(log_type: str):
-    """下載日誌檔案"""
+async def download_log_file(request: Request, log_type: str):
+    _require_log_admin(request)
     try:
         log_files = get_log_files()
-
         if log_type not in log_files:
             raise HTTPException(
                 status_code=404, detail=f"Log file '{log_type}' not found"
             )
 
-        from fastapi.responses import FileResponse
-
         log_file = log_files[log_type]
-
-        logger.info(
-            "日誌檔案下載", log_type=log_type, file_size=log_file.stat().st_size
-        )
-
+        logger.info("Log file downloaded", log_type=log_type)
         return FileResponse(
             path=str(log_file),
             filename=f"{log_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
             media_type="text/plain",
         )
-
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("下載日誌檔案失敗", log_type=log_type, error=str(e))
+        logger.error("Failed to download log file", log_type=log_type, error=str(e))
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")

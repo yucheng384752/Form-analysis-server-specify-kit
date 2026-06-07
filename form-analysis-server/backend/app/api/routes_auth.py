@@ -245,12 +245,41 @@ def _record_password_change_failure(*, user_id: str) -> None:
     _pw_change_failures_by_user[user_id] = recent
 
 
+_LOGIN_FAIL_WINDOW_SECONDS = 60.0
+_LOGIN_FAIL_MAX = 5
+_login_failures: dict[str, list[float]] = {}
+
+
+def _login_throttle_key(*, tenant_code: str, username: str, client_ip: str) -> str:
+    return f"{tenant_code.strip().lower()}:{username.strip().lower()}:{client_ip}"
+
+
+def _check_login_throttle(*, key: str) -> None:
+    now = time.monotonic()
+    window_start = now - _LOGIN_FAIL_WINDOW_SECONDS
+    recent = [t for t in _login_failures.get(key, []) if t >= window_start]
+    if len(recent) >= _LOGIN_FAIL_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed attempts",
+        )
+    _login_failures[key] = recent
+
+
+def _record_login_failure(*, key: str) -> None:
+    now = time.monotonic()
+    window_start = now - _LOGIN_FAIL_WINDOW_SECONDS
+    recent = [t for t in _login_failures.get(key, []) if t >= window_start]
+    recent.append(now)
+    _login_failures[key] = recent
+
+
+def _clear_login_failures(*, key: str) -> None:
+    _login_failures.pop(key, None)
+
+
 class BootstrapStatusResponse(BaseModel):
-    auth_mode: str
-    auth_api_key_header: str
-    auth_protect_prefixes: list[str]
-    auth_exempt_paths: list[str]
-    admin_api_key_header: str
+    auth_mode_enabled: bool
     admin_keys_configured: bool
 
     bootstrap_manager_enabled: bool = False
@@ -272,14 +301,9 @@ async def bootstrap_status():
     manager_configured = bool(manager_username and manager_password)
 
     return BootstrapStatusResponse(
-        auth_mode=str(getattr(settings, "auth_mode", "off")),
-        auth_api_key_header=str(getattr(settings, "auth_api_key_header", "X-API-Key")),
-        auth_protect_prefixes=list(
-            getattr(settings, "auth_protect_prefixes", ["/api"])
-        ),
-        auth_exempt_paths=list(getattr(settings, "auth_exempt_paths", ["/healthz"])),
-        admin_api_key_header=str(
-            getattr(settings, "admin_api_key_header", "X-Admin-API-Key")
+        auth_mode_enabled=(
+            str(getattr(settings, "auth_mode", "api_key")).strip().lower()
+            == "api_key"
         ),
         admin_keys_configured=bool(isinstance(admin_keys, set) and len(admin_keys) > 0),
         bootstrap_manager_enabled=manager_enabled,
@@ -1191,6 +1215,12 @@ async def login(
             tenant = tenants[0]
 
     username = payload.username.strip()
+    client_ip = request.client.host if request.client else "unknown"
+    throttle_key = _login_throttle_key(
+        tenant_code=str(tenant.code), username=username, client_ip=client_ip
+    )
+    _check_login_throttle(key=throttle_key)
+
     user = (
         await db.execute(
             select(TenantUser).where(
@@ -1202,11 +1232,11 @@ async def login(
     ).scalar_one_or_none()
 
     if not user or not verify_password(payload.password, user.password_hash):
-        _client_ip = request.client.host if request.client else "unknown"
+        _record_login_failure(key=throttle_key)
         report_user_action(
             action="login",
             state="failed",
-            describe=f"user={username} tenant={tenant.code} ip={_client_ip}",
+            describe=f"user={username} tenant={tenant.code} ip={client_ip}",
             level="WARNING",
         )
         raise HTTPException(
@@ -1214,6 +1244,7 @@ async def login(
             detail="Invalid username or password",
         )
 
+    _clear_login_failures(key=throttle_key)
     settings = get_settings()
 
     # Rotate per-user API key (one active key per username per tenant).
@@ -1248,11 +1279,10 @@ async def login(
 
     await db.commit()
 
-    _client_ip = request.client.host if request.client else "unknown"
     report_user_action(
         action="login",
         state="success",
-        describe=f"user={username} tenant={tenant.code} role={user.role} ip={_client_ip}",
+        describe=f"user={username} tenant={tenant.code} role={user.role} ip={client_ip}",
     )
 
     header_name = getattr(settings, "auth_api_key_header", "X-API-Key")

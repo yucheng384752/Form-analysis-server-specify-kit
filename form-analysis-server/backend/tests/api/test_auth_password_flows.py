@@ -14,7 +14,9 @@ from app.models.core.tenant_user import TenantUser
 @pytest.fixture(autouse=True)
 def _restore_global_settings():
     from app.main import settings
+    from app.api.routes_auth import _login_failures
 
+    _login_failures.clear()
     previous = {
         "auth_mode": getattr(settings, "auth_mode", None),
         "auth_api_key_header": getattr(settings, "auth_api_key_header", None),
@@ -29,6 +31,7 @@ def _restore_global_settings():
     for key, value in previous.items():
         if hasattr(settings, key):
             setattr(settings, key, value)
+    _login_failures.clear()
 
 
 @pytest.fixture
@@ -203,3 +206,37 @@ async def test_user_cannot_reset_other_user(client, db_session_clean):
         headers={"X-API-Key": user_key},
     )
     assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_login_rate_limited_after_repeated_failures(client, db_session_clean):
+    from app.main import settings
+
+    settings.auth_mode = "api_key"
+    settings.auth_api_key_header = "X-API-Key"
+
+    tenant = await _create_tenant(db_session_clean, code="rate")
+    user = await _create_user(
+        db_session_clean, tenant_id=tenant.id, username="limited", role="user"
+    )
+
+    for _ in range(5):
+        resp = await client.post(
+            "/api/auth/login",
+            json={
+                "tenant_code": tenant.code,
+                "username": user.username,
+                "password": "wrong-password",
+            },
+        )
+        assert resp.status_code == 401, resp.text
+
+    throttled = await client.post(
+        "/api/auth/login",
+        json={
+            "tenant_code": tenant.code,
+            "username": user.username,
+            "password": "password123",
+        },
+    )
+    assert throttled.status_code == 429, throttled.text

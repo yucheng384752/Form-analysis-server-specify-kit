@@ -36,6 +36,44 @@ router = APIRouter()
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+ALLOWED_IMPORT_EXTENSIONS = {".csv", ".xlsx"}
+MAX_IMPORT_FILES_PER_JOB = 10
+
+
+def _safe_upload_filename(raw_filename: str | None) -> str:
+    """Return a safe basename for persisted uploads."""
+    original = (raw_filename or "").strip()
+    filename = Path(original).name
+    if not filename or filename in {".", ".."}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid upload filename",
+        )
+    if filename != original or "/" in original or "\\" in original:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Upload filename must not contain path components",
+        )
+
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_IMPORT_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file extension: {suffix or '(none)'}",
+        )
+    return filename
+
+
+def _safe_child_path(base_dir: Path, filename: str) -> Path:
+    base = base_dir.resolve()
+    target = (base / filename).resolve()
+    if target != base and base not in target.parents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Illegal upload path",
+        )
+    return target
+
 
 class ImportJobFromUploadJobRequest(BaseModel):
     upload_process_id: uuid.UUID
@@ -160,8 +198,21 @@ async def create_import_job(
             detail=f"Invalid table code: {table_code}",
         )
 
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one file is required",
+        )
+    if len(files) > MAX_IMPORT_FILES_PER_JOB:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Too many files. Maximum: {MAX_IMPORT_FILES_PER_JOB}",
+        )
+
+    safe_filenames = [_safe_upload_filename(f.filename) for f in files]
+
     # 1.5 Check Mixed Batch (Extensions)
-    exts = {Path(f.filename).suffix.lower() for f in files}
+    exts = {Path(name).suffix.lower() for name in safe_filenames}
     if len(exts) > 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -199,9 +250,10 @@ async def create_import_job(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        for file in files:
+        total_upload_size = 0
+        for file, safe_filename in zip(files, safe_filenames, strict=True):
             # Calculate Hash & Save
-            file_path = upload_dir / file.filename
+            file_path = _safe_child_path(upload_dir, safe_filename)
 
             sha256_hash = hashlib.sha256()
             file_size = 0
@@ -209,9 +261,28 @@ async def create_import_job(
             # Write to disk and hash
             with open(file_path, "wb") as buffer:
                 while content := await file.read(1024 * 1024):  # 1MB chunks
+                    projected_file_size = file_size + len(content)
+                    projected_total_size = total_upload_size + len(content)
+                    if projected_file_size > settings.max_upload_size_bytes:
+                        raise HTTPException(
+                            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail=(
+                                f"File exceeds maximum size "
+                                f"({settings.max_upload_size_mb}MB): {safe_filename}"
+                            ),
+                        )
+                    if projected_total_size > (
+                        settings.max_upload_size_bytes * MAX_IMPORT_FILES_PER_JOB
+                    ):
+                        raise HTTPException(
+                            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail="Import batch exceeds maximum total size",
+                        )
+
                     sha256_hash.update(content)
                     buffer.write(content)
-                    file_size += len(content)
+                    file_size = projected_file_size
+                    total_upload_size = projected_total_size
 
             file_hash = sha256_hash.hexdigest()
 
@@ -235,7 +306,7 @@ async def create_import_job(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail={
                         "detail": "File content is duplicate (same SHA-256).",
-                        "filename": file.filename,
+                            "filename": safe_filename,
                         "file_hash": file_hash,
                         "duplicate_of": {
                             "job_id": str(dup_job.id),
@@ -252,7 +323,7 @@ async def create_import_job(
                 job_id=job_id,
                 tenant_id=current_tenant.id,
                 table_id=table_registry.id,
-                filename=file.filename,
+                filename=safe_filename,
                 file_hash=file_hash,
                 storage_path=str(file_path),
                 file_size=file_size,
@@ -307,7 +378,7 @@ async def create_import_job(
 
     stmt = (
         select(ImportJob)
-        .where(ImportJob.id == job_id)
+        .where(ImportJob.id == job_id, ImportJob.tenant_id == current_tenant.id)
         .execution_options(populate_existing=True)
     )
     # We rely on lazy loading working if we access it before session close,

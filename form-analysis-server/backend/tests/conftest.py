@@ -17,6 +17,8 @@ from sqlalchemy.pool import StaticPool
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///file:memdb1?mode=memory&cache=shared"
 os.environ["ENVIRONMENT"] = "testing"
 os.environ["DEBUG"] = "true"
+os.environ["AUTH_MODE"] = "off"
+os.environ["ALLOW_AUTH_OFF"] = "true"
 
 from app.core.database import Base
 from app.models.core.schema_registry import SchemaVersion, TableRegistry  # noqa: F401
