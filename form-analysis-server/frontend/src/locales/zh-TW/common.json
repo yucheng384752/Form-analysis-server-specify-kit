@@ -659,7 +659,8 @@
         "sections": {
           "dryerTemps": "乾燥桶溫度",
           "extWheelTemps": "延押輪參數",
-          "productionParams": "生產參數"
+          "productionParams": "生產參數",
+          "finishedProduct": "成品資料"
         },
         "extWheel": {
           "top": "上輪(A)",
@@ -678,6 +679,23 @@
           "quantitativeOutput": "定量輸出",
           "frame": "車台",
           "filterPressure": "濾網壓力"
+        },
+        "finishedProduct": {
+          "boardWidth": "半成品板寬",
+          "length": "半成品米數",
+          "weight": "半成品重量",
+          "position": "位置",
+          "thickness": "PE板 橫向厚度 μm",
+          "prevRoll": "上一捲5點量測",
+          "receivingRoll": "收料捲5點量測",
+          "finishedRoll": "結束捲5點量測",
+          "ngSection": "不良狀況說明",
+          "ngMeters": "不良米數",
+          "good": "良品",
+          "ngProduct": "不良品",
+          "ngCondition": "不良狀況",
+          "ngPosition": "不良位置",
+          "notes": "備註"
         }
       }
     },

@@ -1204,6 +1204,52 @@ export function QueryPage() {
       getValueByKeyRegex(data, [new RegExp(`^set\\s*temp.*${c.key}`, 'i'), new RegExp(`^set[_\\s]*temp.*${c.key}`, 'i')])
     );
 
+    // 成品資料欄位
+    const boardWidth = getValueByKeyRegex(data, [/^semi.*finished.*sheet.*width/i, /^board.*width/i, /半成品板寬/i]);
+    const semiLength = getValueByKeyRegex(data, [/^semi.*finished.*length/i, /半成品米數/i]);
+    const fpWeight   = getValueByKeyRegex(data, [/^weight/i, /^重量/i]);
+    const pts = [1, 2, 3, 4, 5] as const;
+    const measureGroups = [
+      {
+        key: 'prev',
+        label: t('query.p1.finishedProduct.prevRoll'),
+        rows: [
+          { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^previous_volume_high_maximum_${i}$`, 'i')])) },
+          { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^previous_volume_high_minimum_${i}$`, 'i')])) },
+          { hl: 'L', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^previous_volume_low_maximum_${i}$`, 'i')])) },
+          { hl: 'L', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^previous_volume_low_minimum_${i}$`, 'i')])) },
+        ],
+      },
+      {
+        key: 'recv',
+        label: t('query.p1.finishedProduct.receivingRoll'),
+        rows: [
+          { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^receive_material_high_maximum_${i}$`, 'i')])) },
+          { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^receive_material_high_minimum_${i}$`, 'i')])) },
+          { hl: 'L', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^receive_material_low_maximum_${i}$`, 'i')])) },
+          { hl: 'L', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^receive_material_low_minimum_${i}$`, 'i')])) },
+        ],
+      },
+      {
+        key: 'fin',
+        label: t('query.p1.finishedProduct.finishedRoll'),
+        rows: [
+          { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^finish_high_maximum_${i}$`, 'i')])) },
+          { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^finish_high_minimum_${i}$`, 'i')])) },
+          { hl: 'L', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^finish_low_maximum_${i}$`, 'i')])) },
+          { hl: 'L', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^finish_low_minimum_${i}$`, 'i')])) },
+        ],
+      },
+    ];
+    const goodMeters   = getValueByKeyRegex(data, [/^良品/i, /^good.*meter/i]);
+    const ngProduct    = getValueByKeyRegex(data, [/^不良米數/i, /^不良品/i, /^ng.*meter/i]);
+    const ngCondition  = getValueByKeyRegex(data, [/^不良狀況/i, /^ng.*condition/i]);
+    const ngPosition   = getValueByKeyRegex(data, [/^不良位置/i, /^ng.*position/i]);
+    const recordNotes  = getValueByKeyRegex(data, [/^notes?$/i, /^備註/i, /^remark/i]);
+    const totalMeasureRows = measureGroups.length * 4;
+    const hasFinishedData = !!(boardWidth || semiLength || fpWeight ||
+      measureGroups.some(g => g.rows.some(r => r.vals.some(v => v != null))));
+
     // Production params (exclude 成品資料：Semi-finished/Weight)
     const params = [
       {
@@ -1408,6 +1454,94 @@ export function QueryPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {hasFinishedData && renderCollapsibleSection(
+          record.id,
+          t('query.p1.paper.sections.finishedProduct'),
+          'p1_finished_product',
+          <div className="p1-fp-container">
+            {/* 成品基本資訊 */}
+            <div className="p1-fp-info-row">
+              <span className="p1-fp-info-label">{t('query.p1.finishedProduct.boardWidth')}</span>
+              <span className="p1-fp-info-value">{formatCell(boardWidth)}</span>
+              <span className="p1-fp-info-unit">mm</span>
+              <span className="p1-fp-info-sep" />
+              <span className="p1-fp-info-label">{t('query.p1.finishedProduct.length')}</span>
+              <span className="p1-fp-info-value">{formatCell(semiLength)}</span>
+              <span className="p1-fp-info-unit">M</span>
+              <span className="p1-fp-info-sep" />
+              <span className="p1-fp-info-label">{t('query.p1.finishedProduct.weight')}</span>
+              <span className="p1-fp-info-value">{formatCell(fpWeight)}</span>
+              <span className="p1-fp-info-unit">KG</span>
+            </div>
+            {/* 5點量測表格 */}
+            <div className="table-container">
+              <table className="p1-paper-table p1-fp-table">
+                <thead>
+                  <tr>
+                    <th className="p1-fp-col-pe"></th>
+                    <th className="p1-fp-col-group"></th>
+                    <th className="p1-fp-col-hl">{t('query.p1.finishedProduct.position')}</th>
+                    {pts.map(i => <th key={i} className="p1-fp-col-val">{i}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {measureGroups.map((group, gi) =>
+                    group.rows.map((row, ri) => (
+                      <tr key={`${group.key}-${ri}`}>
+                        {gi === 0 && ri === 0 && (
+                          <th rowSpan={totalMeasureRows} className="p1-fp-pe-label">
+                            {t('query.p1.finishedProduct.thickness')}
+                          </th>
+                        )}
+                        {ri === 0 && (
+                          <th rowSpan={4} className="p1-fp-group-label">{group.label}</th>
+                        )}
+                        <th className="p1-fp-hl-label">{row.hl}</th>
+                        {row.vals.map((v, vi) => (
+                          <td key={vi}>{formatCell(v)}</td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {/* 不良狀況說明 */}
+            <div className="table-container">
+              <table className="p1-paper-table p1-fp-ng-table">
+                <tbody>
+                  <tr>
+                    <th rowSpan={3} className="p1-fp-ng-section">{t('query.p1.finishedProduct.ngSection')}</th>
+                    <th>{t('query.p1.finishedProduct.ngMeters')}</th>
+                    <td></td><td></td><td></td>
+                    <td>{t('query.p1.finishedProduct.good')} {formatCell(goodMeters)}</td>
+                    <td>{t('query.p1.finishedProduct.ngProduct')} {formatCell(ngProduct)}</td>
+                  </tr>
+                  <tr>
+                    <th>{t('query.p1.finishedProduct.ngCondition')}</th>
+                    <td colSpan={5} className="p1-fp-text-cell">{formatCell(ngCondition)}</td>
+                  </tr>
+                  <tr>
+                    <th>{t('query.p1.finishedProduct.ngPosition')}</th>
+                    <td colSpan={5} className="p1-fp-text-cell">{formatCell(ngPosition)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {/* 備註 */}
+            <div className="table-container">
+              <table className="p1-paper-table p1-fp-notes-table">
+                <tbody>
+                  <tr>
+                    <th className="p1-fp-notes-label">{t('query.p1.finishedProduct.notes')}</th>
+                    <td colSpan={6} className="p1-fp-text-cell">{formatCell(recordNotes)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

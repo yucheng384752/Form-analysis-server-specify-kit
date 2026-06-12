@@ -563,7 +563,8 @@
         "sections": {
           "dryerTemps": "Dryer Bucket Temps",
           "extWheelTemps": "Extension Wheel Params",
-          "productionParams": "Production Params"
+          "productionParams": "Production Params",
+          "finishedProduct": "Finished Product Data"
         },
         "extWheel": {
           "top": "Top (A)",
@@ -582,6 +583,23 @@
           "quantitativeOutput": "Quantitative Output",
           "frame": "Frame",
           "filterPressure": "Filter Pressure"
+        },
+        "finishedProduct": {
+          "boardWidth": "Semi-finished Width",
+          "length": "Semi-finished Length",
+          "weight": "Semi-finished Weight",
+          "position": "Position",
+          "thickness": "PE Board Lateral Thickness μm",
+          "prevRoll": "Previous Roll 5-pt",
+          "receivingRoll": "Receiving Roll 5-pt",
+          "finishedRoll": "Finished Roll 5-pt",
+          "ngSection": "NG Description",
+          "ngMeters": "NG Meters",
+          "good": "Good",
+          "ngProduct": "NG",
+          "ngCondition": "NG Condition",
+          "ngPosition": "NG Position",
+          "notes": "Notes"
         }
       }
     },
