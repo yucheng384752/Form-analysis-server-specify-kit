@@ -1102,21 +1102,20 @@
   table-layout: fixed;
 }
 
-.p1-fp-col-pe   { width: 60px; }
-.p1-fp-col-group { width: 110px; }
-.p1-fp-col-hl   { width: 30px; }
-.p1-fp-col-val  { width: 60px; }
+.p1-fp-col-pe   { width: 80px; }
+.p1-fp-col-group { width: 100px; }
+.p1-fp-col-hl   { width: 28px; }
+.p1-fp-col-val  { width: 56px; }
 
 .p1-fp-pe-label {
   font-size: 0.75rem;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  transform: rotate(180deg);
-  white-space: nowrap;
   text-align: center;
+  white-space: normal;
+  word-break: break-word;
   background: #f1f5f9;
   font-weight: 700;
-  padding: 0.5rem 0.25rem;
+  padding: 0.4rem 0.3rem;
+  vertical-align: middle;
 }
 
 .p1-fp-group-label {
@@ -1127,13 +1126,14 @@
   white-space: normal;
   word-break: break-word;
   padding: 0.35rem 0.25rem;
+  vertical-align: middle;
 }
 
 .p1-fp-hl-label {
   font-weight: 700;
   background: #f8fafc;
   text-align: center;
-  width: 30px;
+  width: 28px;
 }
 
 /* 不良狀況說明 */

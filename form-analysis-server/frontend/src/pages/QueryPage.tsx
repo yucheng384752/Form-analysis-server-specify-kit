@@ -1212,7 +1212,7 @@ export function QueryPage() {
     const measureGroups = [
       {
         key: 'prev',
-        label: t('query.p1.finishedProduct.prevRoll'),
+        label: t('query.p1.paper.finishedProduct.prevRoll'),
         rows: [
           { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^previous_volume_high_maximum_${i}$`, 'i')])) },
           { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^previous_volume_high_minimum_${i}$`, 'i')])) },
@@ -1222,7 +1222,7 @@ export function QueryPage() {
       },
       {
         key: 'recv',
-        label: t('query.p1.finishedProduct.receivingRoll'),
+        label: t('query.p1.paper.finishedProduct.receivingRoll'),
         rows: [
           { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^receive_material_high_maximum_${i}$`, 'i')])) },
           { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^receive_material_high_minimum_${i}$`, 'i')])) },
@@ -1232,7 +1232,7 @@ export function QueryPage() {
       },
       {
         key: 'fin',
-        label: t('query.p1.finishedProduct.finishedRoll'),
+        label: t('query.p1.paper.finishedProduct.finishedRoll'),
         rows: [
           { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^finish_high_maximum_${i}$`, 'i')])) },
           { hl: 'H', vals: pts.map(i => getValueByKeyRegex(data, [new RegExp(`^finish_high_minimum_${i}$`, 'i')])) },
@@ -1464,15 +1464,15 @@ export function QueryPage() {
           <div className="p1-fp-container">
             {/* 成品基本資訊 */}
             <div className="p1-fp-info-row">
-              <span className="p1-fp-info-label">{t('query.p1.finishedProduct.boardWidth')}</span>
+              <span className="p1-fp-info-label">{t('query.p1.paper.finishedProduct.boardWidth')}</span>
               <span className="p1-fp-info-value">{formatCell(boardWidth)}</span>
               <span className="p1-fp-info-unit">mm</span>
               <span className="p1-fp-info-sep" />
-              <span className="p1-fp-info-label">{t('query.p1.finishedProduct.length')}</span>
+              <span className="p1-fp-info-label">{t('query.p1.paper.finishedProduct.length')}</span>
               <span className="p1-fp-info-value">{formatCell(semiLength)}</span>
               <span className="p1-fp-info-unit">M</span>
               <span className="p1-fp-info-sep" />
-              <span className="p1-fp-info-label">{t('query.p1.finishedProduct.weight')}</span>
+              <span className="p1-fp-info-label">{t('query.p1.paper.finishedProduct.weight')}</span>
               <span className="p1-fp-info-value">{formatCell(fpWeight)}</span>
               <span className="p1-fp-info-unit">KG</span>
             </div>
@@ -1483,7 +1483,7 @@ export function QueryPage() {
                   <tr>
                     <th className="p1-fp-col-pe"></th>
                     <th className="p1-fp-col-group"></th>
-                    <th className="p1-fp-col-hl">{t('query.p1.finishedProduct.position')}</th>
+                    <th className="p1-fp-col-hl">{t('query.p1.paper.finishedProduct.position')}</th>
                     {pts.map(i => <th key={i} className="p1-fp-col-val">{i}</th>)}
                   </tr>
                 </thead>
@@ -1493,7 +1493,7 @@ export function QueryPage() {
                       <tr key={`${group.key}-${ri}`}>
                         {gi === 0 && ri === 0 && (
                           <th rowSpan={totalMeasureRows} className="p1-fp-pe-label">
-                            {t('query.p1.finishedProduct.thickness')}
+                            {t('query.p1.paper.finishedProduct.thickness')}
                           </th>
                         )}
                         {ri === 0 && (
@@ -1514,18 +1514,18 @@ export function QueryPage() {
               <table className="p1-paper-table p1-fp-ng-table">
                 <tbody>
                   <tr>
-                    <th rowSpan={3} className="p1-fp-ng-section">{t('query.p1.finishedProduct.ngSection')}</th>
-                    <th>{t('query.p1.finishedProduct.ngMeters')}</th>
+                    <th rowSpan={3} className="p1-fp-ng-section">{t('query.p1.paper.finishedProduct.ngSection')}</th>
+                    <th>{t('query.p1.paper.finishedProduct.ngMeters')}</th>
                     <td></td><td></td><td></td>
-                    <td>{t('query.p1.finishedProduct.good')} {formatCell(goodMeters)}</td>
-                    <td>{t('query.p1.finishedProduct.ngProduct')} {formatCell(ngProduct)}</td>
+                    <td>{t('query.p1.paper.finishedProduct.good')} {formatCell(goodMeters)}</td>
+                    <td>{t('query.p1.paper.finishedProduct.ngProduct')} {formatCell(ngProduct)}</td>
                   </tr>
                   <tr>
-                    <th>{t('query.p1.finishedProduct.ngCondition')}</th>
+                    <th>{t('query.p1.paper.finishedProduct.ngCondition')}</th>
                     <td colSpan={5} className="p1-fp-text-cell">{formatCell(ngCondition)}</td>
                   </tr>
                   <tr>
-                    <th>{t('query.p1.finishedProduct.ngPosition')}</th>
+                    <th>{t('query.p1.paper.finishedProduct.ngPosition')}</th>
                     <td colSpan={5} className="p1-fp-text-cell">{formatCell(ngPosition)}</td>
                   </tr>
                 </tbody>
@@ -1536,7 +1536,7 @@ export function QueryPage() {
               <table className="p1-paper-table p1-fp-notes-table">
                 <tbody>
                   <tr>
-                    <th className="p1-fp-notes-label">{t('query.p1.finishedProduct.notes')}</th>
+                    <th className="p1-fp-notes-label">{t('query.p1.paper.finishedProduct.notes')}</th>
                     <td colSpan={6} className="p1-fp-text-cell">{formatCell(recordNotes)}</td>
                   </tr>
                 </tbody>
