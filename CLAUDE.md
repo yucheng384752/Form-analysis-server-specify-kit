@@ -22,6 +22,9 @@ All URLs must use `127.0.0.1`, not `localhost` (IPv6 issue on Windows).
 
 ### Start / Stop
 
+> **重要：啟動前須確認**
+> 在執行任何 `start-*.bat` 或 `stop-*.bat` 指令前，**必須先詢問 user 是否確認啟動/停止 Docker 環境**，待 user 明確同意後才可執行。
+
 ```powershell
 # Dev (auto-creates .env.dev on first run, checks ports, smart build)
 cd scripts && .\start-dev.bat
@@ -207,3 +210,6 @@ Demo accounts are bootstrapped by `scripts/ensure-demo-users.ps1`, which is call
 | Demo env vars | `form-analysis-server/.env.demo` |
 | Dev env vars | `form-analysis-server/.env.dev` |
 | Scripts inventory | `scripts/SCRIPTS_INVENTORY.md` |
+
+## Answer rules
+> use traditional chinese answer user's questions
