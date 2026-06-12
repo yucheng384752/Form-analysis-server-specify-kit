@@ -1,5 +1,5 @@
 // src/pages/QueryPage.tsx
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useToast } from "../components/common/ToastContext";
 import { Modal } from "../components/common/Modal";
@@ -139,6 +139,26 @@ const mergeP2RecordsForLotNo = (records: QueryRecord[], lotNo: string): QueryRec
 export function QueryPage() {
   const { t } = useTranslation();
   const { showToast } = useToast();
+
+  const termMap = useMemo(() => {
+    const raw = t('專有名詞對照表', { returnObjects: true }) as Record<string, string> | string;
+    if (!raw || typeof raw !== 'object') return {} as Record<string, string>;
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw)) out[String(key)] = String(value);
+    return out;
+  }, [t]);
+  const termMapLower = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(termMap)) out[key.trim().toLowerCase()] = value;
+    return out;
+  }, [termMap]);
+  const getHeaderLabel = useCallback((header: string) => {
+    const raw = String(header ?? '');
+    if (!raw) return '';
+    const direct = termMap[raw];
+    if (direct) return direct;
+    return termMapLower[raw.trim().toLowerCase()] || raw;
+  }, [termMap, termMapLower]);
   // 搜尋相關狀態
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchPerformed, setSearchPerformed] = useState(false);
@@ -1606,7 +1626,7 @@ export function QueryPage() {
                             style={{ cursor: 'pointer', userSelect: 'none' }}
                             title={t('query.tableHeaders.clickToSort')}
                           >
-                            {header}
+                            {getHeaderLabel(header)}
                             {sortState && sortState.column === header && (
                               <span style={{ marginLeft: '4px' }}>
                                 {sortState.direction === 'asc' ? '▲' : '▼'}
@@ -1700,7 +1720,7 @@ export function QueryPage() {
               <thead>
                 <tr>
                   {headers.map(header => (
-                    <th key={header}>{header}</th>
+                    <th key={header}>{getHeaderLabel(header)}</th>
                   ))}
                 </tr>
               </thead>
@@ -1819,7 +1839,7 @@ export function QueryPage() {
                   <tr>
                     <th>#</th>
                     {rowHeaders.map((h) => (
-                      <th key={h}>{h}</th>
+                      <th key={h}>{getHeaderLabel(h)}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1933,7 +1953,7 @@ export function QueryPage() {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px' }}>
                       {Object.keys(row).map(header => (
                         <div key={header} style={{ fontSize: '14px', display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ color: '#666', fontSize: '12px', marginBottom: '2px' }}>{header}</span>
+                          <span style={{ color: '#666', fontSize: '12px', marginBottom: '2px' }}>{getHeaderLabel(header)}</span>
                           <span style={{ fontWeight: '500' }}>{formatFieldValue(header, row[header])}</span>
                         </div>
                       ))}
