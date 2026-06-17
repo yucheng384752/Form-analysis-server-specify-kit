@@ -35,7 +35,8 @@ class P3ItemV2(Base):
     row_no = Column(Integer, nullable=False)
 
     # P3 Data Fields
-    product_id = Column(String(100), unique=True)
+    # product_id not unique: same date/machine/mold/lot appears across different lot_no groups
+    product_id = Column(String(100))
     lot_no = Column(String(50), nullable=False)
     production_date = Column(Date)
     machine_no = Column(String(20))
