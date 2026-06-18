@@ -32,7 +32,16 @@ function App() {
   const [adminUnlocked, setAdminUnlocked] = useState<boolean>(() => Boolean(getAdminApiKeyValue()) && isAdminUnlockedInSession());
   const canShowAdmin = useMemo(() => adminUnlocked, [adminUnlocked]);
 
-  const [actorRole, setActorRole] = useState<string | null>(null);
+  const [actorRole, setActorRole] = useState<string | null>(() => {
+    try {
+      const s = window.localStorage.getItem('form_analysis_whoami')
+      if (!s) return null
+      const cached = JSON.parse(s) as { actor_role?: string | null }
+      return cached?.actor_role ?? null
+    } catch {
+      return null
+    }
+  });
   const canShowManager = useMemo(() => {
     const r = String(actorRole || '').trim();
     return r === 'manager';

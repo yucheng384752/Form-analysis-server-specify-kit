@@ -57,12 +57,34 @@ export function RegisterPage(props: { onAdminUnlocked?: (ok: boolean) => void; o
   const [adminKeyDraft, setAdminKeyDraft] = useState('')
   const [adminKeyLoading, setAdminKeyLoading] = useState(false)
 
-  const [whoami, setWhoami] = useState<WhoAmI | null>(null)
+  const WHOAMI_CACHE_KEY = 'form_analysis_whoami'
+
+  const [whoami, setWhoami] = useState<WhoAmI | null>(() => {
+    try {
+      const s = window.localStorage.getItem('form_analysis_whoami')
+      return s ? (JSON.parse(s) as WhoAmI) : null
+    } catch {
+      return null
+    }
+  })
   const [diagLoading, setDiagLoading] = useState(false)
 
   useEffect(() => {
     props?.onWhoamiChanged?.(whoami)
   }, [whoami, props?.onWhoamiChanged])
+
+  // 同步 whoami 至 localStorage 快取，避免頁面重載時出現「角色讀取中」閃爍
+  useEffect(() => {
+    try {
+      if (whoami) {
+        window.localStorage.setItem(WHOAMI_CACHE_KEY, JSON.stringify(whoami))
+      } else {
+        window.localStorage.removeItem(WHOAMI_CACHE_KEY)
+      }
+    } catch {
+      // ignore
+    }
+  }, [whoami])
 
   const [storedTenantId, setStoredTenantIdState] = useState(() => getTenantId())
   const [storedApiKeyMasked, setStoredApiKeyMasked] = useState(() => maskKey(getApiKeyValue()))
