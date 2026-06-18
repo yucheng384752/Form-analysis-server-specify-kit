@@ -48,6 +48,18 @@ set "ENV_FILE=%SERVER_PATH%\.env.dev"
 set "ENV_EXAMPLE=%SERVER_PATH%\.env.example"
 set "COMPOSE_FILE=%SERVER_PATH%\docker-compose.yml"
 
+:: ── Phase 0b: WSL health check ──────────────────────────────────────────────
+set "WSL_CHECK_ARGS="
+if /I "%CI%"=="true" set "WSL_CHECK_ARGS=-Quiet"
+if /I "%CI%"=="1"    set "WSL_CHECK_ARGS=-Quiet"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0wsl-health-check.ps1" %WSL_CHECK_ARGS%
+if errorlevel 1 (
+    echo [ERROR] WSL / Docker 健康檢查失敗，無法繼續。
+    echo   診斷日誌：%LOCALAPPDATA%\Docker\wsl-recovery-logs\
+    call :maybe_pause
+    exit /b 1
+)
+
 :: ── Phase 1: Pre-flight checks ─────────────────────────────────────────────
 echo [1/6] Pre-flight checks...
 
