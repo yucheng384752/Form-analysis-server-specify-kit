@@ -907,20 +907,29 @@ export function AnalyticsPage() {
     return Number.isFinite(n) && n === 0
   }, [])
 
+  // P2 Striped Results: "V" = OK, anything else non-empty = NG
+  const isP2NgValue = useCallback((value: unknown): boolean => {
+    if (value === null || value === undefined) return false
+    const s = String(value).trim()
+    if (!s || s.toLowerCase() === 'nan') return false
+    return s !== 'V'
+  }, [])
+
   const normalizeRowKey = useCallback((key: string): string => {
     return key.replace(/\s+/g, ' ').trim().toLowerCase()
   }, [])
 
-  const rowHasNg = useCallback((row: unknown, keys: string[]): boolean => {
+  const rowHasNg = useCallback((row: unknown, keys: string[], valueChecker?: (v: unknown) => boolean): boolean => {
     if (!row || typeof row !== 'object' || Array.isArray(row)) return false
     const obj = row as Record<string, unknown>
 
     const normalizedEntries = Object.entries(obj).map(([k, v]) => [normalizeRowKey(k), v] as const)
     const wanted = keys.map((k) => normalizeRowKey(k))
+    const checker = valueChecker ?? isNgLikeValue
 
     for (const wantKey of wanted) {
       const found = normalizedEntries.find(([k]) => k === wantKey)
-      if (found && isNgLikeValue(found[1])) return true
+      if (found && checker(found[1])) return true
     }
     return false
   }, [isNgLikeValue, normalizeRowKey])
@@ -946,6 +955,9 @@ export function AnalyticsPage() {
         '分條結果',
       ]
     }
+    if (record.data_type === 'P3') {
+      return ['Finish', 'finish']
+    }
     return []
   }, [])
 
@@ -958,13 +970,13 @@ export function AnalyticsPage() {
     return Number.isFinite(n) ? n : null
   }, [])
 
-  const sortRowsNgFirst = useCallback((rows: unknown[], keys: string[]) => {
+  const sortRowsNgFirst = useCallback((rows: unknown[], keys: string[], valueChecker?: (v: unknown) => boolean) => {
     if (!Array.isArray(rows) || rows.length <= 1) return rows
     return rows
       .map((row, idx) => ({ row, idx }))
       .sort((a, b) => {
-        const aNg = rowHasNg(a.row, keys)
-        const bNg = rowHasNg(b.row, keys)
+        const aNg = rowHasNg(a.row, keys, valueChecker)
+        const bNg = rowHasNg(b.row, keys, valueChecker)
         if (aNg !== bNg) return aNg ? -1 : 1
         return a.idx - b.idx
       })
@@ -982,11 +994,14 @@ export function AnalyticsPage() {
           'striped results',
           'striped result',
           '分條結果',
-        ]),
+        ], isP2NgValue),
       )
     }
+    if (record.data_type === 'P3') {
+      return rows.some((r) => rowHasNg(r, ['Finish', 'finish']))
+    }
     return false
-  }, [rowHasNg])
+  }, [rowHasNg, isP2NgValue])
 
   const fetchNgRecords = useCallback(async (opts?: { winderNumber?: number | null }) => {
     setNgError('')
@@ -1048,32 +1063,25 @@ export function AnalyticsPage() {
             return (await res.json()) as QueryResponseLite
           }
 
-          // P2 uses slitting_result, P3 uses Finish for NG detection
+          // P2: "V" = OK, anything else non-empty = NG. Use row_data contains "X" to find NG items.
+          // slitting_result is a legacy materialized column; many records have it NULL, so we
+          // query row_data directly. All known NG values ("X  NG-U", "X  NG-Y2", …) start with "X".
           if (dt === 'P2') {
             try {
-              // Prefer materialized column for better index usage.
               return await queryDynamic([
                 ...baseFilters,
-                { field: 'slitting_result', op: 'eq', value: 0 },
+                { field: 'row_data.Striped Results', op: 'contains', value: 'X' },
               ])
             } catch (e) {
               const msg = String(e)
-              const unsupportedSlittingResult =
-                msg.includes('Unsupported field(s)') && msg.includes('slitting_result')
-              const invalidSlittingResultField = msg.includes('Invalid field: slitting_result')
-              const invalidSlittingResultOp = msg.includes('Invalid operator for slitting_result')
-              if (
-                !unsupportedSlittingResult &&
-                !invalidSlittingResultField &&
-                !invalidSlittingResultOp
-              ) {
-                throw e
+              if (msg.includes('Invalid') || msg.includes('Unsupported')) {
+                // Older backend without row_data filter support; fall back to slitting_result.
+                return await queryDynamic([
+                  ...baseFilters,
+                  { field: 'slitting_result', op: 'eq', value: 0 },
+                ])
               }
-              // Backward-compatible fallback for older backends.
-              return await queryDynamic([
-                ...baseFilters,
-                { field: 'row_data.Striped Results', op: 'eq', value: 0 },
-              ])
+              throw e
             }
           } else if (dt === 'P3') {
             // P3 uses Finish field for NG (0 = NG)
@@ -1724,8 +1732,9 @@ export function AnalyticsPage() {
                         return <div className="analytics-empty">{t('common.noData')}</div>
                       }
                       const keys = getNgKeyCandidates(r)
-                      const sorted = sortRowsNgFirst(rows, keys)
-                      const ngOnly = sorted.filter((row) => rowHasNg(row, keys))
+                      const ngChecker = r.data_type === 'P2' ? isP2NgValue : undefined
+                      const sorted = sortRowsNgFirst(rows, keys, ngChecker)
+                      const ngOnly = sorted.filter((row) => rowHasNg(row, keys, ngChecker))
                       const firstRow = sorted.find((x) => x && typeof x === 'object' && !Array.isArray(x)) as Record<string, unknown> | undefined
                       const headers = firstRow ? Object.keys(firstRow) : []
                       const ngCount = ngOnly.length

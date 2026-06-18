@@ -1655,6 +1655,20 @@ def _pick_date_column_for_station(
     return prod_col if prod_col and prod_count > 0 else None
 
 
+def _normalize_p2_striped_results(value: Any) -> str | None:
+    """Normalize P2 Striped Results to binary "0"/"1".
+
+    "V" = OK → "1"; any other non-empty, non-NaN value = NG → "0".
+    Returns None for empty / NaN inputs so the caller can filter them out.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s or s.lower() == "nan":
+        return None
+    return "1" if s == "V" else "0"
+
+
 def _normalize_binary_target(value: Any) -> str:
     """Normalize common binary target representations to string "0"/"1"."""
 
@@ -2018,6 +2032,37 @@ async def run_external_categorical_analysis_from_db(
         if station_df.empty:
             logger.warning(
                 "[DEBUG] station_df empty after notna filter for %s", station
+            )
+            continue
+
+        # Normalize the binary target column to "0"/"1" so CategoricalAnalyzer
+        # correctly computes count_0 (NG) and count_1 (OK).
+        # P2 "Striped Results": "V" = OK → "1", everything else non-empty = NG → "0".
+        # P3 "Finish" and others: use generic normalization ("OK"/"NG"/"0"/"1" etc.).
+        if station == "P2":
+            station_df = station_df.copy()
+            station_df[target_col] = station_df[target_col].apply(
+                _normalize_p2_striped_results
+            )
+            station_df = station_df[station_df[target_col].notna()].copy()
+        else:
+            station_df = station_df.copy()
+            station_df[target_col] = station_df[target_col].apply(
+                _normalize_binary_target
+            )
+            station_df = station_df[station_df[target_col].isin(["0", "1"])].copy()
+
+        logger.info(
+            "[DEBUG] After binary target normalization for %s: shape=%s, "
+            "NG(0)=%d, OK(1)=%d",
+            station,
+            station_df.shape,
+            int((station_df[target_col] == "0").sum()),
+            int((station_df[target_col] == "1").sum()),
+        )
+        if station_df.empty:
+            logger.warning(
+                "[DEBUG] station_df empty after target normalization for %s", station
             )
             continue
 
