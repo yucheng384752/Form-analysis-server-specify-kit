@@ -119,15 +119,22 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     });
   };
 
-  // 組合日期字串
-  const buildDateString = (year: string, month: string, day: string): string | undefined => {
-    if (!year && !month && !day) return undefined;
-    
-    const y = year || '0000';
+  // 組合起始日期（月/日未填時補最小值 01）
+  const buildDateFrom = (year: string, month: string, day: string): string | undefined => {
+    if (!year) return undefined;
     const m = month ? month.padStart(2, '0') : '01';
     const d = day ? day.padStart(2, '0') : '01';
-    
-    return `${y}-${m}-${d}`;
+    return `${year}-${m}-${d}`;
+  };
+
+  // 組合結束日期（月未填時補 12，日未填時補 31）
+  // 31 作為月末上限對字串比較永遠安全：不存在的日期（如 02-31）在資料中不會出現，
+  // 且 between 只要求 <= 上限，實際最後一筆記錄日期必然 <= 當月真正最後一天 <= "31"
+  const buildDateTo = (year: string, month: string, day: string): string | undefined => {
+    if (!year) return undefined;
+    const m = month ? month.padStart(2, '0') : '12';
+    const d = day ? day.padStart(2, '0') : '31';
+    return `${year}-${m}-${d}`;
   };
 
   // 處理搜尋
@@ -137,8 +144,18 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
       return;
     }
 
+    // 年份必填驗證：有月或日但沒有年時報錯
+    if (!dateFromYear && (dateFromMonth || dateFromDay)) {
+      showToast('error', t('query.advanced.dateYearRequired', '日期篩選：請輸入起始年份'));
+      return;
+    }
+    if (!dateToYear && (dateToMonth || dateToDay)) {
+      showToast('error', t('query.advanced.dateYearRequired', '日期篩選：請輸入結束年份'));
+      return;
+    }
+
     const params: AdvancedSearchParams = {};
-    
+
     // Lot No 正規化：去除前後空白，並將中間的空白轉換為底線
     // 例如: "2507313 02" -> "2507313_02"
     if (lotNo.trim()) {
@@ -147,21 +164,26 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
       normalizedLot = normalizedLot.replace(/\s+/g, '_');
       params.lot_no = normalizedLot;
     }
-    
-    // 日期邏輯優化：若只填寫一個日期，另一個自動使用同一天
-    const dateFrom = buildDateString(dateFromYear, dateFromMonth, dateFromDay);
-    const dateTo = buildDateString(dateToYear, dateToMonth, dateToDay);
-    
+
+    const dateFrom = buildDateFrom(dateFromYear, dateFromMonth, dateFromDay);
+    // 結束側用上限預設（無月→12，無日→31），確保「只填年份」時涵蓋整年
+    const dateTo = buildDateTo(dateToYear, dateToMonth, dateToDay);
+
+    // 起始日期不可大於結束日期（比較的是 from 的最小值 vs to 的最大值）
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      showToast('error', t('query.advanced.dateRangeInvalid', '起始日期不可大於結束日期'));
+      return;
+    }
+
     if (dateFrom && !dateTo) {
-      // 只填寫起始日期，結束日期使用同一天
+      // 只填起始日期：to 取同一個週期的上限
       params.production_date_from = dateFrom;
-      params.production_date_to = dateFrom;
+      params.production_date_to = buildDateTo(dateFromYear, dateFromMonth, dateFromDay)!;
     } else if (!dateFrom && dateTo) {
-      // 只填寫結束日期，起始日期使用同一天
-      params.production_date_from = dateTo;
+      // 只填結束日期：from 取同一個週期的下限
+      params.production_date_from = buildDateFrom(dateToYear, dateToMonth, dateToDay)!;
       params.production_date_to = dateTo;
     } else if (dateFrom && dateTo) {
-      // 兩個都填寫
       params.production_date_from = dateFrom;
       params.production_date_to = dateTo;
     }
