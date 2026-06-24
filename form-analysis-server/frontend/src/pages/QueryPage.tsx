@@ -5,6 +5,7 @@ import { useToast } from "../components/common/ToastContext";
 import { Modal } from "../components/common/Modal";
 import { AdvancedSearch, AdvancedSearchParams } from "../components/AdvancedSearch";
 import { EditRecordModal } from "../components/EditRecordModal";
+import { QcQuerySection } from "../components/QcQuerySection";
 import "../styles/query-page.css";
 
 // 資料類型枚舉
@@ -2104,8 +2105,37 @@ export function QueryPage() {
     );
   };
 
+  const [queryMode, setQueryMode] = useState<'lot' | 'qc'>('lot');
+
   return (
     <div className="query-page">
+
+      {/* 模式切換：批號查詢 / QC 日報表 */}
+      <div className="query-mode-tabs">
+        <button
+          className={`query-mode-tab ${queryMode === 'lot' ? 'is-active' : ''}`}
+          onClick={() => setQueryMode('lot')}
+        >
+          {t('query.modeLot', '批號查詢')}
+        </button>
+        <button
+          className={`query-mode-tab ${queryMode === 'qc' ? 'is-active' : ''}`}
+          onClick={() => setQueryMode('qc')}
+        >
+          {t('query.modeQc', 'QC 日報表')}
+        </button>
+      </div>
+
+      {/* QC 日報表模式 */}
+      {queryMode === 'qc' && (
+        <section className="query-result-section">
+          <QcQuerySection />
+        </section>
+      )}
+
+      {/* 批號查詢模式（原有內容） */}
+      {queryMode === 'lot' && <>
+
       {/* 搜尋區域 */}
       <section className="query-search-section">
         <label className="query-search-label">
@@ -2446,6 +2476,7 @@ export function QueryPage() {
           // Refresh search if needed
         }}
       />
+      </> /* end queryMode === 'lot' */}
     </div>
   );
 }

@@ -42,6 +42,7 @@ from app.api import (
     routes_validate,
 )
 from app.api import routes_stations, traceability as routes_traceability
+from app.api import routes_qc
 from app.api.deps import get_current_tenant
 from app.core.auth import hash_api_key
 from app.core.config import get_settings
@@ -638,6 +639,13 @@ app.include_router(
 app.include_router(
     routes_ut.router,
     tags=["UT Data"],
+    dependencies=tenant_deps,
+)
+
+# QC 日報表
+app.include_router(
+    routes_qc.router,
+    tags=["QC"],
     dependencies=tenant_deps,
 )
 

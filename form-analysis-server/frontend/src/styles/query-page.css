@@ -1300,3 +1300,273 @@
   border-radius: 4px;
   border: 1px solid #e5e7eb;
 }
+
+/* ── QC 日報表樣式 ──────────────────────────────────────────────── */
+
+.qc-query-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 0;
+}
+
+.qc-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+}
+
+.qc-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.qc-filter-check {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.qc-input {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  min-width: 130px;
+}
+
+.qc-upload-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.qc-upload-label {
+  font-weight: 500;
+  color: #1d4ed8;
+  white-space: nowrap;
+}
+
+.qc-result-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  color: #374151;
+  padding: 0 0.25rem;
+}
+
+.qc-ng-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* QC 日報表（對應 PDF 格式）
+   欄位順序：機台 | sub | 1~N 捲 | 不良原因 | A值 | B值 | E'值 | 10P0 | 彎曲 | 備註
+   每台 3 列：判定(✓/✗) / H(上層厚度+QC H值) / L(下層厚度+QC L值) */
+.qc-table-wrapper {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+}
+
+.qc-daily-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.82rem;
+  background: #fff;
+}
+
+.qc-daily-table th,
+.qc-daily-table td {
+  border: 1px solid #d1d5db;
+  padding: 4px 6px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* 表頭第一列大分組 */
+.qc-th-section {
+  background: #eff6ff;
+  font-weight: 600;
+  color: #1e40af;
+  font-size: 0.8rem;
+}
+
+.qc-th-section-qc {
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.qc-th-machine {
+  background: #f3f4f6;
+  font-weight: 600;
+  min-width: 60px;
+  width: 60px;
+}
+
+.qc-th-sub {
+  background: #f3f4f6;
+  width: 40px;
+}
+
+.qc-th-bad {
+  background: #f3f4f6;
+  font-size: 0.75rem;
+  max-width: 80px;
+  white-space: normal;
+  font-weight: 600;
+}
+
+.qc-th-roll-no {
+  background: #f9fafb;
+  min-width: 36px;
+  font-weight: 600;
+}
+
+.qc-th-val {
+  background: #f9fafb;
+  min-width: 70px;
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+
+.qc-td-machine {
+  font-weight: 700;
+  background: #f8fafc;
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+.qc-machine-ng {
+  color: #dc2626;
+}
+
+.qc-td-sub {
+  background: #f9fafb;
+  color: #6b7280;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.qc-td-roll {
+  min-width: 36px;
+}
+
+.qc-td-num {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.qc-td-bad {
+  max-width: 80px;
+  white-space: normal;
+  font-size: 0.8rem;
+  vertical-align: middle;
+}
+
+.qc-td-val {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.qc-td-bending {
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.qc-td-remark {
+  font-weight: 600;
+  vertical-align: middle;
+  min-width: 60px;
+}
+
+.qc-remark-ng {
+  color: #dc2626;
+}
+
+.qc-td-empty {
+  background: #fafafa;
+}
+
+/* 判定符號 */
+.qc-mark-ok {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.qc-mark-ng {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+/* NG 行底色 */
+.qc-row-ng td {
+  background-color: #fff7f7;
+}
+
+/* 機台最後一列（L行）加粗底線作為分隔 */
+.qc-row-last td {
+  border-bottom: 2px solid #9ca3af;
+}
+
+/* 無資料提示 */
+.qc-empty-row {
+  padding: 2rem;
+  color: #9ca3af;
+  font-size: 0.9rem;
+}
+
+/* 查詢模式切換 tabs */
+.query-mode-tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 2px solid #e5e7eb;
+  margin-bottom: 0.5rem;
+}
+
+.query-mode-tab {
+  padding: 0.4rem 1.2rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem 0.375rem 0 0;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-bottom: none;
+  margin-bottom: -2px;
+  transition: background 0.15s;
+}
+
+.query-mode-tab:hover {
+  background: #e5e7eb;
+}
+
+.query-mode-tab.is-active {
+  background: #fff;
+  border-color: #6366f1;
+  border-bottom-color: #fff;
+  color: #4f46e5;
+  font-weight: 600;
+}
