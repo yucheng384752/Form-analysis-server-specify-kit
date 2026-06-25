@@ -5,7 +5,7 @@ import { useToast } from "../components/common/ToastContext";
 import { Modal } from "../components/common/Modal";
 import { AdvancedSearch, AdvancedSearchParams } from "../components/AdvancedSearch";
 import { EditRecordModal } from "../components/EditRecordModal";
-import { QcQuerySection } from "../components/QcQuerySection";
+import { QcDailyTable, QcRecord } from "../components/QcQuerySection";
 import "../styles/query-page.css";
 
 // 資料類型枚舉
@@ -170,7 +170,10 @@ export function QueryPage() {
   // 進階搜尋相關狀態
   const [advancedSearchExpanded, setAdvancedSearchExpanded] = useState(false);
   const [advancedSearchParams, setAdvancedSearchParams] = useState<AdvancedSearchParams | null>(null);
-  
+
+  // QC 日報表查詢結果
+  const [qcRecords, setQcRecords] = useState<QcRecord[]>([]);
+
   // 記錄列表相關狀態
   const [records, setRecords] = useState<QueryRecord[]>([]);
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
@@ -957,14 +960,42 @@ export function QueryPage() {
     }
 
     setAdvancedSearchParams(params);
-    setSearchKeyword(''); // 清除基本搜尋關鍵字
+    setSearchKeyword('');
+
+    if (params.data_type === 'QC') {
+      setLoading(true);
+      setQcRecords([]);
+      setRecords([]);
+      setSearchPerformed(true);
+      try {
+        const urlParams = new URLSearchParams();
+        if (params.qc_date_from) urlParams.append('date_from', params.qc_date_from);
+        if (params.qc_date_to) urlParams.append('date_to', params.qc_date_to);
+        if (params.qc_machine_no) urlParams.append('machine_no', params.qc_machine_no);
+        if (params.qc_ng_only) urlParams.append('ng_only', 'true');
+        urlParams.append('page_size', '200');
+        const res = await fetch(`/api/qc/records?${urlParams}`);
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json() as { records: QcRecord[]; total: number };
+        setQcRecords(data.records ?? []);
+        setTotalCount(data.total ?? 0);
+      } catch (e: any) {
+        showToast('error', e?.message || String(e));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    setQcRecords([]);
     await searchRecords('', 1, params);
   };
-  
+
   // 重置進階搜尋
   const handleAdvancedReset = () => {
     setAdvancedSearchParams(null);
     setRecords([]);
+    setQcRecords([]);
     setSearchPerformed(false);
     setTotalCount(0);
   };
@@ -2105,36 +2136,8 @@ export function QueryPage() {
     );
   };
 
-  const [queryMode, setQueryMode] = useState<'lot' | 'qc'>('lot');
-
   return (
     <div className="query-page">
-
-      {/* 模式切換：批號查詢 / QC 日報表 */}
-      <div className="query-mode-tabs">
-        <button
-          className={`query-mode-tab ${queryMode === 'lot' ? 'is-active' : ''}`}
-          onClick={() => setQueryMode('lot')}
-        >
-          {t('query.modeLot', '批號查詢')}
-        </button>
-        <button
-          className={`query-mode-tab ${queryMode === 'qc' ? 'is-active' : ''}`}
-          onClick={() => setQueryMode('qc')}
-        >
-          {t('query.modeQc', 'QC 日報表')}
-        </button>
-      </div>
-
-      {/* QC 日報表模式 */}
-      {queryMode === 'qc' && (
-        <section className="query-result-section">
-          <QcQuerySection />
-        </section>
-      )}
-
-      {/* 批號查詢模式（原有內容） */}
-      {queryMode === 'lot' && <>
 
       {/* 搜尋區域 */}
       <section className="query-search-section">
@@ -2473,10 +2476,26 @@ export function QueryPage() {
         onClose={() => setEditRecord(null)}
         onSave={(updated) => {
           console.log("Record updated:", updated);
-          // Refresh search if needed
         }}
       />
-      </> /* end queryMode === 'lot' */}
+
+      {/* QC 日報表結果（進階搜尋 data_type=QC 時顯示） */}
+      {advancedSearchParams?.data_type === 'QC' && searchPerformed && (
+        <section className="query-result-section">
+          {loading ? (
+            <p className="section-empty">{t('common.loading')}</p>
+          ) : (
+            <>
+              <div className="records-header" style={{ marginBottom: '0.5rem' }}>
+                <h3>
+                  {t('qc.result.total', '共 {{n}} 筆機台記錄', { n: totalCount })}
+                </h3>
+              </div>
+              <QcDailyTable records={qcRecords} />
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }

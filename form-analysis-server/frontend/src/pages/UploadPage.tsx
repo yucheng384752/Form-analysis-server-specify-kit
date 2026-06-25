@@ -10,7 +10,7 @@ import "./../styles/upload-page.css";
 const EDIT_ENABLED =
   String((import.meta as any).env?.VITE_ENABLE_CSV_EDIT ?? "true").toLowerCase() === "true";
 
-type FileType = "P1" | "P2" | "P3" | "PDF";
+type FileType = "P1" | "P2" | "P3" | "PDF" | "QC";
 
 export interface CsvData {
   headers: string[];
@@ -28,7 +28,7 @@ export interface UploadedFile {
   type: FileType;
   lotNo: string;
   status: "uploaded" | "validating" | "validated" | "importing" | "imported";
-  jobBackend: "import_v2" | "pdf";
+  jobBackend: "import_v2" | "pdf" | "qc";
   uploadProgress: number;
   validateProgress: number;
   importProgress: number;
@@ -49,7 +49,10 @@ export interface UploadedFile {
 const MAX_SIZE_BYTES = 10 * 1024 * 1024;
 
 function detectFileType(name: string): FileType {
-  if (name.toLowerCase().endsWith(".pdf")) return "PDF";
+  if (name.toLowerCase().endsWith(".pdf")) {
+    if (name.toUpperCase().startsWith("QC")) return "QC";
+    return "PDF";
+  }
   if (name.startsWith("P1_")) return "P1";
   if (name.startsWith("P2_")) return "P2";
   return "P3";
@@ -183,6 +186,7 @@ export function UploadPage() {
 
   const fileEligibleForValidate = (f: UploadedFile): boolean => {
     if (f.status === 'validating' || f.status === 'importing') return false;
+    if (f.type === 'QC') return false; // QC 走 handleQcImport，不需驗證
     if (f.type === 'PDF') {
       // PDF：驗證=上傳一次即可；已驗證過就不重複上傳
       return !f.isValidated;
@@ -327,6 +331,7 @@ export function UploadPage() {
         type === "P1" || type === "P2" ? deriveLotNoFromFilename(file.name) : "";
 
       const id = `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const isPdfType = type === "PDF" || type === "QC";
       newFiles.push({
         id,
         file,
@@ -335,11 +340,11 @@ export function UploadPage() {
         type,
         lotNo,
         status: "uploaded",
-        jobBackend: type === "PDF" ? "pdf" : "import_v2",
-        uploadProgress: 100, // 本地成功就視為100%
+        jobBackend: type === "QC" ? "qc" : type === "PDF" ? "pdf" : "import_v2",
+        uploadProgress: 100,
         validateProgress: 0,
         importProgress: 0,
-        expanded: type === "PDF" ? false : true, // PDF 不展開（沒有 CSV 內容）
+        expanded: isPdfType ? false : true,
         csvData: undefined,
         hasUnsavedChanges: false,
         processId: undefined,
@@ -959,6 +964,41 @@ export function UploadPage() {
     }
   };
 
+  const handleQcImport = async (fileId: string) => {
+    const target = filesRef.current.find((f) => f.id === fileId);
+    if (!target || target.type !== 'QC') return;
+
+    setFiles((prev) =>
+      prev.map((f) => f.id === fileId ? { ...f, status: 'importing', importProgress: 20 } : f)
+    );
+
+    try {
+      const formData = new FormData();
+      formData.append('file', target.file, target.name);
+      const res = await fetch('/api/qc/upload', {
+        method: 'POST',
+        headers: buildTenantHeaders(),
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText })) as { detail?: string };
+        throw new Error(err.detail || res.statusText);
+      }
+      const data = await res.json() as { message?: string; count?: number };
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === fileId ? { ...f, status: 'imported', importProgress: 100, isValidated: true } : f
+        )
+      );
+      showToast('success', data.message || t('qc.uploadSuccess', 'QC 匯入成功'));
+    } catch (e: any) {
+      setFiles((prev) =>
+        prev.map((f) => f.id === fileId ? { ...f, status: 'uploaded', importProgress: 0 } : f)
+      );
+      showToast('error', e?.message || 'QC 匯入失敗');
+    }
+  };
+
   const updateCell = (
     fileId: string,
     rowIndex: number,
@@ -1460,6 +1500,7 @@ export function UploadPage() {
               file={f}
               onValidate={() => handleValidate(f.id)}
               onConvertPdf={() => handlePdfConvert(f.id)}
+              onQcImport={() => handleQcImport(f.id)}
               onSaveChanges={() => handleSaveChanges(f.id)}
               onToggleExpand={() => handleToggleExpand(f.id)}
               onRemove={() => handleRemoveFile(f.id)}
@@ -1602,6 +1643,7 @@ interface UploadedFileCardProps {
   file: UploadedFile;
   onValidate: () => void;
   onConvertPdf: () => void;
+  onQcImport: () => void;
   onSaveChanges: () => void;
   onToggleExpand: () => void;
   onRemove: () => void;
@@ -1618,6 +1660,7 @@ function UploadedFileCard({
   file,
   onValidate,
   onConvertPdf,
+  onQcImport,
   onSaveChanges,
   onToggleExpand,
   onRemove,
@@ -1638,6 +1681,7 @@ function UploadedFileCard({
     !EDIT_ENABLED || !file.csvData || !file.hasUnsavedChanges;
 
   const isPdf = file.type === 'PDF';
+  const isQc = file.type === 'QC';
 
   const pdfStatusText = () => {
     if (!isPdf || !file.isValidated) return '';
@@ -1721,7 +1765,13 @@ function UploadedFileCard({
       <div className="uploaded-card__body">
         <div className="uploaded-card__status">
           {file.status === "uploaded" && (
-            <span>{isPdf && file.isValidated ? pdfStatusText() : t('upload.status.pendingValidation')}</span>
+            <span>
+              {isQc
+                ? t('qc.upload.ready', '準備辨識並匯入')
+                : isPdf && file.isValidated
+                ? pdfStatusText()
+                : t('upload.status.pendingValidation')}
+            </span>
           )}
           {file.status === "validating" && (
             <span>{t('upload.status.validating')}</span>
@@ -1745,6 +1795,31 @@ function UploadedFileCard({
         )}
 
         <div className="uploaded-card__buttons">
+
+          {/* QC PDF：單一「辨識並匯入」按鈕 */}
+          {isQc && (
+            <>
+              <button
+                className={`btn-primary ${file.status === 'importing' ? 'btn-primary--disabled' : ''}`}
+                onClick={onQcImport}
+                disabled={file.status === 'importing' || file.status === 'imported'}
+              >
+                {file.status === 'importing'
+                  ? t('common.loading', '處理中...')
+                  : file.status === 'imported'
+                  ? t('upload.status.imported', '已匯入')
+                  : t('qc.upload.submit', '辨識並匯入')}
+              </button>
+              {file.status === 'imported' && (
+                <span className="status-badge status-badge--ready">
+                  {t('upload.status.imported', '已匯入')}
+                </span>
+              )}
+            </>
+          )}
+
+          {/* 一般 PDF / CSV 原有按鈕 */}
+          {!isQc && (
           <button
             className={`btn-secondary ${
               disabledValidate ? "btn-secondary--disabled" : ""
@@ -1752,7 +1827,7 @@ function UploadedFileCard({
             onClick={onValidate}
             disabled={disabledValidate}
             title={
-              file.status === "validating" 
+              file.status === "validating"
                 ? t('upload.tooltips.validating')
                 : file.status === "importing"
                 ? t('upload.tooltips.importing')
@@ -1765,19 +1840,20 @@ function UploadedFileCard({
                 : t('upload.tooltips.validate')
             }
           >
-            {file.status === "validating" 
+            {file.status === "validating"
               ? t('upload.actions.validating')
               : isPdf
               ? (file.isValidated ? t('upload.pdf.upload.uploaded') : t('upload.pdf.upload.upload'))
-              : hasValidationErrors 
+              : hasValidationErrors
               ? t('upload.actions.revalidate')
-              : file.isValidated 
+              : file.isValidated
               ? t('upload.actions.validated')
               : t('upload.actions.validate')
             }
           </button>
+          )}
 
-          {isPdf && file.isValidated && (
+          {!isQc && isPdf && file.isValidated && (
             <button
               className={`btn-primary ${
                 file.pdfConvertStatus === 'queued' || file.pdfConvertStatus === 'uploading' || file.pdfConvertStatus === 'processing'
@@ -1826,7 +1902,7 @@ function UploadedFileCard({
           )}
 
           {/* 個別檔案匯入按鈕 */}
-          {!isPdf && file.status === "validated" && !hasValidationErrors && !file.hasUnsavedChanges && (
+          {!isPdf && !isQc && file.status === "validated" && !hasValidationErrors && !file.hasUnsavedChanges && (
             <button
               className="btn-primary"
               onClick={() => onImport(file.id)}
@@ -1837,14 +1913,14 @@ function UploadedFileCard({
           )}
 
           {/* 已驗證檔案顯示準備好的狀態 */}
-          {!isPdf && file.status === "validated" && !hasValidationErrors && !file.hasUnsavedChanges && (
+          {!isPdf && !isQc && file.status === "validated" && !hasValidationErrors && !file.hasUnsavedChanges && (
             <span className="status-badge status-badge--ready">
               {t('upload.badges.readyToImport')}
             </span>
           )}
-          
+
           {/* 有驗證錯誤時顯示錯誤狀態 */}
-          {!isPdf && file.status === "validated" && hasValidationErrors && (
+          {!isPdf && !isQc && file.status === "validated" && hasValidationErrors && (
             <span className="status-badge" style={{
               backgroundColor: '#fef2f2',
               color: '#dc2626',
@@ -1854,7 +1930,7 @@ function UploadedFileCard({
             </span>
           )}
 
-          {!isPdf && (
+          {!isPdf && !isQc && (
             <button className="btn-text" onClick={onToggleExpand}>
               {file.expanded ? t('upload.actions.collapse') : t('upload.actions.expand')} CSV 內容
             </button>

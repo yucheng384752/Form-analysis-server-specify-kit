@@ -17,6 +17,11 @@ export interface AdvancedSearchParams {
   thickness_max?: string;
   winder_number?: string;  // Winder Number
   data_type?: string;
+  // QC 日報表專用篩選
+  qc_date_from?: string;
+  qc_date_to?: string;
+  qc_machine_no?: string;
+  qc_ng_only?: boolean;
 }
 
 interface AdvancedSearchProps {
@@ -55,6 +60,11 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   const [thicknessMax, setThicknessMax] = useState('');
   const [winderNumber, setWinderNumber] = useState('');   // Winder Number
   const [dataType, setDataType] = useState('');
+  // QC 日報表專用
+  const [qcDateFrom, setQcDateFrom] = useState('');
+  const [qcDateTo, setQcDateTo] = useState('');
+  const [qcMachineNo, setQcMachineNo] = useState('');
+  const [qcNgOnly, setQcNgOnly] = useState(false);
 
   // 選項狀態
   const [machineOptions, setMachineOptions] = useState<string[]>([]);
@@ -91,6 +101,8 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
 
   // 驗證至少填寫一個條件
   const validateSearchParams = (): boolean => {
+    // QC 日報表：選擇 QC 資料類型即可搜尋（不強制要求其他條件）
+    if (dataType === 'QC') return true;
     return !!(
       lotNo.trim() ||
       dateFromYear || dateFromMonth || dateFromDay ||
@@ -199,6 +211,13 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     if (winderNumber.trim()) params.winder_number = winderNumber.trim();
     if (dataType) params.data_type = dataType;
 
+    if (dataType === 'QC') {
+      if (qcDateFrom) params.qc_date_from = qcDateFrom;
+      if (qcDateTo) params.qc_date_to = qcDateTo;
+      if (qcMachineNo.trim()) params.qc_machine_no = qcMachineNo.trim();
+      if (qcNgOnly) params.qc_ng_only = true;
+    }
+
     onSearch(params);
   };
 
@@ -220,6 +239,10 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     setThicknessMax('');
     setWinderNumber('');
     setDataType('');
+    setQcDateFrom('');
+    setQcDateTo('');
+    setQcMachineNo('');
+    setQcNgOnly(false);
     onReset();
   };
 
@@ -450,9 +473,54 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                 <option value="P1">P1</option>
                 <option value="P2">P2</option>
                 <option value="P3">P3</option>
+                <option value="QC">QC 日報表</option>
               </select>
             </div>
             </div>
+
+            {/* QC 日報表專用篩選（僅 data_type=QC 時顯示） */}
+            {dataType === 'QC' && (
+              <div className="search-grid qc-search-grid">
+                <div className="search-field">
+                  <label htmlFor="adv-qc-date-from">{t('qc.filter.dateFrom', '起始日期')}</label>
+                  <input
+                    id="adv-qc-date-from"
+                    type="date"
+                    value={qcDateFrom}
+                    onChange={(e) => setQcDateFrom(e.target.value)}
+                  />
+                </div>
+                <div className="search-field">
+                  <label htmlFor="adv-qc-date-to">{t('qc.filter.dateTo', '結束日期')}</label>
+                  <input
+                    id="adv-qc-date-to"
+                    type="date"
+                    value={qcDateTo}
+                    onChange={(e) => setQcDateTo(e.target.value)}
+                  />
+                </div>
+                <div className="search-field">
+                  <label htmlFor="adv-qc-machine">{t('qc.filter.machine', '機台')}</label>
+                  <input
+                    id="adv-qc-machine"
+                    type="text"
+                    value={qcMachineNo}
+                    onChange={(e) => setQcMachineNo(e.target.value)}
+                    placeholder="P41..."
+                  />
+                </div>
+                <div className="search-field" style={{ justifyContent: 'flex-end' }}>
+                  <label style={{ flexDirection: 'row', alignItems: 'center', gap: '0.4rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={qcNgOnly}
+                      onChange={(e) => setQcNgOnly(e.target.checked)}
+                    />
+                    {t('qc.filter.ngOnly', '僅顯示 NG')}
+                  </label>
+                </div>
+              </div>
+            )}
 
             {/* 操作按鈕 */}
             <div className="search-actions">

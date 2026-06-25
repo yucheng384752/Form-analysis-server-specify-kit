@@ -5,14 +5,14 @@ import { useToast } from './common/ToastContext'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-interface QcRoll {
+export interface QcRoll {
   roll_no: number
   judgment: string | null
   thickness_H: number | null
   thickness_L: number | null
 }
 
-interface QcRecord {
+export interface QcRecord {
   id: string
   production_date: string
   machine_no: string
@@ -48,7 +48,7 @@ const JudgmentMark = ({ j }: { j: string | null }) => {
 // 機台 | sub | 1 2 ... 9 | 不良原因 | A値 | B値 | E'値 | 10P0 | 彎曲 | 備註
 // 每機台 3 列：判定 / H（厚度+QC H值）/ L（厚度+QC L值）
 
-function QcDailyTable({ records }: { records: QcRecord[] }) {
+export function QcDailyTable({ records }: { records: QcRecord[] }) {
   const { t } = useTranslation()
 
   const maxRollNo = records.reduce((acc, r) => {
