@@ -2303,8 +2303,8 @@ export function QueryPage() {
         </section>
       )}
 
-      {/* 結果區域 */}
-      {searchPerformed && (
+      {/* 結果區域（批號/P1/P2/P3，QC 模式下跳過） */}
+      {searchPerformed && advancedSearchParams?.data_type !== 'QC' && (
         <section className="query-result-section">
           {loading ? (
             <p className="section-empty">{t('common.loading')}</p>
