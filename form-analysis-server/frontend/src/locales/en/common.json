@@ -607,7 +607,15 @@
       "linkSearch": "Search",
       "searchLinkedDataHint": "Search matching P2 and P1 data",
       "expandDetails": "Expand to view details",
-      "expandCsvData": "Expand to view CSV data"
+      "expandCsvData": "Expand to view CSV data",
+      "exportCsv": "Export CSV",
+      "exporting": "Exporting…"
+    },
+    "export": {
+      "toast": {
+        "success": "Export succeeded",
+        "error": "Export failed, please try again later"
+      }
     },
     "results": {
       "noResults": "No matching data found",

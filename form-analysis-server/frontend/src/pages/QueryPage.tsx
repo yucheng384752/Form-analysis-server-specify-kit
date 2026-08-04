@@ -218,6 +218,8 @@ export function QueryPage() {
     });
   };
   const [loading, setLoading] = useState(false);
+  const [exportingRecords, setExportingRecords] = useState(false);
+  const [exportingQc, setExportingQc] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [traceabilityData, setTraceabilityData] = useState<any>(null);
@@ -490,6 +492,72 @@ export function QueryPage() {
     return null;
   };
 
+  // 將進階搜尋參數（或基本批號關鍵字）轉換為 /records/dynamic 與匯出 API 共用的 filters 格式
+  type DynamicFilter = { field: string; op: string; value: any };
+
+  const buildDynamicQueryBody = (
+    advancedParams: AdvancedSearchParams | null | undefined,
+    basicKeyword: string
+  ): { data_type: string | undefined; filters: DynamicFilter[] } => {
+    if (!advancedParams) {
+      const filters: DynamicFilter[] = [];
+      if (basicKeyword) {
+        filters.push({ field: 'lot_no', op: 'contains', value: basicKeyword });
+      }
+      return { data_type: undefined, filters };
+    }
+
+    const filters: DynamicFilter[] = [];
+    if (advancedParams.lot_no) {
+      filters.push({ field: 'lot_no', op: 'contains', value: advancedParams.lot_no });
+    }
+
+    const dateFrom = (advancedParams.production_date_from || '').trim();
+    const dateTo = (advancedParams.production_date_to || '').trim();
+    if (dateFrom && dateTo) {
+      if (dateFrom === dateTo) {
+        filters.push({ field: 'production_date', op: 'eq', value: dateFrom });
+      } else {
+        filters.push({ field: 'production_date', op: 'between', value: [dateFrom, dateTo] });
+      }
+    }
+
+    if (advancedParams.machine_no && advancedParams.machine_no.length) {
+      filters.push({ field: 'machine_no', op: 'all_of', value: advancedParams.machine_no });
+    }
+    if (advancedParams.mold_no && advancedParams.mold_no.length) {
+      filters.push({ field: 'mold_no', op: 'all_of', value: advancedParams.mold_no });
+    }
+    if (advancedParams.product_id) {
+      filters.push({ field: 'product_id', op: 'contains', value: advancedParams.product_id });
+    }
+    if (advancedParams.specification && advancedParams.specification.length) {
+      filters.push({ field: 'specification', op: 'all_of', value: advancedParams.specification });
+    }
+    if (advancedParams.material && advancedParams.material.length) {
+      filters.push({ field: 'material', op: 'all_of', value: advancedParams.material });
+    }
+    if (advancedParams.winder_number) {
+      filters.push({ field: 'winder_number', op: 'eq', value: advancedParams.winder_number });
+    }
+    if (advancedParams.thickness_min || advancedParams.thickness_max) {
+      const a = advancedParams.thickness_min ? Number(advancedParams.thickness_min) : null;
+      const b = advancedParams.thickness_max ? Number(advancedParams.thickness_max) : null;
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        filters.push({ field: 'thickness', op: 'between', value: [a, b] });
+      } else if (Number.isFinite(a)) {
+        filters.push({ field: 'thickness', op: 'between', value: [a, a] });
+      } else if (Number.isFinite(b)) {
+        filters.push({ field: 'thickness', op: 'between', value: [b, b] });
+      }
+    }
+
+    const dataTypeRaw = (advancedParams.data_type || '').trim().toUpperCase();
+    const dataType = (dataTypeRaw === 'P1' || dataTypeRaw === 'P2' || dataTypeRaw === 'P3') ? dataTypeRaw : undefined;
+
+    return { data_type: dataType, filters };
+  };
+
   // 搜尋記錄 (支援基本搜尋和進階搜尋)
   const searchRecords = async (search: string, page: number = 1, advancedParams?: AdvancedSearchParams) => {
     setLoading(true);
@@ -525,55 +593,7 @@ export function QueryPage() {
       if (advancedParams) {
         apiUrl = '/api/v2/query/records/dynamic';
 
-        type DynamicFilter = { field: string; op: string; value: any };
-
-        const filters: DynamicFilter[] = [];
-        if (advancedParams.lot_no) {
-          filters.push({ field: 'lot_no', op: 'contains', value: advancedParams.lot_no });
-        }
-
-        const dateFrom = (advancedParams.production_date_from || '').trim();
-        const dateTo = (advancedParams.production_date_to || '').trim();
-        if (dateFrom && dateTo) {
-          if (dateFrom === dateTo) {
-            filters.push({ field: 'production_date', op: 'eq', value: dateFrom });
-          } else {
-            filters.push({ field: 'production_date', op: 'between', value: [dateFrom, dateTo] });
-          }
-        }
-
-        if (advancedParams.machine_no && advancedParams.machine_no.length) {
-          filters.push({ field: 'machine_no', op: 'all_of', value: advancedParams.machine_no });
-        }
-        if (advancedParams.mold_no && advancedParams.mold_no.length) {
-          filters.push({ field: 'mold_no', op: 'all_of', value: advancedParams.mold_no });
-        }
-        if (advancedParams.product_id) {
-          filters.push({ field: 'product_id', op: 'contains', value: advancedParams.product_id });
-        }
-        if (advancedParams.specification && advancedParams.specification.length) {
-          filters.push({ field: 'specification', op: 'all_of', value: advancedParams.specification });
-        }
-        if (advancedParams.material && advancedParams.material.length) {
-          filters.push({ field: 'material', op: 'all_of', value: advancedParams.material });
-        }
-        if (advancedParams.winder_number) {
-          filters.push({ field: 'winder_number', op: 'eq', value: advancedParams.winder_number });
-        }
-        if (advancedParams.thickness_min || advancedParams.thickness_max) {
-          const a = advancedParams.thickness_min ? Number(advancedParams.thickness_min) : null;
-          const b = advancedParams.thickness_max ? Number(advancedParams.thickness_max) : null;
-          if (Number.isFinite(a) && Number.isFinite(b)) {
-            filters.push({ field: 'thickness', op: 'between', value: [a, b] });
-          } else if (Number.isFinite(a)) {
-            filters.push({ field: 'thickness', op: 'between', value: [a, a] });
-          } else if (Number.isFinite(b)) {
-            filters.push({ field: 'thickness', op: 'between', value: [b, b] });
-          }
-        }
-
-        const dataTypeRaw = (advancedParams.data_type || '').trim().toUpperCase();
-        const dataType = (dataTypeRaw === 'P1' || dataTypeRaw === 'P2' || dataTypeRaw === 'P3') ? dataTypeRaw : undefined;
+        const { data_type: dataType, filters } = buildDynamicQueryBody(advancedParams, '');
 
         const response = await fetchWithTenant(apiUrl, {
           method: 'POST',
@@ -998,6 +1018,82 @@ export function QueryPage() {
     setQcRecords([]);
     setSearchPerformed(false);
     setTotalCount(0);
+  };
+
+  // 觸發瀏覽器下載一個 CSV blob
+  const downloadCsvBlob = (blob: Blob, disposition: string | null, fallbackFilename: string) => {
+    const match = (disposition || '').match(/filename="?([^"]+)"?/);
+    const filename = match?.[1] || fallbackFilename;
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // 匯出目前的生產履歷 (P1/P2/P3) 查詢結果為 CSV
+  const handleExportCsv = async () => {
+    if (!effectiveTenantId) {
+      showToast('error', t('query.noTenantWarning'));
+      return;
+    }
+    setExportingRecords(true);
+    try {
+      const { data_type, filters } = buildDynamicQueryBody(advancedSearchParams, searchKeyword);
+      const res = await fetchWithTenant('/api/v2/query/records/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data_type, filters, page: 1, page_size: 200 }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const detail = (body as any)?.detail;
+        showToast('error', typeof detail === 'string' ? detail : t('query.export.toast.error'));
+        return;
+      }
+      const blob = await res.blob();
+      downloadCsvBlob(blob, res.headers.get('Content-Disposition'), `production_records_${Date.now()}.csv`);
+      showToast('success', t('query.export.toast.success'));
+    } catch (e: any) {
+      showToast('error', e?.message || t('query.export.toast.error'));
+    } finally {
+      setExportingRecords(false);
+    }
+  };
+
+  // 匯出目前的 QC 日報表查詢結果為 CSV
+  const handleExportQcCsv = async () => {
+    if (!effectiveTenantId) {
+      showToast('error', t('query.noTenantWarning'));
+      return;
+    }
+    setExportingQc(true);
+    try {
+      const urlParams = new URLSearchParams();
+      if (advancedSearchParams?.qc_date_from) urlParams.append('date_from', advancedSearchParams.qc_date_from);
+      if (advancedSearchParams?.qc_date_to) urlParams.append('date_to', advancedSearchParams.qc_date_to);
+      if (advancedSearchParams?.qc_machine_no) urlParams.append('machine_no', advancedSearchParams.qc_machine_no);
+      if (advancedSearchParams?.qc_ng_only) urlParams.append('ng_only', 'true');
+
+      const res = await fetchWithTenant(`/api/qc/records/export?${urlParams}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const detail = (body as any)?.detail;
+        showToast('error', typeof detail === 'string' ? detail : t('query.export.toast.error'));
+        return;
+      }
+      const blob = await res.blob();
+      downloadCsvBlob(blob, res.headers.get('Content-Disposition'), `qc_records_${Date.now()}.csv`);
+      showToast('success', t('query.export.toast.success'));
+    } catch (e: any) {
+      showToast('error', e?.message || t('query.export.toast.error'));
+    } finally {
+      setExportingQc(false);
+    }
   };
 
   // 處理輸入變化
@@ -2312,12 +2408,19 @@ export function QueryPage() {
             <p className="section-empty">{t('query.results.noResults')}</p>
           ) : (
             <div className="records-container">
-              <div className="records-header">
+              <div className="records-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3>
                   {searchKeyword
                     ? t('query.results.foundCountWithKeyword', { keyword: searchKeyword, count: totalCount })
                     : t('query.results.foundCount', { count: totalCount })}
                 </h3>
+                <button
+                  className="btn-secondary"
+                  onClick={handleExportCsv}
+                  disabled={exportingRecords || records.length === 0}
+                >
+                  {exportingRecords ? t('query.actions.exporting') : t('query.actions.exportCsv')}
+                </button>
               </div>
 
               {(() => {
@@ -2486,10 +2589,17 @@ export function QueryPage() {
             <p className="section-empty">{t('common.loading')}</p>
           ) : (
             <>
-              <div className="records-header" style={{ marginBottom: '0.5rem' }}>
+              <div className="records-header" style={{ marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3>
                   {t('qc.result.total', '共 {{n}} 筆機台記錄', { n: totalCount })}
                 </h3>
+                <button
+                  className="btn-secondary"
+                  onClick={handleExportQcCsv}
+                  disabled={exportingQc || qcRecords.length === 0}
+                >
+                  {exportingQc ? t('query.actions.exporting') : t('query.actions.exportCsv')}
+                </button>
               </div>
               <QcDailyTable records={qcRecords} />
             </>

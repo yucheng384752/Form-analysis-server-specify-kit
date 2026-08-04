@@ -1,10 +1,13 @@
+import csv
+import io
+import json
 import re
 from collections.abc import Iterable
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import JSON, and_, cast, func, or_, select, union_all
 from sqlalchemy.dialects.postgresql import JSONB
@@ -2844,6 +2847,133 @@ async def query_records_dynamic_v2(
         page_size=body.page_size,
         records=page_records,
     )
+
+
+# --- CSV Export ---
+
+_EXPORT_PAGE_SIZE = 200
+_MAX_EXPORT_ROWS = 5000
+
+_EXPORT_BASE_COLUMNS = [
+    "lot_no",
+    "data_type",
+    "production_date",
+    "created_at",
+    "machine_no",
+    "mold_no",
+    "product_id",
+    "winder_number",
+    "specification",
+]
+
+
+def _csv_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict | list):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def _build_query_records_csv(
+    records: list[QueryRecordV2Compat], data_type: str | None
+) -> bytes:
+    base_rows: list[dict[str, Any]] = []
+    detail_rows: list[dict[str, Any]] = []
+    dynamic_keys: set[str] = set()
+
+    for rec in records:
+        base = {
+            "lot_no": rec.lot_no,
+            "data_type": rec.data_type,
+            "production_date": rec.production_date,
+            "created_at": rec.created_at,
+            "machine_no": rec.machine_no,
+            "mold_no": rec.mold_no,
+            "product_id": rec.product_id,
+            "winder_number": rec.winder_number,
+            "specification": rec.specification,
+        }
+        base_rows.append(base)
+
+        if data_type:
+            rows: list[dict[str, Any]] = []
+            additional = (
+                rec.additional_data if isinstance(rec.additional_data, dict) else {}
+            )
+            raw_rows = additional.get("rows")
+            if isinstance(raw_rows, list) and raw_rows:
+                rows = [r for r in raw_rows if isinstance(r, dict)]
+            elif additional:
+                rows = [{k: v for k, v in additional.items() if k != "rows"}]
+
+            if not rows:
+                detail_rows.append(dict(base))
+            for row in rows:
+                dynamic_keys.update(
+                    k for k in row.keys() if k not in _EXPORT_BASE_COLUMNS
+                )
+                detail_rows.append({**base, **row})
+
+    dynamic_columns = sorted(dynamic_keys)
+    columns = _EXPORT_BASE_COLUMNS + dynamic_columns
+    out_rows = detail_rows if data_type else base_rows
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(columns)
+    for row in out_rows:
+        writer.writerow([_csv_cell(row.get(col)) for col in columns])
+
+    content = buffer.getvalue()
+    buffer.close()
+    return content.encode("utf-8-sig")
+
+
+@router.post("/records/export")
+async def export_records_csv(
+    body: DynamicQueryRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+) -> Response:
+    """Export the current filtered query results (P1/P2/P3) as CSV.
+
+    Reuses query_records_dynamic_v2 for filtering/pagination and just paginates
+    in-process until every matching row has been collected (capped for safety).
+    """
+    dt = (body.data_type or "").strip().upper() or None
+
+    all_records: list[QueryRecordV2Compat] = []
+    page = 1
+    truncated = False
+    while True:
+        page_body = DynamicQueryRequest(
+            data_type=body.data_type,
+            filters=body.filters,
+            page=page,
+            page_size=_EXPORT_PAGE_SIZE,
+        )
+        resp = await query_records_dynamic_v2(
+            body=page_body, request=request, db=db, current_tenant=current_tenant
+        )
+        all_records.extend(resp.records)
+        if not resp.records or len(all_records) >= resp.total_count:
+            break
+        if len(all_records) >= _MAX_EXPORT_ROWS:
+            truncated = True
+            break
+        page += 1
+
+    csv_bytes = _build_query_records_csv(all_records, dt)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"production_records_{dt or 'all'}_{timestamp}.csv"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    if truncated:
+        headers["X-Export-Truncated"] = "true"
+
+    return Response(content=csv_bytes, media_type="text/csv", headers=headers)
 
 
 @router.get("/records/stats", response_model=RecordStatsV2Compat)

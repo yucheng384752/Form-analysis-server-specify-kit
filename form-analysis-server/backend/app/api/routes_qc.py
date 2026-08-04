@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import date
+import csv
+import io
+from datetime import date, datetime
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -195,3 +205,119 @@ async def query_qc_records(
 
     report_user_action(request, "qc_query", {"total": total})
     return QcQueryResponse(total=total, records=[_to_out(r) for r in records])
+
+
+_QC_EXPORT_MAX_ROWS = 5000
+
+# 生產捲數欄位固定為 1~9（見 qc_import.py 的 ROLL_COLS），逐卷展開成獨立欄位，
+# 讓每一卷的判定/上下層厚度都能在 CSV/Excel 中個別篩選、排序、分析。
+_QC_EXPORT_MAX_ROLLS = 9
+
+_QC_EXPORT_BASE_COLUMNS = [
+    "production_date",
+    "machine_no",
+    "mold_no",
+    "source_file",
+    "qc_A_H",
+    "qc_A_L",
+    "qc_B_H",
+    "qc_B_L",
+    "qc_E_prime_H",
+    "qc_E_prime_L",
+    "qc_10P0_H",
+    "qc_10P0_L",
+    "qc_bending",
+    "qc_result",
+    "ng_count",
+    "bad_reason",
+]
+
+_QC_EXPORT_ROLL_COLUMNS = [
+    f"roll{n}_{field}"
+    for n in range(1, _QC_EXPORT_MAX_ROLLS + 1)
+    for field in ("judgment", "thickness_H", "thickness_L")
+]
+
+_QC_EXPORT_COLUMNS = _QC_EXPORT_BASE_COLUMNS + _QC_EXPORT_ROLL_COLUMNS
+
+
+@router.get("/records/export", summary="匯出 QC 記錄為 CSV")
+async def export_qc_records_csv(
+    request: Request,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    machine_no: str | None = None,
+    ng_only: bool = False,
+    db: AsyncSession = Depends(get_db),
+    current_tenant: Tenant = Depends(get_current_tenant),
+) -> Response:
+    result = await query_qc_records(
+        request=request,
+        date_from=date_from,
+        date_to=date_to,
+        machine_no=machine_no,
+        ng_only=ng_only,
+        page=1,
+        page_size=_QC_EXPORT_MAX_ROWS,
+        db=db,
+        current_tenant=current_tenant,
+    )
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(_QC_EXPORT_COLUMNS)
+    for rec in result.records:
+        row = rec.model_dump()
+        rolls_by_no = {
+            r.get("roll_no"): r
+            for r in (row.get("rolls_data") or [])
+            if r.get("roll_no")
+        }
+
+        base_values = [
+            row.get("production_date", ""),
+            row.get("machine_no", ""),
+            row.get("mold_no") or "",
+            row.get("source_file") or "",
+            row.get("qc_A_H", ""),
+            row.get("qc_A_L", ""),
+            row.get("qc_B_H", ""),
+            row.get("qc_B_L", ""),
+            row.get("qc_E_prime_H", ""),
+            row.get("qc_E_prime_L", ""),
+            row.get("qc_10P0_H", ""),
+            row.get("qc_10P0_L", ""),
+            row.get("qc_bending", ""),
+            row.get("qc_result") or "",
+            row.get("ng_count", 0),
+            row.get("bad_reason") or "",
+        ]
+
+        roll_values: list[Any] = []
+        for n in range(1, _QC_EXPORT_MAX_ROLLS + 1):
+            roll = rolls_by_no.get(n)
+            if roll is None:
+                roll_values.extend(["", "", ""])
+            else:
+                roll_values.extend(
+                    [
+                        roll.get("judgment") or "",
+                        roll.get("thickness_H", ""),
+                        roll.get("thickness_L", ""),
+                    ]
+                )
+
+        writer.writerow(base_values + roll_values)
+
+    content = buffer.getvalue()
+    buffer.close()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"qc_records_{timestamp}.csv"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    if result.total > _QC_EXPORT_MAX_ROWS:
+        headers["X-Export-Truncated"] = "true"
+
+    return Response(
+        content=content.encode("utf-8-sig"), media_type="text/csv", headers=headers
+    )

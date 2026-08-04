@@ -703,7 +703,15 @@
       "linkSearch": "查詢",
       "searchLinkedDataHint": "查詢對應的 P2 和 P1 資料",
       "expandDetails": "展開查看細項",
-      "expandCsvData": "展開查看 CSV 資料"
+      "expandCsvData": "展開查看 CSV 資料",
+      "exportCsv": "匯出 CSV",
+      "exporting": "匯出中…"
+    },
+    "export": {
+      "toast": {
+        "success": "匯出成功",
+        "error": "匯出失敗，請稍後再試"
+      }
     },
     "results": {
       "noResults": "沒有找到符合條件的資料",
