@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import pandas as pd
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 if TYPE_CHECKING:
@@ -376,21 +376,24 @@ async def fetch_merged_p1p2p3_from_db(
             .where(P2ItemV2.tenant_id == tenant_id)
             .options(selectinload(P2ItemV2.p2_record))
         )
-        # SQL-level date pre-filter using indexed production_date_yyyymmdd
+        # SQL-level date pre-filter using indexed production_date_yyyymmdd.
+        # Strict: when a date range is requested, items with no production
+        # date are excluded (not "let through"). A prior version used
+        # `OR production_date_yyyymmdd IS NULL` here, which meant undated
+        # legacy items leaked into every date-filtered query regardless of
+        # the requested range — e.g. selecting "this month" would still
+        # include items with no date at all, producing histogram/Pareto
+        # results that don't match what the NG drill-down list (which
+        # correctly excludes undated items) finds for the same range. This
+        # broke the exact consistency this function's docstring promises.
+        if start_yyyymmdd is not None or end_yyyymmdd is not None:
+            stmt_p2 = stmt_p2.where(P2ItemV2.production_date_yyyymmdd.is_not(None))
         if start_yyyymmdd is not None:
             stmt_p2 = stmt_p2.where(
-                or_(
-                    P2ItemV2.production_date_yyyymmdd >= start_yyyymmdd,
-                    P2ItemV2.production_date_yyyymmdd.is_(None),
-                )
+                P2ItemV2.production_date_yyyymmdd >= start_yyyymmdd
             )
         if end_yyyymmdd is not None:
-            stmt_p2 = stmt_p2.where(
-                or_(
-                    P2ItemV2.production_date_yyyymmdd <= end_yyyymmdd,
-                    P2ItemV2.production_date_yyyymmdd.is_(None),
-                )
-            )
+            stmt_p2 = stmt_p2.where(P2ItemV2.production_date_yyyymmdd <= end_yyyymmdd)
         result_p2 = await db.execute(stmt_p2)
         p2_items = result_p2.scalars().all()
 
@@ -400,13 +403,9 @@ async def fetch_merged_p1p2p3_from_db(
             # Use production_date_yyyymmdd directly (semantically equivalent to Slitting date)
             slitting_yyyymmdd = p2_item.production_date_yyyymmdd
 
-            # Apply date filter
-            # If slitting_yyyymmdd is None, let the row through:
-            # the SQL pre-filter already passed None-dated rows intentionally.
+            # Apply date filter (strict: undated items don't match a range).
             if start_yyyymmdd is not None or end_yyyymmdd is not None:
-                if slitting_yyyymmdd is not None and not is_date_in_range(
-                    slitting_yyyymmdd, start_yyyymmdd, end_yyyymmdd
-                ):
+                if not is_date_in_range(slitting_yyyymmdd, start_yyyymmdd, end_yyyymmdd):
                     continue
 
             # Get P1 data by lot_no_norm
@@ -444,25 +443,20 @@ async def fetch_merged_p1p2p3_from_db(
             .where(P3ItemV2.tenant_id == tenant_id)
             .options(selectinload(P3ItemV2.p3_record))
         )
-        # SQL-level date pre-filter using P3ItemV2.production_date
+        # SQL-level date pre-filter using P3ItemV2.production_date.
+        # Strict: see the matching comment in the P2 block above — items
+        # with no production date are excluded once a range is requested,
+        # instead of leaking through via an `OR ... IS NULL` clause.
+        if start_yyyymmdd is not None or end_yyyymmdd is not None:
+            stmt_p3 = stmt_p3.where(P3ItemV2.production_date.is_not(None))
         if start_yyyymmdd is not None:
             start_dt = yyyymmdd_to_date(start_yyyymmdd)
             if start_dt is not None:
-                stmt_p3 = stmt_p3.where(
-                    or_(
-                        P3ItemV2.production_date >= start_dt,
-                        P3ItemV2.production_date.is_(None),
-                    )
-                )
+                stmt_p3 = stmt_p3.where(P3ItemV2.production_date >= start_dt)
         if end_yyyymmdd is not None:
             end_dt = yyyymmdd_to_date(end_yyyymmdd)
             if end_dt is not None:
-                stmt_p3 = stmt_p3.where(
-                    or_(
-                        P3ItemV2.production_date <= end_dt,
-                        P3ItemV2.production_date.is_(None),
-                    )
-                )
+                stmt_p3 = stmt_p3.where(P3ItemV2.production_date <= end_dt)
         result_p3 = await db.execute(stmt_p3)
         p3_items = result_p3.scalars().all()
         logger.info(
@@ -481,13 +475,9 @@ async def fetch_merged_p1p2p3_from_db(
                 d = p3_item.production_date
                 p3_yyyymmdd = d.year * 10000 + d.month * 100 + d.day
 
-            # Apply date filter
-            # If p3_yyyymmdd is None, let the row through:
-            # the SQL pre-filter already passed None-dated rows intentionally.
+            # Apply date filter (strict: undated items don't match a range).
             if start_yyyymmdd is not None or end_yyyymmdd is not None:
-                if p3_yyyymmdd is not None and not is_date_in_range(
-                    p3_yyyymmdd, start_yyyymmdd, end_yyyymmdd
-                ):
+                if not is_date_in_range(p3_yyyymmdd, start_yyyymmdd, end_yyyymmdd):
                     continue
 
             # Get P1 data by lot_no_norm
