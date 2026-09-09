@@ -998,14 +998,25 @@ export function AnalyticsPage() {
       )
     }
     if (record.data_type === 'P3') {
-      return rows.some((r) => rowHasNg(r, ['Finish', 'finish']))
+      // P3 "Finish" uses the same convention as P2's Striped Results:
+      // "V" = OK, anything else (e.g. "X", "X(NG-...)", "J") = NG.
+      // (Not a numeric 0/1 field, so the default isNgLikeValue checker
+      // never matches — that was silently hiding all P3 NG rows.)
+      return rows.some((r) => rowHasNg(r, ['Finish', 'finish'], isP2NgValue))
     }
     return false
   }, [rowHasNg, isP2NgValue])
 
+  const ngRequestIdRef = useRef(0)
+
   const fetchNgRecords = useCallback(async (opts?: { winderNumber?: number | null }) => {
     setNgError('')
     setNgLoading(true)
+
+    // Race-condition guard, same pattern as handleRun's analyzeRequestIdRef:
+    // a stale response (e.g. from a previous click that is still in flight)
+    // must not clobber the state written by a newer request.
+    const currentRequestId = ++ngRequestIdRef.current
     try {
       // Use user-selected stations instead of hardcoded P2
       const wantedTypes: DataType[] = []
@@ -1015,15 +1026,25 @@ export function AnalyticsPage() {
         if (stations.p2) wantedTypes.push('P2')
         if (stations.p3) wantedTypes.push('P3')
       }
-      
+
       if (wantedTypes.length === 0) {
         setNgError(t('analytics.stationPickError'))
         setNgLoading(false)
         return
       }
 
+      // Fetch each station independently: one station's query failing (e.g.
+      // a transient network error, or a 5xx unrelated to the retryable
+      // "Invalid"/"Unsupported" field errors handled below) must not discard
+      // another station's already-successful NG records. A single
+      // Promise.all here previously meant any one rejection wiped the whole
+      // combined result back to an empty list, even when e.g. P3 had real
+      // NG data ready to show.
+      const stationErrors: string[] = []
+
       const results = await Promise.all(
-        wantedTypes.map(async (dt) => {
+        wantedTypes.map(async (dt): Promise<QueryResponseLite> => {
+          const empty: QueryResponseLite = { records: [], total_count: 0, page: 1, page_size: 200 }
           const baseFilters: Array<{ field: string; op: string; value: any }> = []
 
           if (startDate && endDate) {
@@ -1066,59 +1087,80 @@ export function AnalyticsPage() {
           // P2: "V" = OK, anything else non-empty = NG. Use row_data contains "X" to find NG items.
           // slitting_result is a legacy materialized column; many records have it NULL, so we
           // query row_data directly. All known NG values ("X  NG-U", "X  NG-Y2", …) start with "X".
-          if (dt === 'P2') {
-            try {
-              return await queryDynamic([
-                ...baseFilters,
-                { field: 'row_data.Striped Results', op: 'contains', value: 'X' },
-              ])
-            } catch (e) {
-              const msg = String(e)
-              if (msg.includes('Invalid') || msg.includes('Unsupported')) {
-                // Older backend without row_data filter support; fall back to slitting_result.
+          try {
+            if (dt === 'P2') {
+              try {
                 return await queryDynamic([
                   ...baseFilters,
-                  { field: 'slitting_result', op: 'eq', value: 0 },
+                  { field: 'row_data.Striped Results', op: 'contains', value: 'X' },
                 ])
+              } catch (e) {
+                const msg = String(e)
+                if (msg.includes('Invalid') || msg.includes('Unsupported')) {
+                  // Older backend without row_data filter support; fall back to slitting_result.
+                  return await queryDynamic([
+                    ...baseFilters,
+                    { field: 'slitting_result', op: 'eq', value: 0 },
+                  ])
+                }
+                throw e
               }
-              throw e
-            }
-          } else if (dt === 'P3') {
-            // P3 uses Finish field for NG (0 = NG)
-            try {
-              return await queryDynamic([
-                ...baseFilters,
-                { field: 'row_data.Finish', op: 'eq', value: 0 },
-              ])
-            } catch (e) {
-              const msg = String(e)
-              // Try lowercase variant if needed
-              if (msg.includes('Invalid') || msg.includes('Unsupported')) {
+            } else if (dt === 'P3') {
+              // P3 "Finish" uses the same "V" = OK / anything else = NG
+              // convention as P2's "Striped Results" (e.g. "X", "X(NG-...)").
+              // It is never literally 0/1, so filtering on `eq: 0` matched
+              // nothing and silently returned an empty NG list for P3.
+              try {
                 return await queryDynamic([
                   ...baseFilters,
-                  { field: 'row_data.finish', op: 'eq', value: 0 },
+                  { field: 'row_data.Finish', op: 'contains', value: 'X' },
                 ])
+              } catch (e) {
+                const msg = String(e)
+                // Try lowercase variant if needed
+                if (msg.includes('Invalid') || msg.includes('Unsupported')) {
+                  return await queryDynamic([
+                    ...baseFilters,
+                    { field: 'row_data.finish', op: 'contains', value: 'X' },
+                  ])
+                }
+                throw e
               }
-              throw e
             }
+          } catch (e) {
+            // A single station's request failing (network hiccup, an
+            // unexpected 5xx, ...) must not blank out another station's
+            // already-successful NG records — record it and move on instead
+            // of rethrowing into the outer Promise.all.
+            stationErrors.push(`${dt}: ${String(e)}`)
+            return empty
           }
-          
+
           // Fallback: return empty result for unknown data type
-          return { records: [], total_count: 0, page: 1, page_size: 200 } as QueryResponseLite
+          return empty
         }),
       )
+
+      // Ignore stale responses: a newer fetchNgRecords call already started.
+      if (currentRequestId !== ngRequestIdRef.current) return
 
       const merged = results.flatMap((r) => (Array.isArray(r.records) ? r.records : []))
       const onlyNg = merged.filter(recordHasNg)
       setNgRecords(onlyNg)
       if (onlyNg.length === 0) {
-        setNgError(t('analytics.notFound'))
+        setNgError(stationErrors.length > 0 ? stationErrors.join(' / ') : t('analytics.notFound'))
+      } else if (stationErrors.length > 0) {
+        // Partial success: show what we could fetch, but surface that some
+        // station(s) failed so a silently-incomplete NG list isn't mistaken
+        // for "no NG data".
+        setNgError(stationErrors.join(' / '))
       }
     } catch (e) {
+      if (currentRequestId !== ngRequestIdRef.current) return
       setNgError(String(e))
       setNgRecords([])
     } finally {
-      setNgLoading(false)
+      if (currentRequestId === ngRequestIdRef.current) setNgLoading(false)
     }
   }, [buildTenantHeaders, endDate, recordHasNg, startDate, stations, t])
 

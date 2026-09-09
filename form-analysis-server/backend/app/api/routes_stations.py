@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_tenant
@@ -15,7 +15,6 @@ from app.core.database import get_db
 from app.core.monitoring import report_user_action
 from app.models.core.tenant import Tenant
 from app.services.generic_traceability import GenericTraceabilityService
-from app.services.generic_validator import GenericValidator
 from app.services.schema_service import SchemaService
 
 router = APIRouter(prefix="/api/stations")
@@ -28,7 +27,9 @@ def _require_admin(request: Request) -> None:
     admin_keys = getattr(settings, "admin_api_keys", set())
     provided = request.headers.get(admin_header)
     if not (provided and provided.strip() in admin_keys):
-        is_admin_state = bool(getattr(getattr(request, "state", None), "is_admin", False))
+        is_admin_state = bool(
+            getattr(getattr(request, "state", None), "is_admin", False)
+        )
         if not is_admin_state:
             raise HTTPException(403, "Admin API key required")
 
@@ -335,8 +336,11 @@ async def create_station(
         describe=f"code={body.code} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
     )
     return StationOut(
-        id=str(station.id), code=station.code, name=station.name,
-        sort_order=station.sort_order, has_items=station.has_items,
+        id=str(station.id),
+        code=station.code,
+        name=station.name,
+        sort_order=station.sort_order,
+        has_items=station.has_items,
     )
 
 
@@ -361,8 +365,11 @@ async def update_station(
         describe=f"code={code} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
     )
     return StationOut(
-        id=str(station.id), code=station.code, name=station.name,
-        sort_order=station.sort_order, has_items=station.has_items,
+        id=str(station.id),
+        code=station.code,
+        name=station.name,
+        sort_order=station.sort_order,
+        has_items=station.has_items,
     )
 
 
@@ -400,7 +407,8 @@ async def upsert_station_schema(
     _require_admin(request)
     svc = SchemaService(db)
     schema = await svc.upsert_schema(
-        tenant.id, code,
+        tenant.id,
+        code,
         record_fields=body.record_fields,
         item_fields=body.item_fields,
         unique_key_fields=body.unique_key_fields,
@@ -421,7 +429,9 @@ async def upsert_station_schema(
         station_code=station.code if station else code,
         version=schema.version,
         record_fields=[FieldDefOut(**f) for f in schema.record_fields],
-        item_fields=[FieldDefOut(**f) for f in schema.item_fields] if schema.item_fields else None,
+        item_fields=[FieldDefOut(**f) for f in schema.item_fields]
+        if schema.item_fields
+        else None,
         unique_key_fields=schema.unique_key_fields,
     )
 
@@ -445,7 +455,11 @@ async def create_validation_rule(
             raise HTTPException(404, f"Station {body.station_code} not found")
         station_id = station.id
     rule = await svc.create_validation_rule(
-        tenant.id, station_id, body.field_name, body.rule_type, body.rule_config,
+        tenant.id,
+        station_id,
+        body.field_name,
+        body.rule_type,
+        body.rule_config,
     )
     await db.commit()
     report_user_action(
@@ -454,8 +468,11 @@ async def create_validation_rule(
         describe=f"field={body.field_name} type={body.rule_type} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
     )
     return ValidationRuleOut(
-        id=str(rule.id), field_name=rule.field_name, rule_type=rule.rule_type,
-        rule_config=rule.rule_config, station_id=str(rule.station_id) if rule.station_id else None,
+        id=str(rule.id),
+        field_name=rule.field_name,
+        rule_type=rule.rule_type,
+        rule_config=rule.rule_config,
+        station_id=str(rule.station_id) if rule.station_id else None,
     )
 
 
@@ -479,8 +496,11 @@ async def update_validation_rule(
         describe=f"rule_id={rule_id} ip={request.client.host if request.client else 'unknown'}",
     )
     return ValidationRuleOut(
-        id=str(rule.id), field_name=rule.field_name, rule_type=rule.rule_type,
-        rule_config=rule.rule_config, station_id=str(rule.station_id) if rule.station_id else None,
+        id=str(rule.id),
+        field_name=rule.field_name,
+        rule_type=rule.rule_type,
+        rule_config=rule.rule_config,
+        station_id=str(rule.station_id) if rule.station_id else None,
     )
 
 
@@ -519,8 +539,13 @@ async def create_analytics_mapping(
     if not station:
         raise HTTPException(404, f"Station {body.station_code} not found")
     mapping = await svc.create_analytics_mapping(
-        tenant.id, station.id, body.source_path, body.output_column,
-        body.output_order, body.data_type, body.null_if_missing,
+        tenant.id,
+        station.id,
+        body.source_path,
+        body.output_column,
+        body.output_order,
+        body.data_type,
+        body.null_if_missing,
     )
     await db.commit()
     report_user_action(
@@ -529,9 +554,12 @@ async def create_analytics_mapping(
         describe=f"station={body.station_code} col={body.output_column} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
     )
     return AnalyticsMappingOut(
-        id=str(mapping.id), source_path=mapping.source_path,
-        output_column=mapping.output_column, output_order=mapping.output_order,
-        data_type=mapping.data_type, null_if_missing=mapping.null_if_missing,
+        id=str(mapping.id),
+        source_path=mapping.source_path,
+        output_column=mapping.output_column,
+        output_order=mapping.output_order,
+        data_type=mapping.data_type,
+        null_if_missing=mapping.null_if_missing,
     )
 
 
@@ -555,9 +583,12 @@ async def update_analytics_mapping(
         describe=f"mapping_id={mapping_id} ip={request.client.host if request.client else 'unknown'}",
     )
     return AnalyticsMappingOut(
-        id=str(mapping.id), source_path=mapping.source_path,
-        output_column=mapping.output_column, output_order=mapping.output_order,
-        data_type=mapping.data_type, null_if_missing=mapping.null_if_missing,
+        id=str(mapping.id),
+        source_path=mapping.source_path,
+        output_column=mapping.output_column,
+        output_order=mapping.output_order,
+        data_type=mapping.data_type,
+        null_if_missing=mapping.null_if_missing,
     )
 
 
@@ -599,7 +630,12 @@ async def create_station_link(
     if not to_st:
         raise HTTPException(404, f"Station {body.to_station_code} not found")
     link = await svc.create_station_link(
-        tenant.id, from_st.id, to_st.id, body.link_type, body.link_config, body.sort_order,
+        tenant.id,
+        from_st.id,
+        to_st.id,
+        body.link_type,
+        body.link_config,
+        body.sort_order,
     )
     await db.commit()
     report_user_action(
@@ -608,8 +644,10 @@ async def create_station_link(
         describe=f"{body.from_station_code}->{body.to_station_code} type={body.link_type} tenant={tenant.code} ip={request.client.host if request.client else 'unknown'}",
     )
     return StationLinkOut(
-        id=str(link.id), from_station_code=body.from_station_code,
-        to_station_code=body.to_station_code, link_type=link.link_type,
+        id=str(link.id),
+        from_station_code=body.from_station_code,
+        to_station_code=body.to_station_code,
+        link_type=link.link_type,
         link_config=link.link_config,
     )
 
@@ -640,7 +678,8 @@ async def update_station_link(
         id=str(link.id),
         from_station_code=station_map.get(link.from_station_id, "?"),
         to_station_code=station_map.get(link.to_station_id, "?"),
-        link_type=link.link_type, link_config=link.link_config,
+        link_type=link.link_type,
+        link_config=link.link_config,
     )
 
 

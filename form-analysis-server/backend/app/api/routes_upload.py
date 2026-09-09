@@ -28,6 +28,7 @@ from app.core import database
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging import get_logger
+from app.core.monitoring import report_user_action
 from app.models.audit import RowEdit
 from app.models.core.schema_registry import TableRegistry
 from app.models.import_job import ImportFile, ImportJob, ImportJobStatus
@@ -53,7 +54,6 @@ from app.schemas.upload import (
     UpdateUploadContentRequest,
     UploadErrorResponse,
 )
-from app.core.monitoring import report_user_action
 from app.services.audit_events import write_audit_event_best_effort
 from app.services.pdf_conversion import (
     process_pdf_conversion_job_background,
@@ -1142,7 +1142,9 @@ async def upload_pdf(
         processing_time=time.time() - start_time,
     )
 
-    _ip = http_request.client.host if http_request and http_request.client else "unknown"
+    _ip = (
+        http_request.client.host if http_request and http_request.client else "unknown"
+    )
     report_user_action(
         action="upload_pdf",
         state="success",
@@ -1235,7 +1237,7 @@ async def trigger_pdf_convert(
         getattr(http_request, "state", None), "auth_api_key_label", None
     )
 
-    winder_number = (body.winder_number if body else None)
+    winder_number = body.winder_number if body else None
 
     job = PdfConversionJob(
         process_id=process_id,

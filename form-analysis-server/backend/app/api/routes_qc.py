@@ -36,6 +36,7 @@ settings = get_settings()
 
 # --- Schemas ---
 
+
 class QcRollItem(BaseModel):
     roll_no: int
     judgment: str | None
@@ -92,6 +93,7 @@ def _to_out(rec: QcRecord) -> QcRecordOut:
 
 # --- Upload & Import ---
 
+
 @router.post("/upload", summary="上傳 QC PDF 並寫入資料庫")
 async def upload_qc_pdf(
     request: Request,
@@ -127,7 +129,9 @@ async def upload_qc_pdf(
             )
             resp.raise_for_status()
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"PDF server 錯誤: {e.response.status_code}")
+        raise HTTPException(
+            status_code=502, detail=f"PDF server 錯誤: {e.response.status_code}"
+        )
     except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail=f"PDF server 無法連線: {e}")
 
@@ -141,18 +145,25 @@ async def upload_qc_pdf(
             zf = zipfile.ZipFile(_io.BytesIO(resp.content))
             csv_text = None
             for info in zf.infolist():
-                if info.filename.lower().endswith(".csv") and "error" not in info.filename.lower():
+                if (
+                    info.filename.lower().endswith(".csv")
+                    and "error" not in info.filename.lower()
+                ):
                     csv_text = zf.read(info).decode("utf-8-sig", errors="replace")
                     break
             if not csv_text:
-                raise HTTPException(status_code=502, detail="PDF server 回傳 ZIP 中無有效 CSV")
+                raise HTTPException(
+                    status_code=502, detail="PDF server 回傳 ZIP 中無有效 CSV"
+                )
         except zipfile.BadZipFile:
             raise HTTPException(status_code=502, detail="PDF server 回傳無效 ZIP")
     elif "json" in content_type:
         result = resp.json()
         csv_text = result.get("csv_text") or result.get("csv")
         if not csv_text:
-            raise HTTPException(status_code=502, detail="PDF server 回傳 JSON 中無 csv_text")
+            raise HTTPException(
+                status_code=502, detail="PDF server 回傳 JSON 中無 csv_text"
+            )
     else:
         raise HTTPException(status_code=502, detail="PDF server 回傳未知格式")
 
@@ -163,11 +174,14 @@ async def upload_qc_pdf(
 
     saved = await upsert_qc_records(db, current_tenant.id, parsed)
 
-    report_user_action(request, "qc_upload", {"file": file.filename, "count": len(saved)})
+    report_user_action(
+        request, "qc_upload", {"file": file.filename, "count": len(saved)}
+    )
     return {"message": f"成功匯入 {len(saved)} 筆 QC 記錄", "count": len(saved)}
 
 
 # --- Query ---
+
 
 @router.get("/records", response_model=QcQueryResponse, summary="查詢 QC 記錄")
 async def query_qc_records(
@@ -193,6 +207,7 @@ async def query_qc_records(
         stmt = stmt.where(QcRecord.ng_count > 0)
 
     from sqlalchemy import func as sqlfunc
+
     count_stmt = select(sqlfunc.count()).select_from(stmt.subquery())
     total = (await db.execute(count_stmt)).scalar() or 0
 

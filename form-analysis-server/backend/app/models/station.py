@@ -84,9 +84,7 @@ class StationSchema(Base):
     csv_signature_columns: Mapped[list[str] | None] = mapped_column(
         JSONB, nullable=True
     )
-    csv_filename_pattern: Mapped[str | None] = mapped_column(
-        String(100), nullable=True
-    )
+    csv_filename_pattern: Mapped[str | None] = mapped_column(String(100), nullable=True)
     csv_field_mapping: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True
     )

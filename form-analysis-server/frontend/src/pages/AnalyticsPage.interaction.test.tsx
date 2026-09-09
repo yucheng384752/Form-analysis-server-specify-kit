@@ -28,11 +28,36 @@ vi.mock('recharts', () => {
     Legend: () => null,
     ComposedChart: ({ children }: { children: React.ReactNode }) => React.createElement('div', null, children),
     BarChart: ({ children }: { children: React.ReactNode }) => React.createElement('div', null, children),
-    Bar: ({ data, onClick, className, children }: { data?: Entry[]; onClick?: (payload: any) => void; className?: string; children: React.ReactNode }) => {
+    Bar: (
+      { data, dataKey, name, onClick, className, children }:
+        { data?: Entry[]; dataKey?: string; name?: string; onClick?: (payload: any) => void; className?: string; children: React.ReactNode },
+    ) => {
       // Only render interactive buttons for Bars that have an onClick handler.
       // Bars without onClick (e.g. ParetoChart's display-only bars) must not render
       // duplicate button elements that would confuse role-based queries.
       if (!onClick) return React.createElement('div', { className }, children)
+
+      // AnalyticsPage renders two different kinds of clickable <Bar>:
+      //  - per-category OK/NG bars (dataKey="value"), which is what these tests
+      //    click on via an "NG"-named button;
+      //  - the winder accumulation histogram (dataKey="count"), a single named
+      //    series that is NOT an OK/NG pair.
+      // Recharts supplies each Bar's series data via the parent chart's `data`
+      // prop, which this mock can't see, so it can't tell them apart from
+      // `data` alone. Fall back to a single button keyed by dataKey/name for
+      // anything that isn't the OK/NG series, so it can never collide with the
+      // real "NG" button under `getByRole('button', { name: /^NG$/i })`.
+      if (dataKey !== 'value') {
+        return React.createElement(
+          'button',
+          {
+            type: 'button',
+            'data-testid': `recharts-bar-${dataKey ?? 'series'}`,
+            onClick: () => onClick?.({}),
+          },
+          String(name ?? dataKey ?? 'bar'),
+        )
+      }
 
       const barData = Array.isArray(data) && data.length > 0 ? data : [{ name: 'OK', value: 0 }, { name: 'NG', value: 0 }]
 
@@ -151,10 +176,9 @@ describe('AnalyticsPage interaction regression', () => {
 
     await user.click(screen.getByRole('button', { name: /Analyze/i }))
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Bar/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^NG$/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: /Bar/i }))
     await user.click(screen.getByRole('button', { name: /^NG$/i }))
 
     await waitFor(() => {
@@ -178,7 +202,7 @@ describe('AnalyticsPage interaction regression', () => {
       expect.arrayContaining([
         expect.objectContaining({ field: 'production_date', op: 'between', value: [expectedStart, expectedEnd] }),
         expect.objectContaining({ field: 'winder_number', op: 'eq', value: '5' }),
-        expect.objectContaining({ field: 'slitting_result', op: 'eq', value: 0 }),
+        expect.objectContaining({ field: 'row_data.Striped Results', op: 'contains', value: 'X' }),
       ]),
     )
   })
@@ -254,10 +278,9 @@ describe('AnalyticsPage interaction regression', () => {
     await user.click(screen.getByRole('button', { name: /Analyze/i }))
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Bar/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^NG$/i })).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: /Bar/i }))
     await user.click(screen.getByRole('button', { name: /^NG$/i }))
 
     await waitFor(() => {
@@ -278,7 +301,7 @@ describe('AnalyticsPage interaction regression', () => {
     const requiredFilters = [
       { field: 'production_date', op: 'between', value: [expectedStart, expectedEnd] },
       { field: 'winder_number', op: 'eq', value: '1' },
-      { field: 'slitting_result', op: 'eq', value: 0 },
+      { field: 'row_data.Striped Results', op: 'contains', value: 'X' },
     ]
 
     const missingFilters = requiredFilters.filter((required) =>
@@ -295,7 +318,7 @@ describe('AnalyticsPage interaction regression', () => {
     expect(payload.page_size).toBe(200)
   })
 
-  it('fallback to row_data.Striped Results when slitting_result filter is unsupported', async () => {
+  it('fallback to slitting_result when row_data.Striped Results filter is unsupported', async () => {
     const user = userEvent.setup()
     const analysisResult = {
       'Winder Number': {
@@ -331,10 +354,13 @@ describe('AnalyticsPage interaction regression', () => {
       if (url.includes('/api/v2/query/records/dynamic')) {
         dynamicHit += 1
         if (dynamicHit === 1) {
-          return new Response(JSON.stringify({ detail: 'Unsupported field(s) for data_type P2: slitting_result' }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' },
-          })
+          return new Response(
+            JSON.stringify({ detail: 'Invalid operator for row_data.Striped Results: contains' }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          )
         }
         return new Response(JSON.stringify(ngRecordsResponse), {
           status: 200,
@@ -347,9 +373,8 @@ describe('AnalyticsPage interaction regression', () => {
     render(<AnalyticsPage />)
     await user.click(screen.getByRole('button', { name: /Analyze/i }))
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Bar/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^NG$/i })).toBeInTheDocument()
     })
-    await user.click(screen.getByRole('button', { name: /Bar/i }))
     await user.click(screen.getByRole('button', { name: /^NG$/i }))
     await waitFor(() => {
       expect(screen.getByText('LOT-FALLBACK-001')).toBeInTheDocument()
@@ -367,10 +392,12 @@ describe('AnalyticsPage interaction regression', () => {
     }
 
     expect(payload1.filters).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'slitting_result', op: 'eq', value: 0 })]),
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'row_data.Striped Results', op: 'contains', value: 'X' }),
+      ]),
     )
     expect(payload2.filters).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'row_data.Striped Results', op: 'eq', value: 0 })]),
+      expect.arrayContaining([expect.objectContaining({ field: 'slitting_result', op: 'eq', value: 0 })]),
     )
   })
 })

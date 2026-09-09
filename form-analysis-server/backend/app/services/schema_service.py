@@ -7,7 +7,6 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.analytics_mapping import AnalyticsMapping
 from app.models.station import Station, StationLink, StationSchema
@@ -109,7 +108,11 @@ class SchemaService:
 
             if fdef.get("required") and value is None:
                 errors.append(
-                    {"field": name, "code": "REQUIRED", "message": f"{name} is required"}
+                    {
+                        "field": name,
+                        "code": "REQUIRED",
+                        "message": f"{name} is required",
+                    }
                 )
                 continue
 
@@ -196,10 +199,19 @@ class SchemaService:
     # -- Station CRUD --------------------------------------------------
 
     async def create_station(
-        self, tenant_id: UUID, code: str, name: str, sort_order: int = 0, has_items: bool = False
+        self,
+        tenant_id: UUID,
+        code: str,
+        name: str,
+        sort_order: int = 0,
+        has_items: bool = False,
     ) -> Station:
         station = Station(
-            tenant_id=tenant_id, code=code, name=name, sort_order=sort_order, has_items=has_items
+            tenant_id=tenant_id,
+            code=code,
+            name=name,
+            sort_order=sort_order,
+            has_items=has_items,
         )
         self.session.add(station)
         await self.session.flush()
@@ -271,12 +283,19 @@ class SchemaService:
     # -- Validation Rule CRUD ------------------------------------------
 
     async def create_validation_rule(
-        self, tenant_id: UUID, station_id: UUID | None, field_name: str,
-        rule_type: str, rule_config: dict[str, Any],
+        self,
+        tenant_id: UUID,
+        station_id: UUID | None,
+        field_name: str,
+        rule_type: str,
+        rule_config: dict[str, Any],
     ) -> ValidationRule:
         rule = ValidationRule(
-            tenant_id=tenant_id, station_id=station_id, field_name=field_name,
-            rule_type=rule_type, rule_config=rule_config,
+            tenant_id=tenant_id,
+            station_id=station_id,
+            field_name=field_name,
+            rule_type=rule_type,
+            rule_config=rule_config,
         )
         self.session.add(rule)
         await self.session.flush()
@@ -311,14 +330,23 @@ class SchemaService:
     # -- Analytics Mapping CRUD ----------------------------------------
 
     async def create_analytics_mapping(
-        self, tenant_id: UUID, station_id: UUID, source_path: str,
-        output_column: str, output_order: int, data_type: str = "string",
+        self,
+        tenant_id: UUID,
+        station_id: UUID,
+        source_path: str,
+        output_column: str,
+        output_order: int,
+        data_type: str = "string",
         null_if_missing: bool = True,
     ) -> AnalyticsMapping:
         mapping = AnalyticsMapping(
-            tenant_id=tenant_id, station_id=station_id, source_path=source_path,
-            output_column=output_column, output_order=output_order,
-            data_type=data_type, null_if_missing=null_if_missing,
+            tenant_id=tenant_id,
+            station_id=station_id,
+            source_path=source_path,
+            output_column=output_column,
+            output_order=output_order,
+            data_type=data_type,
+            null_if_missing=null_if_missing,
         )
         self.session.add(mapping)
         await self.session.flush()
@@ -333,7 +361,13 @@ class SchemaService:
         mapping = result.scalar_one_or_none()
         if not mapping:
             return None
-        for k in ("source_path", "output_column", "output_order", "data_type", "null_if_missing"):
+        for k in (
+            "source_path",
+            "output_column",
+            "output_order",
+            "data_type",
+            "null_if_missing",
+        ):
             if k in patch:
                 setattr(mapping, k, patch[k])
         await self.session.flush()
@@ -353,13 +387,21 @@ class SchemaService:
     # -- Station Link CRUD ---------------------------------------------
 
     async def create_station_link(
-        self, tenant_id: UUID, from_station_id: UUID, to_station_id: UUID,
-        link_type: str, link_config: dict[str, Any] | None = None, sort_order: int = 0,
+        self,
+        tenant_id: UUID,
+        from_station_id: UUID,
+        to_station_id: UUID,
+        link_type: str,
+        link_config: dict[str, Any] | None = None,
+        sort_order: int = 0,
     ) -> StationLink:
         link = StationLink(
-            tenant_id=tenant_id, from_station_id=from_station_id,
-            to_station_id=to_station_id, link_type=link_type,
-            link_config=link_config or {}, sort_order=sort_order,
+            tenant_id=tenant_id,
+            from_station_id=from_station_id,
+            to_station_id=to_station_id,
+            link_type=link_type,
+            link_config=link_config or {},
+            sort_order=sort_order,
         )
         self.session.add(link)
         await self.session.flush()

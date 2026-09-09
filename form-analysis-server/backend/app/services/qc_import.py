@@ -176,33 +176,37 @@ def parse_qc_csv(csv_text: str, source_file: str = "") -> list[dict[str, Any]]:
             if not j_val and not h_val and not l_val:
                 continue
 
-            rolls.append({
-                "roll_no": idx + 1,
-                "judgment": judgment,
-                "thickness_H": th_H,
-                "thickness_L": th_L,
-            })
+            rolls.append(
+                {
+                    "roll_no": idx + 1,
+                    "judgment": judgment,
+                    "thickness_H": th_H,
+                    "thickness_L": th_L,
+                }
+            )
 
         ng_count = sum(1 for r in rolls if r["judgment"] == "NG")
 
-        results.append({
-            "production_date": production_date,
-            "machine_no": machine_no,
-            "source_file": source_file,
-            "qc_A_H": qc_A_H,
-            "qc_A_L": qc_A_L,
-            "qc_B_H": qc_B_H,
-            "qc_B_L": qc_B_L,
-            "qc_E_prime_H": qc_E_H,
-            "qc_E_prime_L": qc_E_L,
-            "qc_10P0_H": qc_10P0_H,
-            "qc_10P0_L": qc_10P0_L,
-            "qc_bending": qc_bending,
-            "qc_result": qc_result,
-            "ng_count": ng_count,
-            "bad_reason": bad_reason,
-            "rolls_data": rolls,
-        })
+        results.append(
+            {
+                "production_date": production_date,
+                "machine_no": machine_no,
+                "source_file": source_file,
+                "qc_A_H": qc_A_H,
+                "qc_A_L": qc_A_L,
+                "qc_B_H": qc_B_H,
+                "qc_B_L": qc_B_L,
+                "qc_E_prime_H": qc_E_H,
+                "qc_E_prime_L": qc_E_L,
+                "qc_10P0_H": qc_10P0_H,
+                "qc_10P0_L": qc_10P0_L,
+                "qc_bending": qc_bending,
+                "qc_result": qc_result,
+                "ng_count": ng_count,
+                "bad_reason": bad_reason,
+                "rolls_data": rolls,
+            }
+        )
 
         i += 3  # 跳到下一機台
 

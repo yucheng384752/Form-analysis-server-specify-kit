@@ -136,11 +136,9 @@ async def test_upload_job_with_errors_foreign_key(self, db_session, clean_db):
 # 範例：驗證預設時間
 async def test_create_record_basic(self, db_session, clean_db):
     record = Record(
-        upload_job_id=job.id,
-        lot_no="L240108001",
-        raw_data={"test": "data"}
+        upload_job_id=job.id, lot_no="L240108001", raw_data={"test": "data"}
     )
-    
+
     # 驗證預設時間非空
     assert record.created_at is not None
     assert isinstance(record.created_at, datetime)

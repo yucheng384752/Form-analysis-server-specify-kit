@@ -872,8 +872,7 @@ async def run_extraction_analysis_from_db(
         # Filter out columns that are mostly NaN (< 50% non-null)
         min_non_null = max(1, len(prepared_df) * 0.5)
         usable_numerical = [
-            c for c in present_numerical
-            if prepared_df[c].notna().sum() >= min_non_null
+            c for c in present_numerical if prepared_df[c].notna().sum() >= min_non_null
         ]
         dropped_cols = set(present_numerical) - set(usable_numerical)
         if dropped_cols:
@@ -1017,9 +1016,7 @@ async def run_extraction_analysis_from_db(
         # difference as a simple feature importance metric so that the
         # Pareto chart still has data to display.
         if not sorted_features and target_col in df.columns:
-            logger.info(
-                "No outliers detected; computing NG-vs-OK fallback for Pareto"
-            )
+            logger.info("No outliers detected; computing NG-vs-OK fallback for Pareto")
             target_series = df[target_col].astype(str)
             ng_mask = target_series == "0"
             ok_mask = target_series == "1"

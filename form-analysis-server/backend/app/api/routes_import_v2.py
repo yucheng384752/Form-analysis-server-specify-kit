@@ -23,12 +23,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_tenant, get_db
 from app.core import database
 from app.core.config import get_settings
+from app.core.monitoring import report_user_action
 from app.models.core.schema_registry import TableRegistry
 from app.models.core.tenant import Tenant
 from app.models.import_job import ImportFile, ImportJob, ImportJobStatus, StagingRow
 from app.models.upload_job import UploadJob
 from app.schemas.import_job import ImportJobErrorRow, ImportJobRead
-from app.core.monitoring import report_user_action
 from app.services.audit_events import write_audit_event_best_effort
 from app.services.import_v2 import ImportService
 

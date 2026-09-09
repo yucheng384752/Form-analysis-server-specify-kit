@@ -113,9 +113,9 @@ def make_structlog_processor(min_level: str = "WARNING"):
         try:
             _executor.submit(
                 _safe_send,
-                method,                                      # action = log method
-                level,                                       # state  = log level
-                str(event_dict.get("event", ""))[:500],     # describe = message
+                method,  # action = log method
+                level,  # state  = log level
+                str(event_dict.get("event", ""))[:500],  # describe = message
                 level,
             )
         except Exception:

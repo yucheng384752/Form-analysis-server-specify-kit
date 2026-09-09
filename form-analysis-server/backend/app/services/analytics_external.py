@@ -1627,12 +1627,6 @@ def _pick_date_column_for_station(
         "Production Date_x",
         "Production Date_y",
     ]
-    # P1 production date (used as fallback only, not for P3-specific filtering)
-    production_like = [
-        "Production Date",
-        "Production Date_x",
-        "Production Date_y",
-    ]
     slitting_like = [
         "Slitting date",
     ]
@@ -1647,18 +1641,27 @@ def _pick_date_column_for_station(
         slit_col, slit_count = _best_from_candidates(slitting_like)
         return slit_col if slit_col and slit_count > 0 else None
 
-    # P2
+    # P2: "Slitting date" is the only column that carries P2's own
+    # production timing. There is intentionally no fallback to
+    # "Production Date" (P1) or "Production Date_x"/"_y" (P3) here — those
+    # come from a different station's rows joined into the same DataFrame.
+    # A prior version fell back to them, and in combined multi-station
+    # ("ALL") requests, whichever of those columns happened to have more
+    # parseable values than "Slitting date" (often zero, since undated P2
+    # rows never populate it) got picked and used to date-filter P2 rows —
+    # silently dropping some or all of P2's contribution to the analysis
+    # even though the rows were correctly in scope. This mirrors the P3 bug
+    # already fixed above; the same isolation now applies to P2.
     slit_col, slit_count = _best_from_candidates(slitting_like)
-    if slit_col and slit_count > 0:
-        return slit_col
-    prod_col, prod_count = _best_from_candidates(production_like)
-    return prod_col if prod_col and prod_count > 0 else None
+    return slit_col if slit_col and slit_count > 0 else None
 
 
-def _normalize_p2_striped_results(value: Any) -> str | None:
-    """Normalize P2 Striped Results to binary "0"/"1".
+def _normalize_v_ok_target(value: Any) -> str | None:
+    """Normalize a "V = OK, else = NG" style target field to binary "0"/"1".
 
-    "V" = OK → "1"; any other non-empty, non-NaN value = NG → "0".
+    Both P2's "Striped Results" and P3's "Finish" columns use this same
+    convention: "V" = OK → "1"; any other non-empty, non-NaN value
+    (e.g. "X", "X(NG-...)") = NG → "0".
     Returns None for empty / NaN inputs so the caller can filter them out.
     """
     if value is None:
@@ -1667,6 +1670,10 @@ def _normalize_p2_striped_results(value: Any) -> str | None:
     if not s or s.lower() == "nan":
         return None
     return "1" if s == "V" else "0"
+
+
+# Backward-compatible alias (kept in case other call sites still refer to it).
+_normalize_p2_striped_results = _normalize_v_ok_target
 
 
 def _normalize_binary_target(value: Any) -> str:
@@ -2037,12 +2044,16 @@ async def run_external_categorical_analysis_from_db(
 
         # Normalize the binary target column to "0"/"1" so CategoricalAnalyzer
         # correctly computes count_0 (NG) and count_1 (OK).
-        # P2 "Striped Results": "V" = OK → "1", everything else non-empty = NG → "0".
-        # P3 "Finish" and others: use generic normalization ("OK"/"NG"/"0"/"1" etc.).
-        if station == "P2":
+        # P2 "Striped Results" and P3 "Finish" both use the same convention:
+        # "V" = OK → "1", everything else non-empty = NG → "0" (e.g. "X",
+        # "X(NG-...)"). Bug fix: P3's "Finish" was previously routed through
+        # the generic OK/NG/0/1 normalizer, which doesn't recognize "V"/"X"
+        # and silently dropped every P3 row — breaking P3-only (and the P3
+        # portion of ALL) analysis.
+        if target_col in ("Striped Results", "Finish"):
             station_df = station_df.copy()
             station_df[target_col] = station_df[target_col].apply(
-                _normalize_p2_striped_results
+                _normalize_v_ok_target
             )
             station_df = station_df[station_df[target_col].notna()].copy()
         else:
