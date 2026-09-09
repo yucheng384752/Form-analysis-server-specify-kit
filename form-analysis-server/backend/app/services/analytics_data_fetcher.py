@@ -389,9 +389,7 @@ async def fetch_merged_p1p2p3_from_db(
         if start_yyyymmdd is not None or end_yyyymmdd is not None:
             stmt_p2 = stmt_p2.where(P2ItemV2.production_date_yyyymmdd.is_not(None))
         if start_yyyymmdd is not None:
-            stmt_p2 = stmt_p2.where(
-                P2ItemV2.production_date_yyyymmdd >= start_yyyymmdd
-            )
+            stmt_p2 = stmt_p2.where(P2ItemV2.production_date_yyyymmdd >= start_yyyymmdd)
         if end_yyyymmdd is not None:
             stmt_p2 = stmt_p2.where(P2ItemV2.production_date_yyyymmdd <= end_yyyymmdd)
         result_p2 = await db.execute(stmt_p2)
@@ -405,7 +403,9 @@ async def fetch_merged_p1p2p3_from_db(
 
             # Apply date filter (strict: undated items don't match a range).
             if start_yyyymmdd is not None or end_yyyymmdd is not None:
-                if not is_date_in_range(slitting_yyyymmdd, start_yyyymmdd, end_yyyymmdd):
+                if not is_date_in_range(
+                    slitting_yyyymmdd, start_yyyymmdd, end_yyyymmdd
+                ):
                     continue
 
             # Get P1 data by lot_no_norm
@@ -687,7 +687,11 @@ async def fetch_merged_by_product_ids(
                     merged_row["Winder number"] = source_winder
             # Fallback: ensure Striped Results from structured field so
             # CategoricalAnalyzer target-column filter does not drop the row
-            if merged_row.get("Striped Results") is None and p2_item is not None and p2_item.slitting_result is not None:
+            if (
+                merged_row.get("Striped Results") is None
+                and p2_item is not None
+                and p2_item.slitting_result is not None
+            ):
                 merged_row["Striped Results"] = p2_item.slitting_result
             # Add original product_id for reference
             merged_row["_original_product_id"] = raw_pid

@@ -13,11 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db
 from app.core.auth import generate_api_key, hash_api_key
 from app.core.config import get_settings
+from app.core.monitoring import report_user_action
 from app.core.password import hash_password, verify_password
 from app.models.core.tenant import Tenant
 from app.models.core.tenant_api_key import TenantApiKey
 from app.models.core.tenant_user import TenantUser
-from app.core.monitoring import report_user_action
 from app.services.audit_events import write_audit_event_best_effort
 
 router = APIRouter()

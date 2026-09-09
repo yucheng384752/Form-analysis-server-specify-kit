@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.monitoring import report_user_action
 from app.models import EditReason, P1Record, P2Record, P3Record, RowEdit
 from app.schemas.audit import (
     EditReasonCreateRequest,
@@ -14,7 +15,6 @@ from app.schemas.audit import (
     EditRecordRequest,
     RowEditResponse,
 )
-from app.core.monitoring import report_user_action
 from app.services.audit_events import write_audit_event_best_effort
 
 router = APIRouter()
@@ -106,7 +106,9 @@ async def create_edit_reason(
     await db.commit()
     await db.refresh(reason)
 
-    _ip = http_request.client.host if http_request and http_request.client else "unknown"
+    _ip = (
+        http_request.client.host if http_request and http_request.client else "unknown"
+    )
     report_user_action(
         action="create_edit_reason",
         state="success",
@@ -158,7 +160,9 @@ async def update_edit_reason(
     await db.commit()
     await db.refresh(reason)
 
-    _ip = http_request.client.host if http_request and http_request.client else "unknown"
+    _ip = (
+        http_request.client.host if http_request and http_request.client else "unknown"
+    )
     report_user_action(
         action="update_edit_reason",
         state="success",
@@ -457,7 +461,11 @@ async def init_default_reasons(
         for r in created:
             await db.refresh(r)
 
-        _ip = http_request.client.host if http_request and http_request.client else "unknown"
+        _ip = (
+            http_request.client.host
+            if http_request and http_request.client
+            else "unknown"
+        )
         report_user_action(
             action="init_edit_reasons",
             state="success",

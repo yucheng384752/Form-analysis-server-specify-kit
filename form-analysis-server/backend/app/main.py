@@ -35,14 +35,15 @@ from app.api import (
     routes_import,
     routes_import_v2,
     routes_logs,
+    routes_qc,
     routes_query_v2,
+    routes_stations,
     routes_tenants,
     routes_upload,
     routes_ut,
     routes_validate,
 )
-from app.api import routes_stations, traceability as routes_traceability
-from app.api import routes_qc
+from app.api import traceability as routes_traceability
 from app.api.deps import get_current_tenant
 from app.core.auth import hash_api_key
 from app.core.config import get_settings

@@ -1,7 +1,7 @@
 """Seed default station definitions for existing manufacturing tenants."""
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.models.core.tenant import Tenant
 from app.models.station import Station, StationLink, StationSchema

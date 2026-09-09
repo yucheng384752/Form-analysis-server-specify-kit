@@ -7,7 +7,6 @@ instead of requests so no extra dependency is needed.
 
 import socket
 import threading
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 

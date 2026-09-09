@@ -12,10 +12,10 @@ from .p2_item_v2 import P2ItemV2
 from .p2_record import P2Record
 from .p3_item import P3Item
 from .p3_item_v2 import P3ItemV2
-from .qc_record import QcRecord
 from .p3_record import P3Record
 from .pdf_conversion_job import PdfConversionJob
 from .pdf_upload import PdfUpload
+from .qc_record import QcRecord
 from .record import Record
 from .station import Station, StationLink, StationSchema
 from .upload_error import UploadError

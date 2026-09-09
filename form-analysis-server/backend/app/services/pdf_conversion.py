@@ -271,7 +271,14 @@ def _inject_winder_into_csv(content: bytes) -> bytes:
     若 CSV 已有 Winder number（或同義欄位）則跳過，避免覆蓋 PDF 轉出的原始值。
     """
     WINDER_KEY = "Winder number"
-    WINDER_SYNONYMS = {"Winder", "Winder number", "winder", "winder_number", "收卷機", "收卷機編號"}
+    WINDER_SYNONYMS = {
+        "Winder",
+        "Winder number",
+        "winder",
+        "winder_number",
+        "收卷機",
+        "收卷機編號",
+    }
 
     text = content.decode("utf-8", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
@@ -285,9 +292,7 @@ def _inject_winder_into_csv(content: bytes) -> bytes:
     # Insert before the "規格/format" column if present; otherwise prepend.
     SPEC_SYNONYMS = {"format", "Format", "規格", "specification", "Specification"}
     existing = list(reader.fieldnames)
-    insert_idx = next(
-        (i for i, f in enumerate(existing) if f in SPEC_SYNONYMS), 0
-    )
+    insert_idx = next((i for i, f in enumerate(existing) if f in SPEC_SYNONYMS), 0)
     fieldnames = existing[:insert_idx] + [WINDER_KEY] + existing[insert_idx:]
     out = io.StringIO()
     writer = csv.DictWriter(out, fieldnames=fieldnames, extrasaction="ignore")
@@ -442,9 +447,11 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
 
         # Update status → PROCESSING (short DB touch)
         async with database.async_session_factory() as db:
-            job = (await db.execute(
-                select(PdfConversionJob).where(PdfConversionJob.id == job_id)
-            )).scalar_one()
+            job = (
+                await db.execute(
+                    select(PdfConversionJob).where(PdfConversionJob.id == job_id)
+                )
+            ).scalar_one()
             job.status = PdfConversionStatus.PROCESSING
             job.progress = 45
             await db.commit()
@@ -481,14 +488,18 @@ async def process_pdf_conversion_job_background(job_id: uuid.UUID) -> None:
     # Phase 3: write results back to DB (fresh session).
     # ------------------------------------------------------------------
     async with database.async_session_factory() as db:
-        job = (await db.execute(
-            select(PdfConversionJob).where(PdfConversionJob.id == job_id)
-        )).scalar_one()
+        job = (
+            await db.execute(
+                select(PdfConversionJob).where(PdfConversionJob.id == job_id)
+            )
+        ).scalar_one()
 
         if convert_error is not None:
             job.status = PdfConversionStatus.FAILED
             job.progress = 100
-            job.error_summary = _to_error_summary(convert_error, stage=convert_error_stage)
+            job.error_summary = _to_error_summary(
+                convert_error, stage=convert_error_stage
+            )
             job.finished_at = datetime.now(UTC)
             await db.commit()
             return

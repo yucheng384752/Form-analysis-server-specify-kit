@@ -1,10 +1,18 @@
 """QC Record Model - 打孔帶生產日報表"""
 
 import uuid
-from datetime import UTC, datetime, date
-from typing import Any
+from datetime import UTC, datetime
 
-from sqlalchemy import Column, Date, Float, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    Date,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 
 from app.core.database import Base
@@ -36,7 +44,7 @@ class QcRecord(Base):
     qc_10P0_H = Column(Float, nullable=True)
     qc_10P0_L = Column(Float, nullable=True)
     qc_bending = Column(Integer, nullable=True)
-    qc_result = Column(String(50), nullable=True)   # "No NG" / "1NG" ...
+    qc_result = Column(String(50), nullable=True)  # "No NG" / "1NG" ...
 
     # 生產摘要
     ng_count = Column(Integer, nullable=False, default=0)
@@ -57,7 +65,9 @@ class QcRecord(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "production_date", "machine_no",
+            "tenant_id",
+            "production_date",
+            "machine_no",
             name="uq_qc_record_date_machine",
         ),
         Index("ix_qc_tenant_date", "tenant_id", "production_date"),
